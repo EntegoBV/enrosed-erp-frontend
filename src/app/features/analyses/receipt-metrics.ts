@@ -142,16 +142,14 @@ export function supplierReceiptPerformance(
       assessedPieces += ordered;
       goodPieces += Math.min(ordered, Math.max(0, received - damaged));
     }
-    const comparable = order.lines.length > 0
-      && order.lines.every((line) => line.orderedQuantity != null);
-    if (comparable) {
+    const tests = orderTests(order);
+    if (tests.perfect !== null) {
       comparableOrders++;
-      if (order.lines.every((line) => line.quantity === line.orderedQuantity
-        && (line.damagedQuantity ?? 0) === 0)) perfectOrders++;
+      if (tests.perfect) perfectOrders++;
     }
-    if (isoDay(order.receivedOn) && isoDay(order.expectedArrival)) {
+    if (tests.lateDays !== null) {
       datedOrders++;
-      if (order.receivedOn! <= order.expectedArrival!) onTimeOrders++;
+      if (tests.lateDays === 0) onTimeOrders++;
     }
   }
   return {
@@ -167,6 +165,64 @@ export function supplierReceiptPerformance(
     onTimeOrders,
     onTimePct: datedOrders > 0 ? (onTimeOrders / datedOrders) * 100 : null,
   };
+}
+
+/**
+ * The two per-order tests of the performance figures: perfect (every line as ordered, nothing damaged; null without
+ * an order snapshot on every line) and the days after the last saved ETA (0 = on time; null without both days).
+ */
+function orderTests(order: SupplierReceiptOrderInput): { perfect: boolean | null; lateDays: number | null } {
+  const comparable = order.lines.length > 0 && order.lines.every((line) => line.orderedQuantity != null);
+  const perfect = comparable ? order.lines.every((line) => line.quantity === line.orderedQuantity && (line.damagedQuantity ?? 0) === 0) : null;
+  const dated = isoDay(order.receivedOn) && isoDay(order.expectedArrival);
+  return { perfect, lateDays: dated ? Math.max(0, daysBetweenIso(order.expectedArrival!, order.receivedOn!)) : null };
+}
+
+export interface ReceiptOrderInput extends SupplierReceiptOrderInput {
+  id: number;
+  orderDate?: string | null;
+}
+
+/** One received order as Kwaliteit's drill-downs list it (design/analyses2/design.md §B.6). */
+export interface ReceiptOrderRow {
+  id: number;
+  receivedOn: string | null;
+  expectedArrival: string | null;
+  orderDate: string | null;
+  /** Everything as ordered and undamaged; false on a shortage, damage or an over-receipt; null without an order snapshot. */
+  perfect: boolean | null;
+  /** Days after the last saved ETA; 0 = on time; null without a receipt day or an ETA. */
+  lateDays: number | null;
+  /** Days from order to receipt; null without both days. */
+  leadDays: number | null;
+  ordered: number;
+  usable: number;
+  missing: number;
+  damaged: number;
+}
+
+/**
+ * Per received order the same tests supplierReceiptPerformance counts (its perfect, comparable, dated and on-time
+ * counts are counts of these rows), with the pieces of its lines in their sales units.
+ */
+export function receiptOrderRows(orders: readonly ReceiptOrderInput[]): ReceiptOrderRow[] {
+  return orders.map((order) => {
+    const lines = order.lines.map((line) => receiptLineMetrics({ orderedPieces: line.orderedQuantity ?? line.quantity, receivedPieces: line.quantity,
+      damagedPieces: line.damagedQuantity ?? 0, unitValueEur: null }));
+    const lead = isoDay(order.orderDate) && isoDay(order.receivedOn) ? daysBetweenIso(order.orderDate!, order.receivedOn!) : null;
+    return {
+      id: order.id,
+      receivedOn: isoDay(order.receivedOn) ? order.receivedOn : null,
+      expectedArrival: isoDay(order.expectedArrival) ? order.expectedArrival : null,
+      orderDate: isoDay(order.orderDate) ? order.orderDate : null,
+      ...orderTests(order),
+      leadDays: lead !== null && lead >= 0 ? lead : null,
+      ordered: lines.reduce((sum, line) => sum + line.orderedPieces, 0),
+      usable: lines.reduce((sum, line) => sum + line.usablePieces, 0),
+      missing: lines.reduce((sum, line) => sum + line.missingPieces, 0),
+      damaged: lines.reduce((sum, line) => sum + line.damagedPieces, 0),
+    };
+  });
 }
 
 export function inDateRange(day: string | null | undefined, from?: string, to?: string): boolean {

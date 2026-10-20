@@ -237,6 +237,32 @@ export interface InventoryCapitalMetric {
   landedUnitCostEur: number;
   costValueEur: number;
   sharePct: number;
+  /** Stock × list price of an active, non-demo product (its part of Verkoopwaarde); null otherwise. */
+  salesValueEur: number | null;
+}
+
+/** One product behind a Datakwaliteit count, or known stock without a cost (design/analyses2/design.md §B.5). */
+export interface InventoryProductRow {
+  productId: number | null;
+  sku: string | null;
+  name: string;
+  colour: string | null;
+  inventoryKnown: boolean;
+  stockPieces: number;
+  /** Stock × list price of an active, non-demo product with known positive stock (Verkoopwaarde); null otherwise. */
+  salesValueEur: number | null;
+}
+
+/** The products behind each Datakwaliteit count, by name: the counts are their lengths. */
+export interface InventoryGapRows {
+  /** Active, non-demo products without a reliable stock figure. */
+  unknown: InventoryProductRow[];
+  /** Known positive stock without a valid cost: in Verkoopwaarde, not in Kostwaarde. */
+  unvalued: InventoryProductRow[];
+  /** Active, non-demo products without an omdoos size. */
+  missingCarton: InventoryProductRow[];
+  /** Known stock below zero. */
+  negative: InventoryProductRow[];
 }
 
 /** How fast a product leaves, from issued invoices of the last weeks. */
@@ -254,6 +280,10 @@ export interface ReorderRow {
   colour: string | null;
   stockPieces: number;
   expectedPieces: number;
+  /** The earliest ETA of what is on order (the Onderweg list's). */
+  nextArrival: string | null;
+  /** The product's supplier: its lead time sets "Bestel vóór". */
+  supplierId: number | null;
   weeklyPieces: number;
   /** Weeks the shelf lasts at the current pace; null when nothing sells. */
   weeksLeft: number | null;
@@ -279,11 +309,15 @@ export interface InventoryAnalysis {
   zeroStock: ZeroStockAnalysis;
   belowCarton: InventoryAttentionGroup;
   incoming: IncomingInventoryAnalysis;
+  /** Every valued product, most money first: Kostwaarde's drill-down; topCapital is its first `topLimit`. */
+  capital: InventoryCapitalMetric[];
   topCapital: InventoryCapitalMetric[];
+  /** The products behind the Datakwaliteit counts (dataGaps). */
+  gapRows: InventoryGapRows;
   velocity: InventoryVelocity;
-  /** Products that run out within the reorder horizon, soonest first. */
+  /** Products that run out within the reorder horizon, soonest first; every row (D-V2). */
   reorder: { horizonWeeks: number; count: number; rows: ReorderRow[] };
-  /** Valued stock that did not sell at all in the velocity window, most money first. */
+  /** Valued stock that did not sell at all in the velocity window, most money first; every row (D-V2). */
   slowMovers: { count: number; valueEur: number; rows: SlowMoverRow[] };
 }
 
@@ -292,6 +326,8 @@ export interface InventoryOptions extends Pick<AnalysisOptions, 'topLimit' | 'to
   sales?: readonly SalesOrderView[];
   velocityDays?: number;
   reorderWeeks?: number;
+  /** The last invoice day per product (lastSoldOn): Nulvoorraad lists the most recently sold first. */
+  lastSold?: ReadonlyMap<number, string>;
 }
 
 const OPEN_QUOTE_STATUSES = new Set<SalesOrderView['order']['status']>([
@@ -546,6 +582,10 @@ export function inventoryAnalysis(
     sum + partnerPiecesOf(product) * finiteNonNegative(product.landedCostEur), 0);
   const salesValueEur = saleable.reduce((sum, product) =>
     sum + finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.computedSalesPriceEur), 0);
+  /* One product's part of Verkoopwaarde: the same set (saleable) and the same product, so the rows add up to it. */
+  const saleableSet = new Set(saleable);
+  const saleableValue = (product: Product): number | null => saleableSet.has(product)
+    ? finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.computedSalesPriceEur) : null;
   const saleableCostValueEur = saleable.reduce((sum, product) =>
     sum + finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.landedCostEur), 0);
 
@@ -553,7 +593,9 @@ export function inventoryAnalysis(
     .filter((product) => product.id != null && product.active && !product.demo
       && product.inventoryKnown === true && finite(product.stockQuantity) <= 0)
     .map((product) => inventoryAttentionRow(product, expectedByProduct.get(product.id!)))
+    /* Nothing on order first; then the most recently sold (never sold last), so a seller that ran dry leads. */
     .sort((left, right) => Number(left.expectedPieces > 0) - Number(right.expectedPieces > 0)
+      || (options.lastSold?.get(right.productId) ?? '').localeCompare(options.lastSold?.get(left.productId) ?? '')
       || compareName(left.name, right.name));
   /* Only a product sold per full carton is short of a sale below one carton;
      per display or per unit it still sells (absent or unknown reads as CARTON). */
@@ -605,6 +647,7 @@ export function inventoryAnalysis(
         landedUnitCostEur,
         costValueEur: stockPieces * landedUnitCostEur,
         sharePct: 0,
+        salesValueEur: saleableValue(product),
       };
     })
     .sort((left, right) => right.costValueEur - left.costValueEur
@@ -634,6 +677,8 @@ export function inventoryAnalysis(
         colour: product.colour,
         stockPieces,
         expectedPieces,
+        nextArrival: expectedByProduct.get(product.id)?.nextArrival ?? null,
+        supplierId: product.supplierId ?? null,
         weeklyPieces: Math.round(weekly * 10) / 10,
         weeksLeft: Math.round(weeksLeft * 10) / 10,
         weeksLeftWithIncoming: Math.round(weeksLeftWithIncoming * 10) / 10,
@@ -653,6 +698,18 @@ export function inventoryAnalysis(
       costValueEur: finiteNonNegative(product.stockQuantity) * finiteNonNegative(product.landedCostEur),
     }))
     .sort((left, right) => right.costValueEur - left.costValueEur || compareName(left.name, right.name));
+  /* Datakwaliteit: each count is the length of its list, so a click lists exactly what it counts. */
+  const byName = (rows: readonly Product[]): InventoryProductRow[] => rows.map((product) => ({
+    productId: product.id ?? null, sku: product.sku, name: product.name, colour: product.colour, inventoryKnown: product.inventoryKnown === true,
+    stockPieces: finite(product.stockQuantity), salesValueEur: saleableValue(product),
+  })).sort((left, right) => compareName(left.name, right.name));
+  const gapRows: InventoryGapRows = {
+    /* Only what can be sold needs a stock figure (D-V5): inactive and demo products stay out. */
+    unknown: byName(products.filter((product) => product.active && !product.demo && product.inventoryKnown !== true)),
+    unvalued: byName(unvalued),
+    missingCarton: byName(products.filter((product) => product.active && !product.demo && cartonSize(product) === null)),
+    negative: byName(known.filter((product) => finite(product.stockQuantity) < 0)),
+  };
 
   return {
     snapshotBasis: 'CURRENT_PRODUCT_DATA',
@@ -680,13 +737,12 @@ export function inventoryAnalysis(
       potentialUpliftEur: saleableCostComplete ? salesValueEur - saleableCostValueEur : null,
     },
     dataGaps: {
-      unknownStockSkuCount: products.length - known.length,
-      unvaluedStockSkuCount: unvalued.length,
+      unknownStockSkuCount: gapRows.unknown.length,
+      unvaluedStockSkuCount: gapRows.unvalued.length,
       unvaluedStockPieces: unvalued.reduce(
         (sum, product) => sum + finiteNonNegative(product.stockQuantity), 0),
-      missingCartonSkuCount: products.filter((product) =>
-        product.active && !product.demo && cartonSize(product) === null).length,
-      negativeStockSkuCount: known.filter((product) => finite(product.stockQuantity) < 0).length,
+      missingCartonSkuCount: gapRows.missingCarton.length,
+      negativeStockSkuCount: gapRows.negative.length,
     },
     zeroStock: {
       count: zeroRows.length,
@@ -701,18 +757,20 @@ export function inventoryAnalysis(
       nextArrival: incomingRows.find((row) => row.expectedArrival)?.expectedArrival ?? null,
       rows: incomingRows,
     },
+    capital: capitalRows,
     topCapital: capitalRows.slice(0, limit),
+    gapRows,
     velocity: {
       days: velocityDays,
       piecesSold,
       skuCount: [...soldByProduct.values()].filter((pieces) => pieces > 0).length,
       weeklyPieces: Math.round((piecesSold / weeks) * 10) / 10,
     },
-    reorder: { horizonWeeks: reorderWeeks, count: reorderRows.length, rows: reorderRows.slice(0, limit) },
+    reorder: { horizonWeeks: reorderWeeks, count: reorderRows.length, rows: reorderRows },
     slowMovers: {
       count: slowRows.length,
       valueEur: slowRows.reduce((sum, row) => sum + row.costValueEur, 0),
-      rows: slowRows.slice(0, limit),
+      rows: slowRows,
     },
   };
 }
@@ -1537,6 +1595,8 @@ export interface ResultChannelRow {
   /** The company costs booked on this channel, such as the TICA stand. */
   costsEur: number;
   resultEur: number;
+  /** Lines of the channel's regular invoices without a product cost: its margin reads "—" (D-O4). */
+  missingCostLines: number;
 }
 
 export interface ResultMonthRow {
@@ -1551,6 +1611,8 @@ export interface ResultAnalysis {
   period: { from: string | null; to: string | null };
   /** Issued invoices (FACTUUR) in the period; credit notes count apart. */
   invoiceCount: number;
+  /** The issued invoices that move the revenue (a voorschot does not): Omzet's "n facturen". */
+  revenueInvoiceCount: number;
   creditNoteCount: number;
   /** Issued invoices, excluding VAT. */
   revenueEur: number;
@@ -1569,10 +1631,12 @@ export interface ResultAnalysis {
   purchasedEur: number;
   receivedContainers: number;
   byChannel: ResultChannelRow[];
+  /** The costs booked on no sales channel: the Algemene kosten row, so the channels add up to the result (D-O5). */
+  generalCostsEur: number;
   byCategory: { category: string; amountEur: number; sharePct: number }[];
   /** Oldest month first; with `today` every month of the period up to today, empty months as zeros. */
   monthly: ResultMonthRow[];
-  /** Invoice lines whose product has no landed cost: the margin is incomplete by that much. */
+  /** Lines of regular issued invoices whose product has no landed cost (Verkoop's rule, D-O7): the margin is incomplete. */
   missingCostLines: number;
 }
 
@@ -1618,20 +1682,21 @@ export function resultAnalysis(
   const periodCosts = costs.filter((cost) => inPeriod(cost.date));
   /* Every cost may charge the period: an investment bought earlier still depreciates in it. */
   const charges = costs.map((cost) => ({ cost, ...charge(cost, from, to) })).filter((row) => row.expenseEur !== 0 || row.depreciationEur !== 0);
-  const received = purchases.filter((row) => row.order.status === 'ONTVANGEN' && inPeriod(row.order.receivedOn ?? null));
+  const received = receivedContainerRows(purchases, { from, to });
+  /* Verkoop's rule (D-O7): a partner voorschot carries no goods cost, so its lines never make the margin "—". */
+  const costedInvoices = invoices.filter((row) => docType(row) === 'FACTUUR' && !isAdvanceDocument(row));
 
   const revenueEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0));
   const marginEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedProfitEur, 0));
   const goodsCostEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedCostEur, 0));
   const depreciationEur = round2(charges.reduce((sum, row) => sum + row.depreciationEur, 0));
   const costsEur = round2(charges.reduce((sum, row) => sum + row.expenseEur, 0) + depreciationEur);
-  const unpaidCostsEur = round2(periodCosts.reduce((sum, cost) => sum + (options.openEur ? finiteNonNegative(options.openEur(cost))
-    : cost.paidOn ? 0 : finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100)), 0));
+  const unpaidCostsEur = round2(periodCosts.reduce((sum, cost) => sum + costOpen(cost, options.openEur), 0));
   const goodsTotal = invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0);
 
   const channels = new Map<string, ResultChannelRow>();
   const channelRow = (channel: string): ResultChannelRow => {
-    const row = channels.get(channel) ?? { channel, invoiceCount: 0, revenueEur: 0, goodsCostEur: 0, marginEur: 0, costsEur: 0, resultEur: 0 };
+    const row = channels.get(channel) ?? { channel, invoiceCount: 0, revenueEur: 0, goodsCostEur: 0, marginEur: 0, costsEur: 0, resultEur: 0, missingCostLines: 0 };
     channels.set(channel, row);
     return row;
   };
@@ -1642,9 +1707,12 @@ export function resultAnalysis(
     row.goodsCostEur = round2(row.goodsCostEur + documentAccounting(invoice).recognizedCostEur);
     row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
   }
+  for (const invoice of costedInvoices) channelRow(channelOf(invoice.order)).missingCostLines += invoice.priced.validation?.productsWithoutCost?.length ?? 0;
+  let generalCostsEur = 0;
   for (const { cost, expenseEur, depreciationEur: depreciation } of charges) {
-    if (!cost.salesChannel) continue;
-    const row = channelRow(cost.salesChannel.trim().toUpperCase());
+    const channel = costChannel(cost);
+    if (!channel) { generalCostsEur += expenseEur + depreciation; continue; }
+    const row = channelRow(channel);
     row.costsEur = round2(row.costsEur + expenseEur + depreciation);
   }
   const byChannel = [...channels.values()]
@@ -1655,7 +1723,7 @@ export function resultAnalysis(
   const categories = new Map<string, number>();
   for (const { cost, expenseEur, depreciationEur: depreciation } of charges) {
     if (expenseEur !== 0 || cost.costKind !== 'INVESTMENT') {
-      const key = (cost.category ?? '').trim().toUpperCase() || 'ANDERE';
+      const key = categoryKeyOf(cost);
       categories.set(key, round2((categories.get(key) ?? 0) + expenseEur));
     }
     if (depreciation !== 0) categories.set('AFSCHRIJVINGEN', round2((categories.get('AFSCHRIJVINGEN') ?? 0) + depreciation));
@@ -1700,6 +1768,7 @@ export function resultAnalysis(
   return {
     period: { from, to },
     invoiceCount: invoices.filter((row) => docType(row) !== 'CREDITNOTA').length,
+    revenueInvoiceCount: invoices.filter((row) => docType(row) === 'FACTUUR' && isRevenueDocument(row)).length,
     creditNoteCount: invoices.filter((row) => docType(row) === 'CREDITNOTA').length,
     revenueEur,
     goodsCostEur,
@@ -1709,13 +1778,107 @@ export function resultAnalysis(
     depreciationEur,
     unpaidCostsEur: round2(unpaidCostsEur),
     resultEur: round2(marginEur - costsEur),
-    purchasedEur: round2(received.reduce((sum, row) => sum + finiteNonNegative(row.reconciliation?.totals.forecastExternalEur
-      ?? Math.max(0, finiteNonNegative(row.costing?.totals?.totalWithSeparateCostsEur ?? row.costing?.totals?.totalEur)
-        - finiteNonNegative(row.costing?.totals?.extraRevenueEur))), 0)),
+    purchasedEur: round2(received.reduce((sum, row) => sum + row.externalCostEur, 0)),
     receivedContainers: received.length,
     byChannel,
+    generalCostsEur: round2(generalCostsEur),
     byCategory,
     monthly,
-    missingCostLines: invoices.reduce((sum, row) => sum + (row.priced.validation?.productsWithoutCost?.length ?? 0), 0),
+    missingCostLines: costedInvoices.reduce((sum, row) => sum + (row.priced.validation?.productsWithoutCost?.length ?? 0), 0),
   };
+}
+
+/** The channel a cost is booked on ('TICA'), null for a general cost. */
+function costChannel(cost: CompanyCost): string | null {
+  return (cost.salesChannel ?? '').trim().toUpperCase() || null;
+}
+
+/** What is still to pay on a cost incl. btw: the money rule's openOf, else the whole amount of a cost without a paid day. */
+function costOpen(cost: CompanyCost, openEur?: (cost: CompanyCost) => number): number {
+  return openEur ? finiteNonNegative(openEur(cost))
+    : cost.paidOn ? 0 : finiteNonNegative(cost.amountExclEur) * (1 + finiteNonNegative(cost.vatPct) / 100);
+}
+
+/** One part of a company cost in a window (Resultaat › Eigen kosten, design/analyses2/design.md §B.4). */
+export interface ResultCostRow {
+  key: string;
+  id: number | null;
+  date: string;
+  description: string;
+  party: string | null;
+  /** Its row of Kosten per categorie: the cost's category, or 'AFSCHRIJVINGEN' for an investment's depreciation. */
+  categoryKey: string;
+  /** The sales channel it is booked on; null = Algemene kosten. */
+  channel: string | null;
+  part: 'expense' | 'depreciation';
+  /** What this part charges the window, excl. btw. */
+  amountEur: number;
+  /** What is still to pay incl. btw, once per cost dated in the window (unpaidCostsEur's rule); null on every other row. */
+  openEur: number | null;
+}
+
+/**
+ * The rows behind Eigen kosten, Kosten per categorie, the months and the channels: one row per (cost, part) with the
+ * split resultAnalysis makes (the expense under its category, an investment's depreciation under Afschrijvingen), so
+ * Σ amountEur is costsEur and Σ openEur is unpaidCostsEur for the same window and rules. A cost dated in the window
+ * that charges nothing but is still open (import VAT, an investment that depreciates later) keeps one row of € 0.
+ */
+export function resultCostRows(costs: readonly CompanyCost[], window: Pick<ResultOptions, 'from' | 'to' | 'costCharge' | 'openEur'> = {}): ResultCostRow[] {
+  const from = isoDayOrNull(window.from);
+  const to = isoDayOrNull(window.to);
+  const charge = window.costCharge ?? defaultCharge;
+  return costs.flatMap((cost, index): ResultCostRow[] => {
+    const { expenseEur, depreciationEur } = charge(cost, from, to);
+    const investment = cost.costKind === 'INVESTMENT';
+    const base = { id: cost.id, date: cost.date, description: cost.description, party: cost.party, channel: costChannel(cost), openEur: null };
+    const key = `c${cost.id ?? `i${index}`}`;
+    const rows: ResultCostRow[] = [];
+    if ((expenseEur !== 0 || depreciationEur !== 0) && (expenseEur !== 0 || !investment)) {
+      rows.push({ ...base, key, categoryKey: categoryKeyOf(cost), part: 'expense', amountEur: expenseEur });
+    }
+    if (depreciationEur !== 0) rows.push({ ...base, key: `${key}:a`, categoryKey: 'AFSCHRIJVINGEN', part: 'depreciation', amountEur: depreciationEur });
+    const dated = !!cost.date && (!from || cost.date >= from) && (!to || cost.date <= to);
+    if (!dated) return rows;
+    const open = costOpen(cost, window.openEur);
+    if (rows.length) rows[0] = { ...rows[0], openEur: open };
+    else if (open > 0) rows.push({ ...base, key, categoryKey: investment ? 'AFSCHRIJVINGEN' : categoryKeyOf(cost), part: investment ? 'depreciation' : 'expense', amountEur: 0, openEur: open });
+    return rows;
+  });
+}
+
+function categoryKeyOf(cost: CompanyCost): string {
+  return (cost.category ?? '').trim().toUpperCase() || 'ANDERE';
+}
+
+/** A container received in a window (Resultaat › Containers ontvangen). */
+export interface ReceivedContainerRow {
+  id: number;
+  number: string;
+  alias: string | null;
+  supplierId: number;
+  receivedOn: string;
+  /** External paid cost plus open commitments (the current reconciliation, else the saved costing); no internal markup. */
+  externalCostEur: number;
+  /** The reconciliation is final: Afgerekend, else Voorlopig. */
+  finalized: boolean;
+  /** A partner co-finances the container. */
+  partner: boolean;
+}
+
+/** The received containers of a window with their external cost: resultAnalysis' purchasedEur is their sum. */
+export function receivedContainerRows(purchases: readonly PurchaseOrderView[], window: { from?: string | null; to?: string | null } = {}): ReceivedContainerRow[] {
+  const from = isoDayOrNull(window.from);
+  const to = isoDayOrNull(window.to);
+  return purchases.flatMap((row): ReceivedContainerRow[] => {
+    const day = row.order.receivedOn ?? null;
+    if (row.order.status !== 'ONTVANGEN' || !day || (from && day < from) || (to && day > to)) return [];
+    return [{
+      id: row.order.id, number: row.order.number, alias: row.order.alias ?? null, supplierId: row.order.supplierId, receivedOn: day,
+      externalCostEur: finiteNonNegative(row.reconciliation?.totals.forecastExternalEur
+        ?? Math.max(0, finiteNonNegative(row.costing?.totals?.totalWithSeparateCostsEur ?? row.costing?.totals?.totalEur)
+          - finiteNonNegative(row.costing?.totals?.extraRevenueEur))),
+      finalized: row.reconciliation?.totals.finalized === true,
+      partner: !!row.order.partnerCustomerId,
+    }];
+  });
 }
