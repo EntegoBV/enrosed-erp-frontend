@@ -1,0 +1,169 @@
+/* ==========================================================================
+   Verkoop · the list (/sales), on the Inkoop recipe of 2026-10-17 (2026-10-19).
+   Desk: the foundation's list recipe, one kit table per tab with a group per
+   customer; partner containers and split orders head their documents inside
+   that customer. Tabs and search in the toolbar, chips and sums in the subbar.
+   Phone: inset groups per customer under the segmented tabs and one search
+   row; the filters sit in one sheet behind the round button (Inkoop's B5:
+   five rows on the first screen).
+   Every rule hangs on app-sales-list; kit classes are never restyled bare.
+   The rows keep their swipe, long-press and wheel gestures.
+   ========================================================================== */
+
+app-sales-list{display:block;min-width:0}
+app-sales-list .sl-nw{white-space:nowrap}
+app-sales-list .sl-warn{color:var(--warn);font-weight:700}
+app-sales-list .sl-ok{color:var(--ok);font-weight:650}
+app-sales-list .sl-muted{color:var(--muted)}
+app-sales-list .sl-credit{color:var(--cn-plum,#8157a3)}
+app-sales-list .sl-tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:10.5px;font-weight:700;line-height:17px;vertical-align:1px;white-space:nowrap}
+app-sales-list .sl-tag--channel{font-size:10px;letter-spacing:.03em;text-transform:uppercase}
+
+/* ---- desk toolbar: three tabs need the room Inkoop's two leave the search, so the search gives way first */
+app-sales-list .sl-search{flex:none;width:300px;min-width:0}
+@media (max-width:1180px){app-sales-list .sl-search{width:256px}}
+@media (max-width:1100px){app-sales-list .sl-search{width:210px}}
+/* Below 1280 px the toolbar's tools leave the subtitle no room; the counts stand on the tabs, so the line steps aside there. */
+@media (min-width:680px) and (max-width:1279.98px){app-sales-list .appbar__sub{display:none}}
+
+/* ---- subbar: it wraps on a narrow desk; the table head sticks under its measured height (--sl-subbar-h, set by the list) */
+app-sales-list .sl-subbar{flex-wrap:wrap;row-gap:6px;padding-block:4px}
+app-sales-list .sl-subbar~*{--wk-sticky-top:calc(var(--appbar-h,0px) + var(--sl-subbar-h,var(--wk-subbar-h,48px)))}
+app-sales-list .sl-subbar__end b{color:var(--ink);font-weight:700}
+app-sales-list .sl-subbar__end b.sl-warn{color:var(--warn)}
+app-sales-list .sl-clear{flex:none;color:var(--rose-dark)}
+/* A chip over a transparent native picker (Soort verkoop, Klant): the phone filter technique of Inkoop. */
+app-sales-list .sl-select{position:relative;max-width:220px}
+app-sales-list .sl-select__label{min-width:0;overflow:hidden;text-overflow:ellipsis}
+app-sales-list .sl-select>app-icon{flex:none;color:var(--muted)}
+app-sales-list .sl-select__native{position:absolute;inset:0;width:100%;height:100%;opacity:0;font:inherit;cursor:pointer}
+app-sales-list .sl-select:has(>.sl-select__native:focus-visible){outline:2px solid var(--rose);outline-offset:2px}
+
+/* ---- desk table: Document · Inhoud · Status · Betaling · Totaal · ⋯ (Offertes have no Betaling); numbers wrap, never cut */
+app-sales-list .sl-card{container:wk-pane/inline-size}
+app-sales-list .sl-table{--wk-cols:minmax(240px,2.2fr) minmax(0,1.1fr) minmax(150px,1.2fr) minmax(0,1.3fr) 124px 32px}
+app-sales-list .sl-table--quotes{--wk-cols:minmax(260px,2.4fr) minmax(0,1.2fr) minmax(170px,1.5fr) 124px 32px}
+/* The folded Inhoud is hidden by default, BEFORE the container query: the same specificity later in the file would always win. */
+app-sales-list .sl-inhoud-inline{display:none}
+/* The Totaal track keeps its 124 px in the fold: 'TOTAAL EXCL. BTW' needs 121 (116 cut its 'T'). */
+@container wk-pane (max-width:859.98px){
+  app-sales-list .sl-table{--wk-cols:minmax(220px,2.3fr) minmax(150px,1.2fr) minmax(0,1.35fr) 124px 32px}
+  app-sales-list .sl-table--quotes{--wk-cols:minmax(220px,2.6fr) minmax(170px,1.6fr) 124px 32px}
+  app-sales-list .sl-inhoud-inline{display:inline}
+}
+/* In the fold the Inhoud cell's two lines read as one: main · sub. */
+app-sales-list .sl-inhoud-inline .sl-main,app-sales-list .sl-inhoud-inline .sl-sub{display:inline;color:inherit;font-size:inherit;font-weight:inherit}
+app-sales-list .sl-isep{display:none}
+app-sales-list .sl-inhoud-inline .sl-isep{display:inline}
+
+app-sales-list .sl-group__name{color:var(--ink);font-weight:700}
+app-sales-list .sl-group .wk-group__label{white-space:normal}
+app-sales-list .sl-row{min-height:58px;align-items:center;row-gap:2px;color:var(--ink);text-decoration:none}
+app-sales-list .sl-cell{display:grid;align-content:center;justify-items:start;gap:2px;min-width:0;padding-block:9px}
+app-sales-list .sl-name{font-size:14px;font-weight:650;line-height:1.3;overflow-wrap:anywhere}
+app-sales-list .sl-main{font-size:13px;font-weight:600}
+app-sales-list .sl-sub{color:var(--muted);font-size:12px;line-height:1.35}
+/* 'Uitgereikt · niet gemaild' is longer than Inkoop's one-word statuses: the pill wraps instead of being cut. */
+app-sales-list .sl-cell .wk-pill{max-width:100%;height:auto;min-height:20px;padding-block:2px;line-height:1.3;white-space:normal}
+app-sales-list .sl-part[class*=tone-]{color:color-mix(in srgb,var(--tone) 85%,var(--ink));font-weight:650}
+app-sales-list .sl-total{justify-items:end;font-size:14px;font-weight:720;text-align:right}
+app-sales-list .sl-total small{font-size:11.5px;font-weight:600}
+/* A document under a partner container or a split order sits one step in. */
+app-sales-list .sl-swipe--nested .sl-row>.sl-cell:first-child{padding-left:22px}
+/* What waits on us: a second line across the columns, only when something does. */
+app-sales-list .sl-attn{display:flex;grid-column:1/-1;align-items:baseline;gap:6px;min-width:0;margin:-4px 0 9px;color:var(--warn);font-size:12px;font-weight:650}
+app-sales-list .sl-attn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
+app-sales-list .sl-attn span{min-width:0}
+
+/* ---- partner container and split order: a sub-head on the table's columns, its toggle laid out on them (subgrid) */
+app-sales-list .sl-head-wrap{position:relative}
+app-sales-list .sl-head{padding-block:0}
+app-sales-list .sl-head__cell{display:grid;grid-column:1/-1;grid-template-columns:subgrid;min-width:0}
+app-sales-list .sl-head .sales-container__toggle{display:grid;grid-column:1/-1;grid-template-columns:subgrid;grid-template-areas:none;align-items:center;gap:normal;min-width:0;min-height:52px;padding:0;border:0;border-radius:0;background:none;color:var(--ink);text-align:left;cursor:pointer}
+app-sales-list .sl-head .sales-container__toggle:hover{background:none}
+app-sales-list .sl-head .sales-container__toggle:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+app-sales-list .sl-eyebrow{display:inline-flex;align-items:center;gap:3px;color:var(--rose-dark);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+app-sales-list .sl-eyebrow app-icon{transition:transform var(--dur-1,120ms) var(--ease-out,ease-out)}
+app-sales-list .sales-container__toggle[aria-expanded=false] .sl-eyebrow app-icon{transform:rotate(-90deg)}
+app-sales-list .sl-badges{display:flex;flex-wrap:wrap;align-content:center;align-items:center;gap:4px}
+app-sales-list .sl-pill--concept{box-shadow:inset 0 0 0 1px var(--line-strong);color:var(--ink)}
+
+/* ⋯ sits over the row's last column, outside the link (no button inside a link); it follows a swipe. */
+app-sales-list .sl-swipe{position:relative}
+app-sales-list .sl-more{position:absolute;top:13px;right:var(--wk-pad-x,16px);z-index:2;opacity:0;transition:opacity var(--dur-1,120ms) var(--ease-out,ease-out),transform .25s cubic-bezier(.16,1,.3,1)}
+app-sales-list .sl-head-wrap .sl-more{top:50%;margin-top:-13px}
+app-sales-list .sl-swipe:hover .sl-more,app-sales-list .sl-swipe:focus-within .sl-more,app-sales-list .sl-head-wrap:hover .sl-more,app-sales-list .sl-head-wrap:focus-within .sl-more{opacity:1}
+@media (pointer:coarse){app-sales-list .sl-more{opacity:1}}
+app-sales-list .swipe--open .sl-more{transform:translateX(-76px)}
+app-sales-list .swipe--open-start .sl-more{transform:translateX(76px)}
+app-sales-list .swipe--dragging .sl-more{transform:translateX(var(--swipe-offset,0px));transition:none}
+/* The row menu: its head is the document; the kit's popover head and the iOS sheet title are one line with an ellipsis,
+   under the menu's own class they wrap instead. */
+app-sales-list .sl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
+@media (max-width:679.98px){app-sales-list .sl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
+
+/* Swipe (desk and phone): the buttons under a row show only while it is open, dragged or the button has focus; no
+   1px sliver, and "Archief" no longer sits fully opaque under every row (B17, V-L4). A focused archive button slides
+   the row aside, as a focused delete button already does (styles.scss): never an invisible focus. */
+app-sales-list .swipe>.swipe__archive,app-sales-list .swipe>.swipe__delete{opacity:0}
+app-sales-list .swipe--open>.swipe__delete,app-sales-list .swipe--open-start>.swipe__archive,app-sales-list .swipe--dragging>.swipe__archive,app-sales-list .swipe--dragging>.swipe__delete,app-sales-list .swipe>.swipe__archive:focus-visible,app-sales-list .swipe>.swipe__delete:focus-visible{opacity:1}
+app-sales-list .swipe:has(>.swipe__archive:focus-visible) .swipe__row{transform:translateX(76px)}
+
+/* ---- phone: segmented, then one search row with the filter circle, the chips that apply, then a section per customer */
+app-sales-list .sl--phone{--ios-inset:4px}
+app-sales-list .sl--phone>.sl-tabs{margin:0 var(--ios-inset) 10px}
+app-sales-list .sl-isearch{margin:0 var(--ios-inset) 14px}
+app-sales-list .sl-isearch:has(+.sl-ichips){margin-bottom:4px}
+app-sales-list .sl-ichips{margin-bottom:6px}
+app-sales-list .sl-ichips .ios-chip>app-icon{margin-right:-4px}
+app-sales-list .sl-ichip__badge--warn{background:var(--warn)}
+app-sales-list .ios-chip[aria-pressed=true] .sl-ichip__badge--warn{background:#fff;color:var(--warn)}
+app-sales-list .sl-filter{position:relative;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-2);cursor:pointer;-webkit-tap-highlight-color:transparent}
+app-sales-list .sl-filter--on{background:var(--rose-soft);color:var(--rose-dark)}
+app-sales-list .sl-filter:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
+app-sales-list .sl-filter__badge{position:absolute;top:2px;right:0;display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--rose);box-shadow:0 0 0 2px var(--surface);color:#fff;font-size:10.5px;font-weight:800}
+app-sales-list .sl-loading{margin:0 var(--ios-inset)}
+app-sales-list .sl-section{margin-bottom:18px}
+/* The customer as the section head: its own element (the kit's h2 is uppercase), sentence case, up to two lines. */
+app-sales-list .sl-customer{display:-webkit-box;min-width:0;overflow:hidden;color:var(--ink-2);font-size:14px;font-weight:700;line-height:1.3;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+app-sales-list .sl-prow,app-sales-list .sl-phead{align-items:flex-start;gap:10px;padding-block:8px;color:var(--ink);text-decoration:none}
+app-sales-list .sl-ptitle{font-size:16px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+app-sales-list .sl-psub{color:var(--muted);font-size:13px;line-height:1.35}
+app-sales-list .sl-psub.sl-warn{color:var(--warn);font-weight:650}
+app-sales-list .sl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
+app-sales-list .sl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
+/* The trail gives way before the number and its facts (Inkoop fix round 2): both size from their content and shrink, and
+   the trail sizes from its total: the day line breaks before its day ('geldig tot' / '01/11/2026'), a credit note's
+   tegoed line and a container's 'waarvan concept' wrap too (one line pushed the total out of the row, or squeezed the
+   name to four lines). Long statuses ('Uitgereikt · niet gemaild') wrap. */
+app-sales-list .sl-prow>.ios-cell__body,app-sales-list .sl-phead>.ios-cell__body{flex:1 1 auto}
+app-sales-list .sl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}
+app-sales-list .sl-ptrail .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;text-align:right;white-space:normal}
+app-sales-list .sl-ptrail .warn-text{font-size:11.5px;font-weight:600}
+app-sales-list .sl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+app-sales-list .sl-pline{color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;line-height:1.25;white-space:nowrap}
+app-sales-list .sl-pline--open{color:var(--ink-2);font-weight:650}
+app-sales-list .sl-pline.sl-warn{color:var(--warn);font-weight:700}
+app-sales-list .sl-pline--wrap{white-space:normal}
+@media (max-width:374px){app-sales-list .sl-ptitle{font-size:15px}}
+/* A partner container or a split order: a cell with a disclosure; its documents open one step in, below it. */
+app-sales-list .sl-phead{padding-block:10px}
+app-sales-list .sl-pbadges{display:flex;flex-wrap:wrap;gap:4px;margin-block:3px 1px}
+app-sales-list .sl-pbadges:empty{display:none}
+app-sales-list .sl-pbadges .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;white-space:normal}
+app-sales-list .sl-pchev{align-self:center;transition:transform var(--dur-1,120ms) var(--ease-out,ease-out)}
+app-sales-list .sl-phead[aria-expanded=true] .sl-pchev{transform:rotate(90deg)}
+app-sales-list .sl-swipe--nested>.sl-prow{padding-left:32px}
+app-sales-list .sl-pmembers>.swipe:not(:first-child)::before{content:'';position:absolute;top:0;right:0;left:32px;z-index:2;height:.5px;background:var(--ios-sep);pointer-events:none}
+@media (prefers-reduced-motion:reduce){app-sales-list .sl-pchev{transition:none}}
+
+/* ---- the phone's Filters sheet: kit sections; the customer is a cell over the native picker */
+app-sales-list .sl-fcount{margin:0 calc(var(--ios-inset,16px) + 16px) 12px;color:var(--muted);font-size:13px}
+app-sales-list .sl-fcount strong{color:var(--ink);font-weight:700}
+app-sales-list .sl-fdocs{margin-top:12px}
+app-sales-list .sl-fvalue{max-width:55%;overflow:hidden;text-overflow:ellipsis}
+app-sales-list .ios-cell:has(>.sl-select__native:focus-visible){outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:-3px}
+
+/* ---- the new-document sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),
+   so the plain fields keep the 16 px gutter here; the desk sheet is unchanged. */
+@media (max-width:679.98px){app-sales-list .sheet--ios .sl-new{padding:0 var(--ios-inset,16px)}}

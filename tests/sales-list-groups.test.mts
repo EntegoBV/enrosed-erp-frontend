@@ -11,6 +11,7 @@ import { statusOf, fulfillmentStatusOf, customerMessageIsReadOnly, originalCusto
 import { isCreditNote } from '../src/app/features/sales/sales-credit-note.ts';
 import type { SalesOrderView } from '../src/app/core/api/models.ts';
 import type { SalesContainerGroup, SalesListEntry } from '../src/app/features/sales/sales-list-groups.ts';
+import { matchesWords } from '../src/app/features/sales/sales-list-model.ts';
 
 const helperSource = await readFile(new URL('../src/app/features/sales/sales-list-groups.ts', import.meta.url), 'utf8');
 const helperJs = ts.transpileModule(helperSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
@@ -166,7 +167,8 @@ const listSource = await readFile(new URL('../src/app/features/sales/sales-list.
 const parsed = ts.createSourceFile('sales-list.ts', listSource, ts.ScriptTarget.Latest, true);
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'SalesList');
 assert.ok(original);
-const names = ['rows', 'groupedRows', 'expandedGroups', 'groupOpen', 'toggleGroup', 'inTab', 'rowsByDocument', 'switchTab', 'switchScope', 'docsFilter'];
+const names = ['pile', 'ofDocs', 'searched', 'narrowing', 'rows', 'chipKeeps', 'moneyRows', 'groupedRows', 'expandedGroups', 'groupOpen', 'toggleGroup', 'inTab',
+  'rowsByDocument', 'switchTab', 'switchScope', 'docsFilter'];
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.includes(member.name.text));
 assert.equal(members.length, names.length);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)), original.name, undefined, undefined, members);
@@ -176,11 +178,11 @@ const listJs = ts.transpileModule(ts.createPrinter().printFile(ts.factory.update
 
 function listHarness(rows: SalesOrderView[]) {
   const exports: any = {};
-  vm.runInNewContext(listJs, { exports, computed, signal, groupSalesInvoices, isPartnerDocument, invoiceReceivable, isCreditNote,
+  vm.runInNewContext(listJs, { exports, computed, signal, groupSalesInvoices, isPartnerDocument, invoiceReceivable, isCreditNote, matchesWords,
     isWebsiteQuoteRequest: () => false });
   const screen = new exports.SalesList();
   Object.assign(screen, { all: signal(rows), docTab: signal('FACTUUR'), businessScope: signal('ALL'),
-    query: signal(''), filter: signal(''), customerFilter: signal(''), websiteOnly: signal(false), toTakeOnly: signal(false), outstandingOnly: signal(false),
+    query: signal(''), filter: signal(''), attentionOnly: signal(false), customerFilter: signal(''), websiteOnly: signal(false), toTakeOnly: signal(false), outstandingOnly: signal(false),
     attention: () => null, customerName: (row: SalesOrderView) => `Customer ${row.order.customerId}`,
     openRow: signal(null), rememberNavigation() {},
   });
@@ -207,6 +209,32 @@ test('production search, customer, status, scope and archive filters apply befor
   assert.equal(screen.groupedRows()[0].rows[0].order.id, 4);
   screen.switchTab('FACTUUR'); screen.outstandingOnly.set(true);
   assert.equal(screen.groupedRows()[0].summary.count, 1, 'Unissued drafts do not appear in the outstanding filter');
+});
+
+test('on Facturen the sums also read the archive\u2019s open invoices and credit notes, Nog te ontvangen on or off', () => {
+  const archivedAt = '2026-09-10T12:00:00Z';
+  const live = invoice(1, 100, { status: 'UITGEREIKT' }), paid = invoice(2, 50, { status: 'BETAALD', paidAt: '2026-09-01' });
+  const archivedOpen = invoice(3, 2000, { status: 'UITGEREIKT', archivedAt }), archivedPaid = invoice(4, 70, { status: 'BETAALD', paidAt: '2026-09-01', archivedAt });
+  const archivedNote = invoice(5, 300, { docType: 'CREDITNOTA', status: 'UITGEREIKT', archivedAt }), archivedQuote = invoice(6, 700, { docType: 'OFFERTE', status: 'VERZONDEN', archivedAt });
+  const screen = listHarness([live, paid, archivedOpen, archivedPaid, archivedNote, archivedQuote]);
+  const ids = (rows: SalesOrderView[]) => Array.from(rows, (row) => row.order.id);
+  assert.deepEqual(ids(screen.rows()), [1, 2], 'the list shows the live invoices');
+  assert.deepEqual(ids(screen.moneyRows()), [1, 3, 5], 'Home counts the archived open invoice and tegoed: so do the sums');
+  screen.outstandingOnly.set(true);
+  assert.deepEqual(ids(screen.rows()), [1, 3, 5]);
+  assert.deepEqual(ids(screen.moneyRows()), [1, 3, 5], 'with Nog te ontvangen on: exactly the shown rows');
+  screen.outstandingOnly.set(false); screen.docsFilter.set('f');
+  assert.deepEqual(ids(screen.moneyRows()), [1, 3], 'the Facturen choice applies');
+  screen.docsFilter.set('all'); screen.query.set('INV-3');
+  assert.deepEqual(ids(screen.moneyRows()), [3], 'and the search');
+  screen.query.set(''); screen.filter.set('BETAALD');
+  assert.deepEqual(ids(screen.moneyRows()), [], 'and the status chip');
+  screen.filter.set(''); screen.customerFilter.set(9);
+  assert.deepEqual(ids(screen.moneyRows()), [], 'and the customer');
+  screen.customerFilter.set(''); screen.switchTab('ARCHIEF');
+  assert.deepEqual(ids(screen.moneyRows()), ids(screen.rows()), 'the archive tab sums what it shows');
+  screen.switchTab('OFFERTE');
+  assert.deepEqual(ids(screen.moneyRows()), ids(screen.rows()));
 });
 
 test('container groups start collapsed, toggle independently and never expose stale swipe actions', () => {

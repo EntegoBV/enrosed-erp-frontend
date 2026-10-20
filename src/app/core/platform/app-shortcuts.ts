@@ -150,6 +150,15 @@ export const PAGE_SHORTCUTS: readonly PageShortcutSet[] = [
     routes: ['/settings'],
     rows: [{ keys: ['⌘', 'S'], text: 'Opslaan' }],
   },
+  /* Verkoop list on the Inkoop recipe (2026-10-19). */
+  {
+    routes: ['/sales'],
+    rows: [
+      { keys: ['↑', '↓'], text: 'Vorig of volgend document' },
+      { keys: ['⇧', 'F10'], text: 'Acties voor het document' },
+      { keys: ['N'], text: 'Nieuwe offerte of factuur' },
+    ],
+  },
 ];
 
 /** The foot line of the Sneltoetsen sheet. */

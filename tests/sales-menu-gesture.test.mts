@@ -130,7 +130,7 @@ test('disabled actions, detached rows and destruction cannot fire late menus or 
   assert.equal(destroyed.opened.length, 0); assert.equal(destroyed.host.ownerDocument.listenerCount(), 0);
 });
 
-test('sales template retains normal links and group toggle with accessible gesture menus and no ellipsis button', async () => {
+test('sales template retains normal links and group toggle with accessible gesture menus and an icon ⋯ button, never a text ellipsis', async () => {
   const list = await readFile(new URL('../src/app/features/sales/sales-list.ts', import.meta.url), 'utf8');
   const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(list)?.[1]; assert.ok(template);
   assert.equal(parseTemplate(template, 'sales-list.html').errors, null);
