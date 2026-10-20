@@ -5,7 +5,7 @@ import { RouterLink } from '@angular/router';
 import type { PurchaseOrderView } from '../../core/api/models';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { PurchaseReconciliation } from '../purchasing/purchase-reconciliation';
-import { ContainerCostFilter, containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
+import { type ContainerCostFilter, type ContainerCostRow, containerCostRows, containerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
 import { mixRange, nacalcUnitMix, purchasePaymentResult, reconciliationUnit, type NacalcUnitMix, type ReconciliationUnit } from '../purchasing/purchase-payment-result-metrics';
 import { containerPaymentResultTotals } from './container-payment-result-metrics';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -13,14 +13,20 @@ import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/ui';
 import { containerName } from '../purchasing/container-name';
 import { plural } from './analyses-words';
+import { type ContainerCostDrillContext, type VariancePart, costOpenView, costPayeesView, costUnitView, costVarianceView, varianceLines } from './drill-container-cost';
+import { AnDrillHost } from './drill-host';
 
 /**
- * Analyses › Inkoop › Containerkost (redesign 2026-10-17): its own filter row
- * (row 2 of the Inkoop bar), four light figures, the payment result and the
- * difference with the afspraak side by side, then the table per container.
- * The phone shows the containers as cells; each opens a sheet with every
- * figure of its row and the Afrekening & PDF (critique B1). Styles live in
- * src/styles/analyses-tabs.scss under app-container-cost-analysis (N4).
+ * Analyses › Inkoop › Containerkost (redesign 2026-10-17, analyses round 2):
+ * its own filter row (row 2 of the Inkoop bar; default "Nog niet volledig
+ * afgerekend"), four light figures in cents, one card "Verschil met de
+ * afspraak" with the payment result under a divider, then the table per
+ * container. Afspraak, Nog te betalen, each difference line and a Per eenheid
+ * range open the Analyses drill-down (drill-container-cost.ts, design/analyses2
+ * §B.7). The phone shows the containers as cells; each opens a sheet with
+ * every figure of its row and the Afrekening & PDF (critique B1). Styles live in
+ * src/styles/analyses-tabs.scss under app-container-cost-analysis (N4); the
+ * round-2 rules sit in this component's own styles (that file is WP1's).
  * Payment reconciliation remains independent of the receipt-quality period.
  */
 @Component({
@@ -57,72 +63,56 @@ import { plural } from './analyses-words';
       @if (rows().length) {
         @let total = totals();
         @let payment = paymentTotals();
+        <!-- Afspraak and Nog te betalen open their drill-down (design/analyses2 §B.7); a zero figure stays a plain tile. -->
+        <ng-template #plannedFigure>
+          <span class="an-kpi__label">Afspraak</span><span class="an-kpi__value">{{ total.plannedEur | eur }}</span>
+          <span class="an-kpi__sub">externe kost · {{ plural(rows().length, 'container', 'containers') }}</span><span class="an-kpi__foot"></span>
+        </ng-template>
+        <ng-template #openFigure>
+          <span class="an-kpi__label">Nog te betalen</span><span class="an-kpi__value">{{ total.remainingEur | eur }}</span>
+          <span class="an-kpi__sub">op {{ plural(total.openCount, 'container', 'containers') }}</span><span class="an-kpi__foot"></span>
+        </ng-template>
         <div class="an-kpis an-kpis--cents">
-          <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">Afgesproken externe kost</span><span class="cc-narrow">Afgesproken</span></span><span class="an-kpi__value">{{ total.plannedEur | eur }}</span>
-            <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(rows().length, 'container', 'containers') }} in dit overzicht</span><span class="an-kpi__foot"></span></div>
+          @if (isZero(total.plannedEur)) { <div class="an-kpi"><ng-container *ngTemplateOutlet="plannedFigure" /></div> }
+          @else { <button type="button" class="an-kpi an-kpi--drill" aria-haspopup="dialog" (click)="openPayees()"><ng-container *ngTemplateOutlet="plannedFigure" /></button> }
           <div class="an-kpi"><span class="an-kpi__label">Werkelijk betaald</span><span class="an-kpi__value">{{ total.paidEur | eur }}</span>
-            <span class="an-kpi__sub">opgeslagen eurobedragen van betalingen</span><span class="an-kpi__foot"></span></div>
-          <div class="an-kpi"><span class="an-kpi__label">Nog te betalen</span><span class="an-kpi__value">{{ total.remainingEur | eur }}</span>
-            <span class="an-kpi__sub">{{ plural(total.provisionalCount, 'container', 'containers') }} nog voorlopig</span><span class="an-kpi__foot"></span></div>
+            <span class="an-kpi__sub">{{ plural(total.paymentCount, 'betaling', 'betalingen') }}</span><span class="an-kpi__foot"></span></div>
+          @if (isZero(total.remainingEur)) { <div class="an-kpi"><ng-container *ngTemplateOutlet="openFigure" /></div> }
+          @else { <button type="button" class="an-kpi an-kpi--drill" aria-haspopup="dialog" (click)="openRemaining()"><ng-container *ngTemplateOutlet="openFigure" /></button> }
           <div class="an-kpi"><span class="an-kpi__label"><span class="cc-wide">{{ total.provisionalCount ? 'Verwachte externe kost' : 'Definitieve externe kost' }}</span><span class="cc-narrow">{{ total.provisionalCount ? 'Verwachte kost' : 'Definitieve kost' }}</span></span><span class="an-kpi__value">{{ total.forecastEur | eur }}</span>
             <span class="an-kpi__sub"><span class="cc-narrow">externe kost · </span>{{ plural(total.finalizedCount, 'container', 'containers') }} volledig afgerekend</span><span class="an-kpi__foot"></span></div>
         </div>
-        <div class="an-cols">
-          <div class="an-col">
-            <section class="an-card cc-pay" aria-labelledby="cc-pay-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="cc-pay-title">Extra opbrengst uit betalingen</h2><span class="an-card__sub">apart van de ENROSED-kost</span>
-                @if (payment.eligibleCount) { <span class="an-card__trail"><span class="wk-pill" [class.tone-warn]="payment.provisionalCount" [class.tone-ok]="!payment.provisionalCount">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></span> }</header>
-              <div class="an-card__body an-card__pad">
-                @if (payment.eligibleCount) {
-                  <div class="cc-pay__amount">
-                    <span>{{ payment.netResultEur < 0 ? 'Negatief betaalresultaat' : 'Netto extra opbrengst' }}</span>
-                    <strong [class.is-warn]="payment.netResultEur < 0">{{ payment.netResultEur | eur: 2 }}</strong>
-                    <small>{{ plural(payment.eligibleCount, 'container', 'containers') }} in deze selectie · {{ payment.finalizedCount | num }} volledig afgerekend</small>
-                  </div>
-                  <dl class="cc-pay__list">
-                    <div><dt>ENROSED-kost</dt><dd>{{ payment.internalMarkupEur | eur: 2 }}</dd></div>
-                    <div><dt>Betaalresultaat</dt><dd>{{ payment.netResultEur > 0 ? '+' : '' }}{{ payment.netResultEur | eur: 2 }}</dd></div>
-                    <div class="is-total"><dt>ENROSED-kost + betaalresultaat</dt><dd>{{ payment.markupWithResultEur | eur: 2 }}</dd></div>
-                  </dl>
-                  @if (payment.unsettledOverrunsEur > 0) {
-                    <p class="cc-pay__pending" role="note"><b>{{ payment.unsettledOverrunsEur | eur: 2 }} meer betaald, nog te beoordelen.</b>
-                      Dit bedrag is nog niet verrekend in het betaalresultaat.</p>
-                  }
-                  <details class="cc-pay__details">
-                    <summary>Hoe is dit berekend? <app-icon name="chevron-down" [size]="14" /></summary>
-                    <dl class="cc-pay__list">
-                      <div><dt>Minder betaald, definitief vereffend</dt><dd>{{ payment.settledSavingsEur | eur: 2 }}</dd></div>
-                      <div><dt>Meer betaald, definitief vereffend</dt><dd>− {{ payment.settledOverrunsEur | eur: 2 }}</dd></div>
-                      <div><dt>Extra uitgaven buiten de afspraak</dt><dd>− {{ payment.additionalCostsEur | eur: 2 }}</dd></div>
-                    </dl>
-                    <p>Besparing telt zodra de betreffende betaalgroep of leverancierstermijn is afgerekend. Andere termijnen blijven open; voorschotten en open bedragen zijn geen extra opbrengst.</p>
-                    <p>ENROSED-kost en productprijzen blijven gelijk. Kostenverschillen zitten al in de verwachte containerkost; dit overzicht boekt ze niet nogmaals als winst.</p>
-                  </details>
-                } @else {
-                  <p class="cc-pay__note">Nog geen betaalresultaat voor deze selectie.</p>
-                }
-                @if (payment.excludedCount) { <p class="cc-pay__note">{{ plural(payment.excludedCount, 'conceptcontainer of container', 'conceptcontainers of containers') }} zonder productregels niet meegeteld.</p> }
-                @if (payment.unavailableCount) { <p class="cc-pay__note">Voor {{ plural(payment.unavailableCount, 'container', 'containers') }} is het betaalresultaat nog niet beschikbaar.</p> }
-              </div>
-            </section>
+        <!-- One card (D-C4): the parts add up to the net with the supplier credit (D-C1); the payment result under the divider. -->
+        <section class="an-card cc-diff" aria-labelledby="cc-diff-title">
+          <header class="an-card__head"><h2 class="an-card__title" id="cc-diff-title">Verschil met de afspraak</h2></header>
+          <div class="an-card__body">
+            @for (line of variance(); track line.id) {
+              @if (line.drill; as part) {
+                <button type="button" class="an-row an-row--nolead an-row--chev" aria-haspopup="dialog" (click)="openVariance(part)">
+                  <span class="an-row__body"><span class="an-row__title">{{ line.label }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value">{{ signed(line.amountEur) }}</span></span>
+                  <span class="an-row__chev" aria-hidden="true">›</span>
+                </button>
+              } @else {
+                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">{{ line.label }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value">{{ signed(line.amountEur) }}</span></span></div>
+              }
+            }
+            <div class="an-row an-row--nolead cc-total"><span class="an-row__body"><span class="an-row__title">Netto verschil</span></span>
+              <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="total.varianceEur > 0 ? 'warn' : total.varianceEur < 0 ? 'ok' : null">{{ signed(total.varianceEur) }}</span></span></div>
+            <div class="cc-diff__pay">
+              @if (payment.eligibleCount) {
+                <p class="cc-diff__sum"><span>Enrosed-kost {{ payment.internalMarkupEur | eur: 2 }} · Betaalresultaat {{ signed(payment.netResultEur) }} = <b>{{ payment.markupWithResultEur | eur: 2 }}</b></span>
+                  <span class="wk-pill" [class.tone-warn]="payment.provisionalCount" [class.tone-ok]="!payment.provisionalCount">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></p>
+                @if (payment.unsettledOverrunsEur > 0) { <p class="cc-diff__pending" role="note">{{ payment.unsettledOverrunsEur | eur: 2 }} meer betaald, nog te beoordelen.</p> }
+              } @else {
+                <p class="cc-diff__note">Nog geen betaalresultaat voor deze selectie.</p>
+              }
+              @if (payment.excludedCount) { <p class="cc-diff__note">{{ plural(payment.excludedCount, 'conceptcontainer of container', 'conceptcontainers of containers') }} zonder productregels niet meegeteld.</p> }
+              @if (payment.unavailableCount) { <p class="cc-diff__note">Voor {{ plural(payment.unavailableCount, 'container', 'containers') }} is het betaalresultaat nog niet beschikbaar.</p> }
+            </div>
           </div>
-          <div class="an-col">
-            <section class="an-card" aria-labelledby="cc-diff-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="cc-diff-title">Verschil met de afspraak</h2></header>
-              <div class="an-card__body">
-                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Meer betaald op afgesproken kosten</span>
-                  <span class="an-row__sub">Controleer bij open betaalstromen of er nog een correctie volgt.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.overpaidEur | eur }}</span></span></div>
-                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Minder betaald na vereffening</span>
-                  <span class="an-row__sub">Een open saldo of gedeeltelijke betaling is geen besparing.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.settledSavingEur | eur }}</span></span></div>
-                <div class="an-row an-row--nolead"><span class="an-row__body"><span class="an-row__title">Extra uitgaven buiten de afspraak</span>
-                  <span class="an-row__sub">Bankkosten, koerier en andere betalingen tellen mee in de kost.</span></span><span class="an-row__end"><span class="an-row__value">{{ total.additionalEur | eur }}</span></span></div>
-                <div class="an-row an-row--nolead cc-total"><span class="an-row__body"><span class="an-row__title">Netto verschil met de afspraak</span>
-                  <span class="an-row__sub">Interne Enrosed opslag staat apart in elke afrekening.</span></span>
-                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="total.varianceEur > 0 ? 'warn' : total.varianceEur < 0 ? 'ok' : null">{{ total.varianceEur > 0 ? '+' : '' }}{{ total.varianceEur | eur }}</span></span></div>
-              </div>
-            </section>
-          </div>
-        </div>
+        </section>
         <section class="an-card" aria-labelledby="cc-table-title">
           <header class="an-card__head"><h2 class="an-card__title" id="cc-table-title">Per container</h2><span class="an-card__trail">{{ plural(rows().length, 'container', 'containers') }}</span></header>
           @if (desk.active()) {
@@ -166,7 +156,9 @@ import { plural } from './analyses-words';
                   <span class="an-row__body"><span class="an-row__title ios-cell__title--2">{{ name(row) }}</span>
                     <span class="an-row__sub">Afspraak {{ row.reconciliation.totals.plannedExternalEur | eur: 0 }} · betaald {{ row.reconciliation.totals.paidEur | eur: 0 }} · open {{ row.reconciliation.totals.remainingEur | eur: 0 }}</span></span>
                   <span class="an-row__end"><span class="an-row__value">{{ row.reconciliation.totals.forecastExternalEur | eur: 0 }}</span>
-                    <span class="an-row__meta" [attr.data-tone]="row.reconciliation.totals.varianceEur > 0 ? 'warn' : row.reconciliation.totals.varianceEur < 0 ? 'ok' : null">verschil {{ row.reconciliation.totals.varianceEur | eur: 0 }}</span></span>
+                    @if (!isZero(row.reconciliation.totals.varianceEur)) {
+                      <span class="an-row__meta" [attr.data-tone]="row.reconciliation.totals.varianceEur > 0 ? 'warn' : 'ok'">verschil {{ row.reconciliation.totals.varianceEur | eur: 0 }}</span>
+                    }</span>
                   <span class="an-row__chev" aria-hidden="true">›</span>
                 </button>
               }
@@ -193,8 +185,8 @@ import { plural } from './analyses-words';
         @let unit = unitOf(row.reconciliation.totals);
         @if (unit.unitEur === null) { — } @else { {{ unit.unitEur | eur: 4 }} per {{ unit.unit }} }@if (unit.pieceEur !== null) { <small>{{ unit.pieceEur | eur: 4 }} per stuk</small> }<small>{{ unit.quantity | num }} {{ unit.usable ? 'bruikbare' : 'bestelde' }} {{ unit.plural }}</small>
       } @else {
-        <!-- Several products: their range per unit, never an average over them. -->
-        {{ range(mix) }}<small>{{ mix.count }} producten · per {{ mix.unit }}</small>
+        <!-- Several products: their range per unit, never an average over them; the range opens the products (design/analyses2 §B.7). -->
+        <button type="button" class="wk-link cc-range" aria-haspopup="dialog" (click)="openUnit(row)">{{ range(mix) }}</button><small>{{ mix.count }} producten · per {{ mix.unit }}</small>
       }
     </ng-template>
 
@@ -226,24 +218,37 @@ import { plural } from './analyses-words';
       </app-sheet>
     }
   `,
+  styles: [`
+    .cc-diff { margin-bottom: var(--an-gap); }
+    .cc-diff__pay { display: grid; gap: 6px; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
+    .cc-diff__sum { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+    .cc-diff__sum b { color: var(--ink); font-weight: 700; }
+    .cc-diff__pending { margin: 0; color: var(--warn); font-size: 12px; font-weight: 650; }
+    .cc-diff__note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .cc-range { font-size: inherit; text-align: inherit; }
+  `],
 })
 export class ContainerCostAnalysis {
   readonly desk = inject(DesktopViewport);
   readonly plural = plural;
+  private readonly drill = inject(AnDrillHost);
+  /** "Actieve" summed every year's containers (D-C3): the default is what is not settled yet. */
   readonly filters: readonly { id: ContainerCostFilter; label: string }[] = [
-    { id: 'active', label: 'Actieve containers' }, { id: 'all', label: 'Alle containers · ook concepten' },
-    { id: 'open', label: 'Nog niet volledig afgerekend' }, { id: 'finalized', label: 'Volledig afgerekend' },
+    { id: 'open', label: 'Nog niet volledig afgerekend' }, { id: 'active', label: 'Alle containers' },
+    { id: 'all', label: 'Alle containers · ook concepten' }, { id: 'finalized', label: 'Volledig afgerekend' },
     { id: 'higher', label: 'Duurder dan afgesproken' }, { id: 'lower', label: 'Goedkoper dan afgesproken' },
   ];
   readonly purchases = input.required<PurchaseOrderView[]>();
   readonly loading = input(false);
-  readonly filter = signal<ContainerCostFilter>('active');
+  readonly filter = signal<ContainerCostFilter>('open');
   readonly search = signal('');
   readonly expandedId = signal<number | null>(null);
   readonly rows = computed(() => containerCostRows(this.purchases(), this.filter(), this.search())
     .map(row => ({ ...row, paymentResult: purchasePaymentResult(row.view) })));
   readonly totals = computed(() => containerCostTotals(this.rows()));
   readonly paymentTotals = computed(() => containerPaymentResultTotals(this.rows()));
+  /** The lines of "Verschil met de afspraak", Tegoed leverancier and Overig included (they add up to the net). */
+  readonly variance = computed(() => varianceLines(this.totals()));
   readonly expanded = computed(() => this.rows().find((row) => row.view.order.id === this.expandedId()) ?? null);
   /** The phone shows five containers, the rest behind "Alle n tonen" (design §2.3). */
   readonly showAll = signal(false);
@@ -258,6 +263,28 @@ export class ContainerCostAnalysis {
   unitMix(reconciliation: NonNullable<PurchaseOrderView['reconciliation']>): NacalcUnitMix { return nacalcUnitMix(reconciliation); }
   unitOf(totals: NonNullable<PurchaseOrderView['reconciliation']>['totals']): ReconciliationUnit { return reconciliationUnit(totals); }
   range(mix: NacalcUnitMix): string { return mixRange(mix); }
+  private readonly money = new EurPipe();
+  isZero(value: number): boolean { return Math.round(value * 100) === 0; }
+  /** "+ € 120,00", "− € 40,00", "€ 0,00": a part of the difference with its sign (a non-breaking space, so it never splits). */
+  signed(value: number): string {
+    if (this.isZero(value)) return this.money.transform(0);
+    return `${value > 0 ? '+' : '−'}\u00a0${this.money.transform(Math.abs(value))}`;
+  }
+  /** The drill-downs' scope: the filter, the search and the containers in view. */
+  private scope(): string {
+    const filter = this.filters.find((option) => option.id === this.filter())?.label ?? '';
+    const search = this.search().trim();
+    return [filter, search ? `zoek “${search}”` : '', plural(this.rows().length, 'container', 'containers')].filter(Boolean).join(' · ');
+  }
+  private context(): ContainerCostDrillContext { return { scope: this.scope(), name: (view: PurchaseOrderView) => containerName(view.order) }; }
+  openPayees(): void { this.drill.open([costPayeesView(this.rows(), this.totals(), this.context())]); }
+  openRemaining(): void { this.drill.open([costOpenView(this.rows(), this.totals(), this.context())]); }
+  openVariance(part: VariancePart): void { this.drill.open([costVarianceView(part, this.rows(), this.totals(), this.context())]); }
+  /** A Per eenheid range: the container's products; on the phone its sheet closes first (one sheet at a time). */
+  openUnit(row: ContainerCostRow): void {
+    this.sheetId.set(null);
+    this.drill.open([costUnitView(row, this.unitMix(row.reconciliation), this.name(row))]);
+  }
   orderStatus(status: PurchaseOrderView['order']['status']): string {
     return { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' }[status];
   }
