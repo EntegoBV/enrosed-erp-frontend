@@ -370,34 +370,43 @@ export class TransactionDetail extends BankMovementPanel {
   /**
    * A cost pattern or a container's Transactiekosten: the hint above the three ways, booked with one button
    * ("Kost · Telefoon & internet · zoals de vorige 3 keer", "Transactiekosten · PO-2026-005 (Yunnan Pubei)"). The
-   * Transactiekosten card below says the latter itself, so the hint steps aside while it shows.
+   * Transactiekosten card says the latter itself where it shows ('Factuur of uitgave', no own document chosen) and
+   * offers that container: only there the hint steps aside.
    */
   readonly pattern = computed(() => {
     const target = this.suggestion()?.target;
     if (target?.kind === 'cost-pattern') return target.label;
-    return target?.kind === 'container-fee' && !this.feeCardState() ? target.label : null;
+    if (target?.kind !== 'container-fee') return null;
+    const cardShown = this.allocationStep() === 'documents' && !this.localDocument();
+    return cardShown && this.feeCardState()?.book?.orderId === target.orderId ? null : target.label;
   });
   /**
    * "Transactiekosten" at the top of 'Factuur of uitgave' (Emre, 2026-10-20): an open charge (feeLike) with the
    * transfer it belongs to (pairedTransfer; KBC books each foreign transfer's fee as its own line the same day). Its
-   * transfer pays one container: "Bij {container} boeken"; several or none: "Container kiezen…", the transfer's
-   * containers (else those its best match points at) leading. Both, and "Algemene bankkost", open Boeken als on
-   * Bankkosten: he books there with Boeken, never in one click. Not on money in, a linked or booked line, or no charge.
+   * transfer pays one container, or the line's suggestion names one (the list's 'Boeken'): "Bij {container} boeken";
+   * otherwise "Container kiezen…", the transfer's containers (else those its best match points at) leading. Both,
+   * and "Algemene bankkost", open Boeken als on Bankkosten: he books there with Boeken, never in one click. Not on
+   * money in, a linked or booked line, or no charge.
    */
   private readonly feeCardState = computed<FeeCard | null>(() => {
     const row = this.line();
     if (!row || allocatedLine(row) || !feeLike(row)) return null;
+    const payments = this.state.payments();
     const lines = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line));
-    const transfer = pairedTransfer(row, lines, (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key));
-    if (!transfer) return { text: 'Hoort deze kost bij een container?', book: null, first: [] };
+    const transfer = pairedTransfer(row, lines, (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key), payments);
+    const target = this.suggestion()?.target;
+    const suggested = target?.kind === 'container-fee' ? target.orderId : null;
+    if (!transfer) return { text: 'Hoort deze kost bij een container?', book: suggested !== null ? this.feeBook(suggested) : null, first: [] };
     const text = `Bij de overschrijving aan ${this.titleOf(transfer)} · ${signedMoney(transfer.amountEur)} · ${dayMonth(this.state.lineDay(transfer))}`;
-    const linked = linkedContainers(transfer.id, this.state.payments());
-    if (linked.length === 1) {
-      const payment = this.state.payments().find((item) => item.orderId === linked[0]);
-      return { text, book: { orderId: linked[0], label: `Bij ${this.orderName(payment ?? { orderId: linked[0] })} boeken` }, first: linked };
-    }
-    return { text, book: null, first: linked.length ? linked : suggestedContainers(this.suggestionOf(transfer)) };
+    const linked = linkedContainers(transfer.id, payments);
+    const one = linked.length === 1 ? linked[0] : suggested;
+    return { text, book: one !== null ? this.feeBook(one) : null, first: linked.length ? linked : suggestedContainers(this.suggestionOf(transfer)) };
   });
+  /** "Bij {container} boeken" on a container Boeken als can pick (non-concept, not archived); else none: "Container kiezen…". */
+  private feeBook(orderId: number): FeeCard['book'] {
+    const order = this.state.purchaseViews().find((view) => view.order.id === orderId)?.order;
+    return order && order.status !== 'CONCEPT' && !order.archivedAt ? { orderId, label: `Bij ${containerName(order)} boeken` } : null;
+  }
   override feeCard(): FeeCard | null { return this.feeCardState(); }
   override openFeeBooking(where: 'COMPANY' | 'CONTAINER', orderId: number | null): void {
     const row = this.line(), card = this.feeCardState();

@@ -655,17 +655,23 @@ native selects styled as capsules (critique B10).
 - A charge and its transfer (2026-10-20, live KBC data: each foreign
   transfer is followed the same day by its own fee line with the next id,
   no shared reference). `pairedTransfer` (bank-suggestions.ts) pairs an
-  outgoing `feeLike` line (charge words, 'Aanrekening kosten', 'Buitenlandse
-  overschrijving'; at most € 100) with an outgoing non-charge of the same
-  account within 3 days: same day, nearest id (a tie: the higher), nearest
-  day. The suggestion takes that transfer's container once it is linked
-  (`linkedContainers`, largest part), else the nearby supplier transfer. The
-  detail's first tab has a 'Transactiekosten' card above the own upload
-  (`feeCard`): 'Bij {container} boeken' for one container, else 'Container
-  kiezen…' (the transfer's containers, else its best match's, lead), and
-  'Algemene bankkost'; each opens Boeken als on Bankkosten through
-  `FinanceState.openBookAsFee` (taken once by the sheet's `reset`), never
-  booking in one click. The container-fee hint above steps aside meanwhile.
+  outgoing `feeLike` line (charge words or 'Buitenlandse overschrijving',
+  never the transfer's own 'Internationale overschrijving'; at most € 100)
+  with an outgoing transfer of the same account within 3 days (transfer
+  words or a BIC, or it pays a container; never a card payment, a
+  domiciliëring or a classified line): same day, nearest id (a tie: the
+  higher), nearest day. The suggestion takes that transfer's container
+  once it is linked (`linkedContainers`, largest part) and makes none while
+  it is not; only a charge without a transfer of its own falls back to the
+  nearby supplier transfer. The detail's first tab has a 'Transactiekosten'
+  card above the own upload (`feeCard`): 'Bij {container} boeken' for the
+  transfer's one container or the line's container-fee suggestion (only a
+  non-concept, non-archived one), else 'Container kiezen…' (the transfer's
+  containers, else its best match's, lead), and 'Algemene bankkost'; each
+  opens Boeken als on Bankkosten through `FinanceState.openBookAsFee` (taken
+  once by the sheet's `reset`), never booking in one click. The
+  container-fee hint above steps aside only where the card shows and
+  offers that container.
 - Own invoices and the PI (Emre, 2026-10-19). An open outgoing line's first
   tab has 'Factuur of bon zelf opladen' with 'Opladen…' (`uploadOwnInvoice`:
   the file dialog first, then the cost sheet with the files queued); the

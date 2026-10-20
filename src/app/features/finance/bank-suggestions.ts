@@ -211,39 +211,63 @@ export function feeText(line: Pick<BankStatementLine, 'counterparty' | 'referenc
   return FEE_WORDS.test(normal(`${line.counterparty ?? ''} ${line.reference ?? ''}`));
 }
 
-/** KBC's own words on the charge of a foreign transfer: 'Aanrekening kosten Buitenlandse overschrijving Referentie … Zie bijlage' (never 'Aanrekening beheerskosten'). */
-const FOREIGN_FEE_WORDS = /\baanrekening\s+kosten\b|\b(buitenlandse|internationale)\s+overschrijving\b/;
+/**
+ * KBC's own words on the charge of a foreign transfer: 'Aanrekening kosten Buitenlandse overschrijving Referentie … Zie
+ * bijlage' ('kosten' is a charge word already). Never 'Internationale overschrijving': that is the transfer's own
+ * wording, also on a small one (samples, review 2026-10-20).
+ */
+const FOREIGN_FEE_WORDS = /\bbuitenlandse\s+overschrijving\b/;
 
 /**
  * A small outgoing line that reads as a bank's charge (the charge words, or
- * KBC's 'Aanrekening kosten' / 'Buitenlandse overschrijving'): a transfer's
- * Transactiekosten. The transfer itself ('Internationale overschrijving',
- * thousands of euro) never is one.
+ * KBC's 'Buitenlandse overschrijving'): a transfer's Transactiekosten. A
+ * transfer itself ('Internationale overschrijving', of any size) never is one.
  */
 export function feeLike(line: Pick<BankStatementLine, 'amountEur' | 'counterparty' | 'reference'>): boolean {
   if (!(line.amountEur < 0) || Math.abs(cents(line.amountEur)) > FEE_MAX_EUR * 100) return false;
   return feeText(line) || FOREIGN_FEE_WORDS.test(normal(`${line.counterparty ?? ''} ${line.reference ?? ''}`));
 }
 
+/** A transfer's own words (KBC via Odoo: 'Europese' / 'Internationale overschrijving', 'Instantoverschrijving', a BIC), never a card payment ('Betaling … via …') or a domiciliëring. */
+const TRANSFER_WORDS = /\b(instant)?overschrijving\b|\bbic\b|\b(transfer|virement|uberweisung)\b/;
+
+/** A transfer a charge can belong to: its own words, or a line that pays a container. */
+function transferLike(line: BankStatementLine, payments: readonly PurchasePaymentRow[]): boolean {
+  return TRANSFER_WORDS.test(normal(`${line.counterparty ?? ''} ${line.reference ?? ''}`))
+    || payments.some((payment) => payment.bankStatementLineId === line.id && !payment.creditOffset);
+}
+
 /**
  * The transfer a charge belongs to (live KBC data via Odoo: each foreign
  * transfer is followed the same day by its own fee line with the next id,
  * 65 '… Internationale overschrijving …' − € 11.565,11 and 64 'Aanrekening
- * kosten …' − € 38,01, no shared reference): an outgoing line of the same
- * account, not a charge itself, larger, booked within three days. The same
- * day first, then the nearest id (on a tie the higher one: the transfer
- * comes before its fee), then the nearest day. Null for a line that is no
- * charge, or with none.
+ * kosten …' − € 38,01, no shared reference): an outgoing transfer of the
+ * same account (its words, or it pays a container; never a card payment, a
+ * domiciliëring or a line booked as something), not a charge itself,
+ * larger, booked within three days. The same day first, then the nearest id
+ * (on a tie the higher one: the transfer comes before its fee), then the
+ * nearest day. Null for a line that is no charge, or with none.
  */
 export function pairedTransfer(fee: BankStatementLine, lines: readonly BankStatementLine[],
-  dayOf: (line: BankStatementLine) => string = (line) => line.bookedAt.slice(0, 10), account: (key: string) => string = (key) => key): BankStatementLine | null {
+  dayOf: (line: BankStatementLine) => string = (line) => line.bookedAt.slice(0, 10), account: (key: string) => string = (key) => key,
+  payments: readonly PurchasePaymentRow[] = []): BankStatementLine | null {
   if (!feeLike(fee)) return null;
-  const day = dayOf(fee), own = account(fee.account), size = Math.abs(cents(fee.amountEur));
-  const rows = lines.filter((other) => other.id !== fee.id && other.amountEur < 0 && Math.abs(cents(other.amountEur)) > size && account(other.account) === own
-    && other.classification !== 'INTERNAL_TRANSFER' && !feeLike(other))
-    .map((other) => ({ other, gap: Math.abs(days(day, dayOf(other))), apart: Math.abs(other.id - fee.id) }))
-    .filter((row) => row.gap <= 3)
-    .sort((a, b) => Number(a.gap > 0) - Number(b.gap > 0) || a.apart - b.apart || Number(b.other.id > fee.id) - Number(a.other.id > fee.id) || a.gap - b.gap);
+  const size = Math.abs(cents(fee.amountEur));
+  // Every open charge runs this over the whole list: the cheap checks first (the stamp within five days, then the
+  // account and the local day within three), the words only on the few rows left.
+  const stamp = fee.bookedAt.slice(0, 10), from = addDays(stamp, -5), to = `${addDays(stamp, 5)}~`;
+  let own: string | null = null, day: string | null = null;
+  const rows: { other: BankStatementLine; gap: number; apart: number }[] = [];
+  for (const other of lines) {
+    if (other.id === fee.id || !(other.amountEur < 0) || Math.abs(cents(other.amountEur)) <= size || other.classification || !(other.bookedAt >= from && other.bookedAt <= to)) continue;
+    own ??= account(fee.account);
+    if (account(other.account) !== own) continue;
+    day ??= dayOf(fee);
+    const gap = Math.abs(days(day, dayOf(other)));
+    if (!(gap <= 3) || feeLike(other) || !transferLike(other, payments)) continue;
+    rows.push({ other, gap, apart: Math.abs(other.id - fee.id) });
+  }
+  rows.sort((a, b) => Number(a.gap > 0) - Number(b.gap > 0) || a.apart - b.apart || Number(b.other.id > fee.id) - Number(a.other.id > fee.id) || a.gap - b.gap);
   return rows[0]?.other ?? null;
 }
 
@@ -285,16 +309,17 @@ function nearSupplierTransfers(line: BankStatementLine, lines: readonly BankStat
 
 /**
  * A charge (feeLike) on a container: the container of its own transfer
- * (pairedTransfer, once that one is linked; the largest part of a split),
- * else the nearest supplier transfer on the same account within three days.
- * Null otherwise.
+ * (pairedTransfer; the largest part of a split), none while that transfer
+ * is not linked to one (never another transfer's container: review
+ * 2026-10-20); with no transfer of its own, the nearest supplier transfer
+ * on the same account within three days. Null otherwise.
  */
 function containerFee(line: BankStatementLine, input: SuggestionInput, day: (line: BankStatementLine) => string): { fee: ContainerFee; reasons: string[] } | null {
   if (!feeLike(line)) return null;
   const account = input.accountKey ?? ((key: string) => key);
-  const transfer = pairedTransfer(line, input.lines, day, account);
+  const transfer = pairedTransfer(line, input.lines, day, account, input.purchasePayments);
   const paired = transfer ? linkedContainers(transfer.id, input.purchasePayments)[0] : undefined;
-  const orderId = paired ?? nearSupplierTransfers(line, input.lines, input.purchasePayments, day, account, 3)[0]?.orderId;
+  const orderId = transfer ? paired : nearSupplierTransfers(line, input.lines, input.purchasePayments, day, account, 3)[0]?.orderId;
   if (orderId === undefined) return null;
   const payment = input.purchasePayments.find((row) => row.orderId === orderId);
   const supplier = input.supplierOf?.(orderId) ?? '';

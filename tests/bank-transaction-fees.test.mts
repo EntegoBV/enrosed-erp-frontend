@@ -304,6 +304,47 @@ test("pairedTransfer: KBC's 'Aanrekening kosten' finds its own transfer, also wi
   assert.equal(feeLike(line(67, -38.01, { reference: 'Buitenlandse overschrijving Referentie 0035' })), true);
 });
 
+test("a small transfer is no charge: 'Internationale overschrijving' is the transfer's own wording; its own fee pairs with it", () => {
+  // Review 2026-10-20: an € 80 sample payment read as a charge and got transfer 65's container as a one-click 'Boeken'.
+  const samples = transfer(70, -80, '2026-09-29', { reference: 'XIAONING GUAN Internationale overschrijving 1560914 BIC: CZCBCN2X SAMPLES' });
+  const linked = { ...t65, allocated: true };
+  assert.equal(feeLike(samples), false);
+  assert.equal(lineSuggestions(input([linked, samples], { purchasePayments: [payment(4, { bankStatementLineId: 65, amountEur: 11565.11 })] })).get(70), undefined);
+  assert.equal(pairedTransfer(charge(69, -15, '2026-09-29'), [linked, samples], dayOf)?.id, 70, 'its fee: the small transfer, not the large one the day before');
+});
+
+test('pairedTransfer: only a transfer, never a card payment, a domiciliëring or a line booked as something; a line paying a container counts', () => {
+  // Review 2026-10-20: the same day won, so a card payment or a direct debit beat the real transfer a day or two away.
+  const card = line(80, -45.5, { counterparty: 'COLRUYT', reference: 'Betaling Bancontact COLRUYT', bookedAt: '2026-10-01T09:00:00Z' });
+  const account = line(81, -12, { reference: 'Kosten zichtrekening', bookedAt: '2026-10-01T21:00:00Z' });
+  assert.equal(pairedTransfer(account, [card, account], dayOf), null, 'a card payment is no transfer');
+  const apple = line(82, -61.2, { reference: 'CCV*Koka House 9000 GENT Betaling met Apple Pay via Debit Mastercard 01-10-2026 om 15.43 uur', bookedAt: '2026-10-01T13:43:00Z' });
+  assert.equal(pairedTransfer(account, [apple, account], dayOf), null);
+  const t100 = transfer(100, -11000, '2026-09-28'), debit = line(140, -60, { counterparty: 'PROXIMUS', reference: 'Domiciliëring 6201554718', bookedAt: '2026-09-30T08:00:00Z' });
+  const late = charge(101, -38, '2026-09-30');
+  assert.equal(pairedTransfer(late, [t100, debit, late], dayOf)?.id, 100, 'a domiciliëring on its day: still its transfer two days before');
+  assert.equal(pairedTransfer(late, [t100, { ...card, id: 141, bookedAt: '2026-09-30T09:00:00Z' }, late], dayOf)?.id, 100, 'a card payment on its day: the same');
+  for (const classification of ['VAT', 'LOAN', 'PRIVATE', 'OTHER'] as const) {
+    const booked = line(90, -5000, { reference: 'Europese overschrijving FOD FINANCIEN', classification, bookedAt: '2026-09-28T08:00:00Z' });
+    assert.equal(pairedTransfer(f64, [booked, f64], dayOf), null, classification);
+  }
+  // A container payment without transfer words (another bank's text) is a transfer too.
+  const wise = line(120, -9000, { counterparty: 'Yunnan Pubei', reference: 'Sent money to Yunnan Pubei', bookedAt: '2026-09-28T07:00:00Z' });
+  const fee = charge(121, -12, '2026-09-28');
+  assert.equal(pairedTransfer(fee, [wise, fee], dayOf), null);
+  assert.equal(pairedTransfer(fee, [wise, fee], dayOf, undefined, [payment(4, { bankStatementLineId: 120 })])?.id, 120);
+});
+
+test('pairedTransfer reads the day and the words only near the charge: a long list stays cheap', () => {
+  // Review 2026-10-20: every larger outgoing line of the account went through feeLike for every open charge.
+  const year = Array.from({ length: 1500 }, (_, index) => transfer(1000 + index, -(500 + index), new Date(Date.UTC(2026, 0, 1) + Math.floor(index / 4) * 86_400_000).toISOString().slice(0, 10)));
+  const fee = charge(5000, -38, '2026-06-01');
+  let calls = 0;
+  const counted = (row: BankStatementLine) => { calls++; return dayOf(row); };
+  assert.equal(pairedTransfer(fee, [...year, fee], counted)?.bookedAt.slice(0, 10), '2026-06-01');
+  assert.ok(calls < 60, `${calls} day lookups for ${year.length} lines`);
+});
+
 test('pairedTransfer: none for a line that is no charge, for money in, on another account or with nothing within three days', () => {
   assert.equal(pairedTransfer(t65, kbc, dayOf), null, 'the transfer');
   assert.equal(pairedTransfer(line(66, -30, { reference: 'Overschrijving', bookedAt: '2026-09-28T09:00:00Z' }), kbc, dayOf), null, 'no charge words');
@@ -323,7 +364,7 @@ test('pairedTransfer: the same day before the nearest id, the nearest id before 
   assert.equal(pairedTransfer(later, [later, transfer(81, -9000, '2026-10-03'), transfer(60, -9000, '2026-09-30')], dayOf)?.id, 81);
 });
 
-test("the suggestion takes the charge's own transfer once it is linked; else the nearest supplier transfer as before", () => {
+test("the suggestion takes the charge's own transfer once it is linked; none while it is open or paid something else", () => {
   const t65Linked = { ...t65, allocated: true }, t63Linked = { ...t63, allocated: true };
   const on65 = payment(4, { bankStatementLineId: 65, amountEur: 11565.11 });
   const on63 = payment(5, { orderId: 40, orderNumber: 'PO-2026-006', bankStatementLineId: 63, amountEur: 11403.38 });
@@ -333,25 +374,30 @@ test("the suggestion takes the charge's own transfer once it is linked; else the
   assert.deepEqual(json(suggestions.get(62)!.target), { kind: 'container-fee', orderId: 40, label: 'Transactiekosten · PO-2026-006 (Yunnan Pubei)' },
     "fee 62 is 63's, not the larger transfer of that day");
   assert.deepEqual(suggestions.get(62)!.reasons, ['kosten in mededeling', 'bij de overschrijving']);
-  const unlinked = lineSuggestions(input([t65Linked, f64, t63, f62], { purchasePayments: [on65] })).get(62)!;
-  assert.equal((unlinked.target as { orderId: number }).orderId, 39, 'its transfer not linked yet: the supplier transfer that day');
-  assert.deepEqual(unlinked.reasons, ['kosten in mededeling', 'naast betaling leverancier']);
+  // Review 2026-10-20: fee 62's own transfer 63 still open gave it 65's container as a one-click 'Boeken'.
+  assert.equal(lineSuggestions(input([t65Linked, f64, t63, f62], { purchasePayments: [on65] })).get(62), undefined, 'its transfer not linked yet: no container');
+  const linkedToCost = lineSuggestions(input([t65Linked, f64, { ...t63, allocated: true }, f62], { purchasePayments: [on65] })).get(62);
+  assert.equal(linkedToCost, undefined, 'its transfer paid something else: no container either');
   const logistics = lineSuggestions(input([{ ...t65Linked, counterparty: 'Forwarder' }, f64], { purchasePayments: [{ ...on65, payee: 'LOGISTICS' }] })).get(64)!;
   assert.equal((logistics.target as { orderId: number }).orderId, 39, 'whoever the transfer paid for the container');
   assert.deepEqual(linkedContainers(65, [on65, payment(6, { orderId: 40, bankStatementLineId: 65, amountEur: 20000 })]), [40, 39], 'a split: the largest part first');
 });
 
 /* The detail's card: the real members of TransactionDetail, the rest of the class and its services replaced. */
-async function feeCardDetail(row: BankStatementLine, lines: BankStatementLine[], payments: PurchasePaymentRow[], suggestions = new Map<number, unknown>()) {
-  const Detail = await selectedClass('../src/app/features/finance/transaction-detail.ts', 'TransactionDetail', ['pattern', 'feeCardState', 'feeCard', 'openFeeBooking', 'orderName'],
+const views = [{ order: { id: 39, number: 'PO-2026-005', alias: null, status: 'ONTVANGEN' } }, { order: { id: 40, number: 'PO-2026-006', alias: null, status: 'BESTELD' } },
+  { order: { id: 41, number: 'PO-2026-007', alias: null, status: 'BESTELD' } }, { order: { id: 42, number: 'PO-2026-008', alias: null, status: 'BESTELD' } }];
+async function feeCardDetail(row: BankStatementLine, lines: BankStatementLine[], payments: PurchasePaymentRow[], suggestions = new Map<number, unknown>(), orders: unknown[] = views) {
+  const Detail = await selectedClass('../src/app/features/finance/transaction-detail.ts', 'TransactionDetail', ['pattern', 'feeCardState', 'feeCard', 'feeBook', 'openFeeBooking'],
     { allocatedLine, feeLike, pairedTransfer, linkedContainers, suggestedContainers, signedMoney: signedEur, dayMonth, containerName });
   const opened: unknown[] = [];
   const detail = new Detail();
   Object.assign(detail, {
     line: () => row, titleOf: (other: BankStatementLine) => bankTextOf(other).title, suggestion: () => suggestions.get(row.id),
     suggestionOf: (other: BankStatementLine) => suggestions.get(other.id),
+    // BankMovementPanel's tab and own document: the card shows on 'Factuur of uitgave' with no document chosen.
+    allocationStep: signal<'documents' | 'payments' | 'new'>('documents'), localDocument: signal<unknown>(null),
     state: { bankStatements: () => lines, officialBankLine: () => true, archivedBankLine: () => false, lineDay: dayOf, canonicalAccount: (key: string) => key,
-      payments: () => payments, openBookAsFee: (line: BankStatementLine, fee: unknown) => opened.push([line.id, json(fee)]) },
+      payments: () => payments, purchaseViews: () => orders, openBookAsFee: (line: BankStatementLine, fee: unknown) => opened.push([line.id, json(fee)]) },
   });
   return { detail, opened };
 }
@@ -367,8 +413,36 @@ test("the card: the transfer's one container is 'Bij PO-… boeken', opening Boe
   detail.openFeeBooking('CONTAINER', 39);
   detail.openFeeBooking('COMPANY', null);
   assert.deepEqual(opened, [[64, { where: 'CONTAINER', orderId: 39, first: [39] }], [64, { where: 'COMPANY', orderId: null, first: [] }]], 'never booked in one click');
-  const alias = await feeCardDetail(f64, [linked65, f64], [{ ...on65, orderAlias: 'Culinan' }]);
+  const alias = await feeCardDetail(f64, [linked65, f64], [on65], undefined, [{ order: { id: 39, number: 'PO-2026-005', alias: 'Culinan', status: 'ONTVANGEN' } }]);
   assert.equal(alias.detail.feeCard().book.label, 'Bij Culinan boeken');
+});
+
+test("the card offers the suggestion's container too, so the list's 'Boeken' and the detail agree; the hint steps aside only where the card shows it", async () => {
+  // Review 2026-10-20: the card never read the line's suggestion, and the hint hid on every tab.
+  const fee = charge(66, -12, '2026-10-14', { reference: 'Kosten buitenlandse betaling OUR' });
+  const nearby = { lineId: 66, target: { kind: 'container-fee', orderId: 41, label: 'Transactiekosten · PO-2026-007 (Yunnan Pubei)' }, others: [] };
+  const { detail } = await feeCardDetail(fee, [fee], [], new Map([[66, nearby]]));
+  assert.deepEqual(card(detail), { text: 'Hoort deze kost bij een container?', book: { orderId: 41, label: 'Bij PO-2026-007 boeken' }, first: [] });
+  assert.equal(detail.pattern(), null, 'the card names it');
+  detail.allocationStep.set('new');
+  assert.equal(detail.pattern(), 'Transactiekosten · PO-2026-007 (Yunnan Pubei)', 'Peppol / Odoo: no card, the hint stays');
+  detail.allocationStep.set('documents');
+  detail.localDocument.set({ key: 'cost:3' });
+  assert.equal(detail.pattern(), 'Transactiekosten · PO-2026-007 (Yunnan Pubei)', 'an own document chosen: no card either');
+  // A split transfer: the largest part, as the list books it.
+  const split = { lineId: 64, target: { kind: 'container-fee', orderId: 40, label: 'Transactiekosten · PO-2026-006 (Yunnan Pubei)' }, others: [] };
+  const two = await feeCardDetail(f64, [linked65, f64], [on65, payment(6, { orderId: 40, orderNumber: 'PO-2026-006', bankStatementLineId: 65, amountEur: 20000 })], new Map([[64, split]]));
+  assert.deepEqual(json(two.detail.feeCard()).book, { orderId: 40, label: 'Bij PO-2026-006 boeken' });
+  assert.deepEqual(json(two.detail.feeCard()).first, [40, 39]);
+});
+
+test("the card's 'Bij … boeken' only on a container Boeken als can pick: never a concept or an archived one", async () => {
+  // Review 2026-10-20: the button promised a container the sheet then opened without.
+  for (const order of [{ id: 39, number: 'PO-2025-003', alias: null, status: 'ONTVANGEN', archivedAt: '2026-01-10' }, { id: 39, number: 'PO-2026-005', alias: null, status: 'CONCEPT' }]) {
+    const { detail } = await feeCardDetail(f64, [linked65, f64], [on65], new Map([[64, { lineId: 64, target: { kind: 'container-fee', orderId: 39, label: 'Transactiekosten · x' }, others: [] }]]), [{ order }]);
+    assert.deepEqual(card(detail), { text: 'Bij de overschrijving aan XIAONING GUAN · − € 11.565,11 · 28 sep', book: null, first: [39] }, order.number);
+    assert.equal(detail.pattern(), 'Transactiekosten · x', 'the card does not offer it: the hint keeps saying it');
+  }
 });
 
 test("the card: a transfer on several containers or none is 'Container kiezen…' with its containers first; no transfer asks", async () => {
