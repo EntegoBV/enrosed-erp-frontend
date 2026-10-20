@@ -1924,17 +1924,39 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   te ontvangen once it is on (e.g. the home's `payment=open` link). Then an
   `ios-section` per customer (head = name, trail = count) with an `ios-group`
   of `#phoneRow` cells in the same `.swipe` wrapper: number, 'kind · date' +
-  channel / Partner tag, a muted facts line only for web and delivery facts,
-  the amber line; trail = total ('− ', decimals, `excl. vracht`), status pill,
-  third line `phoneLines` ('€ x open', warn when overdue; a credit note's
-  tegoed line; else 'geldig tot' split by `dayParts`); every trail line but
-  '€ x open' wraps (`sl-pline--wrap`), so the trail sizes from its total. Inhoud, m³, marge (never
-  on credit notes or partner documents), the due day behind '€ x open',
-  ontvangen and gecrediteerd move into the menu's Openen hint
-  (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner containers and split
-  orders are `ios-cell sl-phead` disclosure cells inside their customer
-  (every figure of the desk head; hold or right-click a container for its
-  menu), members indented below when open. Same swipe, long press (the
+  channel / Partner tag (no 'Partner & veiling' tag under a partner
+  container, TICA / Beurs keep theirs; one tag size, no uppercase), a muted facts line only for web and delivery facts,
+  the amber line; trail = total ('− ', `excl. vracht`), status pill, third
+  line `phoneLines` ('€ x open', warn when overdue; a credit note only
+  '€ x tegoed' while one is open, never 'verrekend · afgehandeld' beside its
+  'Afgehandeld' pill; else 'geldig tot' split by `dayParts`). Every phone
+  trail amount is `trailEuro` (whole euros as on Inkoop, cents under € 1, so
+  never '€ 0 open'); every trail line but '€ x open' wraps (`sl-pline--wrap`),
+  so the trail sizes from its total. Inhoud, m³, marge (never on credit notes
+  or partner documents), the exact open amount when the trail rounded it
+  (`roundedAway`), the due day behind '€ x open', ontvangen, gecrediteerd and
+  a credit note's verrekend / terugbetaald / exact tegoed move into the menu's
+  Openen hint (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner
+  containers and split orders (Emre 2026-10-20: "niet duidelijk met partner
+  container") are `ios-cell sl-phead` cells with a document's anatomy, pure
+  in the model (`containerHead`, `splitHead`, `containerPill`): name (two
+  lines max) / split number, sub ('Partnercontainer · n facturen' or 'n
+  documenten' with a credit note; 'Gesplitste order · 2 delen · n stuks'),
+  the amber line as a document cell reads it (badge = every task of the
+  members, each reason once: '2 Betaling opvolgen · Tegoed af te handelen');
+  trail = total and ONE status: '€ x open' (warn when overdue), else '€ x
+  tegoed' while a credit note holds one, else one pill (all settled with a
+  payment 'Betaald', any concept 'Concept', else the most frequent); a split
+  shows its delivery in one pill ('Deel 2 wacht op voorraad' once the other
+  part shipped); a chevron that rotates, members indented below. The rest of
+  the old head sits after the name in the container menu's head
+  (`containerHint(entry, receivable, today)`, which reads the same status as
+  the head: exact total when rounded, signed '− € x'; the members per status
+  whenever the head shows no pill or they differ, a concept with its share
+  '1 concept (€ 3.000,00)', a label's ' · ' in brackets; pieces in the
+  container; ontvangen, open / tegoed only when the head did not say it
+  exactly, incl. btw; hold or right-click; `SalesContainerMenu [facts]`,
+  phone only; the desk head keeps every figure). Same swipe, long press (the
   directive), menu as an iOS sheet, fab '+ Order' / 'Container kiezen'; the
   new-document sheet is `variant="ios"` with the `.sl-new` phone gutter. The
   old `sales-document-navigation` component is deleted (its types live in the

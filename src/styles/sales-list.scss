@@ -129,13 +129,12 @@ app-sales-list .sl-customer{display:-webkit-box;min-width:0;overflow:hidden;colo
 app-sales-list .sl-prow,app-sales-list .sl-phead{align-items:flex-start;gap:10px;padding-block:8px;color:var(--ink);text-decoration:none}
 app-sales-list .sl-ptitle{font-size:16px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
 app-sales-list .sl-psub{color:var(--muted);font-size:13px;line-height:1.35}
-app-sales-list .sl-psub.sl-warn{color:var(--warn);font-weight:650}
 app-sales-list .sl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
 app-sales-list .sl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
 /* The trail gives way before the number and its facts (Inkoop fix round 2): both size from their content and shrink, and
-   the trail sizes from its total: the day line breaks before its day ('geldig tot' / '01/11/2026'), a credit note's
-   tegoed line and a container's 'waarvan concept' wrap too (one line pushed the total out of the row, or squeezed the
-   name to four lines). Long statuses ('Uitgereikt · niet gemaild') wrap. */
+   the trail sizes from its total: the day line breaks before its day ('geldig tot' / '01/11/2026') and a credit note's
+   tegoed line wraps too (one long line pushed the total out of the row, or squeezed the name to four lines). Long
+   statuses ('Uitgereikt · niet gemaild') wrap. */
 app-sales-list .sl-prow>.ios-cell__body,app-sales-list .sl-phead>.ios-cell__body{flex:1 1 auto}
 app-sales-list .sl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}
 app-sales-list .sl-ptrail .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;text-align:right;white-space:normal}
@@ -146,11 +145,11 @@ app-sales-list .sl-pline--open{color:var(--ink-2);font-weight:650}
 app-sales-list .sl-pline.sl-warn{color:var(--warn);font-weight:700}
 app-sales-list .sl-pline--wrap{white-space:normal}
 @media (max-width:374px){app-sales-list .sl-ptitle{font-size:15px}}
-/* A partner container or a split order: a cell with a disclosure; its documents open one step in, below it. */
-app-sales-list .sl-phead{padding-block:10px}
-app-sales-list .sl-pbadges{display:flex;flex-wrap:wrap;gap:4px;margin-block:3px 1px}
-app-sales-list .sl-pbadges:empty{display:none}
-app-sales-list .sl-pbadges .wk-pill{max-width:100%;height:auto;min-height:18px;padding-block:1px;line-height:1.3;white-space:normal}
+/* One tag size on the phone: the channel tag reads as the Partner tag beside it, not as an uppercase eyebrow. */
+app-sales-list .sl-prow .sl-tag--channel{font-size:10.5px;letter-spacing:0;text-transform:none}
+/* A partner container or a split order (2026-10-20): a document cell's anatomy, its name in two lines at most, and a
+   disclosure; its documents open one step in, below it. */
+app-sales-list .sl-phead .sl-ptitle{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 app-sales-list .sl-pchev{align-self:center;transition:transform var(--dur-1,120ms) var(--ease-out,ease-out)}
 app-sales-list .sl-phead[aria-expanded=true] .sl-pchev{transform:rotate(90deg)}
 app-sales-list .sl-swipe--nested>.sl-prow{padding-left:32px}
