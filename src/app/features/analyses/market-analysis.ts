@@ -5,17 +5,20 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { FormsModule } from '@angular/forms';
 import { messageOf } from '../../core/api/errors';
 import { Fx } from '../../core/api/fx';
-import type { FreightRate, MarketSourceStatus } from '../../core/api/models';
+import type { FreightRate, MarketSourceStatus, PurchaseOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { Sheet, Ui } from '../../shared/ui';
+import { containerName } from '../purchasing/container-name';
 import { dayMonth } from './analyses-words';
+import { AnDrillHost } from './drill-host';
+import { freightContainersView, usdContainersView } from './drill-market';
+import type { MarketDrillContext } from './drill-market';
 import {
-  DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, changeOverMonths, crossOf, freightNarrative, fxInsight,
-  invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, weeklyRows, windowOf,
-  quoteVsMarketPct,
+  DatedSeries, FxInsight, MONTH_OPTIONS, Months, SeriesSummary, alignedQuoteVsMarket, changeOverMonths, crossOf, freightContainerRows, fxInsight,
+  invert, lastStep, periodWords, shortDate, sparseHorizons, summarize, usdContainerRows, weeklyRows, windowOf,
 } from './market-math';
 
 type PairId = 'usd' | 'cny' | 'cross';
@@ -94,6 +97,7 @@ const FREIGHT: readonly FreightDefinition[] = [
 ];
 
 const REFERENCE_CODE = 'WCI SHA-RTM';
+const FBX_CODE = 'FBX11 CN-NEUR';
 const STORAGE_KEY = 'enrosed.market';
 
 /**
@@ -101,6 +105,8 @@ const STORAGE_KEY = 'enrosed.market';
  * Chinese container, each readable in either direction and drawn over the
  * chosen period, the buying-power narrative, and the freight log with our
  * own forwarder quotes next to the licensed market benchmarks and indexes.
+ * "Open containers ›" and "Per container ›" open the page's drill-down over
+ * the purchase orders, fetched on the first open (design/analyses2 §B.9).
  */
 @Component({
   selector: 'app-market-analysis',
@@ -113,7 +119,7 @@ const STORAGE_KEY = 'enrosed.market';
         @if (desk.active()) {
           <app-segmented label="Periode van de grafieken en vergelijkingen" [options]="periodOptions" [value]="'' + months()" (changed)="setMonths($any(+$event))" />
           <span class="an-bar__text">ECB-referentiekoersen@if (fx.series(); as rates) { · bijgewerkt {{ dayText(rates.asOf) }} }</span>
-          <div class="an-bar__end"><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
+          <div class="an-bar__end"><ng-content select="[how]" /><button class="wk-btn wk-btn--primary" type="button" (click)="openAdd()"><app-icon name="plus" [size]="15" />Tarief toevoegen</button></div>
         } @else {
           <!-- Phone: the capsule and sheet of the Kasprognose horizon (design §3.7). -->
           <button class="ios-capsule ios-capsule--sm ios-capsule--tinted an-pick-phone" type="button" aria-haspopup="dialog"
@@ -133,7 +139,7 @@ const STORAGE_KEY = 'enrosed.market';
           <!-- The an-card head (design §3.7): title and sub, no eyebrow; "bijgewerkt" lives in the tool row only. -->
           <div>
             <h2 id="mk-fx-title">Valuta</h2>
-            <p>ECB-referentiekoersen zonder bankopslag · tik op een paar om de richting om te keren</p>
+            <p>ECB-referentiekoersen zonder bankopslag</p>
           </div>
         </header>
 
@@ -162,11 +168,7 @@ const STORAGE_KEY = 'enrosed.market';
                 <app-trend-chart [series]="pair.chart" [decimals]="4" [height]="164"
                                  [ariaLabel]="pair.from + ' naar ' + pair.to + ', verloop over ' + periodWords(months())" />
                 @if (pair.summary; as summary) {
-                  <dl class="fx-pair__range">
-                    <div><dt>Hoog</dt><dd>{{ summary.max | num: 4 }}<small>{{ shortDate(summary.maxOn) }}</small></dd></div>
-                    <div><dt>Gemiddeld</dt><dd>{{ summary.mean | num: 4 }}<small>{{ periodWords(months()) }}</small></dd></div>
-                    <div><dt>Laag</dt><dd>{{ summary.min | num: 4 }}<small>{{ shortDate(summary.minOn) }}</small></dd></div>
-                  </dl>
+                  <p class="fx-pair__range">hoog {{ summary.max | num: 4 }} ({{ shortDate(summary.maxOn) }}) · gem. {{ summary.mean | num: 4 }} · laag {{ summary.min | num: 4 }} ({{ shortDate(summary.minOn) }})</p>
                 }
                 <div class="mk-horizons mk-fig" role="group" aria-label="Verandering per periode">
                   @for (horizon of pair.horizons; track horizon.months) {
@@ -183,15 +185,26 @@ const STORAGE_KEY = 'enrosed.market';
           </div>
 
           @if (insight(); as insight) {
-            <section class="fx-insight" aria-labelledby="mk-insight-title">
+            <!-- Verdict, lead and the money line; the dollar and the yuan apart are folded (design C.8). -->
+            <section class="fx-insight" aria-label="Koopkracht">
               <header>
-                <div><span class="mk-eyebrow">Koopkracht</span><h3 id="mk-insight-title">Wat dit betekent voor inkoop</h3></div>
+                <p class="fx-insight__lead">{{ insight.lead }}</p>
                 <span class="mk-badge mk-badge--lg" [class]="'mk-badge mk-badge--lg mk-badge--' + insight.tone">{{ insight.verdict }}</span>
               </header>
-              <p class="fx-insight__lead">{{ insight.lead }}</p>
-              <ul>
-                @for (line of insight.lines; track line) { <li>{{ line }}</li> }
-              </ul>
+              @if (insight.money) { <p class="fx-insight__money">{{ insight.money }}</p> }
+              <button class="wk-link fx-insight__link" type="button" aria-haspopup="dialog" [disabled]="purchasesLoading()" (click)="openUsdContainers()">Open containers ›</button>
+              @if (insight.money && insight.lines.length) {
+                <details class="fx-insight__apart">
+                  <summary>Dollar en yuan apart</summary>
+                  <ul>
+                    @for (line of insight.lines; track line) { <li>{{ line }}</li> }
+                  </ul>
+                </details>
+              } @else if (insight.lines.length) {
+                <ul>
+                  @for (line of insight.lines; track line) { <li>{{ line }}</li> }
+                </ul>
+              }
               <div class="fx-insight__grid mk-fig mk-fig--lg" role="group" aria-label="Koopkracht per periode">
                 @for (horizon of insight.horizons; track horizon.months) {
                   <button type="button" [class.is-on]="months() === horizon.months" [attr.aria-pressed]="months() === horizon.months" [disabled]="horizon.pct === null"
@@ -211,10 +224,10 @@ const STORAGE_KEY = 'enrosed.market';
             <summary>Koersen als tabel <span>laatste koers per week · {{ periodWords(months()) }}</span></summary>
             <div class="mk-table__scroll">
               <table>
-                <thead><tr><th>Week van</th>@for (pair of pairs; track pair.id) { <th>{{ pair.from }} → {{ pair.to }}</th> }</tr></thead>
+                <thead><tr><th>Week tot</th>@for (pair of pairs; track pair.id) { <th>{{ pair.from }} → {{ pair.to }}</th> }</tr></thead>
                 <tbody>
                   @for (row of fxTable(); track row.date) {
-                    <tr><td data-label="Week van">{{ shortDate(row.date) }}</td>@for (value of row.values; track $index) { <td [attr.data-label]="pairs[$index].from + ' → ' + pairs[$index].to">{{ value | num: 4 }}</td> }</tr>
+                    <tr><td data-label="Week tot">{{ shortDate(row.date) }}</td>@for (value of row.values; track $index) { <td [attr.data-label]="pairs[$index].from + ' → ' + pairs[$index].to">{{ value | num: 4 }}</td> }</tr>
                   }
                 </tbody>
               </table>
@@ -238,7 +251,6 @@ const STORAGE_KEY = 'enrosed.market';
             <h2 id="mk-freight-title">Zeevracht China → Rotterdam</h2>
             <p>Wat wij betalen, wat de markt betaalt en welke kant het op gaat · tik op een tegel voor het verloop en de uitleg</p>
           </div>
-          @if (!desk.active()) { <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="openAdd()"><app-icon name="plus" [size]="14" />Tarief toevoegen</button> }
         </header>
 
         @for (group of freightGroups; track group.id) {
@@ -248,9 +260,15 @@ const STORAGE_KEY = 'enrosed.market';
               <i class="mk-chip mk-chip--unit">{{ group.unit }}</i>
               <small>{{ group.hint }}</small>
             </div>
-            @if (group.id === 'own' && quoteVsMarket(); as q) {
-              <p class="fr-vs">Onze laatste offerte ({{ q.route }}, {{ shortDate(q.quotedOn) }}): $ {{ q.ownUsd | num: 0 }} · {{ q.benchmark }} $ {{ q.marketUsd | num: 0 }} ·
-                <b [class.is-warn]="q.pct > 0" [class.is-ok]="q.pct < 0">{{ q.pct > 0 ? '+ ' : q.pct < 0 ? '− ' : '' }}{{ abs(q.pct) | num: 0 }} %</b></p>
+            <!-- Our latest quote against the market of its own week, never the newest point (design D-M1). -->
+            @if (group.id === 'own') {
+              <p class="fr-vs">
+                @if (quoteVsMarket(); as q) {
+                  Onze laatste offerte ({{ q.route }}, {{ shortDate(q.quotedOn) }}): $ {{ q.ownUsd | num: 0 }} · {{ q.benchmark }} {{ shortDate(q.marketOn) }} $ {{ q.marketUsd | num: 0 }} ·
+                  <b [class.is-warn]="q.pct > 0" [class.is-ok]="q.pct < 0">{{ q.pct > 0 ? '+ ' : q.pct < 0 ? '− ' : '' }}{{ abs(q.pct) | num: 0 }} %</b>
+                }
+                <button class="wk-link fr-vs__link" type="button" aria-haspopup="dialog" [disabled]="purchasesLoading()" (click)="openFreightContainers()">Per container ›</button>
+              </p>
             }
             <div class="fr-tiles" role="group" [attr.aria-label]="group.title">
               @for (tile of tilesFor(group.id); track tile.code) {
@@ -330,12 +348,12 @@ const STORAGE_KEY = 'enrosed.market';
               }
             </div>
 
-            <div class="fr-analysis">
-              <span class="mk-eyebrow">Analyse</span>
-              @for (line of d.narrative; track line) { <p>{{ line }}</p> }
-            </div>
-
+            <!-- The source in one line while it is current; the full block (and "Bron nu ophalen") when it needs attention. -->
             @if (d.source; as source) {
+              @if (!sourceNeedsAttention(source)) {
+                <p class="fr-source-line">{{ source.sourceName }}@if (source.latestPublishedOn) { · publicatie {{ shortDate(source.latestPublishedOn) }} } ·
+                  <a [href]="source.sourceUrl" target="_blank" rel="noopener noreferrer">Bron ↗</a></p>
+              } @else {
               <div class="fr-source" role="note" [class.fr-source--attention]="sourceNeedsAttention(source)">
                 <div class="fr-source__row">
                   <strong>{{ source.metric === 'INDEX_POINTS' ? 'Marktindex, geen prijs' : 'USD-marktbenchmark' }}</strong>
@@ -353,6 +371,7 @@ const STORAGE_KEY = 'enrosed.market';
                 </div>
                 @if (sourceNeedsAttention(source)) { <p class="fr-source__detail">{{ sourceGuidance(source) }}</p> }
               </div>
+              }
             }
 
             @if (d.history.length) {
@@ -470,13 +489,13 @@ const STORAGE_KEY = 'enrosed.market';
     .fx-pair__flip small{margin-left:2px;color:var(--muted);font-size:10.5px}
     .fx-pair__now{display:grid;gap:1px}.fx-pair__now strong{font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1}.fx-pair__now span{color:var(--muted);font-size:11.5px}
     .fx-pair__delta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:var(--muted);font-size:11.5px}
-    .fx-pair__range{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:10px 0 0;border-top:1px solid var(--line)}
-    .fx-pair__range div{display:grid;gap:1px;min-width:0}.fx-pair__range dt{color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
-    .fx-pair__range dd{display:grid;margin:0;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}.fx-pair__range small{color:var(--muted);font-size:10px;font-weight:500}
+    .fx-pair__range{margin:0;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;line-height:1.45}
     /* buying power */
     .fx-insight{display:grid;gap:10px;padding:16px 18px;border-top:1px solid var(--line);background:var(--surface-2)}
-    .fx-insight header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}.fx-insight h3{margin:2px 0 0;font-size:15px}
-    .fx-insight__lead{margin:0;font-size:13.5px;font-weight:600;line-height:1.45}
+    .fx-insight header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px 12px}
+    .fx-insight__lead{margin:0;font-size:13.5px;font-weight:600;line-height:1.45}.fx-insight__money{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+    .fx-insight__link{justify-self:start}
+    .fx-insight__apart summary{color:var(--ink-2);font-size:12px;font-weight:700;cursor:pointer}.fx-insight__apart ul{margin-top:6px}
     .fx-insight ul{display:grid;gap:6px;margin:0;padding-left:18px;color:var(--ink-2);font-size:12.5px;line-height:1.5}
     /* tables */
     .mk-table{border-top:1px solid var(--line)}.mk-table summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 18px;font-size:12px;font-weight:750;cursor:pointer}
@@ -503,7 +522,7 @@ const STORAGE_KEY = 'enrosed.market';
     .fr-horizons{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
     .fr-horizon{display:grid;gap:2px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
     .fr-horizon span{color:var(--muted);font-size:10px;font-weight:700}.fr-horizon b{font-size:15px;font-variant-numeric:tabular-nums}.fr-horizon small{color:var(--muted);font-size:10px}
-    .fr-analysis{display:grid;gap:5px}.fr-analysis p{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+    .fr-vs__link{margin-left:6px;font-size:12.5px}.fr-source-line{margin:0;color:var(--muted);font-size:11.5px}.fr-source-line a{color:var(--rose-dark);font-weight:700}
     .fr-source{display:grid;gap:5px;padding:11px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:11.5px}
     .fr-source--attention{border-color:#eddcb9;background:var(--warn-soft)}
     .fr-source__row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px}.fr-source strong{font-size:12px}
@@ -571,6 +590,7 @@ const STORAGE_KEY = 'enrosed.market';
 export class MarketAnalysis {
   private readonly sourcing = inject(SourcingApi);
   private readonly ui = inject(Ui);
+  private readonly drill = inject(AnDrillHost);
   readonly fx = inject(Fx);
 
   readonly monthOptions = MONTH_OPTIONS;
@@ -610,6 +630,10 @@ export class MarketAnalysis {
   readonly newRoute = signal('NINGBO');
   readonly newRate = signal(0);
   readonly newDate = signal(localIsoDay());
+  /** The purchase orders behind the two drill-downs: fetched on the first open, kept for the visit (Markt never loads the page). */
+  private readonly purchases = signal<PurchaseOrderView[] | null>(null);
+  readonly purchasesLoading = signal(false);
+  private readonly drillContext: MarketDrillContext = { containerName: (po) => containerName(po), day: (day) => this.dayText(day) };
 
   private readonly ratesByRoute = computed(() => {
     const grouped = new Map<string, FreightRate[]>();
@@ -709,7 +733,6 @@ export class MarketAnalysis {
       latest: rows[rows.length - 1] ?? null,
       step: lastStep(all),
       horizons: sparseHorizons(all),
-      narrative: freightNarrative(all, definition.unit),
       source: this.sourceByCode().get(code) ?? null,
       history,
     };
@@ -730,6 +753,7 @@ export class MarketAnalysis {
     this.loading.set(true);
     this.loadError.set('');
     this.fx.failed.set(false);
+    this.purchases.set(null);
     const fxLoad = this.fx.load();
     try {
       const [rates, sources] = await Promise.allSettled([
@@ -758,17 +782,45 @@ export class MarketAnalysis {
     return withTrend('own')?.code ?? withTrend('usd')?.code ?? withTrend()?.code ?? FREIGHT[0].code;
   }
 
-  /** Our latest quote against the latest market price in USD (design §3.7): "+ 36 %". */
+  /** Our latest quote against Drewry (else FBX11) of the quote's own week (design D-M1): "+ 36 %". */
   readonly quoteVsMarket = computed(() => {
-    const latest = (group: FreightDefinition['group']) => this.tiles().filter((tile) => tile.group === group && tile.latest)
-      .sort((left, right) => right.latest!.quotedOn.localeCompare(left.latest!.quotedOn))[0] ?? null;
-    const own = latest('own');
-    const market = latest('usd');
-    if (!own?.latest || !market?.latest) return null;
-    const pct = quoteVsMarketPct(own.latest.usdPerContainer, market.latest.usdPerContainer);
-    return pct === null ? null : { route: own.short, quotedOn: own.latest.quotedOn, ownUsd: own.latest.usdPerContainer, benchmark: market.short,
-      marketUsd: market.latest.usdPerContainer, pct };
+    const own = this.tiles().filter((tile) => tile.group === 'own' && tile.latest)
+      .map((tile) => ({ route: tile.short, quotedOn: tile.latest!.quotedOn, usd: tile.latest!.usdPerContainer }));
+    const series = (code: string) => toSeries(this.ratesByRoute().get(code) ?? []);
+    return alignedQuoteVsMarket(own, [{ name: 'Drewry', series: series(REFERENCE_CODE) }, { name: 'FBX11', series: series(FBX_CODE) }]);
   });
+
+  /** Koopkracht › "Open containers ›": the open containers' goods at the order's rate and at today's ECB rate. */
+  async openUsdContainers(): Promise<void> {
+    const rates = this.fx.series();
+    const views = rates ? await this.ensurePurchases() : null;
+    if (!rates || !views) return;
+    this.drill.open([usdContainersView(usdContainerRows(views, rates.latestUsd), { usdPerEur: rates.latestUsd, asOf: rates.asOf }, this.drillContext)]);
+  }
+
+  /** Zeevracht › "Per container ›": our freight per container against Drewry of that week. */
+  async openFreightContainers(): Promise<void> {
+    const views = await this.ensurePurchases();
+    if (views) this.drill.open([freightContainersView(freightContainerRows(views, toSeries(this.ratesByRoute().get(REFERENCE_CODE) ?? [])), this.drillContext)]);
+  }
+
+  /** The existing purchase-order list, once per visit; a failure says so and opens nothing. */
+  private async ensurePurchases(): Promise<PurchaseOrderView[] | null> {
+    const known = this.purchases();
+    if (known) return known;
+    if (this.purchasesLoading()) return null;
+    this.purchasesLoading.set(true);
+    try {
+      const views = await this.sourcing.purchaseOrders();
+      this.purchases.set(views);
+      return views;
+    } catch {
+      this.ui.toast('Containers konden niet laden', 'err');
+      return null;
+    } finally {
+      this.purchasesLoading.set(false);
+    }
+  }
 
   tilesFor(group: FreightDefinition['group']) {
     return this.tiles().filter((tile) => tile.group === group);

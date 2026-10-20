@@ -1,21 +1,25 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { Sheet } from '../../shared/ui';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import type { ForecastMonth } from '../finance/cash-forecast';
-import { weekdayDayMonth } from '../finance/cash-format';
+import { dayMon, eurWhole } from '../finance/cash-format';
 import { CashState } from './cash-state';
 import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole, tableCell, underBuffer } from './cash-view';
+import { cashMonthView } from './drill-cash';
+import type { CashDrillContext } from './drill-cash';
+import { AnDrillHost } from './drill-host';
 
 /**
  * "Per maand" (spec §4.5): begin, what went and goes out and in per kind,
  * end and lowest, the past months from the bank, the future ones from the
- * forecast. A month opens a sheet with the lines behind it. The desk shows
- * the full table, the phone a compact one.
+ * forecast. A month opens the page's drill-down with the lines behind it
+ * (design/analyses2 §B.8; it no longer renders a sheet of its own inside the
+ * Kasprognose size container, D-K1). The desk shows the full table, the
+ * phone a compact one.
  */
 @Component({
   selector: 'app-cash-months',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet],
+  imports: [RouterLink],
   template: `
     @if (table(); as t) {
       @if (!ios()) {
@@ -27,7 +31,7 @@ import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole
               </tr>
               <tr><th scope="col">Maand</th>
                 @for (month of t.months; track month.key) {
-                  <th scope="col" [class.is-past]="month.past"><button type="button" (click)="open(month)" [attr.aria-label]="'Regels van ' + month.label">{{ month.label }}</button></th>
+                  <th scope="col" [class.is-past]="month.past"><button type="button" aria-haspopup="dialog" (click)="open(month)" [attr.aria-label]="'Regels van ' + month.label">{{ month.label }}</button></th>
                 }
               </tr>
             </thead>
@@ -44,12 +48,12 @@ import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole
             </tbody>
           </table>
         </div>
-        <p class="cf-mtable__note">{{ note() }}</p>
+        @if (note(); as text) { <a class="wk-link cf-mtable__note" routerLink="/costs" [queryParams]="unlinked">{{ text }} ›</a> }
       } @else {
         <div class="ios-group cf-mlist" role="table" aria-label="Per maand">
           <div class="cf-mlist__head" role="row"><span role="columnheader">Maand</span><span role="columnheader">Laagste</span><span role="columnheader">Einde</span><span role="columnheader">±</span></div>
           @for (month of t.months; track month.key) {
-            <button class="cf-mlist__row" type="button" role="row" [class.is-past]="month.past" (click)="open(month)">
+            <button class="cf-mlist__row" type="button" role="row" aria-haspopup="dialog" [class.is-past]="month.past" (click)="open(month)">
               <span role="cell">{{ month.label }}</span>
               <span role="cell" [class.is-low]="low(month.lowestEur)">{{ cell(month.lowestEur) }}</span>
               <span role="cell">{{ cell(month.endEur) }}</span>
@@ -57,34 +61,20 @@ import { itemLink, lineLink, monthLines, monthTable, monthTableNote, signedWhole
             </button>
           }
         </div>
-        <p class="ios-section__foot">{{ note() }}</p>
+        @if (note(); as text) { <a class="ios-section__foot cf-mlist__note" routerLink="/costs" [queryParams]="unlinked">{{ text }} ›</a> }
       }
-    }
-
-    @if (opened(); as month) {
-      <app-sheet [title]="(month.past ? 'Gebeurd · ' : 'Verwacht · ') + month.label" variant="ios" (closed)="opened.set(null)">
-        <div body class="cf-lines">
-          @for (line of lines(); track $index) {
-            <button class="cf-line" type="button" (click)="follow(line)">
-              <span class="cf-line__day">{{ day(line.day) }}</span>
-              <span class="cf-line__body"><b>{{ line.title }}</b><small>{{ line.sub }}</small></span>
-              <span class="cf-line__amt" [class.is-in]="line.amountEur > 0">{{ signed(line.amountEur) }}</span>
-            </button>
-          } @empty {
-            <p class="cf-lines__empty">Geen regels in deze maand.</p>
-          }
-        </div>
-      </app-sheet>
     }
   `,
 })
 export class CashMonths {
   private readonly state = inject(CashState);
-  private readonly router = inject(Router);
+  private readonly drill = inject(AnDrillHost);
   readonly variant = input<'desk' | 'ios'>('desk');
   readonly ios = computed(() => this.variant() === 'ios');
+  /** The note's link: the bank movements still to link (the data-quality line's "Koppelen"). */
+  readonly unlinked = { view: 'bank', tab: 'movements', link: 'unlinked' };
+  private readonly drillContext: CashDrillContext = { day: dayMon, whole: eurWhole, itemLink, lineLink, openPo: (orderId) => this.state.openPo(orderId) };
 
-  readonly opened = signal<ForecastMonth | null>(null);
   readonly table = computed(() => {
     const forecast = this.state.forecast();
     return forecast ? monthTable(forecast) : null;
@@ -94,16 +84,8 @@ export class CashMonths {
     const forecast = this.state.forecast();
     return input && forecast ? monthTableNote(input, forecast) : '';
   });
-  readonly lines = computed(() => {
-    const month = this.opened();
-    const input = this.state.input();
-    const forecast = this.state.forecast();
-    return month && input && forecast ? monthLines(input, forecast, month) : [];
-  });
 
   readonly cell = tableCell;
-  readonly signed = signedWhole;
-  readonly day = weekdayDayMonth;
 
   /** Laagste under the buffer (amber); never in relative mode. */
   low(eur: number | null): boolean {
@@ -116,15 +98,10 @@ export class CashMonths {
     return signedWhole(month.endEur - month.beginEur);
   }
 
+  /** A month: the lines behind it in the page's drill-down (`cash.month.{key}`). */
   open(month: ForecastMonth): void {
-    this.opened.set(month);
-  }
-
-  follow(line: ReturnType<typeof monthLines>[number]): void {
-    const link = line.lineId !== null ? lineLink(line.lineId) : line.item ? itemLink(line.item) : null;
-    if (!link) return;
-    this.opened.set(null);
-    if (link.po !== null) { this.state.openPo(link.po); return; }
-    void this.router.navigate(link.path, link.query ? { queryParams: link.query } : {});
+    const input = this.state.input();
+    const forecast = this.state.forecast();
+    if (input && forecast) this.drill.open([cashMonthView(month, monthLines(input, forecast, month), this.drillContext)]);
   }
 }

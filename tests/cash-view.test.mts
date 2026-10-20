@@ -118,14 +118,13 @@ test('small texts: periods, signed whole euros, month names', () => {
   assert.equal(view.threeMonthsBack('2027-02-28'), '2026-11-01');
 });
 
-test('the krap banner: the first period with the scenario, the zero day of the fixed line, the slow band, the relative mode', () => {
-  assert.equal(plain(view.krapBanner(scenario)!.text), 'Krap van 8 jan tot 4 mrt: laagste stand − € 4.286 op ma 1 feb, na Btw-aangifte Q4 2026 en Huur loods Wilrijk.'
-    + ' Zonder nieuwe verkoop onder nul vanaf ma 25 jan.');
+test('the krap banner: the first period with the scenario and its causes, the slow band, the relative mode', () => {
+  /* The lowest stand and the day without sales are the figures under the banner (design C.7): the banner names the period and why. */
+  assert.equal(plain(view.krapBanner(scenario)!.text), 'Krap van 8 jan tot 4 mrt, na Btw-aangifte Q4 2026 en Huur loods Wilrijk.');
   assert.deepEqual([view.krapBanner(scenario)!.kind, view.krapBanner(scenario)!.from, view.krapBanner(scenario)!.to], ['tight', '2027-01-08', '2027-03-04']);
   assert.equal(plain(view.phoneKrapBanner(scenario)!.text), 'Krap van 8 jan tot 4 mrt. Laagste stand − € 4.286 op ma 1 feb.');
   const slowOnly = { ...scenario, tightWith: [] };
-  assert.equal(plain(view.krapBanner(slowOnly)!.text), 'Als de verkoop 4 weken trager loopt: krap van 8 jan tot 8 apr, laagste stand − € 5.824 op ma 1 mrt.'
-    + ' Zonder nieuwe verkoop onder nul vanaf ma 25 jan.');
+  assert.equal(plain(view.krapBanner(slowOnly)!.text), 'Als de verkoop 4 weken trager loopt: krap van 8 jan tot 8 apr, laagste stand − € 5.824 op ma 1 mrt.');
   assert.equal(view.krapBanner({ ...scenario, tightWith: [], tightSlow: [] }), null);
   const relative = buildCashForecast(exampleB({ accounts: accounts({ currentEur: null, latestReading: null, checkedAt: null }) }), options());
   assert.equal(view.krapBanner(relative)!.text, 'Saldo ontbreekt voor KBC-zichtrekening: de prognose toont het verschil t.o.v. vandaag.');
@@ -138,12 +137,15 @@ test('the five cards read the forecast', () => {
   assert.deepEqual([cards.bank.label, cards.bank.value, cards.bank.sub, cards.bank.foot, cards.bank.footWarn], ['Op de bank vandaag', '€ 32.365', 'KBC-zichtrekening € 32.365', 'Gecontroleerd 5 d geleden', false]);
   assert.deepEqual([cards.lowest.value, cards.lowest.sub, cards.lowest.foot, cards.lowest.valueTone], ['− € 4.286', 'ma 1 feb · met scenario', 'Onder buffer · 8 jan–4 mrt', 'danger']);
   assert.deepEqual([cards.end.label, cards.end.value, cards.end.foot], ['Op 15 apr', '€ 27.084', 'T.o.v. vandaag − € 5.282']);
-  assert.deepEqual([cards.zero.value, cards.zero.sub, cards.zero.foot], ['25 jan', 'onder nul vanaf die dag', 'Op 15 apr − € 7.450']);
+  assert.deepEqual([cards.zero.label, cards.zero.value, cards.zero.sub, cards.zero.foot, cards.zero.kind, cards.zero.valueTone],
+    ['Zonder verkoop', 'onder nul op 25 jan', 'zonder nieuwe verkoop', 'op 15 apr − € 7.450', 'text', 'danger']);
   assert.deepEqual([cards.scenario.value, cards.scenario.sub, cards.scenario.foot], ['+ € 34.533', 'tot 15 apr · incl. btw', 'Marge op goederen € 10.278 · 1 bron']);
   const stale = view.kpiCards({ ...scenario, startAccounts: [{ ...scenario.startAccounts[0], ageDays: 16, stale: true }] });
   assert.deepEqual([stale[0].foot, stale[0].footWarn], ['Saldo KBC-zichtrekening · 16 d oud', true]);
   const calm = view.kpiCards({ ...base, tightWith: [], zeroBase: null });
-  assert.deepEqual([calm[1].foot, calm[3].value, calm[3].sub], ['Boven de buffer', 'Blijft boven nul', '']);
+  assert.deepEqual([calm[1].foot, calm[3].value, calm[3].sub, calm[3].valueTone], ['Boven de buffer', 'blijft boven nul', 'zonder nieuwe verkoop', 'normal']);
+  assert.equal(view.zeroText({ mode: 'relative', zeroBase: '2027-01-25' }), 'lager dan vandaag op 25 jan');
+  assert.equal(view.zeroText({ mode: 'relative', zeroBase: null }), 'niet lager dan vandaag');
 });
 
 test('the chart: past line runs into today, markers and pins', () => {
@@ -199,8 +201,8 @@ test('the register: groups per month, filters, the summary line, CSV', () => {
   const groups = view.registerGroups(base, 'all', null);
   assert.deepEqual(groups.map((group) => group.label), ['Oktober', 'November', 'December', 'Januari ’27', 'Februari ’27', 'Maart ’27', 'April ’27']);
   assert.equal(groups.reduce((sum, group) => sum + group.rows.length, 0), counts.all - 10);
-  assert.equal(view.groupSummary(groups[0]), '6 bewegingen · in € 8.141 · uit − € 8.718 · laagste € 31.789 · einde € 31.789');
-  assert.deepEqual(view.groupSummaryParts(groups[0]), { lead: '6 bewegingen · in € 8.141 · uit − € 8.718 · ', lowest: 'laagste € 31.789', end: ' · einde € 31.789' });
+  /* The header says what the rows shown add up to; laagste and einde stay in the strip and Per maand (design D-K2). */
+  assert.equal(view.groupSummary(groups[0]), '6 bewegingen · in € 8.141 · uit − € 8.718');
   assert.deepEqual(groups.map((group) => group.lowWarn), [false, false, false, true, true, true, true], 'laagste goes amber from January, under the buffer');
   const out = view.registerGroups(base, 'out', null);
   assert.ok(out.every((group) => group.rows.every((row) => row.amountEur < 0)));
@@ -249,16 +251,18 @@ test('data quality, rule switches and the reconciliation note', () => {
   assert.deepEqual(switches.map((row) => [row.rule, row.on]), [['invoices', true], ['tica', true], ['quotes', true], ['openQuotes', false], ['partner', true], ['containers', true], ['costs', true], ['vat', false]]);
   assert.equal(switches[3].sub, 'waarde × 40 % conversie (12 mnd)');
   assert.equal(switches[0].totalEur, base.ruleTotals.invoices);
-  assert.equal(view.ruleSummary(switches), '6 van 8 regels aan · open offertes uit');
-  assert.equal(view.ruleSummary(view.ruleSwitches(base, DEFAULT_CASH_LOCATION, 40)), '7 van 8 regels aan · open offertes uit');
-  assert.equal(view.ruleSummary(view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, openQuotesOn: true }, 40)), '8 van 8 regels aan · open offertes aan');
-  assert.equal(plain(view.monthTableNote(exampleB(), base)), 'Gebeurd = banktransacties per koppeling; 1 nog te koppelen (− € 9.000) staan bij Kosten of Klanten. '
-    + 'Klanten · overig = facturen, offertes, partnervoorschotten en de huidige voorraad. Btw-aangifte Q3 − € 7.412 (25 okt) · Btw-aangifte Q4 − € 4.851 (25 jan)');
+  /* Seven rules besides the open quotes, which the sentence names once (design D-K8). */
+  assert.equal(view.ruleSummary(switches), '6 van 7 regels aan · open offertes uit');
+  assert.equal(view.ruleSummary(view.ruleSwitches(base, DEFAULT_CASH_LOCATION, 40)), '7 van 7 regels aan · open offertes uit');
+  assert.equal(view.ruleSummary(view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, openQuotesOn: true }, 40)), '7 van 7 regels aan · open offertes aan');
+  /* The note under Per maand is the link to what is still to link; the rest is in "Hoe gerekend" (design C.7). */
+  assert.equal(plain(view.monthTableNote(exampleB(), base)), '1 nog te koppelen (− € 9.000)');
+  assert.equal(view.monthTableNote(exampleB({ bankLines: BANK_LINES.map((row) => ({ ...row, allocated: true })) }), base), '');
 });
 
 test('Per maand: rows, cells and the lines behind a month', () => {
   const table = view.monthTable(base);
-  assert.deepEqual(table.rows.map((row) => row.label), ['Begin', 'Containers · uit', 'Containers · terug', 'Klanten · overig', 'Btw', 'Kosten', 'Einde', 'Laagste']);
+  assert.deepEqual(table.rows.map((row) => row.label), ['Begin', 'Containers · uit', 'Verkoop containers (scenario)', 'Klanten en voorraad', 'Btw', 'Kosten', 'Einde', 'Laagste']);
   assert.equal(table.months.length, base.months.length);
   assert.equal(view.tableCell(0), '—');
   assert.equal(view.tableCell(null), '—');

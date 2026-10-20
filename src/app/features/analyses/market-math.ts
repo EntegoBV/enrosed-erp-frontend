@@ -1,9 +1,13 @@
+import type { PurchaseOrderView } from '../../core/api/models';
+
 /**
  * Pure arithmetic behind the market page: calendar baselines, windows,
- * pair inversion, freight horizons and the buying-power narrative.
+ * pair inversion, freight horizons and the buying-power narrative, and the
+ * container rows behind its two drill-downs (design/analyses2 §B.9).
  *
  * Everything here is deterministic over plain arrays, so the page stays a
  * thin view and the node tests can pin the behaviour without a browser.
+ * Type-only imports.
  */
 
 export type Months = 1 | 3 | 6 | 12;
@@ -35,6 +39,9 @@ export interface FxInsight {
   verdict: string;
   tone: 'ok' | 'warn' | 'neutral';
   lead: string;
+  /** "Per $10.000 aan inkoop: ongeveer € 412 minder; per ¥10.000 … dan op …"; null without a fair baseline. */
+  money: string | null;
+  /** The dollar and yuan apart and where the euro stands in its range (the page folds them). */
   lines: string[];
   horizons: { label: string; months: Months; pct: number | null; usd: number | null; cny: number | null }[];
 }
@@ -292,6 +299,7 @@ export function fxInsight(rates: FxRates, months: Months): FxInsight | null {
       verdict: 'Onvoldoende historiek',
       tone: 'neutral',
       lead: `Voor ${period} zijn nog niet genoeg ECB-koersen beschikbaar.`,
+      money: null,
       lines: ['Kies een kortere periode om de vergelijking te zien.'],
       horizons,
     };
@@ -390,7 +398,7 @@ export function fxInsight(rates: FxRates, months: Months): FxInsight | null {
         `${eurPerTenKCny > 0 ? 'minder' : 'meer'}`;
     }
   }
-  lines.push(`${money} dan op ${baselineDate}.`);
+  money = `${money} dan op ${baselineDate}.`;
 
   let verdict: string;
   let tone: FxInsight['tone'];
@@ -408,7 +416,7 @@ export function fxInsight(rates: FxRates, months: Months): FxInsight | null {
     tone = 'neutral';
     lead = `Jullie koopkracht ligt op het niveau van ${baselineDate} (gemiddeld over dollar en yuan).`;
   }
-  return { verdict, tone, lead, lines, horizons };
+  return { verdict, tone, lead, money, lines, horizons };
 }
 
 /** Narrative for a sparse freight log: direction of the last weeks and the longest fair comparison. */
@@ -452,4 +460,109 @@ export function freightNarrative(entries: DatedSeries, unit: 'usd' | 'points'): 
 export function quoteVsMarketPct(ownUsd: number, marketUsd: number): number | null {
   if (!Number.isFinite(ownUsd) || !Number.isFinite(marketUsd) || marketUsd <= 0) return null;
   return Math.round(((ownUsd - marketUsd) / marketUsd) * 1000) / 10;
+}
+
+/* ------------------------------------------------- freight against its week */
+
+/**
+ * The market's point of a day: the last entry on or before `day`, at most
+ * `maxDays` earlier (a weekly index publishes once a week); null when the
+ * series has none in that window. `series` runs oldest first.
+ */
+export function marketOnOrBefore(series: DatedSeries, day: string, maxDays = 14): { date: string; value: number } | null {
+  const at = dayTime(day);
+  if (Number.isNaN(at)) return null;
+  for (let index = series.dates.length - 1; index >= 0; index--) {
+    const time = dayTime(series.dates[index]);
+    if (Number.isNaN(time) || time > at) continue;
+    if (at - time > maxDays * DAY_MS) return null;
+    const value = series.values[index];
+    return Number.isFinite(value) && value > 0 ? { date: series.dates[index], value } : null;
+  }
+  return null;
+}
+
+export interface QuoteVsMarket { route: string; quotedOn: string; ownUsd: number; benchmark: string; marketOn: string; marketUsd: number; pct: number }
+
+/**
+ * Our latest forwarder quote against the market of the same week (design
+ * D-M1): the first market in `markets` (Drewry WCI Shanghai → Rotterdam,
+ * then FBX11) with a point on or before the quote day, at most `maxDays`
+ * before it. Never the newest market point: that mixes months of movement.
+ */
+export function alignedQuoteVsMarket(own: readonly { route: string; quotedOn: string; usd: number }[],
+  markets: readonly { name: string; series: DatedSeries }[], maxDays = 14): QuoteVsMarket | null {
+  const latest = [...own].sort((left, right) => right.quotedOn.localeCompare(left.quotedOn))[0];
+  if (!latest) return null;
+  for (const market of markets) {
+    const point = marketOnOrBefore(market.series, latest.quotedOn, maxDays);
+    const pct = point ? quoteVsMarketPct(latest.usd, point.value) : null;
+    if (point && pct !== null) {
+      return { route: latest.route, quotedOn: latest.quotedOn, ownUsd: latest.usd, benchmark: market.name, marketOn: point.date, marketUsd: point.value, pct };
+    }
+  }
+  return null;
+}
+
+/* ------------------------------------------------ the containers behind it */
+
+const OPEN_STATUSES: ReadonlySet<string> = new Set(['CONCEPT', 'BESTELD', 'ONDERWEG']);
+const cents = (value: number): number => Math.round((Number.isFinite(value) ? value : 0) * 100);
+
+export interface UsdContainerRow {
+  id: number; number: string; alias: string | null; status: PurchaseOrderView['order']['status'];
+  goodsUsd: number;
+  /** The order's goods rate as dollars for € 1 (the page's direction); null without a rate. */
+  orderRate: number | null;
+  /** The goods in euro as the order computed them, and at today's ECB rate; diff = today − order. */
+  eurOrder: number; eurToday: number; diffEur: number;
+}
+
+/**
+ * Koopkracht › "Open containers": every open container (concept, ordered, on
+ * the way; not archived) with goods in dollar, at the order's rate and at
+ * today's ECB rate (`latestUsdPerEur`, dollars for € 1). Cents.
+ */
+export function usdContainerRows(views: readonly PurchaseOrderView[], latestUsdPerEur: number): UsdContainerRow[] {
+  if (!(latestUsdPerEur > 0)) return [];
+  return views.filter((view) => !view.order.archivedAt && OPEN_STATUSES.has(view.order.status) && (view.costing?.totals?.goodsUsd ?? 0) > 0)
+    .map((view) => {
+      const goodsUsd = view.costing.totals.goodsUsd;
+      const eurOrder = cents(view.costing.totals.goodsEur);
+      const eurToday = cents(goodsUsd / latestUsdPerEur);
+      const rate = view.order.usdToEurGoods;
+      return { id: view.order.id, number: view.order.number, alias: view.order.alias, status: view.order.status, goodsUsd,
+        orderRate: rate > 0 ? 1 / rate : null, eurOrder: eurOrder / 100, eurToday: eurToday / 100, diffEur: (eurToday - eurOrder) / 100 };
+    });
+}
+
+export interface FreightContainerRow {
+  id: number; number: string; alias: string | null; status: PurchaseOrderView['order']['status'];
+  route: string;
+  /** The day it sailed, else the order date (`shipped` false). */
+  day: string; shipped: boolean;
+  freightUsd: number;
+  /** Drewry that week (marketOnOrBefore); null when it published nothing in the 14 days before. */
+  marketUsd: number | null; marketOn: string | null;
+  /** + 36,3 = we paid 36,3 % above the market of that week. */
+  diffPct: number | null;
+}
+
+/**
+ * Zeevracht › "Per container": every container with sea freight of our own
+ * in dollar (not via the supplier, not archived) against the market of its
+ * week, newest first.
+ */
+export function freightContainerRows(views: readonly PurchaseOrderView[], market: DatedSeries, maxDays = 14): FreightContainerRow[] {
+  return views.filter((view) => !view.order.archivedAt && !view.order.freightViaSupplier && view.order.freightUsd > 0)
+    .map((view) => {
+      const order = view.order;
+      const day = (order.shippedOn || order.orderDate).slice(0, 10);
+      const point = marketOnOrBefore(market, day, maxDays);
+      return { id: order.id, number: order.number, alias: order.alias, status: order.status,
+        route: [order.departurePort, order.destinationPort].filter(Boolean).join(' → '), day, shipped: !!order.shippedOn,
+        freightUsd: order.freightUsd, marketUsd: point?.value ?? null, marketOn: point?.date ?? null,
+        diffPct: point ? quoteVsMarketPct(order.freightUsd, point.value) : null };
+    })
+    .sort((left, right) => right.day.localeCompare(left.day) || right.id - left.id);
 }

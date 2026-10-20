@@ -143,11 +143,15 @@ test('fx insight averages dollar and yuan and reads the verdict from the selecte
   assert.equal(insight!.verdict, 'Sterker dan toen');
   assert.equal(insight!.tone, 'ok');
   assert.match(insight!.lead, /sterker/);
-  assert.ok(insight!.lines.some((line) => line.includes('Per $10.000')));
+  /* The money line stands apart (shown), the dollar and yuan lines fold (design C.8). */
+  assert.match(insight!.money!, /^Per \$10\.000 aan inkoop: ongeveer € [\d.]+ minder; per ¥10\.000 ongeveer € [\d.]+ minder dan op /);
+  assert.ok(!insight!.lines.some((line) => line.includes('Per $10.000')));
+  assert.ok(insight!.lines.length >= 1);
   const twelve = insight!.horizons.find((horizon) => horizon.months === 12)!;
   assert.ok(twelve.pct! > 3 && twelve.pct! < 5, `mean of the two currencies, got ${twelve.pct}`);
   const short = fxInsight({ dates: dates.slice(-5), usd: usd.slice(-5), cny: cny.slice(-5) }, 1);
   assert.equal(short?.verdict, 'Onvoldoende historiek');
+  assert.equal(short?.money, null);
 });
 
 test('our latest quote against the market: + 36 % above, − below, nothing without a market price', async () => {

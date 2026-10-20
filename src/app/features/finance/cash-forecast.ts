@@ -148,7 +148,9 @@ export interface ResolvedChoice {
 }
 export interface ScenarioSource { id: 'stock' | number; label: string; sub: string; status: 'STOCK' | 'CONCEPT' | 'BESTELD' | 'ONDERWEG';
   included: boolean; locked: boolean; lockedText: string | null; choice: ResolvedChoice | null;
-  units: number; costEur: number; backEur: number; cashInHorizonEur: number; }
+  units: number; costEur: number; backEur: number; cashInHorizonEur: number;
+  /** The stock's sales plan per product (Analyses drill "Huidige voorraad"): Σ backEur = backEur. Only on the stock. */
+  products?: { productId: number | null; name: string; units: number; costUnitEur: number; priceUnitEur: number; backEur: number }[]; }
 export interface LikelyPaidMatch { lineId: number; itemKey: string; orderId: number | null; title: string; amountEur: number;
   day: Iso; account: string; counterparty: string; reference: string; reason: 'reference' | 'party'; }
 export interface ForecastDay { day: Iso; baseEur: number; withEur: number; slowEur: number; inEur: number; outEur: number; }
@@ -174,6 +176,8 @@ export interface CashForecast {
   tightWith: TightPeriod[]; tightSlow: TightPeriod[]; pins: ForecastPin[];
   months: ForecastMonth[]; register: RegisterRow[];
   ruleTotals: Record<ForecastRule, number>;     // BASE items of the rule within the horizon, also when switched off
+  /** The items behind each rule total (likely-paid ones left out, also when the rule is off), by date: Σ = ruleTotals. */
+  ruleItems: Record<ForecastRule, ForecastItem[]>;
   scenario: { sources: ScenarioSource[]; salesExclEur: number; salesVatEur: number; inHorizonEur: number;
     vatPaidEur: number; marginEur: number; afterHorizonEur: number; };
   reconciliation: ForecastReconciliation;
@@ -1081,7 +1085,7 @@ function scenarioOf(input: CashForecastInput, options: ForecastOptions): Scenari
     if (included) { items.push(...plan.items); slow.push(...plan.slow); }
     sources.push({ id: 'stock', label: 'Huidige voorraad', sub: `${grouped(plan.units)} st · verkocht in ${choice.sellWeeks} w`, status: 'STOCK',
       included, locked: false, lockedText: null, choice: { ...choice, included }, units: plan.units, costEur: toEur(plan.costCents),
-      backEur: toEur(plan.backCents), cashInHorizonEur: included ? inHorizon(plan.items) : 0 });
+      backEur: toEur(plan.backCents), cashInHorizonEur: included ? inHorizon(plan.items) : 0, products: plan.products });
   }
   const orders = input.orders.filter((order) => !order.archived && (order.status === 'BESTELD' || order.status === 'ONDERWEG' || order.status === 'CONCEPT'))
     .sort((left, right) => Number(left.partner) - Number(right.partner) || STATUS_RANK[left.status] - STATUS_RANK[right.status]
@@ -1439,16 +1443,19 @@ export function buildCashForecast(input: CashForecastInput, options: ForecastOpt
   const dayRows: ForecastDay[] = days.map((day, index) => ({ day, baseEur: toEur(core.baseValues[index]), withEur: toEur(core.withValues[index]),
     slowEur: toEur(core.slowValues[index]), inEur: toEur(flows.get(day)?.in ?? 0), outEur: toEur(flows.get(day)?.out ?? 0) }));
 
-  /* Rule totals: every rule's BASE items in the horizon, also the switched-off ones (and the VAT rows computed as if on). */
-  const ruleTotals = Object.fromEntries(RULES.map((rule) => [rule, 0])) as Record<ForecastRule, number>;
+  /* Rule totals: every rule's BASE items in the horizon, also the switched-off ones (and the VAT rows computed as if on);
+     the items stay beside them, so a total opens the list it adds up (Analyses drill "Wat telt mee"). */
+  const ruleItems = Object.fromEntries(RULES.map((rule) => [rule, [] as ForecastItem[]])) as Record<ForecastRule, ForecastItem[]>;
   const excludedKeys = new Set(core.base.excluded.map((item) => item.key));
   for (const item of core.base.generated) {
     if (item.date > horizonEnd || excludedKeys.has(item.key)) continue;
     const rule: ForecastRule | null = item.kind === 'OPEN_QUOTE' ? 'openQuotes' : item.rule;
-    if (rule) ruleTotals[rule] = toEur(toCents(ruleTotals[rule]) + toCents(item.amountEur));
+    if (rule) ruleItems[rule].push(item);
   }
   const vatRows = options.rulesOff.includes('vat') ? baseVatItems(input, core.quarters, core.base.active) : core.baseVat;
-  ruleTotals.vat = toEur(sumCents(vatRows.filter((item) => item.date <= horizonEnd)));
+  ruleItems.vat = vatRows.filter((item) => item.date <= horizonEnd);
+  for (const rule of RULES) ruleItems[rule].sort(compareItems);
+  const ruleTotals = Object.fromEntries(RULES.map((rule) => [rule, toEur(sumCents(ruleItems[rule]))])) as Record<ForecastRule, number>;
 
   return {
     today, horizonEnd, mode: core.absolute ? 'absolute' : 'relative', bufferEur: toEur(bufferCents),
@@ -1469,7 +1476,7 @@ export function buildCashForecast(input: CashForecastInput, options: ForecastOpt
     pins: pinsOf(core.withSet, horizonEnd),
     months: monthsOf(core, bank),
     register: registerOf(core, bank),
-    ruleTotals,
+    ruleTotals, ruleItems,
     scenario: {
       sources: core.scenario.sources,
       salesExclEur: toEur(scenarioIn.reduce((sum, item) => sum + toCents(item.amountEur) - toCents(item.vatEur), 0)),

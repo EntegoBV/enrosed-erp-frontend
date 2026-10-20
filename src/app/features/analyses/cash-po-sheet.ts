@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type { CostBasis, PriceMode, PurchaseOrderForecastWrite } from '../../core/api/models';
 import { CashChart, CashChartMarker, CashChartSeries } from '../../shared/cash-chart';
@@ -8,7 +9,8 @@ import { Segmented, SegmentOption } from '../../shared/segmented';
 import type { ChoiceOrigin, PoFlowRow, ResolvedChoice } from '../finance/cash-forecast';
 import { dayMon, eurWhole } from '../finance/cash-format';
 import { CashState } from './cash-state';
-import { likelyPaidText, marginOfMarkup, pct, peakMonth, signedWhole } from './cash-view';
+import { likelyPaidText, lineLink, marginOfMarkup, pct, peakMonth, signedWhole } from './cash-view';
+import type { CashLink } from './cash-view';
 
 const PRICE_OPTIONS: SegmentOption[] = [
   { id: 'MARKUP_PCT', label: 'Opslag %' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijst' }, { id: 'HISTORIC', label: 'Historisch' },
@@ -25,7 +27,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
 @Component({
   selector: 'app-cash-po-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CashChart, DateField, Icon, RouterLink, Segmented],
+  imports: [CashChart, DateField, Icon, NgTemplateOutlet, RouterLink, Segmented],
   template: `
     @if (sheet(); as s) {
       <div class="cf-po" [class.cf-po--ios]="ios()">
@@ -158,7 +160,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
             <span class="cf-po__failed">Keuzes konden niet laden</span>
             <button class="wk-link" type="button" [disabled]="state.sources.refreshing()" (click)="state.retryChoices()">Opnieuw</button>
           } @else if (state.cashRound()) {
-            <span>Bewaard bij de container · ook op de desk.</span>
+            <span>Bewaard bij de container.</span>
             @if (storedRow()) { <button class="wk-link" type="button" (click)="state.resetChoice(s.orderId)">Terug naar standaard</button> }
           } @else {
             <span>Bewaren bij de container kan zodra de server bijgewerkt is.</span>
@@ -168,12 +170,13 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
         <section class="cf-po__sec" aria-label="Geldstroom">
           <h4 class="cf-po__sec-title">Geldstroom <small>excl. btw</small></h4>
           <div class="cf-flows">
+            <!-- A paid row opens its bank line, an open one the container's payments (design C.7). -->
             @for (flow of s.flows; track $index) {
-              <div class="cf-flow" [attr.data-kind]="flow.kind">
-                <span class="cf-flow__date">{{ flowDate(flow) }}</span>
-                <span class="cf-flow__body"><b>{{ flow.title }}</b><small>{{ flow.status }}</small></span>
-                <span class="cf-flow__amt" [class.is-in]="flow.kind === 'sales'">{{ flow.kind === 'internal' ? '(' + whole(flow.amountEur) + ')' : signed(flow.amountEur) }}</span>
-              </div>
+              @if (flowLink(flow, s.orderId); as link) {
+                <a class="cf-flow cf-flow--link" [attr.data-kind]="flow.kind" [routerLink]="link.path" [queryParams]="link.query"><ng-container *ngTemplateOutlet="flowBody; context: { $implicit: flow }" /></a>
+              } @else {
+                <div class="cf-flow" [attr.data-kind]="flow.kind"><ng-container *ngTemplateOutlet="flowBody; context: { $implicit: flow }" /></div>
+              }
               @if (flow.kind === 'likely' && likelyFor(flow); as match) {
                 <div class="cf-likely" role="note">
                   <p>{{ likelyText(match) }}</p>
@@ -193,10 +196,17 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
             <h4 class="cf-po__sec-title">Per product <small>uit de nacalculatie</small></h4>
             <div class="cf-products">
               @for (product of s.products; track $index) {
-                <div class="cf-product">
-                  <span><b>{{ product.name }}</b><small>{{ units(product.units) }} st · kost {{ unitEur(product.costUnitEur) }} → {{ unitEur(product.priceUnitEur) }}</small></span>
-                  <strong>{{ whole(product.backEur) }}</strong>
-                </div>
+                @if (product.productId !== null) {
+                  <a class="cf-product cf-product--link" [routerLink]="['/products', product.productId]">
+                    <span><b>{{ product.name }}</b><small>{{ units(product.units) }} st · kost {{ unitEur(product.costUnitEur) }} → {{ unitEur(product.priceUnitEur) }}</small></span>
+                    <strong>{{ whole(product.backEur) }}</strong>
+                  </a>
+                } @else {
+                  <div class="cf-product">
+                    <span><b>{{ product.name }}</b><small>{{ units(product.units) }} st · kost {{ unitEur(product.costUnitEur) }} → {{ unitEur(product.priceUnitEur) }}</small></span>
+                    <strong>{{ whole(product.backEur) }}</strong>
+                  </div>
+                }
               }
             </div>
             <p class="cf-po__note">Kost per stuk per product, geen containergemiddelde.</p>
@@ -218,6 +228,12 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
         <p class="cf-po__note">{{ state.input() ? 'Deze inkooporder staat niet (meer) in de lijst.' : 'Laden…' }}</p>
       </div>
     }
+
+    <ng-template #flowBody let-flow>
+      <span class="cf-flow__date">{{ flowDate(flow) }}</span>
+      <span class="cf-flow__body"><b>{{ flow.title }}</b><small>{{ flow.status }}</small></span>
+      <span class="cf-flow__amt" [class.is-in]="flow.kind === 'sales'">{{ flow.kind === 'internal' ? '(' + whole(flow.amountEur) + ')' : signed(flow.amountEur) }}</span>
+    </ng-template>
   `,
 })
 export class CashPoSheet {
@@ -299,6 +315,12 @@ export class CashPoSheet {
   flowDate(flow: PoFlowRow): string {
     if (!flow.date) return '—';
     return `${flow.approx ? '~' : ''}${dayMon(flow.date)}`;
+  }
+
+  /** A paid row with its bank line → the transaction; an open term → the container's payments; the rest stays text. */
+  flowLink(flow: PoFlowRow, orderId: number): CashLink | null {
+    if (flow.kind === 'paid') return flow.lineId !== null ? lineLink(flow.lineId) : null;
+    return flow.kind === 'open' ? { path: ['/costs'], query: { container: orderId }, po: null } : null;
   }
 
   likelyFor(flow: PoFlowRow) {

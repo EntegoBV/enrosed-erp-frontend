@@ -53,22 +53,23 @@ export function monthName(key: string, today: Iso): string {
 
 export interface KrapBanner { kind: 'tight' | 'slow' | 'relative'; text: string; from: Iso | null; to: Iso | null; }
 
-/** The desk banner: the first krap period with the scenario, else the first of the slow band; the relative mode replaces it. */
+/**
+ * The desk banner: the first krap period with the scenario and what caused it, else the first of the slow band; the
+ * relative mode replaces it. The lowest stand and the day without sales are the figures right below (design C.7).
+ */
 export function krapBanner(forecast: CashForecast): KrapBanner | null {
   if (forecast.mode === 'relative') {
     return { kind: 'relative', text: `Saldo ontbreekt voor ${forecast.missingAccounts.join(', ')}: de prognose toont het verschil t.o.v. vandaag.`, from: null, to: null };
   }
-  const zero = forecast.zeroBase ? ` Zonder nieuwe verkoop onder nul vanaf ${weekdayDayMonth(forecast.zeroBase)}.` : '';
   const tight = forecast.tightWith[0];
   if (tight) {
     const causes = tight.causes.length ? `, na ${tight.causes[0]}${tight.causes[1] ? ` en ${tight.causes[1]}` : ''}` : '';
-    return { kind: 'tight', from: tight.from, to: tight.to,
-      text: keepAmounts(`Krap van ${dayMon(tight.from)} tot ${dayMon(tight.to)}: laagste stand ${eurWhole(tight.lowestEur)} op ${weekdayDayMonth(tight.lowestDay)}${causes}.${zero}`) };
+    return { kind: 'tight', from: tight.from, to: tight.to, text: keepAmounts(`Krap van ${dayMon(tight.from)} tot ${dayMon(tight.to)}${causes}.`) };
   }
   const slow = forecast.tightSlow[0];
   if (slow) {
     return { kind: 'slow', from: slow.from, to: slow.to,
-      text: keepAmounts(`Als de verkoop 4 weken trager loopt: krap van ${dayMon(slow.from)} tot ${dayMon(slow.to)}, laagste stand ${eurWhole(slow.lowestEur)} op ${weekdayDayMonth(slow.lowestDay)}.${zero}`) };
+      text: keepAmounts(`Als de verkoop 4 weken trager loopt: krap van ${dayMon(slow.from)} tot ${dayMon(slow.to)}, laagste stand ${eurWhole(slow.lowestEur)} op ${weekdayDayMonth(slow.lowestDay)}.`) };
   }
   return null;
 }
@@ -98,13 +99,20 @@ function checkedText(forecast: CashForecast): { text: string; warn: boolean } {
   return { text: oldest === 0 ? 'Gecontroleerd vandaag' : `Gecontroleerd ${oldest} d geleden`, warn: false };
 }
 
+/** "Zonder verkoop" in words: 'onder nul op 25 jan', 'blijft boven nul' (relative mode: against today). */
+export function zeroText(forecast: Pick<CashForecast, 'mode' | 'zeroBase'>): string {
+  const relative = forecast.mode === 'relative';
+  if (forecast.zeroBase) return `${relative ? 'lager dan vandaag' : 'onder nul'} op ${dayMon(forecast.zeroBase)}`;
+  return relative ? 'niet lager dan vandaag' : 'blijft boven nul';
+}
+
 /** The tight periods as one short text: '1–13 dec, 28 jan', at most three. */
 export function periodsText(periods: readonly { from: Iso; to: Iso }[]): string {
   const shown = periods.slice(0, 3).map((period) => periodText(period.from, period.to));
   return shown.join(', ') + (periods.length > 3 ? ` +${periods.length - 3}` : '');
 }
 
-/** The five cards of §4.2 (whole euros). */
+/** The five cards of §4.2 (whole euros); the desk shows four (Scenario binnen is its panel's "Binnen op de bank"). */
 export function kpiCards(forecast: CashForecast): KpiCard[] {
   const end = dayMon(forecast.horizonEnd);
   const checked = checkedText(forecast);
@@ -120,9 +128,7 @@ export function kpiCards(forecast: CashForecast): KpiCard[] {
       valueTone: forecast.lowestWith.eur < 0 ? 'danger' : underBuffer(forecast, forecast.lowestWith.eur) ? 'warn' : 'normal' },
     { id: 'end', label: `Op ${end}`, value: eurWhole(forecast.endWithEur), sub: 'met scenario',
       foot: `T.o.v. vandaag ${signedWhole(forecast.endWithEur - forecast.startEur)}`, footWarn: false, valueTone: forecast.endWithEur < 0 ? 'danger' : 'normal' },
-    { id: 'zero', label: 'Zonder nieuwe verkoop', value: forecast.zeroBase ? dayMon(forecast.zeroBase) : relative ? 'Niet lager dan vandaag' : 'Blijft boven nul',
-      kind: forecast.zeroBase ? undefined : 'text',
-      sub: forecast.zeroBase ? (relative ? 'lager dan vandaag vanaf die dag' : 'onder nul vanaf die dag') : '', foot: `Op ${end} ${eurWhole(forecast.endBaseEur)}`, footWarn: false,
+    { id: 'zero', label: 'Zonder verkoop', value: zeroText(forecast), kind: 'text', sub: 'zonder nieuwe verkoop', foot: `op ${end} ${eurWhole(forecast.endBaseEur)}`, footWarn: false,
       valueTone: forecast.zeroBase ? 'danger' : 'normal' },
     { id: 'scenario', label: 'Scenario binnen', value: `+ ${eurWhole(forecast.scenario.inHorizonEur)}`, sub: `tot ${end} · incl. btw`,
       foot: `Marge op goederen ${eurWhole(forecast.scenario.marginEur)} · ${included} ${included === 1 ? 'bron' : 'bronnen'}`, footWarn: false,
@@ -265,17 +271,13 @@ export function registerGroups(forecast: CashForecast, filter: RegisterFilter, p
   return [...groups.values()];
 }
 
-/** The month line in three parts, so the page can mark 'laagste' amber under the buffer (`lowWarn`). */
-export function groupSummaryParts(group: RegisterGroup): { lead: string; lowest: string; end: string } {
-  const n = group.rows.length;
-  return { lead: `${n} ${n === 1 ? 'beweging' : 'bewegingen'} · in ${eurWhole(group.inEur)} · uit ${eurWhole(group.outEur)} · `,
-    lowest: `laagste ${eurWhole(group.lowestEur)}`, end: ` · einde ${eurWhole(group.endEur)}` };
-}
-
-/** '4 bewegingen · in € 8.319 · uit − € 20.435 · laagste € 46.296 · einde € 46.296' (the name goes in front). */
+/**
+ * '4 bewegingen · in € 8.319 · uit − € 20.435' (the name goes in front): the rows shown. The lowest and the end stay
+ * in the month strip and Per maand, which count the month's bank part too (design D-K2).
+ */
 export function groupSummary(group: RegisterGroup): string {
-  const parts = groupSummaryParts(group);
-  return `${parts.lead}${parts.lowest}${parts.end}`;
+  const n = group.rows.length;
+  return `${n} ${n === 1 ? 'beweging' : 'bewegingen'} · in ${eurWhole(group.inEur)} · uit ${eurWhole(group.outEur)}`;
 }
 
 /** The phone row's second line: 'di 20 okt · Vaste kost · vast'. */
@@ -385,11 +387,11 @@ export function ruleSwitches(forecast: CashForecast, location: CashLocation, con
   ];
 }
 
-/** '6 van 7 regels aan · open offertes uit'. */
+/** '6 van 7 regels aan · open offertes uit': the open quotes are said once, after the seven other rules. */
 export function ruleSummary(switches: readonly RuleSwitch[]): string {
-  const on = switches.filter((row) => row.on).length;
+  const rules = switches.filter((row) => row.rule !== 'openQuotes');
   const open = switches.find((row) => row.rule === 'openQuotes')?.on;
-  return `${on} van ${switches.length} regels aan · open offertes ${open ? 'aan' : 'uit'}`;
+  return `${rules.filter((row) => row.on).length} van ${rules.length} regels aan · open offertes ${open ? 'aan' : 'uit'}`;
 }
 
 /* ----------------------------------------------------------------- scenario */
@@ -498,8 +500,8 @@ export function monthTable(forecast: CashForecast): { months: ForecastMonth[]; r
   const rows: MonthTableRow[] = [
     { id: 'begin', label: 'Begin', values: pick((month) => month.beginEur) },
     { id: 'containersOut', label: 'Containers · uit', values: pick((month) => month.containersOutEur) },
-    { id: 'containersBack', label: 'Containers · terug', values: pick((month) => month.containersBackEur) },
-    { id: 'customersOther', label: 'Klanten · overig', values: pick((month) => month.customersOtherEur) },
+    { id: 'containersBack', label: 'Verkoop containers (scenario)', values: pick((month) => month.containersBackEur) },
+    { id: 'customersOther', label: 'Klanten en voorraad', values: pick((month) => month.customersOtherEur) },
     { id: 'vat', label: 'Btw', values: pick((month) => month.vatEur) },
     { id: 'costs', label: 'Kosten', values: pick((month) => month.costsEur) },
     { id: 'other', label: 'Andere', values: pick((month) => month.otherEur) },
@@ -514,28 +516,24 @@ export function tableCell(value: number | null): string {
   return value === null || Math.round(value) === 0 ? '—' : eurWhole(value);
 }
 
-/** The note under "Per maand": what is still to link in the past months, what the customer row holds, the VAT deadlines. */
+/**
+ * The note under "Per maand", a link to the bank movements: '1 nog te koppelen (− € 9.000)' in the past months, ''
+ * when nothing is. What the rows hold and the VAT returns are in "Hoe gerekend" and Wat telt mee (design C.7).
+ */
 export function monthTableNote(input: CashForecastInput, forecast: CashForecast): string {
   const counted = countedKeys(input);
   const pastStart = forecast.months.find((month) => month.past)?.key.slice(0, 7);
   const open = pastStart ? input.bankLines.filter((line) => counted.has(line.account) && !line.allocated && line.classification == null
     && line.day.slice(0, 7) >= pastStart && line.day <= forecast.today) : [];
-  const openEur = euros(open.reduce((sum, line) => sum + cents(line.amountEur), 0));
-  const quarters = new Map<string, { q: number; date: Iso; cents: number }>();
-  for (const item of forecast.items) {
-    if (item.kind !== 'VAT' || item.source.type !== 'vat') continue;
-    const key = `${item.source.year}-${item.source.quarter}`;
-    const row = quarters.get(key) ?? { q: item.source.quarter, date: item.date, cents: 0 };
-    row.cents += cents(item.amountEur);
-    quarters.set(key, row);
-  }
-  const vat = [...quarters.values()].map((row) => `Btw-aangifte Q${row.q} ${eurWhole(euros(row.cents))} (${dayMon(row.date)})`).join(' · ');
-  return keepAmounts(`Gebeurd = banktransacties per koppeling; ${open.length} nog te koppelen (${eurWhole(openEur)}) staan bij Kosten of Klanten. `
-    + `Klanten · overig = facturen, offertes, partnervoorschotten en de huidige voorraad.${vat ? ` ${vat}` : ''}`);
+  if (!open.length) return '';
+  return keepAmounts(`${open.length} nog te koppelen (${eurWhole(euros(open.reduce((sum, line) => sum + cents(line.amountEur), 0)))})`);
 }
 
+/** One line behind a month: a bank line (`lineId`) or a forecast item. */
+export interface MonthLine { day: Iso; title: string; sub: string; amountEur: number; lineId: number | null; item: ForecastItem | null; }
+
 /** The lines behind one month: bank lines of the counted accounts for a past month, items for a future one. */
-export function monthLines(input: CashForecastInput, forecast: CashForecast, month: ForecastMonth): { day: Iso; title: string; sub: string; amountEur: number; lineId: number | null; item: ForecastItem | null }[] {
+export function monthLines(input: CashForecastInput, forecast: CashForecast, month: ForecastMonth): MonthLine[] {
   if (month.past) {
     const counted = countedKeys(input);
     const key = month.key.slice(0, 7);
