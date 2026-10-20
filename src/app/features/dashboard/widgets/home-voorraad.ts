@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { withAllLocations } from '../../analyses/analyses-stock';
 import { HomeData } from '../home-data';
 import { HomeWidget, amount, count } from './home-w';
 
@@ -6,7 +7,9 @@ import { HomeWidget, amount, count } from './home-w';
  * Voorraad (spec-home §6.6): the known stock cost and its pieces, the pieces
  * without a cost (only when there are any), and the coverage note when
  * pieces have no cost or products no known stock - the old home's formula,
- * the same as Analyses › Voorraad. In pieces.
+ * the same as Analyses › Voorraad, over every stock location as there
+ * (withAllLocations, design/analyses2 D-H2; the warehouse alone when the
+ * levels could not load). In pieces.
  */
 @Component({
   selector: 'app-home-voorraad',
@@ -31,7 +34,11 @@ import { HomeWidget, amount, count } from './home-w';
 export class HomeVoorraad {
   readonly data = inject(HomeData);
   readonly variant = input<'desk' | 'phone'>('desk');
-  readonly state = computed(() => this.data.combined('voorraad'));
+  /* The first load waits for the levels too, so the figure never jumps from the warehouse to every location. */
+  readonly state = computed(() => {
+    const state = this.data.combined('voorraad');
+    return state === 'ready' && this.data.stockLevels() === undefined ? 'loading' : state;
+  });
   readonly whole = amount;
   readonly count = count;
   readonly stock = computed(() => {
@@ -39,7 +46,8 @@ export class HomeVoorraad {
     let pieces = 0;
     let unvalued = 0;
     let unknown = 0;
-    for (const product of this.data.products()) {
+    const levels = this.data.stockLevels();
+    for (const product of levels ? withAllLocations(this.data.products(), levels) : this.data.products()) {
       if (product.inventoryKnown !== true) { unknown++; continue; }
       if (product.stockQuantity <= 0) continue;
       if (product.landedCostEur == null) { unvalued += product.stockQuantity; continue; }

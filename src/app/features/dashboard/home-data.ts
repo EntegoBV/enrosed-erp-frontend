@@ -5,12 +5,14 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import { FinanceApi } from '../../core/api/finance-api';
 import type {
-  CompanyCost, Customer, IncomingPaymentRow, PartnerFinancing, Product, PurchaseOrderView, SalesOrderView, Supplier,
+  CompanyCost, Customer, IncomingPaymentRow, PartnerFinancing, Product, PurchaseOrderView, SalesOrderView, StockLevel, Supplier,
 } from '../../core/api/models';
 import { PlannerApi, PlannerStore } from '../../core/api/planner-api';
 import type { PlannerItem } from '../../core/api/planner-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { TicaApi } from '../../core/api/tica-api';
+import type { TicaAnalyticsDay } from '../../core/api/tica-api';
 import { WorkQueue } from '../../core/api/work-queue';
 import { plannedBusinessDay } from '../../shared/business-days';
 import { Ui } from '../../shared/ui';
@@ -39,8 +41,9 @@ import type { HomeCashSources } from './home-sources';
 
 /*
  * Everything the home shows, loaded and derived once (spec-home §1, §7):
- * the page data (sales, purchases, products, families, suppliers, website,
- * costs, incoming payments, partner financing, customers, planner, bell),
+ * the page data (sales with the TICA days, purchases, products with their
+ * stock per location, families, suppliers, website, costs, incoming
+ * payments, partner financing, customers, planner, bell),
  * the shared CashData with the 6-month forecast built at idle, the ranked
  * tasks (home-priority.ts), the agenda model (agenda-entries.ts) and the
  * row actions. Root, so the desk, the phone, the Agenda and Open punten
@@ -91,6 +94,7 @@ export class HomeData {
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly analytics = inject(AnalyticsApi);
+  private readonly tica = inject(TicaApi);
   private readonly plannerApi = inject(PlannerApi);
   private readonly ui = inject(Ui);
   readonly planner = inject(PlannerStore);
@@ -121,6 +125,20 @@ export class HomeData {
   readonly customers = signal<Customer[]>([]);
   /** Families (else products) not ready for the website: Website "Aanvullen" and the Ook nog row. */
   readonly catalogAttention = signal(0);
+  /**
+   * TICA's portal sales per day, fetched with the sales (design/analyses2 D-H1): Resultaat dit jaar adds them as
+   * Analyses does (withTicaResult). Its own state, outside the HomeSource set: while it loads the tile waits, a
+   * failure reads "—" on the result and the margin and is named in the status; the last good days stay.
+   */
+  readonly ticaDays = signal<TicaAnalyticsDay[]>([]);
+  readonly ticaState = signal<SourceState>('loading');
+  /**
+   * Every product's stock per location, fetched with the products (D-H2): Bekende voorraadkost counts every
+   * location, as Analyses › Voorraad (withAllLocations). Undefined until the first answer; null when it failed
+   * without an earlier answer (the warehouse figure counts then, named in the status).
+   */
+  readonly stockLevels = signal<StockLevel[] | null | undefined>(undefined);
+  private readonly levelsFailed = signal(false);
 
   private readonly states = signal<Record<HomeSource, SourceState>>(
     Object.fromEntries(PAGE_SOURCES.map((source) => [source, 'loading'])) as Record<HomeSource, SourceState>);
@@ -324,7 +342,8 @@ export class HomeData {
    */
   readonly warnings = computed(() => {
     const states = this.states();
-    return [...new Set<string>([...this.coverageParts().failed, ...OTHER_SOURCES.filter((source) => states[source] === 'failed')])];
+    return [...new Set<string>([...this.coverageParts().failed, ...OTHER_SOURCES.filter((source) => states[source] === 'failed'),
+      ...(this.ticaState() === 'failed' ? ['TICA verkopen'] : []), ...(this.levelsFailed() ? ['voorraadlocaties'] : [])])];
   });
 
   /* -------------------------------------------------------------- agenda */
@@ -457,6 +476,17 @@ export class HomeData {
       const families = want('websiteproducten') ? this.catalog.productFamilies() : null;
       await Promise.all([
         track('verkoop', () => this.salesApi.orders(), (value) => this.salesOrders.set(value)),
+        /* TICA with the sales and the locations with the products: they follow those calls' age, each with its own state. */
+        want('verkoop') ? this.tica.analytics().then(
+          (days) => land(() => { this.ticaDays.set(days); this.ticaState.set('ready'); }),
+          () => land(() => this.ticaState.set('failed'))) : Promise.resolve(),
+        want('voorraad') ? this.catalog.stockLevels().then(
+          (levels) => land(() => {
+            const ok = Array.isArray(levels);
+            this.levelsFailed.set(!ok);
+            this.stockLevels.update((last) => (ok ? levels : last ?? null));
+          }),
+          () => land(() => { this.levelsFailed.set(true); this.stockLevels.update((last) => last ?? null); })) : Promise.resolve(),
         track('inkoop', () => this.sourcing.purchaseOrders(), (value) => this.purchases.set(value)),
         track('voorraad', () => products!, (value) => this.products.set(value)),
         track('leveranciers', () => this.sourcing.suppliers(), (value) => this.suppliers.set(value)),
