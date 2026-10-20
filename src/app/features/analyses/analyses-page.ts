@@ -24,7 +24,10 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, lastSoldOn, missingCostRows, openPipelineQuotes, partnerFinancingAnalysis, resultAnalysis, salesAnalysis, salesDocumentRows, salesLineRows } from './analysis-metrics';
+import {
+  inventoryAnalysis, lastSoldOn, missingCostRows, openPipelineQuotes, partnerFinancingAnalysis, receivedContainerRows, resultAnalysis, resultCostRows, salesAnalysis,
+  salesDocumentRows, salesLineRows,
+} from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
@@ -36,7 +39,8 @@ import { MarketAnalysis } from './market-analysis';
 import { ContainerCostAnalysis } from './container-cost-analysis';
 import { purchaseExternalCost } from '../purchasing/purchase-reconciliation-metrics';
 import { WebsiteAnalytics } from './website-analytics';
-import { averageLeadDays, inDateRange, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
+import { averageLeadDays, inDateRange, receiptOrderRows, supplierReceiptPerformance, supplierScorecards } from './receipt-metrics';
+import type { SupplierScorecard } from './receipt-metrics';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { incomingMoneyTotals } from '../finance/incoming-money';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -77,7 +81,7 @@ import type { InkoopPart } from './analyses-period';
 import { Segmented } from '../../shared/segmented';
 import type { SegmentOption } from '../../shared/segmented';
 import { scrollBehavior } from '../../shared/motion';
-import type { PartnerFinancingRow, SalesProductMetric } from './analysis-metrics';
+import type { CostCharge, PartnerFinancingRow, SalesProductMetric } from './analysis-metrics';
 import { AnDrill } from './an-drill';
 import { AnDrillHost } from './drill-host';
 import type { DrillView } from './drill-model';
@@ -86,11 +90,18 @@ import {
   productView, revenueViews, ticaMonthRows, ticaUnmatchedView,
 } from './drill-sales';
 import type { FunnelStep, SalesDrillContext } from './drill-sales';
-import { zeroNoIncomingView } from './drill-stock';
-import { partnersAwaitingView, partnersUnbilledView, varianceGroups, varianceOrdersView } from './drill-purchase';
-import type { VarianceGroup } from './drill-purchase';
+import { incomingView, qualityViews, QUALITY_KEYS, reorderView, stockValueView, zeroNoIncomingView } from './drill-stock';
+import {
+  impactViews, partnersAwaitingView, partnersOpenView, partnersUnbilledView, receiptsView, supplierView, varianceGroups, varianceOrdersView,
+} from './drill-purchase';
+import type { ReceiptFigure, ReceivedOrderRow, VarianceGroup } from './drill-purchase';
+import { categoryView, channelView as resultChannelView, costsView, generalCostsView, monthView, receivedView } from './drill-result';
+import type { ResultDrillContext } from './drill-result';
 import type { PeriodChoice } from './analyses-period';
-import { advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
+import {
+  advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention,
+  weekdayDayMonth, wholeNumber,
+} from './analyses-words';
 
 type AnalysisSection = 'cash' | 'overview' | 'sales' | 'inventory' | 'purchasing' | 'result' | 'market' | 'website';
 
@@ -170,12 +181,19 @@ interface AttentionRow {
   metaTone: 'danger' | null;
 }
 
-/** A Verkoop tile: its four lines, and whether a click opens the list behind it (never on "—" or zero). */
-interface KpiTile {
-  key: 'revenue' | 'margin' | 'invoiced' | 'received' | 'openQuotes' | 'accepted' | 'openInvoices' | 'overdue';
+type SalesTileKey = 'revenue' | 'margin' | 'invoiced' | 'received' | 'openQuotes' | 'accepted' | 'openInvoices' | 'overdue';
+type ResultTileKey = 'revenue' | 'margin' | 'costs' | 'result' | 'received';
+type StockTileKey = 'cost' | 'sales' | 'incoming' | 'reorder';
+type PartnerTileKey = 'advance' | 'unbilled' | 'received' | 'open' | 'own' | 'result' | 'credit' | 'settle';
+
+/** A figure tile: its four lines, and whether a click opens the list behind it (never on "—" or zero). */
+interface KpiTile<K extends string = SalesTileKey> {
+  key: K;
   label: string;
   value: string;
-  tone: 'danger' | null;
+  /** A small word after the value ("SKU's", "containers"). */
+  unit?: string;
+  tone: 'danger' | 'warn' | null;
   sub: string;
   subWarn?: boolean;
   foot: string;
@@ -378,7 +396,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           </div>
         }
         @case ('inventory') {
-          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo over de facturen van {{ inventoryMetrics().velocity.days }} dagen</span>
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: facturen van {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span>
             <div class="an-bar__end"><app-an-how [lines]="how.inventory" /><a class="wk-btn" routerLink="/stock/inventaris">Jaarinventaris ›</a></div></div>
         }
         @case ('purchasing') {
@@ -394,7 +412,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-bar">
             <app-an-period [value]="salesPeriod()" [today]="today()" [note]="salesNote" idPrefix="an-result" (changed)="setSalesPeriod($event)" />
             <span class="an-bar__text">{{ salesRangeText() }} · alles excl. btw</span>
-            <div class="an-bar__end"><app-an-how [lines]="how.result" /><a class="wk-btn" routerLink="/costs">Alle kosten ›</a></div>
+            <div class="an-bar__end"><app-an-how [lines]="how.result" /><a class="wk-btn" routerLink="/costs" [queryParams]="costsQuery()">Alle kosten ›</a></div>
           </div>
         }
       }
@@ -403,7 +421,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @case ('sales') { <ng-container *ngTemplateOutlet="phonePeriod; context: { $implicit: ' · op documentdatum' }" /> }
         @case ('result') { <ng-container *ngTemplateOutlet="phonePeriod; context: { $implicit: ' · alles excl. btw' }" /> }
         @case ('inventory') {
-          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo over 90 dagen</span></div>
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span></div>
         }
         @case ('purchasing') {
           <div class="an-bar an-bar--seg">
@@ -745,29 +763,26 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       @if (section() === 'inventory') {
         @let im = inventoryMetrics();
         @if (loading()) {
-          <div class="an-kpis an-kpis--6" aria-label="Voorraad laden">@for (n of [1, 2, 3, 4, 5, 6]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+          <div class="an-kpis" aria-label="Voorraad laden">@for (n of [1, 2, 3, 4]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
         } @else {
-          <div class="an-kpis an-kpis--6">
-            <div class="an-kpi"><span class="an-kpi__label">Kostwaarde</span><span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(im.stock.costValueEur) }}</span>
-              <span class="an-kpi__sub">{{ im.physicalStock.valuedPieces | num }} gewaardeerde fysieke stuks</span>
-              <span class="an-kpi__foot">eigen {{ whole(im.stock.ownCostValueEur) }} · partner {{ whole(im.stock.partnerCostValueEur) }}@if (im.physicalStock.partnerPieces) { voor {{ im.physicalStock.partnerPieces | num }} fysieke stuks, al gefactureerd, nog te verzenden }</span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Verkoopwaarde</span><span class="an-kpi__value">{{ whole(im.stock.salesValueEur) }}</span>
-              <span class="an-kpi__sub">{{ im.physicalStock.saleablePieces | num }} fysieke stuks van actieve verkoopproducten</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Bekende voorraad</span><span class="an-kpi__value">{{ im.physicalStock.knownPieces | num }} <small>fysieke stuks</small></span>
-              <span class="an-kpi__sub">{{ plural(im.stock.knownSkuCount, 'SKU', 'SKU’s') }} · {{ im.stock.unknownSkuCount | num }} onbekend</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Onderweg</span><span class="an-kpi__value">{{ im.incoming.pieces | num }} <small>st</small></span>
-              <span class="an-kpi__sub">{{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}@if (im.incoming.nextArrival) { · eerst verwacht {{ dayText(im.incoming.nextArrival) }} }</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Verkooptempo</span><span class="an-kpi__value">{{ im.velocity.weeklyPieces | num }} <small>st/week</small></span>
-              <span class="an-kpi__sub">{{ im.velocity.piecesSold | num }} gefactureerd in {{ im.velocity.days }} dagen · {{ plural(im.velocity.skuCount, 'SKU', 'SKU’s') }}</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Snel bestellen</span>
-              <span class="an-kpi__value" [attr.data-tone]="im.reorder.count > 0 ? 'danger' : null">{{ plural(im.reorder.count, 'SKU', 'SKU’s') }}</span>
-              <span class="an-kpi__sub">Binnen {{ im.reorder.horizonWeeks }} weken op, ook met wat onderweg is</span><span class="an-kpi__foot"></span></div>
+          <!-- A tile opens the list behind its figure (design/analyses2 §B.5); "—" or zero is a plain tile. -->
+          <div class="an-kpis">
+            @for (k of stockTiles(); track k.key) {
+              @if (k.drill) {
+                <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" [attr.data-kpi]="k.key" (click)="openStockTile(k.key)"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></button>
+              } @else {
+                <div class="an-kpi" [attr.data-kpi]="k.key"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></div>
+              }
+            }
           </div>
+          <!-- Each count after "met stand" opens the products it counts; "onbekend" counts active, non-demo products only (D-V5). -->
           <p class="an-quality" role="status">Datakwaliteit:
-            <span [class.is-warn]="im.dataGaps.unknownStockSkuCount > 0"><b>{{ im.dataGaps.unknownStockSkuCount }}</b> voorraad onbekend</span> ·
-            <span [class.is-warn]="im.dataGaps.unvaluedStockSkuCount > 0"><b>{{ im.dataGaps.unvaluedStockSkuCount }}</b> zonder kostwaarde</span> ·
-            <span [class.is-warn]="im.dataGaps.missingCartonSkuCount > 0"><b>{{ im.dataGaps.missingCartonSkuCount }}</b> zonder outer carton</span> ·
-            <span [class.is-warn]="im.dataGaps.negativeStockSkuCount > 0"><b>{{ im.dataGaps.negativeStockSkuCount }}</b> negatief</span></p>
+            <span><b>{{ im.stock.knownSkuCount | num }}</b> {{ im.stock.knownSkuCount === 1 ? 'SKU' : 'SKU’s' }} met stand</span>
+            @for (item of qualityItems(); track item.key) {
+              · @if (item.count > 0) {
+                <button class="an-link is-warn" type="button" aria-haspopup="dialog" (click)="openQuality($index)"><b>{{ item.count | num }}</b> {{ item.label }}</button>
+              } @else { <span><b>0</b> {{ item.label }}</span> }
+            }</p>
         }
         <div class="an-cols">
           <div class="an-col">
@@ -778,7 +793,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
                   @for (row of take('zero', im.zeroStock.rows); track row.productId) {
                     <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
-                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span><span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} }</span></span>
+                      <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span><span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} }@if (lastSold().get(row.productId); as day) { · laatst verkocht {{ dayText(day) }} }</span></span>
                       <span class="an-row__end">@if (row.expectedPieces > 0) { <span class="an-row__meta" data-tone="ok">{{ unitWords(row.productId, row.expectedPieces) }} onderweg</span> }
                         @else { <span class="an-row__meta" data-tone="warn">Geen inkoop onderweg</span> }</span>
                       <span class="an-row__chev" aria-hidden="true">›</span>
@@ -789,17 +804,17 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               </div>
             </section>
             <section class="an-card" aria-labelledby="an-carton-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="an-carton-title">Minder dan één outer carton</h2>
+              <header class="an-card__head"><h2 class="an-card__title" id="an-carton-title">Minder dan één omdoos</h2>
                 @if (!loading()) { <span class="an-card__trail">{{ plural(im.belowCarton.count, 'SKU', 'SKU’s') }}</span> }</header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="2" /> } @else {
                   @for (row of take('carton', im.belowCarton.rows); track row.productId) {
                     <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
                       <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span><span class="an-row__sub">{{ row.sku || 'Geen SKU' }} · {{ unitWords(row.productId, row.stockPieces) }} op voorraad</span></span>
-                      <span class="an-row__end"><span class="an-row__meta" data-tone="warn">{{ unitWords(row.productId, row.missingPiecesToCarton ?? 0) }} nodig voor carton</span></span>
+                      <span class="an-row__end"><span class="an-row__meta" data-tone="warn">{{ unitWords(row.productId, row.missingPiecesToCarton ?? 0) }} nodig voor omdoos</span></span>
                       <span class="an-row__chev" aria-hidden="true">›</span>
                     </a>
-                  } @empty { <p class="an-empty">Alle bekende positieve voorraden vullen minstens één outer carton.</p> }
+                  } @empty { <p class="an-empty">Alle bekende positieve voorraden vullen minstens één omdoos.</p> }
                   <ng-container *ngTemplateOutlet="more; context: { key: 'carton', total: im.belowCarton.rows.length }" />
                 }
               </div>
@@ -808,7 +823,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-col">
             <section class="an-card" aria-labelledby="an-incoming-title">
               <header class="an-card__head"><h2 class="an-card__title" id="an-incoming-title">Onderweg</h2>
-                @if (!loading()) { <span class="an-card__trail">{{ im.incoming.pieces | num }} st · {{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}</span> }</header>
+                @if (!loading()) { <span class="an-card__trail">{{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}</span> }</header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
                   @for (row of take('incoming', incomingRows()); track row.productId) {
@@ -831,8 +846,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   @for (row of take('reorder', im.reorder.rows); track row.productId) {
                     <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', row.productId]">
                       <span class="an-row__body"><span class="an-row__title">{{ row.name }}</span>
-                        <span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ unitWords(row.productId, row.stockPieces) }} op voorraad@if (row.expectedPieces) { · {{ unitWords(row.productId, row.expectedPieces) }} onderweg } · {{ row.weeklyPieces | num }} st/week</span></span>
-                      <span class="an-row__end"><span class="an-row__meta" [attr.data-tone]="(row.weeksLeftWithIncoming ?? 0) >= 4 ? 'ok' : 'warn'">{{ weeksLabel(row.weeksLeftWithIncoming) }}</span></span>
+                        <span class="an-row__sub">{{ row.sku || 'Geen SKU' }}@if (row.colour) { · {{ row.colour }} } · {{ unitWords(row.productId, row.stockPieces) }} op voorraad@if (row.expectedPieces) { · onderweg {{ unitWords(row.productId, row.expectedPieces) }}@if (row.nextArrival) { · {{ dayText(row.nextArrival) }} } } · {{ row.weeklyPieces | num }}/week</span></span>
+                      <span class="an-row__end"><span class="an-row__meta" [attr.data-tone]="(row.weeksLeft ?? 0) >= 4 ? 'ok' : 'warn'">{{ weeksLabel(row.weeksLeft) }}</span></span>
                       <span class="an-row__chev" aria-hidden="true">›</span>
                     </a>
                   } @empty { <p class="an-empty">Niets raakt binnen {{ im.reorder.horizonWeeks }} weken op, of er werd nog niets gefactureerd.</p> }
@@ -845,7 +860,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @let merged = slowSameAsCapital();
         <section class="an-card" aria-labelledby="an-capital-title">
           <header class="an-card__head"><h2 class="an-card__title" id="an-capital-title">Grootste voorraadposities</h2>
-            <span class="an-card__trail">op bekende kostwaarde@if (merged && !loading()) { · alles zonder verkoop in {{ im.velocity.days }} dagen: {{ whole(im.slowMovers.valueEur) }} in {{ plural(im.slowMovers.count, 'SKU', 'SKU’s') }} }</span></header>
+            <span class="an-card__trail">{{ im.capital.length > im.topCapital.length ? 'top ' + im.topCapital.length + ' op kostwaarde' : 'op kostwaarde' }}@if (merged && !loading()) { · alles zonder verkoop in {{ im.velocity.days }} dagen: {{ whole(im.slowMovers.valueEur) }} in {{ plural(im.slowMovers.count, 'SKU', 'SKU’s') }} }
+              @if (!loading() && im.capital.length && !failed('voorraad')) { <button class="an-link" type="button" aria-haspopup="dialog" (click)="openStockTile('cost')">Alle ›</button> }</span></header>
           <div class="an-card__body">
             @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
               @for (row of take('capital', im.topCapital); track row.productId) {
@@ -885,20 +901,15 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @if (loading()) {
           <div class="an-kpis an-kpis--5" aria-label="Resultaat laden">@for (n of [1, 2, 3, 4, 5]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
         } @else {
+          <!-- A tile opens the list behind its figure (design/analyses2 §B.4); Resultaat itself is the bars and Per maand below. -->
           <div class="an-kpis an-kpis--5">
-            <div class="an-kpi"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ failed('TICA verkopen') ? '—' : whole(r.revenueEur) }}</span>
-              <span class="an-kpi__sub">{{ channelVolume(r.invoiceCount, r.ticaTransactions) }}@if (r.creditNoteCount) { · {{ plural(r.creditNoteCount, 'creditnota', 'creditnota’s') }} } · excl. btw</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Marge op goederen</span>
-              <span class="an-kpi__value" [attr.data-tone]="r.marginEur < 0 ? 'danger' : null">{{ r.missingCostLines || failed('TICA verkopen') ? '—' : whole(r.marginEur) }}</span>
-              <span class="an-kpi__sub">@if (r.marginPct !== null && !r.missingCostLines) { {{ r.marginPct | pct: 1 }} · }bekende productkost {{ whole(r.goodsCostEur) }}@if (r.missingCostLines) { · {{ plural(r.missingCostLines, 'regel', 'regels') }} zonder kost }</span><span class="an-kpi__foot">@if (r.ticaTransactions) {TICA: actuele productkost}</span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Eigen kosten</span><span class="an-kpi__value">{{ whole(r.costsEur) }}</span>
-              <span class="an-kpi__sub">{{ r.unpaidCostsEur ? whole(r.unpaidCostsEur) + ' nog te betalen incl. btw' : 'alles betaald' }}</span>
-              <span class="an-kpi__foot">@if (r.depreciationEur > 0) {waarvan {{ whole(r.depreciationEur) }} afschrijvingen}</span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Resultaat</span>
-              <span class="an-kpi__value" [attr.data-tone]="r.resultEur < 0 ? 'danger' : null">{{ r.missingCostLines || failed('TICA verkopen') ? '—' : whole(r.resultEur) }}</span>
-              <span class="an-kpi__sub">{{ r.missingCostLines ? 'onvolledig: productkosten ontbreken' : 'marge min eigen kosten' }}</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Ingekocht</span><span class="an-kpi__value">{{ whole(r.purchasedEur) }}</span>
-              <span class="an-kpi__sub">{{ plural(r.receivedContainers, 'container', 'containers') }} ontvangen · externe kost volgens actuele afrekening</span><span class="an-kpi__foot"></span></div>
+            @for (k of resultTiles(); track k.key) {
+              @if (k.drill) {
+                <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" [attr.data-kpi]="k.key" (click)="openResultTile(k.key)"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></button>
+              } @else {
+                <div class="an-kpi" [attr.data-kpi]="k.key"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></div>
+              }
+            }
           </div>
         }
         <section class="an-card" aria-labelledby="an-bars-title">
@@ -907,8 +918,11 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-card__body">
             @if (loading()) { <app-skeleton kind="card" /> }
             @else if (!r.monthly.length) { <p class="an-empty">Nog niets in deze periode.</p> }
-            @else if (r.missingCostLines) { <p class="an-empty">Marge en resultaat zijn onvolledig: productkosten ontbreken.</p> }
-            @else { <app-an-month-bars [months]="r.monthly" [height]="desk.active() ? 180 : 132" [compact]="!desk.active()" /> }
+            @else if (r.missingCostLines) {
+              <p class="an-empty">Marge en resultaat zijn onvolledig: productkosten ontbreken.
+                <button class="an-link" type="button" aria-haspopup="dialog" (click)="openResultTile('margin')">Regels zonder kost ›</button></p>
+            }
+            @else { <app-an-month-bars [months]="r.monthly" [height]="desk.active() ? 180 : 132" [compact]="!desk.active()" (picked)="openMonth($event)" /> }
           </div>
         </section>
         <!-- Per verkoopkanaal (1–3 rows) and Kosten per categorie are full-width cards: side by side the short channel card left a hole of 250+ px (design §2.1.5). -->
@@ -916,27 +930,36 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <header class="an-card__head"><h2 class="an-card__title" id="an-rchannel-title">Per verkoopkanaal</h2><span class="an-card__trail">resultaat, excl. btw</span></header>
           <div class="an-card__body">
             @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+              <!-- A channel opens its documents, TICA and costs; Algemene kosten (no channel) makes the rows add up to Resultaat (D-O5). -->
               @for (row of r.byChannel; track row.channel) {
-                <div class="an-row an-row--nolead">
-                  <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
-                    <span class="an-row__sub">{{ channelVolume(row.invoiceCount, row.ticaTransactions) }} · omzet {{ whole(row.revenueEur) }} · marge {{ row.ticaMissingCostLines ? 'onbekend' : whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
-                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ row.ticaMissingCostLines ? '—' : whole(row.resultEur) }}</span></span>
-                </div>
-              } @empty { <p class="an-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
+                @if (row.revenueEur !== 0 || row.marginEur !== 0 || row.costsEur !== 0) {
+                  <button class="an-row an-row--nolead an-row--chev" type="button" aria-haspopup="dialog" (click)="openResultChannel(row.channel)">
+                    <ng-container *ngTemplateOutlet="resultChannelBody; context: { $implicit: row }" /><span class="an-row__chev" aria-hidden="true">›</span></button>
+                } @else {
+                  <div class="an-row an-row--nolead"><ng-container *ngTemplateOutlet="resultChannelBody; context: { $implicit: row }" /></div>
+                }
+              }
+              @if (r.generalCostsEur) {
+                <button class="an-row an-row--nolead an-row--chev" type="button" aria-haspopup="dialog" (click)="openResultChannel(null)">
+                  <span class="an-row__body"><span class="an-row__title">Algemene kosten</span><span class="an-row__sub">kosten zonder verkoopkanaal</span></span>
+                  <span class="an-row__end"><span class="an-row__value">{{ whole(-r.generalCostsEur) }}</span></span><span class="an-row__chev" aria-hidden="true">›</span></button>
+              }
+              @if (!r.byChannel.length && !r.generalCostsEur) { <p class="an-empty">Nog geen facturen of kosten in deze periode.</p> }
             }
           </div>
         </section>
         <section class="an-card" aria-labelledby="an-rcat-title">
-          <header class="an-card__head"><h2 class="an-card__title" id="an-rcat-title">Kosten per categorie</h2><span class="an-card__trail"><a class="an-link" routerLink="/costs">alle kosten ›</a></span></header>
+          <header class="an-card__head"><h2 class="an-card__title" id="an-rcat-title">Kosten per categorie</h2></header>
           <div class="an-card__body">
             @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+              <!-- Each category opens its costs, with Kosten & bank on that category in the foot (D-O9). -->
               @for (row of take('categories', r.byCategory); track row.category) {
-                <div class="an-row an-share" [class.mo-fade]="$index >= limitOf('categories')">
-                  <span class="an-row__body"><span class="an-row__title">{{ categoryLabel(row.category) }}</span></span>
-                  <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
-                  <span class="an-row__value">{{ whole(row.amountEur) }}</span>
-                  <span class="an-row__meta">{{ row.sharePct | pct: 0 }}</span>
-                </div>
+                @if (row.amountEur !== 0) {
+                  <button class="an-row an-share" type="button" aria-haspopup="dialog" [class.mo-fade]="$index >= limitOf('categories')" (click)="openCategory(row.category, row.amountEur)">
+                    <ng-container *ngTemplateOutlet="categoryBody; context: { $implicit: row }" /></button>
+                } @else {
+                  <div class="an-row an-share" [class.mo-fade]="$index >= limitOf('categories')"><ng-container *ngTemplateOutlet="categoryBody; context: { $implicit: row }" /></div>
+                }
               } @empty { <p class="an-empty">Nog geen kosten geboekt in deze periode.</p> }
               <ng-container *ngTemplateOutlet="more; context: { key: 'categories', total: r.byCategory.length }" />
             }
@@ -952,20 +975,25 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 <thead><tr><th>Maand</th><th>Omzet</th><th>Marge</th><th>Eigen kosten</th><th>Resultaat</th></tr></thead>
                 <tbody>
                   @for (row of r.monthly; track row.month) {
-                    <tr><td>{{ monthLabel(row.month) }}</td><td>{{ whole(row.revenueEur) }}</td><td>{{ r.missingCostLines ? '—' : whole(row.marginEur) }}</td><td>{{ whole(row.costsEur) }}</td>
+                    <tr><td>@if (monthActive(row)) { <button class="an-link" type="button" aria-haspopup="dialog" (click)="openMonth(row.month)">{{ monthLabel(row.month) }}</button> } @else { {{ monthLabel(row.month) }} }</td>
+                      <td>{{ whole(row.revenueEur) }}</td><td>{{ r.missingCostLines ? '—' : whole(row.marginEur) }}</td><td>{{ whole(row.costsEur) }}</td>
                       <td [class.is-danger]="!r.missingCostLines && row.resultEur < 0">{{ r.missingCostLines ? '—' : whole(row.resultEur) }}</td></tr>
                   }
                 </tbody>
+                <!-- The total row is the tiles' figures. -->
+                <tfoot><tr><td>Totaal</td><td>{{ whole(r.revenueEur) }}</td><td>{{ r.missingCostLines ? '—' : whole(r.marginEur) }}</td><td>{{ whole(r.costsEur) }}</td>
+                  <td [class.is-danger]="!r.missingCostLines && r.resultEur < 0">{{ r.missingCostLines ? '—' : whole(r.resultEur) }}</td></tr></tfoot>
               </table>
             </div>
           } @else {
             <div class="an-card__body">
               @for (row of take('months', monthsNewestFirst()); track row.month) {
-                <div class="an-row an-row--nolead" [class.mo-fade]="$index >= listLimit()">
-                  <span class="an-row__body"><span class="an-row__title">{{ monthLabel(row.month) }}</span>
-                    <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ r.missingCostLines ? 'onbekend' : whole(row.marginEur) }} · kosten {{ whole(row.costsEur) }}</span></span>
-                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!r.missingCostLines && row.resultEur < 0 ? 'danger' : null">{{ r.missingCostLines ? '—' : whole(row.resultEur) }}</span></span>
-                </div>
+                @if (monthActive(row)) {
+                  <button class="an-row an-row--nolead an-row--chev" type="button" aria-haspopup="dialog" [class.mo-fade]="$index >= listLimit()" (click)="openMonth(row.month)">
+                    <ng-container *ngTemplateOutlet="monthBody; context: { $implicit: row, unknown: r.missingCostLines > 0 }" /><span class="an-row__chev" aria-hidden="true">›</span></button>
+                } @else {
+                  <div class="an-row an-row--nolead" [class.mo-fade]="$index >= listLimit()"><ng-container *ngTemplateOutlet="monthBody; context: { $implicit: row, unknown: r.missingCostLines > 0 }" /></div>
+                }
               }
               <ng-container *ngTemplateOutlet="more; context: { key: 'months', total: r.monthly.length }" />
             </div>
@@ -986,49 +1014,31 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           @case ('kosten') { <app-container-cost-analysis [purchases]="purchases()" [loading]="loading()" /> }
           @case ('kwaliteit') {
             <ng-container *ngTemplateOutlet="receiptBar; context: { $implicit: false }" />
-            @if (qualityError()) {
-              <div [class]="desk.active() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
-                <span class="wk-banner__text"><b>Ontvangstafwijkingen niet beschikbaar.</b> {{ qualityError() }}</span>
-                <button [class]="desk.active() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" [disabled]="filtering()" (click)="loadVariances()">Opnieuw</button>
-              </div>
-            }
             @if (loading()) {
-              <div class="an-kpis an-kpis--6" aria-label="Kwaliteit laden">@for (n of [1, 2, 3, 4, 5, 6]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+              <div class="an-kpis an-kpis--3" aria-label="Kwaliteit laden">@for (n of [1, 2, 3]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
             } @else {
-              @let perf = supplierPerformance();
-              @let q = qualityReport().totals;
-              <div class="an-kpis an-kpis--6">
-                <div class="an-kpi"><span class="an-kpi__label">Besteld en onderweg</span><span class="an-kpi__value">{{ whole(incomingValue()) }}</span>
-                  <span class="an-kpi__sub">{{ incomingPieces() | num }} st in {{ plural(incomingOrders().length, 'order', 'orders') }} · externe kost</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Perfect ontvangen</span><span class="an-kpi__value">{{ perf.perfectPct === null ? '—' : (perf.perfectPct | pct: 1) }}</span>
-                  <span class="an-kpi__sub">{{ perf.perfectOrders }} van {{ plural(perf.comparableOrders, 'vergelijkbare order', 'vergelijkbare orders') }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Op tijd</span><span class="an-kpi__value">{{ perf.onTimePct === null ? '—' : (perf.onTimePct | pct: 0) }}</span>
-                  <span class="an-kpi__sub">{{ perf.onTimeOrders }} van {{ plural(perf.datedOrders, 'ontvangst', 'ontvangsten') }} tegen de laatst opgeslagen ETA</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Doorlooptijd</span><span class="an-kpi__value">{{ leadDays() === null ? '—' : plural(leadDays()!, 'dag', 'dagen') }}</span>
-                  <span class="an-kpi__sub">van bestelling tot ontvangst, gemiddeld</span><span class="an-kpi__foot"></span></div>
-                @if (qualityError()) {
-                  <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">—</span>
-                    <span class="an-kpi__sub">afwijkingen niet geladen</span><span class="an-kpi__foot"></span></div>
-                  <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value">—</span>
-                    <span class="an-kpi__sub">afwijkingen niet geladen</span><span class="an-kpi__foot"></span></div>
-                } @else {
-                  <div class="an-kpi"><span class="an-kpi__label">Bekende verliesimpact</span><span class="an-kpi__value">{{ whole(q.totalLossValueEur) }}</span>
-                    <span class="an-kpi__sub">{{ q.missingPieces + q.damagedPieces | num }} afwijkende stuks</span><span class="an-kpi__foot"></span></div>
-                  <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="q.unvaluedLossPieces ? 'warn' : null">{{ q.unvaluedLossPieces | num }} st</span>
-                    <span class="an-kpi__sub">{{ q.valuationComplete ? 'alles gewaardeerd' : 'Vul de ontvangstwaarde in om de impact compleet te maken' }}</span><span class="an-kpi__foot"></span></div>
+              <!-- Each figure opens the received orders, ordered for it (design/analyses2 §B.6); the loss figures live on Afwijkingen. -->
+              <div class="an-kpis an-kpis--3">
+                @for (k of qualityTiles(); track k.key) {
+                  @if (k.drill) {
+                    <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" [attr.data-kpi]="k.key" (click)="openReceipts(k.key)"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></button>
+                  } @else {
+                    <div class="an-kpi" [attr.data-kpi]="k.key"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></div>
+                  }
                 }
               </div>
               <section class="an-card" aria-labelledby="an-score-title">
                 <header class="an-card__head"><h2 class="an-card__title" id="an-score-title">Scorekaart per leverancier</h2><span class="an-card__trail">ontvangen orders in de gekozen periode</span></header>
+                <!-- A supplier opens its received orders (D-V1: there is no /suppliers/:id; its foot searches the supplier list). -->
                 @if (!supplierCards().length) { <p class="an-empty">Nog geen ontvangen orders in deze periode.</p> }
                 @else if (desk.active()) {
                   <div class="an-table-wrap" tabindex="0" role="region" aria-label="Scorekaart per leverancier">
                     <table class="an-table">
-                      <thead><tr><th>Leverancier</th><th>Orders</th><th>Waarde</th><th>Perfect</th><th>Op tijd</th><th>Doorlooptijd</th><th>Laatste ontvangst</th></tr></thead>
+                      <thead><tr><th>Leverancier</th><th>Orders</th><th>Externe kost</th><th>Perfect</th><th>Op tijd</th><th>Doorlooptijd</th><th>Laatste ontvangst</th></tr></thead>
                       <tbody>
                         @for (card of supplierCards(); track card.supplierId) {
                           <tr>
-                            <td><a [routerLink]="['/suppliers', card.supplierId]">{{ card.name }}</a></td>
+                            <td><button class="an-link" type="button" aria-haspopup="dialog" (click)="openSupplier(card)">{{ card.name }}</button></td>
                             <td>{{ plural(card.orders, 'order', 'orders') }}</td>
                             <td>{{ whole(card.totalEur) }}</td>
                             <td [class.is-warn]="card.perfectPct !== null && card.perfectPct < 80">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</td>
@@ -1043,13 +1053,13 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 } @else {
                   <div class="an-card__body">
                     @for (card of supplierCards(); track card.supplierId) {
-                      <a class="an-row an-row--nolead an-row--chev" [routerLink]="['/suppliers', card.supplierId]">
+                      <button class="an-row an-row--nolead an-row--chev" type="button" aria-haspopup="dialog" (click)="openSupplier(card)">
                         <span class="an-row__body"><span class="an-row__title">{{ card.name }}</span>
                           <span class="an-row__sub">{{ plural(card.orders, 'order', 'orders') }} · {{ whole(card.totalEur) }} · {{ card.avgLeadDays === null ? '—' : card.avgLeadDays + ' d' }} · laatst {{ dayText(card.latestReceivedOn) }}</span></span>
                         <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="card.perfectPct !== null && card.perfectPct < 80 ? 'warn' : null">{{ card.perfectPct === null ? '—' : (card.perfectPct | pct: 0) }}</span>
                           <span class="an-row__meta" [attr.data-tone]="card.onTimePct !== null && card.onTimePct < 80 ? 'warn' : null">op tijd {{ card.onTimePct === null ? '—' : (card.onTimePct | pct: 0) }}</span></span>
                         <span class="an-row__chev" aria-hidden="true">›</span>
-                      </a>
+                      </button>
                     }
                   </div>
                 }
@@ -1058,35 +1068,21 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           }
           @case ('partners') {
             @if (loading()) {
-              <div class="an-kpis an-kpis--3" aria-label="Partners laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8, 9]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
+              <div class="an-kpis" aria-label="Partners laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
             } @else {
               @let f = financing();
-              <div class="an-kpis an-kpis--3">
-                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Kosten partnercontainers' : 'Containerkosten' }}</span><span class="an-kpi__value">{{ whole(f.partner.landedEur) }}</span>
-                  <span class="an-kpi__sub">{{ plural(f.partner.count, 'container', 'containers') }}{{ desk.active() ? ' · werkelijke kosten en nog open verplichtingen' : '' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Afgesproken voorfinanciering' : 'Voorfinanciering' }}</span><span class="an-kpi__value">{{ whole(f.committedAdvanceEur) }}</span>
-                  <span class="an-kpi__sub">excl. btw</span><span class="an-kpi__foot">{{ whole(f.invoicedEur) }} voorschot gefactureerd</span></div>
-                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Voorschotten nog factureren' : 'Nog factureren' }}</span>
-                  <span class="an-kpi__value" [attr.data-tone]="f.overdueUnbilledAdvanceEur > 0 ? 'danger' : null">{{ whole(f.unbilledAdvanceEur) }}</span>
-                  <span class="an-kpi__sub">excl. btw · {{ plural(f.unbilledAdvanceCount, 'geplande termijn', 'geplande termijnen') }}</span>
-                  <span class="an-kpi__foot" [class.is-warn]="f.overdueUnbilledAdvanceEur > 0">{{ f.overdueUnbilledAdvanceEur > 0 ? whole(f.overdueUnbilledAdvanceEur) + ' met vervaldatum bereikt' : nextAdvanceDue() ? 'volgende vervaldatum ' + dayText(nextAdvanceDue()) : '' }}</span></div>
-                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Netto van partners ontvangen' : 'Netto ontvangen' }}</span><span class="an-kpi__value">{{ whole(f.receivedEur) }}</span>
-                  <span class="an-kpi__sub">incl. btw{{ desk.active() ? ' · ontvangsten min terugbetalingen' : '' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Nog te ontvangen</span><span class="an-kpi__value">{{ whole(f.openEur) }}</span>
-                  <span class="an-kpi__sub">incl. btw{{ desk.active() ? ' · open uitgegeven facturen, na deelbetalingen' : '' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Eigen kasinleg</span><span class="an-kpi__value">{{ whole(f.ownExposureEur) }}</span>
-                  <span class="an-kpi__sub">{{ desk.active() ? 'betaalde containerkosten min ontvangen partnergeld' : 'betaald min partnergeld' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">{{ desk.active() ? 'Gerealiseerd partnerresultaat' : 'Partnerresultaat' }}</span>
-                  <span class="an-kpi__value" [attr.data-tone]="f.resultEur < 0 ? 'danger' : null">{{ whole(f.resultEur) }}</span>
-                  <span class="an-kpi__sub">{{ desk.active() ? 'uit deel- en slotafrekeningen; voorschotten zijn geen winst' : 'uit afrekeningen' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Credit voor partners</span><span class="an-kpi__value">{{ whole(f.creditEur) }}</span>
-                  <span class="an-kpi__sub">{{ desk.active() ? 'op creditnota’s en afrekeningen, te verrekenen of terug te betalen' : 'te verrekenen of terug te betalen' }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Nog af te rekenen</span>
-                  <span class="an-kpi__value" [attr.data-tone]="f.awaitingSettlement > 0 ? 'warn' : null">{{ f.awaitingSettlement }} <small>{{ f.awaitingSettlement === 1 ? 'container' : 'containers' }}</small></span>
-                  <span class="an-kpi__sub">{{ desk.active() ? 'ontvangen, veilingoverzicht nog niet afgerekend' : 'veilingoverzicht wacht' }}</span><span class="an-kpi__foot"></span></div>
+              <!-- Eight figures in four columns; the three to-dos open their containers (design/analyses2 §B.6). -->
+              <div class="an-kpis">
+                @for (k of partnerTiles(); track k.key) {
+                  @if (k.drill) {
+                    <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" [attr.data-kpi]="k.key" (click)="openPartnerTile(k.key)"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></button>
+                  } @else {
+                    <div class="an-kpi" [attr.data-kpi]="k.key"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></div>
+                  }
+                }
               </div>
               <section class="an-card" aria-labelledby="an-partner-title">
-                <header class="an-card__head"><h2 class="an-card__title" id="an-partner-title">Per partnercontainer</h2><span class="an-card__trail">{{ plural(f.rows.length, 'container', 'containers') }}</span></header>
+                <header class="an-card__head"><h2 class="an-card__title" id="an-partner-title">Per partnercontainer</h2><span class="an-card__trail">{{ plural(f.partner.count, 'container', 'containers') }} · externe kost {{ whole(f.partner.landedEur) }}</span></header>
                 @if (!f.rows.length) { <p class="an-empty">Nog geen container met een partner: alles betalen we zelf.</p> }
                 @else if (desk.active()) {
                   <div class="an-table-wrap" tabindex="0" role="region" aria-label="Per partnercontainer">
@@ -1145,21 +1141,20 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               <div class="an-kpis" aria-label="Afwijkingen laden">@for (n of [1, 2, 3, 4]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
             } @else {
               @let t = report().totals;
+              <!-- Counts in each product's sales unit (D-V3); Inkoopimpact opens it per product and per supplier, the order cards below are the rest. -->
               <div class="an-kpis" [attr.aria-busy]="filtering()">
-                <div class="an-kpi"><span class="an-kpi__label">Inkoopimpact</span><span class="an-kpi__value">{{ whole(t.totalLossValueEur) }}</span>
-                  <span class="an-kpi__sub">{{ plural(t.affectedOrders, 'order', 'orders') }} · {{ plural(t.affectedLines, 'regel', 'regels') }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Ontbreekt</span><span class="an-kpi__value">{{ t.missingPieces | num }} st</span>
+                @if (t.affectedLines > 0) {
+                  <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" data-kpi="impact" (click)="openImpact()"><ng-container *ngTemplateOutlet="impactBody; context: { $implicit: t }" /></button>
+                } @else {
+                  <div class="an-kpi" data-kpi="impact"><ng-container *ngTemplateOutlet="impactBody; context: { $implicit: t }" /></div>
+                }
+                <div class="an-kpi"><span class="an-kpi__label">Ontbreekt</span><span class="an-kpi__value">{{ t.missingPieces | num }}</span>
                   <span class="an-kpi__sub">{{ whole(t.missingValueEur) }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Beschadigd</span><span class="an-kpi__value">{{ t.damagedPieces | num }} st</span>
+                <div class="an-kpi"><span class="an-kpi__label">Beschadigd</span><span class="an-kpi__value">{{ t.damagedPieces | num }}</span>
                   <span class="an-kpi__sub">{{ whole(t.damagedValueEur) }}</span><span class="an-kpi__foot"></span></div>
-                <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="t.valuationComplete ? null : 'warn'">{{ t.unvaluedLossPieces | num }} st</span>
+                <div class="an-kpi"><span class="an-kpi__label">Zonder waarde</span><span class="an-kpi__value" [attr.data-tone]="t.valuationComplete ? null : 'warn'">{{ t.unvaluedLossPieces | num }}</span>
                   <span class="an-kpi__sub">{{ t.valuationComplete ? 'alles gewaardeerd' : 'vul de waarde per stuk aan' }}</span><span class="an-kpi__foot"></span></div>
               </div>
-              @if (!t.valuationComplete) {
-                <div [class]="desk.active() ? 'wk-banner wk-banner--warn wk-banner--inset' : 'ios-banner'" role="status"><span class="wk-banner__text">
-                  De bekende waarde is {{ whole(t.totalLossValueEur) }}.
-                  {{ t.unvaluedLossPieces | num }} afwijkende stuks tellen pas mee zodra hun ontvangstwaarde is ingevuld.</span></div>
-              }
               @for (group of varianceGroups(); track group.orderId) {
                 <section class="an-card an-order" [id]="'an-order-' + group.orderId" [class.is-focus]="focusedOrderId() === group.orderId" [attr.aria-label]="containerOf(group.orderId, group.orderNumber, group.orderAlias)">
                   <header class="an-card__head an-order__head">
@@ -1169,8 +1164,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                       <span class="an-order__meta">@if (containerOf(group.orderId, group.orderNumber, group.orderAlias) !== group.orderNumber) { {{ group.orderNumber }} · }ontvangen {{ dayText(group.receivedOn) }}</span>
                     </a>
                     <span class="an-order__end"><b>{{ whole(group.totalLossValueEur) }}</b>
-                      @if (group.unvaluedLossPieces) { <small>+ {{ group.unvaluedLossPieces | num }} st onbekend</small> }
-                      <a class="an-link" [routerLink]="['/purchasing', group.orderId]">Open order ›</a></span>
+                      @if (group.unvaluedLossPieces) { <small>+ {{ group.unvaluedLossPieces | num }} zonder waarde</small> }</span>
                   </header>
                   <div class="an-card__body">
                     @for (row of group.rows; track row.lineId ?? row.productId) {
@@ -1221,7 +1215,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
     </ng-template>
 
     <ng-template #kpiBody let-k>
-      <span class="an-kpi__label">{{ k.label }}</span><span class="an-kpi__value" [attr.data-tone]="k.tone">{{ k.value }}</span>
+      <span class="an-kpi__label">{{ k.label }}</span><span class="an-kpi__value" [attr.data-tone]="k.tone">{{ k.value }}@if (k.unit) { <small>{{ k.unit }}</small> }</span>
       <span class="an-kpi__sub" [class.is-warn]="k.subWarn">{{ k.sub }}</span><span class="an-kpi__foot" [class.is-warn]="k.footWarn">{{ k.foot }}</span>
     </ng-template>
 
@@ -1237,6 +1231,31 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       <span class="an-meter"><i [style.width.%]="channel.sharePct"></i></span>
       <span class="an-row__value">{{ whole(channel.revenueExclEur) }}</span>
       <span class="an-row__meta">{{ channel.sharePct | pct: 0 }}</span>
+    </ng-template>
+
+    <ng-template #resultChannelBody let-row>
+      @let unknown = row.missingCostLines > 0 || row.ticaMissingCostLines > 0;
+      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
+        <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ unknown ? '—' : whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
+      <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!unknown && row.resultEur < 0 ? 'danger' : null">{{ unknown ? '—' : whole(row.resultEur) }}</span></span>
+    </ng-template>
+
+    <ng-template #categoryBody let-row>
+      <span class="an-row__body"><span class="an-row__title">{{ categoryLabel(row.category) }}</span></span>
+      <span class="an-meter"><i [style.width.%]="row.sharePct"></i></span>
+      <span class="an-row__value">{{ whole(row.amountEur) }}</span>
+      <span class="an-row__meta">{{ row.sharePct | pct: 0 }}</span>
+    </ng-template>
+
+    <ng-template #monthBody let-row let-unknown="unknown">
+      <span class="an-row__body"><span class="an-row__title">{{ monthLabel(row.month) }}</span>
+        <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ unknown ? 'onbekend' : whole(row.marginEur) }} · kosten {{ whole(row.costsEur) }}</span></span>
+      <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!unknown && row.resultEur < 0 ? 'danger' : null">{{ unknown ? '—' : whole(row.resultEur) }}</span></span>
+    </ng-template>
+
+    <ng-template #impactBody let-t>
+      <span class="an-kpi__label">Inkoopimpact</span><span class="an-kpi__value">{{ whole(t.totalLossValueEur) }}</span>
+      <span class="an-kpi__sub">{{ plural(t.affectedOrders, 'order', 'orders') }} · {{ plural(t.affectedLines, 'regel', 'regels') }}</span><span class="an-kpi__foot"></span>
     </ng-template>
 
     <ng-template #attentionBody let-row>
@@ -1448,11 +1467,8 @@ export class AnalysesPage {
   readonly receiptNote = RECEIPT_PERIOD_NOTE;
   /** Kwaliteit's report: the receipt filter without the order focus (N8). */
   private readonly unfocusedReport = signal<ReceiptVarianceReport>(EMPTY_REPORT);
-  /** The unfocused call's failure: Kwaliteit shows it, Afwijkingen (focused) does not need that report. */
-  private readonly unfocusedError = signal('');
+  /* Kwaliteit shows no variance figures since round 2 (they are Afwijkingen'); the report counts the part's orders. */
   readonly qualityReport = computed(() => this.focusedOrderId() === null ? this.report() : this.unfocusedReport());
-  /** Kwaliteit's variance figures failed: a banner and "—", never € 0 and "alles gewaardeerd". */
-  readonly qualityError = computed(() => this.focusedOrderId() === null ? this.receiptError() : this.unfocusedError());
   readonly partnerSheetId = signal<number | null>(null);
   readonly partnerSheetRow = computed(() => this.financing().rows.find((row) => row.purchaseOrderId === this.partnerSheetId()) ?? null);
   readonly valueSheetKey = signal<string | null>(null);
@@ -1484,8 +1500,6 @@ export class AnalysesPage {
     .filter((row) => row.order.status === 'BESTELD' || row.order.status === 'ONDERWEG'));
   readonly incomingValue = computed(() => this.incomingOrders()
     .reduce((sum, row) => sum + purchaseExternalCost(row), 0));
-  readonly incomingPieces = computed(() => this.incomingOrders()
-    .reduce((sum, row) => sum + row.costing.totals.pieces, 0));
   readonly orderedCount = computed(() => this.incomingOrders()
     .filter((row) => row.order.status === 'BESTELD').length);
   readonly sailingCount = computed(() => this.incomingOrders()
@@ -1525,6 +1539,26 @@ export class AnalysesPage {
     topLimit: 8,
   }), this.ticaDays()));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers(), this.partnerSummaries()));
+  /** Partners' eight tiles (C.5): subs of at most four words, the explanations behind Hoe gerekend. */
+  readonly partnerTiles = computed<KpiTile<PartnerTileKey>[]>(() => {
+    const f = this.financing(), desk = this.desk.active(), next = this.nextAdvanceDue(), overdue = f.overdueUnbilledAdvanceEur;
+    return [
+      { key: 'advance', label: desk ? 'Afgesproken voorfinanciering' : 'Voorfinanciering', value: this.whole(f.committedAdvanceEur), tone: null, sub: 'excl. btw',
+        foot: `${this.whole(f.invoicedEur)} voorschot gefactureerd`, drill: false },
+      { key: 'unbilled', label: desk ? 'Voorschotten nog factureren' : 'Nog factureren', value: this.whole(f.unbilledAdvanceEur), tone: overdue > 0 ? 'danger' : null,
+        sub: `excl. btw · ${plural(f.unbilledAdvanceCount, 'termijn', 'termijnen')}`,
+        foot: overdue > 0 ? `${this.whole(overdue)} met vervaldatum bereikt` : next ? `volgende vervaldatum ${this.dayText(next)}` : '', footWarn: overdue > 0,
+        drill: f.unbilledAdvanceCount > 0 },
+      { key: 'received', label: desk ? 'Netto van partners ontvangen' : 'Netto ontvangen', value: this.whole(f.receivedEur), tone: null, sub: 'incl. btw', foot: '', drill: false },
+      { key: 'open', label: 'Nog te ontvangen', value: this.whole(f.openEur), tone: null, sub: 'incl. btw', foot: '', drill: f.openEur > 0 },
+      { key: 'own', label: 'Eigen kasinleg', value: this.whole(f.ownExposureEur), tone: null, sub: 'betaald min partnergeld', foot: '', drill: false },
+      { key: 'result', label: desk ? 'Gerealiseerd partnerresultaat' : 'Partnerresultaat', value: this.whole(f.resultEur), tone: f.resultEur < 0 ? 'danger' : null,
+        sub: 'uit afrekeningen', foot: '', drill: false },
+      { key: 'credit', label: 'Credit voor partners', value: this.whole(f.creditEur), tone: null, sub: 'te verrekenen', foot: '', drill: false },
+      { key: 'settle', label: 'Nog af te rekenen', value: wholeNumber(f.awaitingSettlement), unit: f.awaitingSettlement === 1 ? 'container' : 'containers',
+        tone: f.awaitingSettlement > 0 ? 'warn' : null, sub: 'veilingoverzicht wacht', foot: '', drill: f.awaitingSettlement > 0 },
+    ];
+  });
   readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
   /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
   readonly result = computed(() => withTicaResult(resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
@@ -1532,6 +1566,38 @@ export class AnalysesPage {
     today: this.today(),
   }), this.ticaDays()));
   readonly monthsNewestFirst = computed(() => [...this.result().monthly].reverse());
+  /** Resultaat's cost parts of the period (resultCostRows): Eigen kosten, the categories and the channels list them. */
+  private readonly costCharge: CostCharge = (cost, from, to) => costChargeIn(cost, from, to, this.today());
+  readonly costRows = computed(() => resultCostRows(this.costs(), { from: this.salesFromDate() || null, to: this.salesToDate() || null,
+    costCharge: this.costCharge, openEur: openOf }));
+  private readonly resultContext = computed<ResultDrillContext>(() => ({ period: this.salesScope(), channelName: channelLabel, categoryName: categoryLabel,
+    costsQuery: this.costsQuery() }));
+  /** Resultaat's five tiles (C.3): "—" for each source a figure reads (D-O3); the Resultaat tile is the bars and Per maand below. */
+  readonly resultTiles = computed<KpiTile<ResultTileKey>[]>(() => {
+    const r = this.result(), salesDown = this.failed('verkoop') || this.failed('TICA verkopen'), costsDown = this.failed('kosten');
+    const missing = r.missingCostLines;
+    const tica = r.ticaTransactions ? plural(r.ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : '';
+    const credits = r.creditNoteCount ? plural(r.creditNoteCount, 'creditnota', 'creditnota’s') : '';
+    const cost = `kost ${this.whole(r.goodsCostEur)}`;
+    return [
+      { key: 'revenue', label: 'Omzet', value: salesDown ? '—' : this.whole(r.revenueEur), tone: null,
+        sub: `excl. btw · ${plural(r.revenueInvoiceCount, 'factuur', 'facturen')}`, foot: [tica, credits].filter(Boolean).join(' · '), drill: !salesDown && r.revenueEur !== 0 },
+      { key: 'margin', label: 'Marge op goederen', value: salesDown || missing ? '—' : this.whole(r.marginEur), tone: !salesDown && !missing && r.marginEur < 0 ? 'danger' : null,
+        sub: missing ? `${plural(missing, 'regel', 'regels')} zonder kost` : r.marginPct === null ? cost : `${pctText(r.marginPct, 1)} · ${cost}`, subWarn: missing > 0,
+        foot: '', drill: !salesDown && (missing > 0 || r.marginEur !== 0) },
+      { key: 'costs', label: 'Eigen kosten', value: costsDown ? '—' : this.whole(r.costsEur), tone: null,
+        sub: costsDown ? '' : r.unpaidCostsEur ? `${this.whole(r.unpaidCostsEur)} open incl. btw` : 'alles betaald',
+        foot: !costsDown && r.depreciationEur > 0 ? `waarvan ${this.whole(r.depreciationEur)} afschrijvingen` : '', drill: !costsDown && (r.costsEur !== 0 || r.unpaidCostsEur !== 0) },
+      { key: 'result', label: 'Resultaat', value: salesDown || costsDown || missing ? '—' : this.whole(r.resultEur),
+        tone: !salesDown && !costsDown && !missing && r.resultEur < 0 ? 'danger' : null, sub: missing ? 'onvolledig: kost ontbreekt' : 'marge min kosten', foot: '', drill: false },
+      { key: 'received', label: 'Containers ontvangen', value: this.failed('inkoop') ? '—' : this.whole(r.purchasedEur), tone: null,
+        sub: plural(r.receivedContainers, 'container', 'containers'), foot: 'telt niet in het resultaat', drill: !this.failed('inkoop') && r.receivedContainers > 0 },
+    ];
+  });
+  /** A month of Per maand or the bars with something in it opens its rows. */
+  monthActive(row: { revenueEur: number; marginEur: number; costsEur: number }): boolean {
+    return row.revenueEur !== 0 || row.marginEur !== 0 || row.costsEur !== 0;
+  }
   readonly monthLabel = monthLabel;
   readonly channelLabel = channelLabel;
   channelVolume(invoiceCount: number, ticaTransactions = 0): string {
@@ -1622,8 +1688,44 @@ export class AnalysesPage {
   }
   readonly categoryLabel = categoryLabel;
 
-  readonly inventoryMetrics = computed(() => inventoryAnalysis(
-    this.stockProducts(), this.expectedStock(), { topLimit: 10, sales: this.salesOrders(), today: this.today() }));
+  /** The last invoice day per product: Nulvoorraad's order and the Aandacht list. */
+  readonly lastSold = computed(() => lastSoldOn(this.salesOrders()));
+  /* A failed sales load leaves the pace unknown (D-V4): never "every valued product is slow". */
+  readonly inventoryMetrics = computed(() => inventoryAnalysis(this.stockProducts(), this.expectedStock(),
+    { topLimit: 10, sales: this.failed('verkoop') ? undefined : this.salesOrders(), today: this.today(), lastSold: this.lastSold() }));
+
+  /** Voorraad's four tiles (C.4): "—" for a source that failed (D-O3); Onderweg in euro and containers (D-V3). */
+  readonly stockTiles = computed<KpiTile<StockTileKey>[]>(() => {
+    const im = this.inventoryMetrics(), stockDown = this.failed('voorraad'), buyDown = this.failed('inkoop');
+    const paceDown = stockDown || this.failed('verkoop');
+    const orders = this.incomingOrders();
+    const first = orders.map((row) => row.order.expectedArrival).filter((day): day is string => !!day).sort()[0] ?? null;
+    const uplift = im.stock.potentialUpliftEur, reorder = im.reorder.count;
+    return [
+      { key: 'cost', label: 'Kostwaarde', value: stockDown ? '—' : this.whole(im.stock.costValueEur), tone: null,
+        sub: `${plural(im.physicalStock.valuedPieces, 'gewaardeerd stuk', 'gewaardeerde stuks')}`,
+        foot: `eigen ${this.whole(im.stock.ownCostValueEur)} · partner ${this.whole(im.stock.partnerCostValueEur)}`, drill: !stockDown && im.capital.length > 0 },
+      { key: 'sales', label: 'Verkoopwaarde', value: stockDown ? '—' : this.whole(im.stock.salesValueEur), tone: null, sub: 'lijstprijs excl. btw',
+        foot: uplift === null ? 'kostdekking onvolledig' : `marge op voorraad ${this.whole(uplift)}`, footWarn: uplift === null,
+        drill: !stockDown && im.stock.salesValueEur !== 0 },
+      { key: 'incoming', label: 'Onderweg', value: buyDown ? '—' : this.whole(this.incomingValue()), tone: null,
+        sub: orders.length ? `${plural(orders.length, 'container', 'containers')}${first ? ` · eerst ${this.dayText(first)}` : ''}` : 'niets besteld',
+        foot: orders.length ? `${this.orderedCount()} besteld · ${this.sailingCount()} vertrokken` : '', drill: !buyDown && orders.length > 0 },
+      { key: 'reorder', label: 'Raakt op', value: paceDown ? '—' : wholeNumber(reorder), unit: paceDown ? '' : reorder === 1 ? 'SKU' : 'SKU’s',
+        tone: !paceDown && reorder > 0 ? 'danger' : null, sub: `binnen ${im.reorder.horizonWeeks} weken`,
+        foot: paceDown ? '' : `tempo ${wholeNumber(im.velocity.weeklyPieces)} per week`, drill: !paceDown && reorder > 0 },
+    ];
+  });
+  /** Datakwaliteit (C.4): each count after "met stand" opens the products it counts. */
+  readonly qualityItems = computed(() => {
+    const gaps = this.inventoryMetrics().dataGaps;
+    return [
+      { key: 'unknown', count: gaps.unknownStockSkuCount, label: 'onbekend' },
+      { key: 'unvalued', count: gaps.unvaluedStockSkuCount, label: 'zonder kostprijs' },
+      { key: 'missingCarton', count: gaps.missingCartonSkuCount, label: 'zonder omdoos' },
+      { key: 'negative', count: gaps.negativeStockSkuCount, label: 'negatief' },
+    ] as const;
+  });
 
   /** Onderweg as a list (design §5.11): soonest arrival first, then the most pieces; containers by name (N11). */
   readonly incomingRows = computed(() => [...this.inventoryMetrics().incoming.rows]
@@ -1675,6 +1777,40 @@ export class AnalysesPage {
     totalEur: purchaseExternalCost(row),
   }))));
   readonly leadDays = computed(() => averageLeadDays(this.receivedForPerformance().map((row) => row.order)));
+  /** Afgesproken: the average lead time (> 0) of the suppliers of the received orders in view. */
+  readonly agreedLeadDays = computed<number | null>(() => {
+    const ids = new Set(this.receivedForPerformance().map((row) => row.order.supplierId));
+    const days = this.suppliers().filter((supplier) => supplier.id !== null && ids.has(supplier.id) && supplier.leadTimeDays > 0).map((supplier) => supplier.leadTimeDays);
+    return days.length ? Math.round(days.reduce((sum, value) => sum + value, 0) / days.length) : null;
+  });
+  /** The received orders of Kwaliteit, one row each with the tests of its figures (receiptOrderRows) and their names. */
+  readonly receivedOrderRows = computed<ReceivedOrderRow[]>(() => {
+    const views = this.receivedForPerformance();
+    return receiptOrderRows(views.map((row) => ({ id: row.order.id, orderDate: row.order.orderDate, receivedOn: row.order.receivedOn,
+      expectedArrival: row.order.expectedArrival, lines: row.order.lines }))).map((row, index) => {
+      const order = views[index].order;
+      const lead = this.suppliers().find((supplier) => supplier.id === order.supplierId)?.leadTimeDays ?? 0;
+      return { ...row, name: containerName(order), supplierId: order.supplierId, supplierName: this.supplierName(order.supplierId), agreedDays: lead > 0 ? lead : null };
+    });
+  });
+  /** "Dit jaar · 1 jan – 21 okt 2026 · op ontvangstdatum · Yunnan": the scope line of Kwaliteit's and Afwijkingen' dialogs. */
+  readonly receiptScope = computed(() => {
+    const range = this.receiptRange(), supplier = this.receiptSupplier();
+    return [this.receiptPeriodLabel(), range.from || range.to ? this.receiptRangeText() : '', 'op ontvangstdatum',
+      supplier === null ? '' : this.supplierName(supplier)].filter(Boolean).join(' · ');
+  });
+  /** Kwaliteit's three tiles (C.5): each opens the received orders, ordered for its figure. */
+  readonly qualityTiles = computed<KpiTile<ReceiptFigure>[]>(() => {
+    const perf = this.supplierPerformance(), lead = this.leadDays(), agreed = this.agreedLeadDays(), any = perf.receivedOrders > 0;
+    return [
+      { key: 'perfect', label: 'Perfect ontvangen', value: perf.perfectPct === null ? '—' : pctText(perf.perfectPct, 1), tone: null,
+        sub: `${wholeNumber(perf.perfectOrders)} van ${plural(perf.comparableOrders, 'order', 'orders')}`, foot: '', drill: any && perf.perfectPct !== null },
+      { key: 'ontime', label: 'Op tijd', value: perf.onTimePct === null ? '—' : pctText(perf.onTimePct, 0), tone: null,
+        sub: `${wholeNumber(perf.onTimeOrders)} van ${wholeNumber(perf.datedOrders)} · laatste ETA`, foot: '', drill: any && perf.onTimePct !== null },
+      { key: 'lead', label: 'Doorlooptijd', value: lead === null ? '—' : plural(lead, 'dag', 'dagen'), tone: null, sub: 'besteld tot ontvangst',
+        foot: agreed === null ? '' : `afgesproken ${wholeNumber(agreed)} d`, drill: any && lead !== null },
+    ];
+  });
   private readonly regionNames = new Intl.DisplayNames(['nl'], { type: 'region' });
 
   /** Afwijkingen' order cards: the report's lines per order (the rule of the Overzicht dialog too, drill-purchase.ts). */
@@ -1900,18 +2036,15 @@ export class AnalysesPage {
       case 'overdue': return [overdueView(this.allDocs(), this.allSales().invoices.overdueValueEur)];
       case 'stock': {
         const zero = this.inventoryMetrics().zeroStock;
-        return [zeroNoIncomingView(zero.rows, lastSoldOn(this.salesOrders()), zero.withoutIncomingCount)];
+        return [zeroNoIncomingView(zero.rows, this.lastSold(), zero.withoutIncomingCount)];
       }
       case 'variance': {
         const report = this.overviewReport();
         return [varianceOrdersView(varianceGroups(report.rows), report.totals.totalLossValueEur, report.totals.unvaluedLossPieces,
           `Dit jaar · ${this.yearRangeText()} · op ontvangstdatum`, (group) => this.containerOf(group.orderId, group.orderNumber, group.orderAlias))];
       }
-      case 'settle': {
-        const received = new Map(this.purchases().map((row) => [row.order.id, row.order.receivedOn ?? null]));
-        return [partnersAwaitingView(this.financing().rows, received, this.financing().awaitingSettlement, (row) => this.partnerName(row))];
-      }
-      case 'advance': return [partnersUnbilledView(this.financing().unbilledAdvances, this.financing().unbilledAdvanceEur, (row) => this.partnerName(row))];
+      case 'settle': return [this.partnerView('settle')];
+      case 'advance': return [this.partnerView('unbilled')];
       default: return null;
     }
   }
@@ -1971,6 +2104,104 @@ export class AnalysesPage {
     const card = this.ticaCard().data, range = this.ticaLines();
     if (!card || !range) return;
     this.drillHost.open([ticaUnmatchedView(card.products, card.unmatchedLines, range, rangeLabel(range.from, range.to))]);
+  }
+
+  /* ---------- Resultaat (§B.4): Omzet and Marge open Verkoop's lists with Resultaat's figures (the same rules) */
+
+  openResultTile(key: ResultTileKey): void {
+    const r = this.result(), ctx = this.drillContext(), docs = this.salesDocs(), from = this.salesFromDate() || null, to = this.salesToDate() || null;
+    switch (key) {
+      case 'revenue': this.drillHost.open(revenueViews(docs, this.ticaMonths(), r.revenueEur, ctx, to)); break;
+      case 'margin': this.drillHost.open(marginViews(docs, this.ticaMonths(), missingCostRows(this.salesOrders(), { from, to }),
+        { marginEur: r.marginEur, marginPct: r.marginPct, missingCostLines: r.missingCostLines }, ctx, to,
+        ticaLineRange(this.salesFromDate(), this.salesToDate(), this.ticaDays(), this.today()))); break;
+      case 'costs': this.drillHost.open([costsView(this.costRows(), r.byCategory.map((row) => row.category), r.costsEur, this.resultContext())]); break;
+      case 'received': this.drillHost.open([receivedView(receivedContainerRows(this.purchases(), { from, to }), r.purchasedEur, this.resultContext(),
+        { container: (row) => this.containerOf(row.id, row.number, row.alias), supplier: (id) => this.supplierName(id), amount: this.whole })]); break;
+      case 'result': break;
+    }
+  }
+
+  /** Kosten per categorie: one category's cost parts. */
+  openCategory(code: string, figure: number): void {
+    this.drillHost.open([categoryView(code, this.costRows(), figure, this.resultContext())]);
+  }
+
+  /** A month of the bars or of Per maand: its documents, TICA and costs, the costs clipped to the period. */
+  openMonth(month: string): void {
+    const r = this.result(), row = r.monthly.find((candidate) => candidate.month === month);
+    if (!row) return;
+    const [year, index] = month.split('-').map(Number);
+    const first = `${month}-01`, last = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, '0')}`;
+    const from = this.salesFromDate(), to = this.salesToDate();
+    const costs = resultCostRows(this.costs(), { from: from && from > first ? from : first, to: to && to < last ? to : last, costCharge: this.costCharge, openEur: openOf });
+    this.drillHost.open([monthView(month, monthLabel(month), this.salesDocs(), this.ticaMonths(), costs, { resultEur: row.resultEur, complete: !r.missingCostLines },
+      this.resultContext())]);
+  }
+
+  /** Per verkoopkanaal: a channel's documents, TICA and costs; null = Algemene kosten (costs on no channel). */
+  openResultChannel(code: string | null): void {
+    const r = this.result();
+    if (code === null) { this.drillHost.open([generalCostsView(this.costRows(), r.generalCostsEur, this.resultContext())]); return; }
+    const row = r.byChannel.find((candidate) => candidate.channel === code);
+    if (!row) return;
+    this.drillHost.open([resultChannelView(code, this.salesDocs(), this.ticaMonths(), this.costRows(),
+      { resultEur: row.resultEur, complete: !row.missingCostLines && !row.ticaMissingCostLines }, this.resultContext())]);
+  }
+
+  /* ---------- Voorraad (§B.5) */
+
+  openStockTile(key: StockTileKey): void {
+    const im = this.inventoryMetrics(), unit = (id: number, count: number) => this.unitWords(id, count);
+    switch (key) {
+      case 'cost': case 'sales':
+        this.drillHost.open([stockValueView(im.capital, im.gapRows.unvalued,
+          { costValueEur: im.stock.costValueEur, salesValueEur: im.stock.salesValueEur, upliftEur: im.stock.potentialUpliftEur }, key, unit, this.whole)]); break;
+      case 'incoming':
+        this.drillHost.open([incomingView(this.incomingOrders(), this.incomingValue(), { container: (view) => containerName(view.order),
+          supplier: (id) => this.supplierName(id), cost: purchaseExternalCost }, `${this.orderedCount()} besteld · ${this.sailingCount()} vertrokken`)]); break;
+      case 'reorder': {
+        const supplierOf = (id: number | null) => { const supplier = this.suppliers().find((row) => row.id === id); return supplier ? { name: supplier.name, leadTimeDays: supplier.leadTimeDays } : null; };
+        this.drillHost.open([reorderView(im.reorder.rows, im.reorder.count, this.today(), supplierOf, unit, im.velocity.days)]); break;
+      }
+    }
+  }
+
+  /** Datakwaliteit: the four counts as segments, on the one clicked. */
+  openQuality(index: number): void {
+    const im = this.inventoryMetrics(), gaps = im.dataGaps;
+    this.drillHost.open(qualityViews(im.gapRows, { unknown: gaps.unknownStockSkuCount, unvalued: gaps.unvaluedStockSkuCount, missingCarton: gaps.missingCartonSkuCount,
+      negative: gaps.negativeStockSkuCount }, (id, count) => this.unitWords(id, count)), Math.max(0, Math.min(index, QUALITY_KEYS.length - 1)));
+  }
+
+  /* ---------- Inkoop › Kwaliteit, Partners, Afwijkingen (§B.6) */
+
+  openReceipts(by: ReceiptFigure): void {
+    this.drillHost.open([receiptsView(by, this.receivedOrderRows(), this.supplierPerformance(), { averageDays: this.leadDays(), agreedDays: this.agreedLeadDays() },
+      this.receiptScope())]);
+  }
+
+  /** Scorekaart: a supplier's received orders (D-V1: the supplier list opens from its foot). */
+  openSupplier(card: SupplierScorecard): void {
+    this.drillHost.open([supplierView(card, this.receivedOrderRows(), this.receiptScope(), this.whole)]);
+  }
+
+  openPartnerTile(key: PartnerTileKey): void {
+    if (key === 'unbilled' || key === 'open' || key === 'settle') this.drillHost.open([this.partnerView(key)]);
+  }
+
+  private partnerView(key: 'unbilled' | 'open' | 'settle'): DrillView {
+    const f = this.financing(), name = (row: PartnerFinancingRow) => this.partnerName(row);
+    if (key === 'unbilled') return partnersUnbilledView(f.unbilledAdvances, f.unbilledAdvanceEur, name);
+    if (key === 'open') return partnersOpenView(f.rows, f.openEur, name);
+    const received = new Map(this.purchases().map((row) => [row.order.id, row.order.receivedOn ?? null]));
+    return partnersAwaitingView(f.rows, received, f.awaitingSettlement, name);
+  }
+
+  /** Afwijkingen › Inkoopimpact: per product and per supplier, in the report's selection (the order focus included). */
+  openImpact(): void {
+    const report = this.report(), focus = this.focusedOrderId() === null ? '' : ` · alleen ${this.focusName()}`;
+    this.drillHost.open(impactViews(report.rows, report.totals, `${this.receiptScope()}${focus}`, (row) => this.productLabel(row)));
   }
 
   /** Producten names come from the catalogue (D-S10); the invoice line's text when the product is gone. */
@@ -2096,7 +2327,6 @@ export class AnalysesPage {
     /* The variance ticket: a filter change while this load runs starts a newer loadVariances(), whose report wins. */
     const round = ++this.varianceRound;
     this.receiptError.set('');
-    this.unfocusedError.set('');
     try {
       const filters = this.filters();
       this.loadedFilterKey = JSON.stringify(filters);
@@ -2121,8 +2351,7 @@ export class AnalysesPage {
       if (round === this.varianceRound) {
         if (report.status === 'fulfilled') this.acceptReport(report.value);
         else this.receiptError.set(messageOf(report.reason, VARIANCE_FAILED));
-        if (unfocused.status === 'fulfilled') { if (unfocused.value) this.unfocusedReport.set(unfocused.value); }
-        else this.unfocusedError.set(messageOf(unfocused.reason, VARIANCE_FAILED));
+        if (unfocused.status === 'fulfilled' && unfocused.value) this.unfocusedReport.set(unfocused.value);
         this.filtering.set(false);
       }
       /* Overzicht reuses Afwijkingen' report while its filter is the default (this year, everything); that filter never changes, so an older round still fits it. */
@@ -2156,7 +2385,6 @@ export class AnalysesPage {
     const round = ++this.varianceRound;
     this.filtering.set(true);
     this.receiptError.set('');
-    this.unfocusedError.set('');
     const filters = this.filters();
     this.loadedFilterKey = JSON.stringify(filters);
     try {
@@ -2167,8 +2395,7 @@ export class AnalysesPage {
         this.acceptReport(report.value);
         if (this.sameFilters(filters, this.overviewFilters())) this.overviewReport.set(report.value);
       } else this.receiptError.set(messageOf(report.reason, VARIANCE_FAILED));
-      if (unfocused.status === 'fulfilled') { if (unfocused.value) this.unfocusedReport.set(unfocused.value); }
-      else this.unfocusedError.set(messageOf(unfocused.reason, VARIANCE_FAILED));
+      if (unfocused.status === 'fulfilled' && unfocused.value) this.unfocusedReport.set(unfocused.value);
     } finally {
       if (round === this.varianceRound) this.filtering.set(false);
     }
@@ -2278,10 +2505,12 @@ export class AnalysesPage {
     try { return this.regionNames.of(code) ?? code; } catch { return code; }
   }
 
+  /** Raakt binnenkort op: how long the shelf lasts on its own (D-V6: what is on the water is in the sub). */
   weeksLabel(weeks: number | null): string {
     if (weeks === null) return 'Geen verkoop';
-    if (weeks < 1) return 'Minder dan een week';
-    return `Nog ${weeks} weken`;
+    if (weeks <= 0) return 'nu op';
+    if (weeks < 1) return 'op binnen een week';
+    return `op in ${plural(Math.round(weeks), 'week', 'weken')}`;
   }
 
   valueKey(row: ReceiptVarianceRow): string { return `${row.orderId}:${row.lineId ?? 'legacy'}`; }
@@ -2336,6 +2565,11 @@ export class AnalysesPage {
     this.report.set(report);
     this.valueDrafts.set(Object.fromEntries(report.rows.map((row) => [this.valueKey(row), formatValue(row.receiptUnitValueEur)])));
   }
+}
+
+/** "92,3 %": a percentage as the tiles write it. */
+function pctText(value: number, decimals: number): string {
+  return `${value.toLocaleString('nl-BE', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} %`;
 }
 
 /** A stored value per piece as the field shows it: "1,26" (no grouping, up to four decimals). */

@@ -33,6 +33,19 @@ app-analyses-page .an-funnel__item:hover { color: var(--rose-dark); }
 app-analyses-page .an-tica__drill { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
 app-analyses-page .an-tica__drill:hover { color: var(--rose-dark); }
 
+/* Resultaat: a month bar, a Per maand month and a scorecard supplier open their rows; the table's total row is the tiles. */
+app-analyses-page button.an-mbars__m { display: block; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; font: inherit; cursor: pointer; }
+app-analyses-page button.an-mbars__m:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+app-analyses-page button.an-mbars__m:focus-visible { outline: 2px solid var(--rose); outline-offset: -2px; }
+app-analyses-page button.an-mbars__m:disabled { cursor: default; }
+app-analyses-page .an-table td button.an-link { color: inherit; font-size: inherit; font-weight: 650; text-align: left; white-space: normal; }
+app-analyses-page .an-table td button.an-link:hover { color: var(--rose-dark); }
+app-analyses-page .an-table tfoot td { border-top: 1px solid var(--line-strong); border-bottom: 0; font-weight: 700; }
+/* Voorraad › Datakwaliteit: a count is the trigger, in its warn tone. */
+app-analyses-page .an-quality button.an-link { color: var(--warn); font-size: inherit; font-weight: 500; }
+app-analyses-page .an-quality button.an-link b { color: inherit; }
+app-analyses-page button.an-link:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; border-radius: 4px; }
+
 /* ---------- the dialog: desk = the wide Sheet with a kit table, phone = the iOS sheet with inset cells */
 app-an-drill .sheet__foot:empty { display: none; }
 app-an-drill .and { display: grid; gap: 10px; }

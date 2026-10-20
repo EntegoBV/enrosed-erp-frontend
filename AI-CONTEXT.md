@@ -484,9 +484,16 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   open their quotes), Omzet per maand excl. btw, channels, Opvolgen, Landen
   / Klanten by omzet excl. / Producten (catalogue names, counts in the
   product's sales unit), the TICA card.
-- Voorraad: six figures, a Datakwaliteit line, Nulvoorraad, Minder dan één
-  outer carton, the new Onderweg list (containers by name), Raakt binnenkort
-  op, Grootste voorraadposities (Trage verkopers folds in when identical).
+- Voorraad: four figures since round 2 (Kostwaarde, Verkoopwaarde with the
+  marge op voorraad, Onderweg in € over the ordered and sailing containers,
+  Raakt op), a Datakwaliteit line ("n SKU's met stand" then four counts that
+  open their products; "onbekend" = active non-demo only), Nulvoorraad
+  (nothing on order first, then last sold), Minder dan één omdoos, the
+  Onderweg list (containers by name), Raakt binnenkort op (every row, shelf
+  weeks "op in n weken" without what is on the water), Grootste
+  voorraadposities ("Alle ›" = every valued product; Trage verkopers folds in
+  when identical, and lists every row; a failed sales load passes
+  `sales: undefined`, so nothing reads as slow).
   Stock counts every location (critique N14): `catalog.stockLevels()` with
   the page load, `withAllLocations()` (analyses-stock.ts) feeds Voorraad and
   Overzicht; on failure the warehouse figure counts and the banner says
@@ -499,9 +506,9 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   (`?ontvangst` / `?ovan&otot`) and `?leverancier`, applied at once with a
   300 ms debounced reload; `load()` and `loadVariances()` share one ticket
   (`varianceRound`), so the newest report wins. The order focus applies to Afwijkingen only
-  (critique N8; Kwaliteit reads `qualityReport`, the unfocused report, and
-  `qualityError`: a failed report shows the danger banner with Opnieuw and
-  "—" for its two variance figures, never € 0 / "alles gewaardeerd"); the
+  (critique N8; the part's order count reads `qualityReport`, the unfocused
+  report; since round 2 Kwaliteit has three figures, Perfect, Op tijd and
+  Doorlooptijd, and the variance figures live on Afwijkingen only); the
   chip "Alleen {container} ✕" clears it and `?orderId`. A deep link scrolls
   to the order card (`#an-order-{id}`, ring `.is-focus`). Value field
   (critique B3): it shows the stored `receiptUnitValueEur` ("1,26"), label
@@ -523,12 +530,16 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   still scroll. On the phone row 2
   wraps: the supplier picker fills the line beside the period capsule and
   the order chip gets a line of its own.
-- Resultaat: five figures (3 + 2 below 1280), `app-an-month-bars`
-  (result-month-bars.ts; a year band under the months when the bars span
-  several years, `yearSpans()`), channels as rows and categories as share
-  rows, both full-width cards (side by side they left a 250 px hole), Per
-  maand with "mrt 2026" and every month up to today (`resultAnalysis`
-  `today` option; credit notes counted apart: `creditNoteCount`).
+- Resultaat: five figures (3 + 2 below 1280; "Containers ontvangen" telt
+  niet in het resultaat), `app-an-month-bars` (result-month-bars.ts; a year
+  band under the months when the bars span several years, `yearSpans()`;
+  each month with figures is a button, `picked`), channels as rows (with a
+  last row "Algemene kosten", `generalCostsEur`, so they add up to the
+  result) and categories as share rows, both full-width cards (side by side
+  they left a 250 px hole), Per maand with "mrt 2026", every month up to
+  today (`resultAnalysis` `today` option; credit notes counted apart:
+  `creditNoteCount`) and a Totaal row. "Alle kosten ›" carries the period
+  (`costsQuery`).
 - Markt: its own tool row (desk: period segmented, ECB line, "+ Tarief
   toevoegen"; phone: the tinted capsule "6 maanden ⌄" opening a "Periode"
   sheet, as the Kasprognose horizon), tiles fill the card, "Onze laatste
@@ -564,7 +575,7 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
 is open. Kept on purpose: Inkoop's phone container filter and supplier stay
 native selects styled as capsules (critique B10).
 
-### Analyses round 2: drill-downs (2026-10-21, WP1a)
+### Analyses round 2: drill-downs (2026-10-21, WP1a + WP1b)
 
 Design: scratchpad design/analyses2/design.md (§A kit, §B per screen, §C
 clarity, §D bugs, §E packages). A click on a total opens one dialog with
@@ -596,17 +607,22 @@ the rows behind it; **the rows add up to the clicked figure** (A.4).
   remove). Every tab has `HOW_TEXTS` (market, website new; the phone ⋯
   shows them); Markt and Bezoekers get `<app-an-how how>` projected (their
   `[how]` slot comes with WP3/WP4).
-- **Part b (WP1b) still to do on this branch**: Resultaat (B.4, C.3: tiles,
-  `resultCostRows`, `receivedContainerRows`, month bars `picked`, Per maand
-  tfoot, Algemene kosten row, D-O4 for `ResultChannelRow`, D-O5, D-O7,
-  D-O9; `costsQuery` on the page is ready for "Alle kosten ›"), Voorraad
-  (B.5, C.4, D-V2…V6; `lastSoldOn` exists for the Nulvoorraad sort; the
-  Overzicht moved Besteld/onderweg and Voorraadwaarde figures there),
-  Inkoop Kwaliteit / Partners / Afwijkingen (B.6, C.5, D-V1, `receiptOrderRows`;
-  `drill-purchase.ts` already has `varianceGroups` and the two partner
-  views the Overzicht uses; Kwaliteit takes Perfect/Op tijd from the old
-  Overzicht tile). Extend `tests/analyses-drill-stock.test.mts`,
-  `-purchase.test.mts` and add `-result.test.mts`.
+- WP1b: `drill-result.ts` (Eigen kosten per category, a category, Containers
+  ontvangen, a month, a channel, Algemene kosten; Omzet and Marge op
+  goederen reuse Verkoop's views with Resultaat's figures), `drill-stock.ts`
+  (Kostwaarde / Verkoopwaarde with a "Zonder kostprijs" group, Onderweg,
+  Raakt op with "Bestel vóór" = today + shelf weeks − the supplier's
+  `leadTimeDays`, Datakwaliteit in four segments), `drill-purchase.ts`
+  (Perfect / Op tijd / Doorlooptijd over `receiptOrderRows`, a scorecard
+  supplier with "Leverancier openen ›" `/suppliers?q=` (D-V1), Nog te
+  ontvangen, Inkoopimpact per product and per supplier). Row data:
+  `resultCostRows` (one row per cost part; Σ = costsEur, Σ open =
+  unpaidCostsEur), `receivedContainerRows` (purchasedEur sums it),
+  `inventoryAnalysis` `capital` + `gapRows` (the dataGaps counts are their
+  lengths) + `lastSold` option, no slicing of reorder / slow rows,
+  `receiptOrderRows` (supplierReceiptPerformance counts its tests).
+  Resultaat's missing-cost rule is Verkoop's (non-advance invoices, D-O7),
+  also per channel (`ResultChannelRow.missingCostLines`, D-O4).
 
 ## Workspaces
 

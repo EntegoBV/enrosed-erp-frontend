@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { ResultMonthRow } from './analysis-metrics';
 import { eurK } from '../finance/cash-format';
 import { monthBars, monthLabel, monthShort, yearSpans } from './analyses-words';
@@ -8,7 +8,9 @@ import { monthBars, monthLabel, monthShort, yearSpans } from './analyses-words';
  * margin on goods (accent above zero, danger below) beside the own costs
  * (warn, hanging below zero), one zero line and three ticks; the desk shows
  * each month's result under its label. Every month of the period is there,
- * empty ones as bars of 0; a period over several years adds a year band. Styles: analyses-tabs.scss (.an-mbars).
+ * empty ones as bars of 0; a period over several years adds a year band. Each month with figures is a button
+ * that says its numbers and emits `picked` (the page opens the month's rows, design/analyses2 §B.4). Styles:
+ * analyses-tabs.scss (.an-mbars), the button reset in analyses-drill.scss.
  */
 @Component({
   selector: 'app-an-month-bars',
@@ -16,17 +18,18 @@ import { monthBars, monthLabel, monthShort, yearSpans } from './analyses-words';
   host: { class: 'an-mbars-host' },
   template: `
     @let g = geometry();
-    <div class="an-mbars" role="img" [attr.aria-label]="ariaLabel()" [style.--h.px]="height()" [style.--n]="g.bars.length">
+    <div class="an-mbars" role="group" [attr.aria-label]="ariaLabel()" [style.--h.px]="height()" [style.--n]="g.bars.length">
       <div class="an-mbars__axis" aria-hidden="true">
         @for (tick of g.ticks; track tick.value) { <span [style.top.%]="tick.pct">{{ k(tick.value) }}</span> }
       </div>
-      <div class="an-mbars__plot" aria-hidden="true">
-        @for (tick of g.ticks; track tick.value) { <i class="an-mbars__grid" [class.is-zero]="tick.value === 0" [style.top.%]="tick.pct"></i> }
+      <div class="an-mbars__plot">
+        @for (tick of g.ticks; track tick.value) { <i class="an-mbars__grid" aria-hidden="true" [class.is-zero]="tick.value === 0" [style.top.%]="tick.pct"></i> }
         @for (bar of g.bars; track bar.month) {
-          <div class="an-mbars__m" [attr.title]="title(bar.month)">
+          <button class="an-mbars__m" type="button" aria-haspopup="dialog" [disabled]="!pickable(bar.month)" [attr.aria-label]="title(bar.month)" [attr.title]="title(bar.month)"
+                  (click)="picked.emit(bar.month)">
             <i class="m" [class.neg]="bar.marginNegative" [style.top.%]="bar.marginTop" [style.height.%]="bar.marginHeight"></i>
             <i class="c" [style.top.%]="bar.costTop" [style.height.%]="bar.costHeight"></i>
-          </div>
+          </button>
         }
       </div>
     </div>
@@ -48,6 +51,8 @@ export class ResultMonthBars {
   readonly height = input(180);
   /** Phone: month words only; the results are in the Per maand cells below. */
   readonly compact = input(false);
+  /** A month with figures was clicked ('2026-10'). */
+  readonly picked = output<string>();
 
   readonly geometry = computed(() => monthBars(this.months()));
   readonly years = computed(() => yearSpans(this.months().map((row) => row.month)));
@@ -57,6 +62,12 @@ export class ResultMonthBars {
   });
   readonly k = eurK;
   readonly short = monthShort;
+
+  /** A month without margin, revenue or costs has nothing to list: its bar stays plain. */
+  pickable(month: string): boolean {
+    const row = this.months().find((candidate) => candidate.month === month);
+    return !!row && (row.revenueEur !== 0 || row.marginEur !== 0 || row.costsEur !== 0);
+  }
 
   title(month: string): string {
     const row = this.months().find((candidate) => candidate.month === month);
