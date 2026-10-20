@@ -24,7 +24,7 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, physicalInventoryQuantity, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
@@ -66,7 +66,7 @@ import { changeOverMonths } from './market-math';
 import type { Months } from './market-math';
 import { AnVisitorsRow } from './analyses-visitors-row';
 import { ResultMonthBars } from './result-month-bars';
-import { withAllLocations } from './analyses-stock';
+import { withAllLocations, fractionalDisplayCount } from './analyses-stock';
 import { LoadError } from '../../shared/load-error';
 import { AnHow, HOW_TEXTS } from './analyses-how';
 import { AnPeriodPicker, AnPeriodSheet } from './analyses-period-picker';
@@ -438,7 +438,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             <div class="an-kpi" data-kpi="stock">
               <span class="an-kpi__label">Voorraadwaarde</span>
               <span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(inventoryPurchaseValue()) }}</span>
-              <span class="an-kpi__sub">vandaag · {{ inventoryValuedPieces() | num }} st met kost@if (inventoryUnvaluedPieces()) { · {{ inventoryUnvaluedPieces() | num }} zonder kost }@if (inventoryUnknownSkuCount()) { · {{ plural(inventoryUnknownSkuCount(), 'SKU', 'SKU’s') }} zonder betrouwbare stand }</span>
+              <span class="an-kpi__sub">vandaag · {{ inventoryValuedPieces() | num }} fysieke stuks met kost@if (inventoryUnvaluedPieces()) { · {{ inventoryUnvaluedPieces() | num }} zonder kost }@if (inventoryUnknownSkuCount()) { · {{ plural(inventoryUnknownSkuCount(), 'SKU', 'SKU’s') }} zonder betrouwbare stand }</span>
               <span class="an-kpi__foot">Verkoopwaarde {{ whole(inventorySalesValue()) }} · {{ inventoryUplift() === null ? 'kostdekking onvolledig' : signedWhole(inventoryUplift()!) }}</span>
             </div>
             <div class="an-kpi" data-kpi="pipeline">
@@ -483,7 +483,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/inventory">
                     <span class="an-tile tone-green"><app-icon name="stock" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Voorraad</span>
-                      <span class="an-row__sub">{{ inv.stock.knownPieces | num }} st</span>
+                      <span class="an-row__sub">{{ inv.physicalStock.knownPieces | num }} fysieke stuks</span>
                       <span class="an-row__sub">{{ plural(inv.zeroStock.withoutIncomingCount, 'product', 'producten') }} op nul zonder aanvulling</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('voorraad') ? '—' : whole(inv.stock.costValueEur) }}</span>
                       <span class="an-row__meta">kostwaarde</span></span>
@@ -764,11 +764,11 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         } @else {
           <div class="an-kpis an-kpis--6">
             <div class="an-kpi"><span class="an-kpi__label">Kostwaarde</span><span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(im.stock.costValueEur) }}</span>
-              <span class="an-kpi__sub">{{ im.stock.valuedPieces | num }} gewaardeerde stuks</span>
-              <span class="an-kpi__foot">eigen {{ whole(im.stock.ownCostValueEur) }} · partner {{ whole(im.stock.partnerCostValueEur) }}@if (im.stock.partnerPieces) { voor {{ im.stock.partnerPieces | num }} st, al gefactureerd, nog te verzenden }</span></div>
+              <span class="an-kpi__sub">{{ im.physicalStock.valuedPieces | num }} gewaardeerde fysieke stuks</span>
+              <span class="an-kpi__foot">eigen {{ whole(im.stock.ownCostValueEur) }} · partner {{ whole(im.stock.partnerCostValueEur) }}@if (im.physicalStock.partnerPieces) { voor {{ im.physicalStock.partnerPieces | num }} fysieke stuks, al gefactureerd, nog te verzenden }</span></div>
             <div class="an-kpi"><span class="an-kpi__label">Verkoopwaarde</span><span class="an-kpi__value">{{ whole(im.stock.salesValueEur) }}</span>
-              <span class="an-kpi__sub">{{ im.stock.saleablePieces | num }} actieve verkoopbare stuks</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi"><span class="an-kpi__label">Bekende voorraad</span><span class="an-kpi__value">{{ im.stock.knownPieces | num }} <small>st</small></span>
+              <span class="an-kpi__sub">{{ im.physicalStock.saleablePieces | num }} fysieke stuks van actieve verkoopproducten</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Bekende voorraad</span><span class="an-kpi__value">{{ im.physicalStock.knownPieces | num }} <small>fysieke stuks</small></span>
               <span class="an-kpi__sub">{{ plural(im.stock.knownSkuCount, 'SKU', 'SKU’s') }} · {{ im.stock.unknownSkuCount | num }} onbekend</span><span class="an-kpi__foot"></span></div>
             <div class="an-kpi"><span class="an-kpi__label">Onderweg</span><span class="an-kpi__value">{{ im.incoming.pieces | num }} <small>st</small></span>
               <span class="an-kpi__sub">{{ plural(im.incoming.skuCount, 'SKU', 'SKU’s') }}@if (im.incoming.nextArrival) { · eerst verwacht {{ dayText(im.incoming.nextArrival) }} }</span><span class="an-kpi__foot"></span></div>
@@ -1481,9 +1481,9 @@ export class AnalysesPage {
   readonly inventoryUnknownSkuCount = computed(() => this.stockProducts()
     .filter((product) => product.inventoryKnown !== true).length);
   readonly inventoryValuedPieces = computed(() => this.valuedInventory()
-    .reduce((sum, product) => sum + product.stockQuantity, 0));
+    .reduce((sum, product) => sum + physicalInventoryQuantity(product), 0));
   readonly inventoryUnvaluedPieces = computed(() => this.unvaluedInventory()
-    .reduce((sum, product) => sum + product.stockQuantity, 0));
+    .reduce((sum, product) => sum + physicalInventoryQuantity(product), 0));
   readonly inventoryPurchaseValue = computed(() => this.valuedInventory()
     .reduce((sum, product) => sum + product.stockQuantity * product.landedCostEur!, 0));
   readonly saleableInventory = computed(() => this.stockProducts().filter((product) =>
@@ -1576,7 +1576,9 @@ export class AnalysesPage {
   /** "7.200 stuks", "1.500 displays": a count in the product's own sales unit (design §5.10). */
   unitWords(productId: number, count: number): string {
     const product = this.products().find((candidate) => candidate.id === productId);
-    return product ? unitCount(productSalesUnit(product), count) : `${new Intl.NumberFormat('nl-BE').format(count)} stuks`;
+    if (!product) return `${new Intl.NumberFormat('nl-BE').format(count)} stuks`;
+    const unit = productSalesUnit(product);
+    return (unit.isDisplay ? fractionalDisplayCount(count, unit.piecesPerDisplay, unit.piece) : null) ?? unitCount(unit, count);
   }
   readonly categoryLabel = categoryLabel;
 

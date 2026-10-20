@@ -203,7 +203,8 @@ host stays inline):
   app-ios-nav), the glass bar with title over subtitle on detail screens.
   Back control: none on the five tab roots, else the screen below in the
   history ("‹ Verkoop", history back), without history the parent's label,
-  backTo's screen label, or "Meer"; over ten characters, or when the title
+  backTo's screen label, or the root of the screen's tab (`phoneTabRootFor`:
+  "‹ Verkoop" on Klanten, "‹ Meer" on a Meer-only screen); over ten characters, or when the title
   would be cut, a chevron circle; still cut, an editable title's pencil goes
   (`.appbar--tight`, the button keeps "Titel wijzigen"). "Cut" is measured
   unrounded (`textCut`: a Range over the text against its box; scrollWidth
@@ -246,6 +247,53 @@ stays the accessible name) and the bar narrows beside it (9.5 px labels).
 `.fab--text` keeps an action's words ("Container kiezen", Partner scope) as
 a labelled pill above the bar. Staff screens use `--bg` #f2efeb on the
 phone, as the status-bar theme-color and the manifest do.
+Long press (2026-10-20, `core/platform/tab-menu.ts` + App): about 450 ms
+on Verkoop, Inkoop or Producten (cancelled past 10 px; Android's own
+contextmenu may open it a little sooner) opens a glass `role=menu` above
+that tab, centred on it and kept within the bar: the tab root in full
+("Verkooporders") first, then Meer's rows for that group (short labels,
+counts, the current page in the accent pill, only under the lit tab:
+`menuRowCurrent`). Tap a row or slide onto it
+and let go; a tap outside (the backdrop, z 70, covers the page and the
+'+'; the bar is raised to 71 above it while open, so another tab still
+takes a press), Escape (focus back to the tab), a route change or a page
+scroll closes it. The click that ends a long press is swallowed in the
+capture phase, before RouterLink; a plain tap still goes to the tab root.
+The bar and the menu have no callout, selection or link drag (the menu
+also cancels `contextmenu`: Android's link sheet), and the three tabs are
+`touch-action: none`. Shift+F10 / ContextMenu opens it from a focused tab;
+Space opens a row as Enter does; `data-kit-overlay` stands the page's keys
+down. It scales in on `--dur-2`, the menu token. Home and Meer get none;
+the desk is unchanged.
+Decided by Emre (2026-10-20, fewer trips to Meer): a page that is a row of
+a tab's menu belongs to that tab. Klanten, TICA, Wijzigingen,
+Login-aanvragen, Prospects, Contactaanvragen and Landen & vracht light
+Verkoop; Leveranciers and Douane Inkoop; Voorraad, Jaarinventaris,
+Locaties, EAN-codes, Categorieën and Catalogus PDF Producten, each with
+what lies below it (`PHONE_TAB_PAGES` in phone-tabs.ts, kept equal to the
+`tabMenuFor` rows by a test). Without history their back goes up to the
+tab root ("‹ Verkoop", "‹ Inkoop", "‹ Producten"); those pages set no
+`backTo="/more"` any more. The menus' views of Instellingen (Kortingen,
+Catalogusdata: `/settings?sectie=…`) stay Instellingen's and light Meer,
+so the menu marks them current under no tab. Picked from the menu, a page
+of the lit tab arrives as a push from anywhere in it (`menuRowInfo`:
+Klanten from an order never slides back as a pop); the tab root and a
+page you are on or under keep the plain rule, so they go up: under by
+path, an exact row too (Voorraad from Jaarinventaris), or by `parentOf`
+(Catalogus PDF from its texts; `liesUnder` in tab-menu.ts); a view of
+Instellingen only by its query. A page of another tab (Klanten picked on
+Meer) is a tab switch. One navigation per pick, so the tab pill moves once.
+Instellingen's phone rows push only while their page lights Meer
+(`SettingsOverview.rowInfo`): Douane (Inkoop) and Categorieën (Producten)
+name no direction and fade as a tab switch.
+Open for Emre: the open login-request count stays on the phone Meer tab,
+though Login-aanvragen now lights Verkoop. Kept so
+for now because the Verkoop tab's number is the bell's (`actionCount`,
+"the two cannot drift apart"); the count still shows on the Login-aanvragen
+row of the Verkoop menu, on Meer's Verkoop group and as a Home task. If he
+wants it on Verkoop, the tab sums both as the desk's group header does
+(`groupCountKeys`); the 680-899 rail's Meer keeps its count either way
+(Login-aanvragen is not in that rail; shell-contract.test.mts).
 
 **Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
 "Aangemeld als …", the bell) over the kit's inset groups rendered from
@@ -291,8 +339,13 @@ never shows the form again.
   `NavCountKey` names WorkQueue signals; extend it with the signal. Icons
   are unique within a group and never two look-alikes ('suppliers' and
   'truck' are the same lorry; Douane has 'customs', a stamp).
-- `phone-tabs.ts`: `phoneTabForUrl` (screens reached from Meer light Meer),
+- `phone-tabs.ts`: `phoneTabForUrl` (a page of a tab's long-press menu
+  lights that tab, `PHONE_TAB_PAGES`; screens reached only from Meer light
+  Meer), `phoneTabRootFor` (the phone back's last fallback),
   `isPhoneTabRoot`, `PHONE_TABS`. The tab bar highlight uses it.
+- `tab-menu.ts`: the long press's rows (`tabMenuFor`), press decisions
+  (`startTabPress`, `pressWandered`, `clickGuardAfter`), keys
+  (`isMenuKey`, `menuFocusIndex`) and `tabMenuPlacement`.
 - `page-parent.ts`: `parentOf(url)` → `{label, url, phoneLabel}` or null.
 - `nav-history.ts` (stack keyed by navigation id) and the injectable
   `NavHistory` (`nav-history-service.ts`, created by App): `below()`,
@@ -1871,17 +1924,39 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   te ontvangen once it is on (e.g. the home's `payment=open` link). Then an
   `ios-section` per customer (head = name, trail = count) with an `ios-group`
   of `#phoneRow` cells in the same `.swipe` wrapper: number, 'kind · date' +
-  channel / Partner tag, a muted facts line only for web and delivery facts,
-  the amber line; trail = total ('− ', decimals, `excl. vracht`), status pill,
-  third line `phoneLines` ('€ x open', warn when overdue; a credit note's
-  tegoed line; else 'geldig tot' split by `dayParts`); every trail line but
-  '€ x open' wraps (`sl-pline--wrap`), so the trail sizes from its total. Inhoud, m³, marge (never
-  on credit notes or partner documents), the due day behind '€ x open',
-  ontvangen and gecrediteerd move into the menu's Openen hint
-  (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner containers and split
-  orders are `ios-cell sl-phead` disclosure cells inside their customer
-  (every figure of the desk head; hold or right-click a container for its
-  menu), members indented below when open. Same swipe, long press (the
+  channel / Partner tag (no 'Partner & veiling' tag under a partner
+  container, TICA / Beurs keep theirs; one tag size, no uppercase), a muted facts line only for web and delivery facts,
+  the amber line; trail = total ('− ', `excl. vracht`), status pill, third
+  line `phoneLines` ('€ x open', warn when overdue; a credit note only
+  '€ x tegoed' while one is open, never 'verrekend · afgehandeld' beside its
+  'Afgehandeld' pill; else 'geldig tot' split by `dayParts`). Every phone
+  trail amount is `trailEuro` (whole euros as on Inkoop, cents under € 1, so
+  never '€ 0 open'); every trail line but '€ x open' wraps (`sl-pline--wrap`),
+  so the trail sizes from its total. Inhoud, m³, marge (never on credit notes
+  or partner documents), the exact open amount when the trail rounded it
+  (`roundedAway`), the due day behind '€ x open', ontvangen, gecrediteerd and
+  a credit note's verrekend / terugbetaald / exact tegoed move into the menu's
+  Openen hint (`inhoudText(row, true)`, `phoneMoneyFacts`). Partner
+  containers and split orders (Emre 2026-10-20: "niet duidelijk met partner
+  container") are `ios-cell sl-phead` cells with a document's anatomy, pure
+  in the model (`containerHead`, `splitHead`, `containerPill`): name (two
+  lines max) / split number, sub ('Partnercontainer · n facturen' or 'n
+  documenten' with a credit note; 'Gesplitste order · 2 delen · n stuks'),
+  the amber line as a document cell reads it (badge = every task of the
+  members, each reason once: '2 Betaling opvolgen · Tegoed af te handelen');
+  trail = total and ONE status: '€ x open' (warn when overdue), else '€ x
+  tegoed' while a credit note holds one, else one pill (all settled with a
+  payment 'Betaald', any concept 'Concept', else the most frequent); a split
+  shows its delivery in one pill ('Deel 2 wacht op voorraad' once the other
+  part shipped); a chevron that rotates, members indented below. The rest of
+  the old head sits after the name in the container menu's head
+  (`containerHint(entry, receivable, today)`, which reads the same status as
+  the head: exact total when rounded, signed '− € x'; the members per status
+  whenever the head shows no pill or they differ, a concept with its share
+  '1 concept (€ 3.000,00)', a label's ' · ' in brackets; pieces in the
+  container; ontvangen, open / tegoed only when the head did not say it
+  exactly, incl. btw; hold or right-click; `SalesContainerMenu [facts]`,
+  phone only; the desk head keeps every figure). Same swipe, long press (the
   directive), menu as an iOS sheet, fab '+ Order' / 'Container kiezen'; the
   new-document sheet is `variant="ios"` with the `.sl-new` phone gutter. The
   old `sales-document-navigation` component is deleted (its types live in the
@@ -1898,7 +1973,7 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   Meldingen). Subbar Verkopen: Vandaag · 7 dagen · Deze maand · Vorige maand · Periode (popover with two dates), Niet
   herkend n, Vestiging (only with more than one), end = ready-guarded sums of what shows. Table Artikel · Product · Stuks ·
   Omzet excl. btw · ⋯ grouped per Brussels day (sums only with more than one day); below an 860 px card Product folds into
-  the sub. Row menu: Product openen, Bon n tonen, Alle verkopen van dit artikel. The period loads whole
+  the sub. Row menu: Verkoop en voorraad, Product openen, Bon n tonen, Alle verkopen van dit artikel. The period loads whole
   (`TicaApi.allSales`, pages of 200, at most 10 000 lines; past the cap the sums are the server's and a warn line says so).
   Banners: status failed, ERROR with its last attempt and Opnieuw ophalen, DISABLED / NOT_CONFIGURED (info), a failed
   start, a failed reload over kept lines.
@@ -1915,6 +1990,15 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   presets and dates, Alleen niet herkend, Vestiging), period chips and Niet herkend (Verkopen) / Te boeken (Afrekeningen),
   inset sections per day or state with one trail figure and one status. Meldingen is an iOS sheet of cells (mode, time,
   the device link with "Nog geen toestel aangemeld", the last delivery).
+- Codex's TICA stock (e1c0ea6, merged into this layout the same day; its logic and calls unchanged): the
+  `TicaStockSettings` card (state, verwerkt / vragen aandacht, a link per vestiging to its stock) with its sheet sits
+  under the sales on Verkopen, desk and phone (`#stock` template, `.tl-stock`); it stays mounted on Afrekeningen too
+  (`[hidden]`), so `canDeactivate` asks it and a new successful import reloads it. Per sale: the desk's Product cell
+  has a calm sub for POSTED / REVERSED ('Voorraad afgeboekt', 'Retour bijgeschreven', 'Afboeking teruggedraaid');
+  `ticaStockNeedsAttention` is the amber line on desk and phone ('1 Voorraadlocatie kiezen · message';
+  PRODUCT_UNMATCHED on a line that already reads 'niet herkend' gets none). Row menu first item 'Verkoop en
+  voorraad' (hint = `ticaStockLabel`) sets `?sale=` for `TicaSaleHistory`, mounted once at page level. The desk foot
+  no longer says 'zonder voorraadboeking'.
 - Pure `tica-list-model.ts` (tests/tica-list-model.test.mts). Analyses › Verkoop has a TICA card (`tica-breakdown.ts`,
   tests/tica-breakdown.test.mts): Gem. per stuk, Gem. per verkoop, Korting, Niet herkend, Producten (ERP product by id,
   else by article code) and Vestigingen; omzet and transacties stay in Omzet per kanaal, the card adds to no total. Its
@@ -2585,7 +2669,7 @@ contract `redesign/products/design.md` + `critique.md`).
   with its own value (the parts add up to the total), units per product;
   roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
   fold chevron (or kleur · SKU), line 2 the location split and the value;
-  a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock itself lights the Producten phone tab;
+  a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
   its back falls back to "‹ Producten".
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from
@@ -3254,7 +3338,8 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   follows the query live; visited views stay mounted and hidden
   (`[hidden]` + an explicit `display:none` rule), so a draft survives a tab
   switch. Desk: a `wk-subbar` tab strip (replaceUrl); phone: pushed screens
-  (`info: {nav: 'push'}`), back = history, else the overview. The way up
+  (`info: {nav: 'push'}`; a row to another tab's page, Douane or
+  Categorieën, names none: `rowInfo`, a tab switch), back = history, else the overview. The way up
   (desk crumb, phone fallback, Verwijderde items' phone fallback) is
   `/settings/overzicht`: its own path, because NavHistory keys "the last URL
   seen" by path and a parent on the open view's path would resolve to the

@@ -22,7 +22,7 @@ import { barcodesInUse, matchesBarcode, type BarcodeInUse } from './barcode-usag
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, RouterLink, PageHeader, Skeleton, LoadError, Segmented, Icon],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="EAN-codes" [subtitle]="subtitle()">
+    <app-page-header [showBack]="true" title="EAN-codes" [subtitle]="subtitle()">
       @if (desktop.active()) {
         <app-segmented label="Weergave" [options]="viewOptions()" [value]="view()" (changed)="view.set($any($event))" />
       }

@@ -126,7 +126,11 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
               Voeg alleen de producten toe die je opnieuw telt; de rest blijft zoals geboekt.</p>
           } @else {
             <p>Tel alles wat er ligt: ook demostukken, stuks van partnercontainers en goederen van iemand anders. Kapotte stuks tel je niet mee; kies bij het verschil de reden 'Beschadigd of stuk'.</p>
-            <p>Displayproducten tel je in displays.</p>
+            @if (v.quantityBasis === 'BASE_PIECE') {
+              <p>Tel de losse stuks, ook binnen volledige displays. Bijvoorbeeld: 7 displays van 12 en 11 losse rozen = 95 rozen.</p>
+            } @else {
+              <p>Displayproducten tel je in displays.</p>
+            }
           }
         </div>
 
@@ -809,6 +813,9 @@ export class StockCountPage {
 
   displayHint(line: CountLine): string {
     const unit = inventoryUnit(line);
+    if (line.quantityBasis === 'BASE_PIECE' && line.piecesPerUnit != null && line.piecesPerUnit > 1) {
+      return `1 display = ${whole(line.piecesPerUnit)} ${unit.piece.other}; tel de losse ${unit.piece.other}`;
+    }
     return unit.isDisplay && unit.piecesPerDisplay ? `1 display = ${whole(unit.piecesPerDisplay)} ${unit.piece.other}` : '';
   }
 

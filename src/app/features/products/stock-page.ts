@@ -23,11 +23,16 @@ import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { productSalesUnit, unitCount } from './product-sales-unit';
 import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from './stock-booking';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
+import { StockMovementSource } from './stock-movement-source';
+import { looseStockText, stockAmountText, stockMovementDelta, stockMovementAfter } from './stock-quantity';
 import { distinctOrderCount, knownValueSum, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
 
 interface StockRow {
   product: Product;
   byLocation: Map<number, number>;
+  looseByLocation: Map<number, number>;
+  loosePieces: number;
+  piecesPerUnit: number;
   total: number;
   /** Euros at landed cost; null without a cost (or without stock). */
   value: number | null;
@@ -41,6 +46,8 @@ interface StockGroup {
   colours: { name: string; hex: string | null }[];
   rows: StockRow[];
   byLocation: Map<number, number>;
+  looseByLocation: Map<number, number>;
+  loosePieces: number;
   total: number;
   value: number | null;
   onway: Onderweg | null;
@@ -81,7 +88,7 @@ function mediaSignal(query: string) {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [NgTemplateOutlet, RouterLink, AuthImage, PageHeader, Skeleton, Icon, Segmented, ContextMenu, NumPipe, EurPipe, DateNlPipe, DateTimeNlPipe,
-    Sheet, LoadError, StockBookingSheet],
+    Sheet, LoadError, StockBookingSheet, StockMovementSource],
   template: `
     <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : (desktop.active() ? subtitle() : phoneCaption())">
       @if (desktop.active()) {
@@ -284,12 +291,12 @@ function mediaSignal(query: string) {
               }</span>
           </span>
           @for (location of shownLocations(); track location.id) {
-            <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-loc" [class.zero]="!group.byLocation.get(location.id)">{{ (group.byLocation.get(location.id) ?? 0) | num }}</span></span>
+            <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-loc" [class.zero]="!group.byLocation.get(location.id)">{{ (group.byLocation.get(location.id) ?? 0) | num }}</span>@if (group.looseByLocation.get(location.id)) { <small class="sk-unit">+ {{ looseText(group.looseByLocation.get(location.id), group.rows[0].product) }}</small> }</span>
           }
           <span class="wk-td wk-td--num sk-cell" role="cell">
-            <span class="sk-total">{{ group.total | num }}</span>
+            <span class="sk-total">{{ group.total | num }}</span>@if (group.loosePieces) { <small class="sk-unit">+ {{ looseText(group.loosePieces, group.rows[0].product) }}</small> }
             @if (group.unit) { <span class="sk-unit">{{ group.total === 1 ? group.unit.singular : group.unit.plural }}</span> }
-            @if (splitLine(group.byLocation); as split) { <span class="sk-unit">{{ split }}</span> }
+            @if (splitLine(group.byLocation, group.looseByLocation); as split) { <span class="sk-unit">{{ split }}</span> }
             @if (narrow() && group.onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: group.onway }" /> }
           </span>
           @if (!narrow()) {
@@ -336,12 +343,13 @@ function mediaSignal(query: string) {
             } @else {
               <span class="sk-loc" [class.zero]="!row.byLocation.get(location.id)">{{ (row.byLocation.get(location.id) ?? 0) | num }}</span>
             }
+            @if (row.looseByLocation.get(location.id)) { <small class="sk-unit">+ {{ looseText(row.looseByLocation.get(location.id), row.product) }}</small> }
           </span>
         }
         <span class="wk-td wk-td--num sk-cell" role="cell">
-          <span class="sk-total">{{ row.total | num }}</span>
+          <span class="sk-total">{{ row.total | num }}</span>@if (row.loosePieces) { <small class="sk-unit">+ {{ looseText(row.loosePieces, row.product) }}</small> }
           <span class="sk-unit">{{ row.total === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</span>
-          @if (splitLine(row.byLocation); as split) { <span class="sk-unit">{{ split }}</span> }
+          @if (splitLine(row.byLocation, row.looseByLocation); as split) { <span class="sk-unit">{{ split }}</span> }
           @if (narrow() && onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: onway }" /> }
         </span>
         @if (!narrow()) {
@@ -393,11 +401,12 @@ function mediaSignal(query: string) {
               }
               <app-icon class="skp-chev" name="chevron-down" [size]="14" />
             </span>
-            @if (phoneFigures(group.byLocation, group.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
+            @if (phoneFigures(group.byLocation, group.value, group.looseByLocation); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
           </span>
           <span class="skp-end">
             <strong [class.zero]="!figureOf(group.byLocation, group.total)">{{ figureOf(group.byLocation, group.total) | num }}</strong>
             @if (group.unit) { <small>{{ figureOf(group.byLocation, group.total) === 1 ? group.unit.singular : group.unit.plural }}</small> }
+            @if (figureOf(group.looseByLocation, group.loosePieces); as loose) { <small>+ {{ looseText(loose, group.rows[0].product) }}</small> }
             @if (group.onway) { <span class="exp">+{{ group.onway.quantity | num }}</span> }
           </span>
         </button>
@@ -422,7 +431,7 @@ function mediaSignal(query: string) {
             <span class="skp-name">{{ row.product.name }}</span>
           }
           <span class="skp-meta">{{ nested ? (row.product.sku || 'Geen SKU') : productMeta(row.product) }}</span>
-          @if (phoneFigures(row.byLocation, row.value); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
+          @if (phoneFigures(row.byLocation, row.value, row.looseByLocation); as parts) { <ng-container *ngTemplateOutlet="figureLine; context: { $implicit: parts }" /> }
         </span>
         <span class="skp-end">
           @if (editing() && editLocation() !== null) {
@@ -433,6 +442,7 @@ function mediaSignal(query: string) {
             <strong [class.zero]="!figureOf(row.byLocation, row.total)">{{ figureOf(row.byLocation, row.total) | num }}</strong>
           }
           <small>{{ figureOf(row.byLocation, row.total) === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</small>
+          @if (figureOf(row.looseByLocation, row.loosePieces); as loose) { <small>+ {{ looseText(loose, row.product) }}</small> }
           @if (exp) { <span class="exp">+{{ exp.quantity | num }}</span> }
         </span>
         <!-- One tap to move between locations, as before the redesign. -->
@@ -455,7 +465,7 @@ function mediaSignal(query: string) {
       <app-sheet [title]="book.row.product.name" [variant]="desktop.active() ? 'default' : 'ios'" (closed)="closeBook()">
         <div body class="sk-book">
           <p class="book-sub">{{ book.row.product.sku || 'Geen SKU' }}@if (book.row.product.colour) { · {{ book.row.product.colour }}}
-            · <b>{{ book.row.total | num }} {{ book.row.total === 1 ? unitOf(book.row.product).singular : unitOf(book.row.product).plural }}</b></p>
+            · <b>{{ stockAmount({ quantity: book.row.total, loosePieces: book.row.loosePieces }, book.row.product) }}</b></p>
           <div class="history-levels">
             @for (location of activeLocations(); track location.id) {
               <!-- Read-only: a tap opens Hertelling for that location, with the effect shown first. -->
@@ -463,7 +473,7 @@ function mediaSignal(query: string) {
                       [attr.aria-label]="'Hertelling op ' + location.name"
                       (click)="openBooking(book.row, 'RECOUNT', location.id)">
                 <small>{{ location.name }}</small>
-                <b class="history-levels__qty num">{{ (book.row.byLocation.get(location.id!) ?? 0) | num }}</b>
+                <b class="history-levels__qty num">{{ stockAmount({ quantity: book.row.byLocation.get(location.id!) ?? 0, loosePieces: book.row.looseByLocation.get(location.id!) ?? 0 }, book.row.product) }}</b>
               </button>
             }
             @if (expectedFor(book.row.product.id!); as exp) {
@@ -499,12 +509,13 @@ function mediaSignal(query: string) {
               <ol class="history-list">
                 @for (move of historyOpen() ? moves : moves.slice(0, 2); track move.id) {
                   <li>
-                    <span class="history-delta num" [class.history-delta--minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</span>
+                    <span class="history-delta num" [class.history-delta--minus]="move.delta * (move.unitPieces || 1) + (move.looseDelta || 0) < 0">{{ moveDelta(move, book.row.product) }}</span>
                     <span class="history-what">
                       <b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
                       <small>{{ move.at | dateTimeNl }} · {{ move.actor }}@if (move.locationName) { · {{ move.locationName }}}</small>
+                      <app-stock-movement-source [move]="move" />
                     </span>
-                    <span class="history-after num">= {{ move.quantityAfter | num }}</span>
+                    <span class="history-after num">= {{ moveAfter(move, book.row.product) }}</span>
                   </li>
                 }
               </ol>
@@ -656,27 +667,29 @@ export class StockPage {
   }
 
   /* ---- the rows, their value and their groups ---- */
+  readonly looseText = looseStockText;
+  readonly stockAmount = stockAmountText;
+  readonly moveDelta = stockMovementDelta;
+  readonly moveAfter = stockMovementAfter;
+
   readonly rows = computed<StockRow[]>(() => {
-    const byProduct = new Map<number, Map<number, number>>();
-    for (const level of this.levels()) {
-      const map = byProduct.get(level.productId) ?? new Map<number, number>();
-      map.set(level.locationId, level.quantity);
-      byProduct.set(level.productId, map);
-    }
-    return this.products()
-      .filter((product) => product.active)
-      .map((product) => {
-        const byLocation = byProduct.get(product.id!) ?? new Map<number, number>();
-        let total = 0;
-        for (const quantity of byLocation.values()) total += quantity;
-        const cost = product.landedCostEur;
-        const value = total > 0 && cost !== null && cost > 0 ? Math.round(total * cost * 100) / 100 : null;
-        return { product, byLocation, total, value };
-      });
+    return this.products().filter(product => product.active).map(product => {
+      const levels = this.levels().filter(level => level.productId === product.id);
+      const byLocation = new Map(levels.map(level => [level.locationId, level.quantity]));
+      const looseByLocation = new Map(levels.map(level => [level.locationId, level.loosePieces ?? 0]));
+      const total = levels.reduce((sum, level) => sum + level.quantity, 0);
+      const loosePieces = levels.reduce((sum, level) => sum + (level.loosePieces ?? 0), 0);
+      const piecesPerUnit = levels.find(level => (level.piecesPerUnit ?? 1) > 1)?.piecesPerUnit
+        ?? (productSalesUnit(product).isDisplay ? productSalesUnit(product).piecesPerDisplay : 1) ?? 1;
+      const cost = product.landedCostEur;
+      const value = (total > 0 || loosePieces > 0) && cost !== null && cost > 0
+        ? stockValue([{ quantity: total, loosePieces, piecesPerUnit, cost }]).value : null;
+      return { product, byLocation, looseByLocation, total, loosePieces, piecesPerUnit, value };
+    });
   });
 
   /** Waarde tegen kostprijs over every location (demo pieces with a cost included, N15). */
-  readonly totalValue = computed(() => stockValue(this.rows().map((row) => ({ quantity: row.total, cost: row.product.landedCostEur }))));
+  readonly totalValue = computed(() => stockValue(this.rows().map((row) => ({ quantity: row.total, loosePieces: row.loosePieces, piecesPerUnit: row.piecesPerUnit, cost: row.product.landedCostEur }))));
   readonly valueByLocation = computed(() => locationValues(this.levels().filter((level) => this.rows().some((row) => row.product.id === level.productId)),
     new Map(this.rows().map((row) => [row.product.id!, row.product.landedCostEur]))));
   readonly summaryLocations = computed(() => this.activeLocations().slice(0, 3));
@@ -729,10 +742,10 @@ export class StockPage {
   });
 
   /** "Zaltbommel 1.960 · Tica Brussel 8": only when the location columns are folded away and two locations hold stock. */
-  splitLine(byLocation: Map<number, number>): string | null {
+  splitLine(byLocation: Map<number, number>, looseByLocation = new Map<number, number>()): string | null {
     if (this.shownLocations().length || this.view() !== null) return null;
-    const entries = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }));
-    return entries.filter((entry) => entry.quantity).length >= 2 ? locationSplit(entries) : null;
+    const entries = this.activeLocations().map(location => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0, loose: looseByLocation.get(location.id!) ?? 0 }));
+    return entries.filter(entry => entry.quantity || entry.loose).length >= 2 ? entries.filter(entry => entry.quantity || entry.loose).map(entry => `${entry.name} ${entry.quantity.toLocaleString('nl-BE')}${entry.loose ? ` + ${entry.loose.toLocaleString('nl-BE')} los` : ''}`).join(' · ') : null;
   }
 
   /** Phone: the figure of the chosen segment, else the total. */
@@ -746,13 +759,13 @@ export class StockPage {
    * stock lies (two or more locations hold it and the segment is Alle) and
    * what it is worth; null when there is neither.
    */
-  phoneFigures(byLocation: Map<number, number>, value: number | null): string[] | null {
+  phoneFigures(byLocation: Map<number, number>, value: number | null, looseByLocation = new Map<number, number>()): string[] | null {
     const parts: string[] = [];
     if (this.view() === null) {
       /* One part per location that holds stock ("Zaltbommel 1.960"), so a name never parts from its figure. */
-      const held = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0 }))
-        .filter((entry) => entry.quantity !== 0);
-      if (held.length >= 2) parts.push(...held.map((entry) => locationSplit([entry])));
+      const held = this.activeLocations().map((location) => ({ name: location.name, quantity: byLocation.get(location.id!) ?? 0, loose: looseByLocation.get(location.id!) ?? 0 }))
+        .filter(entry => entry.quantity !== 0 || entry.loose !== 0);
+      if (held.length >= 2) parts.push(...held.map(entry => `${entry.name} ${entry.quantity.toLocaleString('nl-BE')}${entry.loose ? ` + ${entry.loose.toLocaleString('nl-BE')} los` : ''}`));
     }
     if (value !== null) parts.push(value.toLocaleString('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }));
     return parts.length ? parts : null;
@@ -761,9 +774,9 @@ export class StockPage {
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
     const category = this.categoryFilter();
-    return this.rows().filter(({ product, total }) =>
+    return this.rows().filter(({ product, total, loosePieces }) =>
       (category === null || (category === 'none' ? product.categoryId == null : product.categoryId === category))
-      && (!this.hideEmpty() || total !== 0 || (this.expectedFor(product.id)?.quantity ?? 0) > 0)
+      && (!this.hideEmpty() || total !== 0 || loosePieces !== 0 || (this.expectedFor(product.id)?.quantity ?? 0) > 0)
       && (!needle || [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle)));
   });
 
@@ -775,7 +788,7 @@ export class StockPage {
       let group = byKey.get(key);
       if (!group) {
         group = { key, name: (product.familyId != null && this.familyNames().get(product.familyId)) || product.name,
-          photo: null, colours: [], rows: [], byLocation: new Map(), total: 0, value: null, onway: null, unit: null, demo: true };
+          photo: null, colours: [], rows: [], byLocation: new Map(), looseByLocation: new Map(), loosePieces: 0, total: 0, value: null, onway: null, unit: null, demo: true };
         byKey.set(key, group);
       }
       group.rows.push(row);
@@ -783,6 +796,8 @@ export class StockPage {
       const colour = product.colour?.trim();
       if (colour && !group.colours.some((item) => item.name === colour)) group.colours.push({ name: colour, hex: this.colourHex(product) });
       for (const [locationId, quantity] of row.byLocation) group.byLocation.set(locationId, (group.byLocation.get(locationId) ?? 0) + quantity);
+      for (const [locationId, quantity] of row.looseByLocation) group.looseByLocation.set(locationId, (group.looseByLocation.get(locationId) ?? 0) + quantity);
+      group.loosePieces += row.loosePieces;
       group.total += row.total;
       if (row.value !== null) group.value = Math.round(((group.value ?? 0) + row.value) * 100) / 100;
       group.demo = group.demo && !!product.demo;
@@ -802,7 +817,7 @@ export class StockPage {
   }
 
   private compareRows(a: StockRow, b: StockRow): number {
-    const tier = (row: StockRow) => row.product.demo ? 3 : row.total > 0 ? 0 : this.expectedFor(row.product.id) ? 1 : 2;
+    const tier = (row: StockRow) => row.product.demo ? 3 : (row.total > 0 || row.loosePieces > 0) ? 0 : this.expectedFor(row.product.id) ? 1 : 2;
     switch (this.sortKey()) {
       case 'NAME_ASC': return this.byName(a.product.name, b.product.name);
       case 'NAME_DESC': return this.byName(b.product.name, a.product.name);
@@ -817,7 +832,7 @@ export class StockPage {
 
   /** The list's default order (Standaardvolgorde): stock first, then on the way, then empty, demo last. */
   private compareGroups(a: StockGroup, b: StockGroup): number {
-    const tier = (group: StockGroup) => group.demo ? 3 : group.total > 0 ? 0 : group.onway ? 1 : 2;
+    const tier = (group: StockGroup) => group.demo ? 3 : (group.total > 0 || group.loosePieces > 0) ? 0 : group.onway ? 1 : 2;
     switch (this.sortKey()) {
       case 'NAME_ASC': return this.byName(a.name, b.name);
       case 'NAME_DESC': return this.byName(b.name, a.name);
@@ -997,7 +1012,7 @@ export class StockPage {
     const row = this.rows().find((item) => item.product.id === open.productId);
     if (!row) return null;
     const levels: BookingLevel[] = this.activeLocations().map((location) => ({
-      locationId: location.id!, name: location.name, quantity: row.byLocation.get(location.id!) ?? 0,
+      locationId: location.id!, name: location.name, quantity: row.byLocation.get(location.id!) ?? 0, loosePieces: row.looseByLocation.get(location.id!) ?? 0, piecesPerUnit: row.piecesPerUnit,
     }));
     return { row, levels, kind: open.kind, locationId: open.locationId };
   });
@@ -1093,6 +1108,7 @@ export class StockPage {
    */
   async setQuantity(row: StockRow, locationId: number, field: HTMLInputElement): Promise<void> {
     const before = row.byLocation.get(locationId) ?? 0;
+    const beforeLoose = row.looseByLocation.get(locationId) ?? 0;
     const edit = stockCellEdit(field.value, before);
     if (edit.action !== 'book') {
       field.value = String(before);
@@ -1106,7 +1122,7 @@ export class StockPage {
       this.storeLevel(productId, locationId, quantity);
       const unit = productSalesUnit(row.product);
       this.ui.toast(`${row.product.name}: ${unitCount(unit, quantity)} op ${this.locationName(locationId)}`, 'ok',
-        { label: 'Ongedaan maken', run: () => void this.undoQuantity(productId, locationId, before, quantity) });
+        { label: 'Ongedaan maken', run: () => void this.undoQuantity(productId, locationId, before, quantity, beforeLoose) });
     } catch (failure: unknown) {
       field.value = String(before);
       this.ui.toast(messageOf(failure, 'Voorraad zetten mislukt'), 'err');
@@ -1118,16 +1134,19 @@ export class StockPage {
    * the server: a sale, a receipt or a booking from another screen or device
    * since then is never erased by the absolute write.
    */
-  private async undoQuantity(productId: number, locationId: number, before: number, booked: number): Promise<void> {
+  private async undoQuantity(productId: number, locationId: number, before: number, booked: number, bookedLoose = 0): Promise<void> {
     let current: number;
+    let currentLoose: number;
     try {
-      current = (await this.catalog.productStock(productId)).find((level) => level.locationId === locationId)?.quantity ?? 0;
+      const live = (await this.catalog.productStock(productId)).find(level => level.locationId === locationId);
+      current = live?.quantity ?? 0;
+      currentLoose = live?.loosePieces ?? 0;
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Terugzetten mislukt'), 'err');
       return;
     }
-    if (!undoAllowed(current, booked)) {
-      this.storeLevel(productId, locationId, current);
+    if (!undoAllowed(current, booked) || currentLoose !== bookedLoose) {
+      this.storeLevel(productId, locationId, current, currentLoose);
       this.ui.toast('Niet teruggezet: het aantal is intussen gewijzigd', 'err');
       return;
     }
@@ -1140,10 +1159,11 @@ export class StockPage {
     }
   }
 
-  private storeLevel(productId: number, locationId: number, quantity: number): void {
+  private storeLevel(productId: number, locationId: number, quantity: number, loosePieces?: number): void {
     this.levels.update((levels) => {
       const rest = levels.filter((level) => !(level.productId === productId && level.locationId === locationId));
-      return [...rest, { productId, locationId, quantity }];
+      const previous = levels.find(level => level.productId === productId && level.locationId === locationId);
+      return [...rest, { ...previous, productId, locationId, quantity, ...(loosePieces === undefined ? {} : { loosePieces }) }];
     });
     if (this.bookProductId() === productId) void this.loadMoves(productId);
   }

@@ -60,6 +60,9 @@ const CORRECTION_SPEC: DecisionSheetSpec = {
 
     <div class="content inv-shell" [class.inv-shell--phone]="!desktop.active()">
       @if (view(); as v) {
+        @if (v.quantityBasis === 'BASE_PIECE') {
+          <p class="inv-step__quiet">Aantallen en stukwaarden zijn per los artikel. Volledige displays en losse stuks tellen samen mee.</p>
+        }
         @if (v.status === 'DEFINITIEF') {
           <div class="alert alert--ok inv-shell__banner" role="status">
             <span>Definitief sinds {{ v.finalizedAt | brusselsDate }} door {{ v.finalizedByName || 'onbekend' }}. Niets kan nog gewijzigd worden.</span>

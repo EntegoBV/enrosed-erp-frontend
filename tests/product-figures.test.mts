@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  distinctOrderCount, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, productMargin, stockValue, totalsByProduct,
+  distinctOrderCount, locationSplit, locationValues, locationStock, onderwegOrdersLabel, onderwegSummary, productMargin, stockValue, totalsByProduct,
 } from '../src/app/features/products/product-figures.ts';
 
 test('margin rounds as the desk always did', () => {
@@ -65,4 +65,16 @@ test('value per location and the group value add up to the total', () => {
 test('the split names the locations that hold stock', () => {
   assert.equal(locationSplit([{ name: 'Zaltbommel', quantity: 1960 }, { name: 'Tica Brussel', quantity: 8 }]), 'Zaltbommel 1.960 · Tica Brussel 8');
   assert.equal(locationSplit([{ name: 'Zaltbommel', quantity: 1960 }, { name: 'Tica Brussel', quantity: 0 }]), 'Zaltbommel 1.960');
+});
+
+test('loose stems keep their proportional set value at every stock location', () => {
+  const levels = [{ productId: 1, locationId: 2, quantity: 7, loosePieces: 11, piecesPerUnit: 12 }];
+  assert.equal(locationValues(levels, new Map([[1, 24]])).get(2), 190);
+  assert.equal(totalsByProduct(levels).get(1), 95 / 12);
+  assert.deepEqual(stockValue([{ quantity: 7, loosePieces: 11, piecesPerUnit: 12, cost: 24 }]), { value: 190, withoutCost: 0 });
+  assert.deepEqual(stockValue([{ quantity: 0, loosePieces: 11, piecesPerUnit: 12, cost: null }]), { value: 0, withoutCost: 1 });
+  assert.deepEqual(locationStock([{ ...levels[0], quantity: 0 }], [{ id: 1, active: true, landedCostEur: 24 }]).get(2),
+    { products: 1, value: 22 });
+  assert.equal(locationSplit([{ name: 'Tica Brussel', quantity: 7, loosePieces: 11, piecesPerUnit: 12 }]),
+    'Tica Brussel 7 + 11 los');
 });

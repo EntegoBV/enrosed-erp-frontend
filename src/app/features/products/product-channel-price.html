@@ -1,0 +1,48 @@
+<section class="pcp" aria-label="TICA-kanaalprijs" [attr.aria-busy]="loading() || saving()">
+  <div class="pcp-head"><div><h3>TICA</h3><p>Verkoopkanaalprijs in ERP · deze variant</p></div><a routerLink="/tica">Verkopen bekijken ›</a></div>
+  @if (product().id === null) {
+    <p class="pcp-hint">Sla dit product eerst op om een TICA-prijs vast te leggen.</p>
+  } @else if (loading()) {
+    <p class="pcp-hint">TICA-prijs laden…</p>
+  } @else if (error(); as error) {
+    <p class="pcp-error" role="alert">{{ error }} <button class="linklike" type="button" (click)="load()">Opnieuw proberen</button></p>
+  } @else {
+    <div class="pcp-current"><strong>{{ price()?.priceExclVat == null ? 'Nog geen TICA-prijs' : (price()!.priceExclVat | eur: 2) }}</strong>
+      @if (price()?.priceExclVat != null) { <span>per {{ unitLabel(price()?.unit) }} · excl. btw</span> }
+      <small>{{ price()?.source === 'MANUAL' ? 'Zelf ingesteld' : price()?.source === 'TICA' ? 'Uit TICA · laatste prijs zonder korting' : 'Prijs nog niet bekend' }}@if (price()?.updatedAt) { · {{ moment(price()!.updatedAt) }}}</small>
+    </div>
+    @if (price()?.source === 'MANUAL' && price()?.observedPriceExclVat != null) {
+      <p class="pcp-observed">Laatste prijs zonder korting uit TICA: <b>{{ price()!.observedPriceExclVat | eur: 2 }}</b> per {{ unitLabel(price()?.observedUnit) }}, excl. btw · {{ moment(price()!.observedAt) }}.</p>
+    }
+    @if (editable()) {
+      @if (editing()) {
+        <div class="pcp-fields">
+          <label class="field"><span>TICA-prijs excl. btw</span><div class="input-affix"><input class="input num" appDecimal inputmode="decimal" [ngModel]="amount()" (ngModelChange)="setAmount($event)" [disabled]="saving() || disabled()" aria-label="TICA-prijs exclusief btw" /><span class="input-affix__suffix">EUR</span></div></label>
+          <label class="field"><span>Prijs per</span><select class="select" [ngModel]="unit()" (ngModelChange)="unit.set($event)" [disabled]="saving() || disabled()">
+            <option value="PIECE">{{ salesUnit().piece.one }}</option><option value="DISPLAY">display</option><option value="TICA_ARTICLE">TICA-artikel</option>
+          </select></label>
+        </div>
+        <p class="pcp-hint">Deze prijs bewaar je apart met de knop hieronder. De catalogusprijs en eerdere verkopen veranderen niet.</p>
+        @if (dirty()) { <p class="pcp-dirty" role="status">TICA-prijs nog niet opgeslagen</p> }
+        <div class="pcp-actions"><button class="btn btn--primary" type="button" [disabled]="saving() || disabled() || !dirty()" (click)="save()">{{ saving() ? 'Opslaan…' : 'TICA-prijs opslaan' }}</button><button class="btn" type="button" [disabled]="saving() || disabled()" (click)="cancel()">Annuleren</button></div>
+      } @else {
+        <div class="pcp-actions"><button class="btn btn--sm" type="button" [disabled]="saving() || disabled()" (click)="edit()">{{ price()?.source === 'MANUAL' ? 'Prijs aanpassen' : 'Zelf een prijs instellen' }}</button>
+          @if (price()?.manualPriceExclVat != null) { <button class="btn btn--sm" type="button" [disabled]="saving() || disabled()" (click)="useObserved()">Prijs uit TICA gebruiken</button> }
+        </div>
+      }
+    } @else {
+      <a [routerLink]="['/products', product().id, 'edit']" [queryParams]="{ tab: 'sales' }" class="pcp-edit">TICA-prijs bewerken ›</a>
+    }
+    @if (formError(); as error) { <p class="pcp-error" role="alert">{{ error }}</p> }
+    <div class="pcp-history">
+      <button class="linklike" type="button" [attr.aria-expanded]="historyOpen()" (click)="toggleHistory()">{{ historyOpen() ? 'Prijsgeschiedenis verbergen' : 'Prijsgeschiedenis bekijken' }}</button>
+      @if (historyOpen()) {
+        @if (historyLoading()) { <p class="pcp-hint">Geschiedenis laden…</p> }
+        @else if (historyError(); as error) { <p class="pcp-error" role="alert">{{ error }} <button class="linklike" type="button" (click)="loadHistory()">Opnieuw proberen</button></p> }
+        @else {
+          <ol>@for (row of history(); track row.id) { <li><span><b>{{ row.priceExclVat == null ? 'Geen automatische prijs beschikbaar' : (row.priceExclVat | eur: 2) }}</b>@if (row.priceExclVat != null) { per {{ unitLabel(row.unit) }} · excl. btw }<small>{{ row.source === 'MANUAL' ? 'Zelf ingesteld' : 'Uit TICA' }} · {{ moment(row.changedAt) }}@if (row.changedBy) { · {{ row.changedBy }}}</small></span></li> } @empty { <li>Nog geen prijswijzigingen.</li> }</ol>
+        }
+      }
+    </div>
+  }
+</section>

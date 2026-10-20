@@ -16,6 +16,7 @@ app-tica-page .tl-link:hover{text-decoration:underline;text-underline-offset:2px
 app-tica-page .tl-foot{margin:12px 4px 0;color:var(--muted);font-size:12px;line-height:1.45}
 app-tica-page .tl-busy{margin:10px 4px 0;color:var(--muted);font-size:12.5px}
 app-tica-page .tl-import{margin-top:16px}
+app-tica-page .tl-stock{margin-top:16px}
 
 /* ---- desk toolbar: the search gives way first; the import state is one pill with its refresh button */
 app-tica-page .tl-search{flex:none;width:260px;min-width:0}
@@ -71,6 +72,10 @@ app-tica-page .tl-more{position:absolute;top:12px;right:var(--wk-pad-x,16px);z-i
 app-tica-page .tl-rowwrap:hover .tl-more,app-tica-page .tl-rowwrap:focus-within .tl-more{opacity:1}
 @media (pointer:coarse){app-tica-page .tl-more{opacity:1}}
 app-tica-page .tl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
+/* The amber line (Verkoop's): a sale whose stock waits on us, across the row under its cells. */
+app-tica-page .tl-attn{display:flex;grid-column:1/-1;align-items:baseline;gap:6px;min-width:0;margin:-4px 0 9px;color:var(--warn);font-size:12px;font-weight:650}
+app-tica-page .tl-attn b,app-tica-page .tl-pattn b{display:inline-grid;flex:none;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--warn);color:#fff;font-size:10px;font-weight:800}
+app-tica-page .tl-attn span,app-tica-page .tl-pattn span{min-width:0;overflow-wrap:anywhere}
 
 /* ---- phone: segmented, search with the filter circle, quick chips, then inset sections */
 app-tica-page .tl--phone{--ios-inset:4px}
@@ -96,6 +101,8 @@ app-tica-page .tl-ptotal{font-size:16px;font-weight:700;font-variant-numeric:tab
 app-tica-page .tl-pline{color:var(--muted);font-size:12.5px;white-space:nowrap}
 app-tica-page .tl--phone .tl-foot{margin-inline:calc(var(--ios-inset) + 16px)}
 app-tica-page .tl--phone .tl-import{margin:4px var(--ios-inset) 0}
+app-tica-page .tl--phone .tl-stock{margin:16px var(--ios-inset) 0}
+app-tica-page .tl-pattn{display:flex;align-items:baseline;gap:6px;margin-top:3px;color:var(--warn);font-size:12.5px;font-weight:650;line-height:1.35}
 
 /* ---- the iOS sheets (Filters, Meldingen) */
 app-tica-page .tl-fcount{margin:0 calc(var(--ios-inset,16px) + 16px) 12px;color:var(--muted);font-size:13px}

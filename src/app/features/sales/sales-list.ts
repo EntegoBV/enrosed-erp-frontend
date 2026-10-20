@@ -6,7 +6,7 @@ import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { isAdvanceDocument, isPartnerDocument } from './sales-payment-state';
 import { invoiceReceivable } from '../finance/incoming-money';
 import { NgTemplateOutlet } from '@angular/common';
-import { groupSalesInvoices, type SalesContainerGroup } from './sales-list-groups';
+import { groupSalesInvoices, type SalesContainerGroup, type SalesSplitGroup } from './sales-list-groups';
 import { SalesContainerMenu } from './sales-container-menu';
 import { SalesMenuTrigger } from './sales-menu-trigger';
 import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
@@ -49,8 +49,9 @@ import {
 } from '../../shared/row-actions';
 import { dayParts, keepEuro } from '../purchasing/purchase-list-model';
 import {
-  countText, customerSections, documentSub, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, phoneLines, salesTone, statusParts,
-  type LinePart, type PaymentCell, type PhoneLines, type SalesDocsFilter, type SalesScope, type SalesTab,
+  containerHead, containerHint, countText, customerSections, documentSub, invoiceOverdue, listCaption, listMoney, matchesWords, paymentCell, phoneLines,
+  roundedAway, salesTone, splitHead, statusParts, trailEuro,
+  type LinePart, type PaymentCell, type PhoneHead, type PhoneLines, type SalesDocsFilter, type SalesScope, type SalesTab,
 } from './sales-list-model';
 
 /**
@@ -357,7 +358,10 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                 <div class="ios-group">
                   @for (entry of section.entries; track entry.key) {
                     @if (entry.kind === 'PARTNER_CONTAINER') {
-                      <!-- The container inside its customer: a cell that opens its documents in place; hold it for its menu. -->
+                      <!-- The container inside its customer, with a document's anatomy: its name, 'Partnercontainer · n facturen'
+                           and the amber line; the total and one status ('€ x open', '€ x tegoed' or a pill). Its other figures
+                           sit in the head of its menu (hold it or right-click); a tap opens its documents in place. -->
+                      @let head = phoneHeadOf(entry);
                       <button class="ios-cell sl-phead" type="button"
                               appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
                               (salesMenu)="openContainerMenu(null, entry)" aria-haspopup="dialog" aria-describedby="sales-menu-help"
@@ -365,21 +369,17 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                               [attr.aria-controls]="entry.key + '-invoices'" (click)="toggleGroup(entry.key)"
                               title="De facturen hieronder volgen je huidige filters.">
                         <span class="ios-cell__body">
-                          <span class="sl-eyebrow">Partnercontainer</span>
                           <span class="sl-ptitle" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</span>
-                          <span class="sl-psub">{{ entry.summary.count }} {{ entry.summary.count === 1 ? 'factuur' : 'facturen' }}@if (entry.summary.containerPieces !== null) { · {{ entry.summary.containerPieces | num }} stuks in container }</span>
-                          <span class="sl-pbadges">
-                            @for (status of entry.summary.statuses; track status.label) {
-                              <span class="wk-pill" [class]="salesTone(status.cls)" [class.sl-pill--concept]="status.concept">{{ status.count }} {{ status.label }}@if (status.concept) { · nog niet uitgereikt }@if (status.inactive) { · buiten totaal }</span>
-                            }
-                          </span>
-                          @if (entry.summary.attentionCount) { <span class="sl-psub sl-warn">{{ entry.summary.attentionCount }} {{ entry.summary.attentionCount === 1 ? 'factuur vraagt' : 'facturen vragen' }} aandacht</span> }
-                          @if (entry.summary.issuedCount) { <span class="sl-psub">{{ entry.summary.remainingEur | eur }} open · {{ entry.summary.receivedEur | eur }} ontvangen · incl. btw</span> }
-                          @if (entry.summary.creditEur > 0) { <span class="sl-psub sl-credit">{{ entry.summary.creditEur | eur }} credit incl. btw</span> }
+                          <span class="sl-psub">{{ head.sub }}</span>
+                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }
                         </span>
                         <span class="ios-cell__trail sl-ptrail">
-                          <span class="sl-ptotal">{{ entry.summary.totalEur | eur }}</span>
-                          @if (entry.summary.draftCount && entry.summary.issuedCount) { <span class="sl-pline sl-pline--wrap">waarvan concept <span class="sl-nw">{{ entry.summary.draftEur | eur }}</span></span> }
+                          <span class="sl-ptotal">{{ head.total }}</span>
+                          @if (head.status; as status) {
+                            @if (status.kind === 'open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="status.overdue">{{ status.text }}</span> }
+                            @else if (status.kind === 'tegoed') { <span class="sl-pline sl-pline--wrap sl-credit">{{ status.text }}</span> }
+                            @else { <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.text }}</span> }
+                          }
                         </span>
                         <app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />
                       </button>
@@ -391,21 +391,21 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         }
                       </div>
                     } @else if (entry.kind === 'SPLIT_ORDER') {
+                      <!-- The split order the same way: its number, 'Gesplitste order · 2 delen · n stuks', the amber line; the
+                           total and its delivery in one pill. Each part keeps its own document and delivery status below. -->
+                      @let head = phoneHeadOf(entry);
                       <button class="ios-cell sl-phead" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
                               [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)"
                               title="Elk deel heeft een eigen document- en leverstatus.">
                         <span class="ios-cell__body">
-                          <span class="sl-eyebrow">Gesplitste order</span>
                           <span class="sl-ptitle">{{ entry.rows[0].order.number }}</span>
-                          <span class="sl-psub">{{ entry.summary.parts }} van 2 delen in dit overzicht · {{ entry.summary.pieces | num }} stuks</span>
-                          <span class="sl-pbadges">
-                            @if (entry.summary.unavailableCount) { <span class="wk-pill tone-amber">{{ entry.summary.unavailableCount }} niet beschikbaar</span> }
-                            @if (entry.summary.waitingCount) { <span class="wk-pill tone-amber">{{ entry.summary.waitingCount }} wacht op voorraad</span> }
-                            @if (entry.summary.shippedCount) { <span class="wk-pill tone-ok">{{ entry.summary.shippedCount }} verzonden</span> }
-                            @if (!entry.summary.waitingCount && !entry.summary.shippedCount && entry.summary.pieces > 0) { <span class="wk-pill tone-blue">Leveringen gepland</span> }
-                          </span>
+                          <span class="sl-psub">{{ head.sub }}</span>
+                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }
                         </span>
-                        <span class="ios-cell__trail sl-ptrail"><span class="sl-ptotal">{{ entry.summary.totalEur | eur }}</span></span>
+                        <span class="ios-cell__trail sl-ptrail">
+                          <span class="sl-ptotal">{{ head.total }}</span>
+                          @if (head.status; as status) { <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.text }}</span> }
+                        </span>
                         <app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />
                       </button>
                       <div class="sl-pmembers" role="group" [id]="entry.key + '-parts'" [hidden]="!groupOpen(entry.key)" [attr.aria-labelledby]="entry.key + '-toggle'">
@@ -547,12 +547,12 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
     </ng-template>
 
     <!-- A phone row: the document number, its customer is the section above; the trail holds the total, the status and
-         what is open. Inhoud and marge sit in the menu's Openen hint. Drag left for the bin, drag right for the archive;
-         hold it for the same choices as a menu. -->
+         what is open, in whole euros. Inhoud, marge and the exact amounts sit in the menu's Openen hint. Under a partner
+         container no 'Partner & veiling' tag: the head says it; TICA or Beurs keep theirs. Drag left for the bin, drag
+         right for the archive; hold it for the same choices as a menu. -->
     <ng-template #phoneRow let-row let-nested="nested">
       @let attn = rowAttention(row);
       @let status = statusOf(row);
-      @let pay = paymentOf(row);
       @let lines = phoneLinesOf(row);
       <div class="swipe sl-swipe" role="none" [class.sl-swipe--nested]="nested"
            [animate.leave]="leavingId() === row.order.id ? 'mo-leave' : ''"
@@ -582,7 +582,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
            (click)="blockWhenSwiped($event)">
           <span class="ios-cell__body">
             <span class="sl-ptitle">{{ row.order.number }}</span>
-            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row)) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }</span>
+            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row) && !(nested && partner(row.order) && channelCode(row.order.salesChannel) === 'PARTNER')) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }</span>
             @if (lines.facts.length) {
               <span class="sl-psub">@for (part of lines.facts; track $index) {@if (!$first) { · }<span class="sl-part" [class]="part.cls ? salesTone(part.cls) : ''">{{ part.text }}</span>}</span>
             }
@@ -591,11 +591,11 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
             }
           </span>
           <span class="ios-cell__trail sl-ptrail">
-            <span class="sl-ptotal" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}</span>
+            <span class="sl-ptotal" [class.so-credit]="creditNoteRow(row)">{{ creditNoteRow(row) ? '− ' : '' }}{{ trailEuro(row.priced.totals.total) }}</span>
             @if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }
             <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.label }}</span>
             @switch (lines.trail.kind) {
-              @case ('open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="lines.trail.overdue">{{ pay.openEur | eur }} open</span> }
+              @case ('open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="lines.trail.overdue">{{ lines.trail.text }}</span> }
               @case ('credit') { <span class="sl-pline sl-pline--wrap sl-credit">{{ lines.trail.text }}</span> }
               @case ('day') {
                 @let day = dayParts(lines.trail.text);
@@ -643,7 +643,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
     @if (containerMenu(); as menuContainer) {
       <app-sales-container-menu [container]="menuContainer" [customerName]="customerName(menuContainer.rows[0])"
-        [externalBusy]="deletingOrderId() !== null || archivingOrderId() !== null"
+        [facts]="desktop.active() ? [] : containerHintOf(menuContainer)" [externalBusy]="deletingOrderId() !== null || archivingOrderId() !== null"
         (closed)="containerMenu.set(null)" (busyChange)="containerDeletingId.set($event ? menuContainer.purchaseOrderId : null)"
         (deleted)="containerDeleted($event)" />
     }
@@ -1750,6 +1750,7 @@ export class SalesList {
   readonly keepEuro = keepEuro;
   readonly dayParts = dayParts;
   readonly salesTone = salesTone;
+  readonly trailEuro = trailEuro;
 
   readonly tabOptions = computed<SegmentOption[]>(() => {
     const counts = this.documentCounts(), ready = this.ready(), work = this.workTabs();
@@ -1853,9 +1854,19 @@ export class SalesList {
   paymentOf(row: SalesOrderView): PaymentCell {
     return paymentCell(row.order, invoiceReceivable(row), this.overdue(row.order));
   }
-  /** The phone row's facts line and third trailing line (sales-list-model phoneLines). */
+  /** The phone row's facts line and third trailing line (sales-list-model phoneLines); a credit note hands in what it still holds. */
   phoneLinesOf(row: SalesOrderView): PhoneLines {
-    return phoneLines(this.statusPartsOf(row), this.paymentOf(row), isCreditNote(row.order) ? this.creditLine(row) : null);
+    return phoneLines(this.statusPartsOf(row), this.paymentOf(row),
+      isCreditNote(row.order) ? creditNoteSettlement(row.paymentSummary, row.order.status).openEur : null);
+  }
+  /** A phone head: a partner container or a split order with a document's anatomy (sales-list-model containerHead, splitHead). */
+  phoneHeadOf(entry: SalesContainerGroup | SalesSplitGroup): PhoneHead {
+    const reasons = (row: SalesOrderView): string[] => this.rowAttention(row);
+    return entry.kind === 'PARTNER_CONTAINER' ? containerHead(entry, invoiceReceivable, todayIso(), reasons) : splitHead(entry, reasons);
+  }
+  /** On the phone the container menu's head carries what the head cell leaves out; the desk head shows it all. */
+  containerHintOf(container: SalesContainerGroup): string[] {
+    return containerHint(container, invoiceReceivable, todayIso());
   }
 
   /* ---- the phone list: the round filter button and its sheet, the chips that apply ---------------------------- */
@@ -1960,13 +1971,21 @@ export class SalesList {
     return parts.join(' · ');
   }
 
-  /** What the phone row leaves to the menu: the due day behind '€ x open', what came in and what was credited. */
+  /**
+   * What the phone row leaves to the menu: the exact open amount when the trail rounded it, the due day behind it,
+   * what came in and what was credited; on a credit note what was verrekend or paid back and the exact tegoed.
+   */
   private phoneMoneyFacts(row: SalesOrderView): string[] {
     const eur = (value: number): string => new EurPipe().transform(value);
     const pay = this.paymentOf(row);
     const invoice = pay.state === 'open' || pay.state === 'settled';
-    return [this.phoneLinesOf(row).unshown, invoice && pay.receivedEur > 0 ? `${eur(pay.receivedEur)} ontvangen` : null,
-      invoice && row.creditedEur ? `${eur(row.creditedEur)} gecrediteerd` : null].filter((fact): fact is string => !!fact);
+    const credit = pay.state === 'credit' ? creditNoteSettlement(row.paymentSummary, row.order.status) : null;
+    return [pay.state === 'open' && roundedAway(pay.openEur) ? `${eur(pay.openEur)} open` : null, this.phoneLinesOf(row).unshown,
+      invoice && pay.receivedEur > 0 ? `${eur(pay.receivedEur)} ontvangen` : null,
+      invoice && row.creditedEur ? `${eur(row.creditedEur)} gecrediteerd` : null,
+      credit && credit.offsetEur > 0 ? `${eur(credit.offsetEur)} verrekend` : null,
+      credit && credit.refundedEur > 0 ? `${eur(credit.refundedEur)} terugbetaald` : null,
+      credit && roundedAway(credit.openEur) ? `${eur(credit.openEur)} tegoed` : null].filter((fact): fact is string => !!fact);
   }
 
   /* ---- customer groups folded shut, remembered on this device ---------- */

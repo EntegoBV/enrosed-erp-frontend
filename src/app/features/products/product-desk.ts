@@ -18,6 +18,8 @@ import { ProductView } from './product-view';
 import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet } from './stock-booking-sheet';
+import { ProductChannelPrice } from './product-channel-price';
+import { StockMovementSource } from './stock-movement-source';
 
 /** A media query as a signal, for the component that asks (removes its listener on destroy). */
 function mediaSignal(query: string) {
@@ -51,7 +53,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [Icon, ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton, StockBookingSheet,
-    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe,
+    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, StockMovementSource,
   ],
   template: `
     @if (product(); as product) {
@@ -131,7 +133,8 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             <button class="pdk-kpi" type="button" (click)="scrollTo('pd-stock')">
               <small>Voorraad</small>
               @if (stockLevels()) {
-                <strong [class.is-bad]="stockTotal() <= 0">{{ stockTotal() | num }}<em>{{ unitWord(product, stockTotal()) }}</em></strong>
+                <strong [class.is-bad]="stockTotal() <= 0 && !stockLooseTotal()">{{ stockTotal() | num }}<em>{{ unitWord(product, stockTotal()) }}</em></strong>
+                @if (stockLooseTotal()) { <span>+ {{ looseText(stockLooseTotal(), product) }}</span> }
                 <span>@for (part of stockSplit(); track $index) {@if (!$first) { · }<span class="pdk-nw">{{ part }}</span>}</span>
               } @else if (product.inventoryKnown) {
                 <strong [class.is-bad]="product.stockQuantity <= 0">{{ product.stockQuantity | num }}<em>{{ unitWord(product, product.stockQuantity) }}</em></strong>
@@ -279,6 +282,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </div>
           </div>
           <p class="pdk-flow-note">{{ orderStepSentence(product) }} · prijzen excl. btw</p>
+          <app-product-channel-price [product]="product" />
           @if (priceOpen()) {
             <div class="pd-price__tabs per-toggle" role="group" aria-label="Prijsdetail">
               <button type="button" [class.on]="priceTab() === 'build'" (click)="priceTab.set('build')">Opbouw</button>
@@ -450,7 +454,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
         <section class="pdk-card" id="pd-stock" aria-labelledby="pd-stock-title">
           <div class="pdk-card__head">
             <div><h2 id="pd-stock-title">Voorraad</h2><p>Per locatie, in {{ salesUnit(product).plural }} · klik een locatie voor een hertelling</p></div>
-            <b class="pdk-total" [class.is-bad]="stockTotal() <= 0">@if (stockLevels()) { {{ stockTotal() | num }}<em>{{ unitWord(product, stockTotal()) }}</em> } @else { — }</b>
+            <b class="pdk-total" [class.is-bad]="stockTotal() <= 0 && !stockLooseTotal()">@if (stockLevels()) { {{ stockAmount({quantity: stockTotal(), loosePieces: stockLooseTotal()}, product) }} } @else { — }</b>
           </div>
           @if (stockLevels(); as levels) {
             <div class="pdk-levels">
@@ -458,7 +462,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                 <button class="pdk-level" type="button" [class.on]="bookingSheet()?.locationId === level.locationId"
                         [title]="'Hertelling boeken voor ' + level.name" (click)="openBooking('RECOUNT', level.locationId)">
                   <span><b>{{ level.name }}</b><small>{{ level.kindLabel }} · {{ level.countsForWebsite ? 'alle verkoopkanalen' : 'enkel ter plaatse' }}</small></span>
-                  <strong [class.zero]="!level.quantity">{{ level.quantity | num }}</strong>
+                  <strong [class.zero]="!level.quantity && !level.loosePieces">{{ stockAmount(level, product) }}</strong>
                 </button>
               } @empty {
                 <p class="pd-empty">Nog geen voorraadlocaties.</p>
@@ -487,8 +491,8 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                 @for (move of moves; track move.id) {
                   <div class="pdk-move">
                     <span><b>{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</b>
-                      <small>{{ move.at | dateTimeNl }}@if (move.actor) { · {{ move.actor }}}@if (move.locationName) { · {{ move.locationName }}}</small></span>
-                    <strong [class.minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</strong>
+                      <small>{{ move.at | dateTimeNl }}@if (move.actor) { · {{ move.actor }}}@if (move.locationName) { · {{ move.locationName }}}</small><app-stock-movement-source [move]="move" /></span>
+                    <strong [class.minus]="move.delta * (move.unitPieces || 1) + (move.looseDelta || 0) < 0">{{ moveDelta(move, product) }}</strong>
                   </div>
                 }
               </div>
@@ -733,7 +737,7 @@ export class ProductDesk extends ProductView {
   readonly stockSplit = computed(() => {
     const levels = this.stockLevels() ?? [];
     if (levels.length <= 1) return ['alle locaties'];
-    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`);
+    return levels.map((level) => `${level.name} ${this.stockAmount(level, this.product())}`);
   });
 
   unitWord(product: Product, quantity: number): string {

@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild,
+} from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { PushSetup } from './core/platform/push';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
@@ -18,7 +20,7 @@ import { DesktopViewport } from './core/platform/desktop-viewport';
 import { WorkspaceReturn } from './core/platform/workspace-return';
 import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import {
-  NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew,
+  NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew, navItemUrl,
 } from './core/platform/nav-items';
 import type { NavCountKey, NavGroup, NavItem } from './core/platform/nav-items';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
@@ -26,7 +28,13 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 import { installReducedMotionScroll } from './core/platform/reduced-motion';
 import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
+import { parentOf } from './core/platform/page-parent';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
+import {
+  TAB_MENU_HOLD_MS, TAB_MENU_PUSH, clickGuardAfter, isMenuKey, liesUnder, menuFocusIndex, pressWandered, startTabPress, tabMenuFor,
+  tabMenuPlacement,
+} from './core/platform/tab-menu';
+import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
 import { preloadWanted } from './core/platform/shell-loading-plan';
 
@@ -180,12 +188,13 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
       </div>
 
       @if (!bare() && !websiteWorkspace()) {
-        <nav class="tabbar">
+        <!-- A long press on Verkoop, Inkoop or Producten opens that section's pages above the tab (tab-menu.ts). -->
+        <nav class="tabbar" #tabbar>
           <a class="tabbar__item" routerLink="/dashboard"
              [class.active]="phoneTab() === 'home'" [attr.aria-current]="phoneTab() === 'home' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="home" /></span><span class="tabbar__label">Home</span>
           </a>
-          <a class="tabbar__item" routerLink="/sales"
+          <a class="tabbar__item" routerLink="/sales" data-tab-menu="sales" aria-haspopup="menu" [attr.aria-expanded]="tabMenu()?.tab === 'sales'"
              [class.active]="phoneTab() === 'sales'" [attr.aria-current]="phoneTab() === 'sales' ? 'page' : null">
             <span class="tabbar__icon">
               <app-icon name="sales" />
@@ -194,11 +203,11 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
               }
             </span><span class="tabbar__label">Verkoop</span>
           </a>
-          <a class="tabbar__item" routerLink="/purchasing"
+          <a class="tabbar__item" routerLink="/purchasing" data-tab-menu="purchasing" aria-haspopup="menu" [attr.aria-expanded]="tabMenu()?.tab === 'purchasing'"
              [class.active]="phoneTab() === 'purchasing'" [attr.aria-current]="phoneTab() === 'purchasing' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="purchase" /></span><span class="tabbar__label">Inkoop</span>
           </a>
-          <a class="tabbar__item" routerLink="/products"
+          <a class="tabbar__item" routerLink="/products" data-tab-menu="products" aria-haspopup="menu" [attr.aria-expanded]="tabMenu()?.tab === 'products'"
              [class.active]="phoneTab() === 'products'" [attr.aria-current]="phoneTab() === 'products' ? 'page' : null">
             <span class="tabbar__icon"><app-icon name="products" /></span><span class="tabbar__label">Producten</span>
           </a>
@@ -212,6 +221,27 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
             </span><span class="tabbar__label">Meer</span>
           </a>
         </nav>
+        <!-- Over the page and the '+'; the bar stands above it, so another tab still takes a press.
+             The page's keys stand down (data-kit-overlay) and a held row gets no link sheet. -->
+        @if (tabMenu(); as menu) {
+          <div class="tabbar-menu__backdrop" (click)="closeTabMenu()"></div>
+          <div class="tabbar-menu" role="menu" [attr.aria-label]="menu.label" animate.leave="tabbar-menu--leaving" data-kit-overlay
+               [style.left.px]="menu.left" [style.width.px]="menu.width" [style.--tab-x]="menu.origin + 'px'"
+               (keydown)="tabMenuKey($event)" (contextmenu)="$event.preventDefault()">
+            @for (row of menu.rows; track row.item.id) {
+              <a class="tabbar-menu__row" role="menuitem" [routerLink]="row.item.link" [queryParams]="row.item.query ?? null"
+                 [info]="menuRowInfo(row)" [attr.data-tab-menu-row]="row.item.id" [class.tabbar-menu__row--hot]="tabMenuHot() === row.item.id"
+                 [class.tabbar-menu__row--current]="menuRowCurrent(menu, row)" [attr.aria-current]="menuRowCurrent(menu, row) ? 'page' : null"
+                 (click)="closeTabMenu()">
+                <app-icon class="tabbar-menu__icon" [name]="row.item.icon" [size]="20" />
+                <span class="tabbar-menu__label">{{ row.label }}</span>
+                @if (countOf(row.item.countKey); as n) { <span class="ios-count">{{ n }}</span> }
+              </a>
+              <!-- The tab's own list, then the section's other pages. -->
+              @if ($first && !$last) { <div class="tabbar-menu__rule" role="separator"></div> }
+            }
+          </div>
+        }
       }
     </div>
 
@@ -419,10 +449,228 @@ export class App {
 
   /**
    * The lit phone tab follows where a screen is listed on the phone
-   * (phone-tabs.ts): screens reached from Meer light Meer, in agreement with
-   * their "‹ Meer" back control.
+   * (phone-tabs.ts): a page of a tab's long-press menu lights that tab,
+   * a screen reached only from Meer lights Meer, in agreement with the
+   * back control's tab root ("‹ Verkoop", "‹ Meer").
    */
   readonly phoneTab = computed(() => phoneTabForUrl(this.url()));
+
+  /* ---- The tab bar's long press (core/platform/tab-menu.ts): Verkoop, Inkoop and Producten
+     open their pages in a menu above the tab, so a sub-page is no detour through Meer. The
+     listeners are native: the click that ends a long press must be stopped before RouterLink. */
+  private readonly injector = inject(Injector);
+  private readonly tabbar = viewChild<ElementRef<HTMLElement>>('tabbar');
+  /** The open menu and where it stands over its tab. */
+  readonly tabMenu = signal<(TabMenu & { left: number; width: number; origin: number }) | null>(null);
+  /** The row under a finger that slid on from the tab after the menu opened. */
+  readonly tabMenuHot = signal<string | null>(null);
+  private tabPress: TabPress | null = null;
+  private tabHold: ReturnType<typeof setTimeout> | null = null;
+  /** Until when the bar swallows a click: the one that trails a long press. */
+  private tabClickGuard = 0;
+  private tabMenuOpener: HTMLElement | null = null;
+
+  private readonly tabbarPress = effect((onCleanup) => {
+    const nav = this.tabbar()?.nativeElement;
+    if (!nav) return;
+    const down = (event: PointerEvent) => this.tabPointerDown(event);
+    const context = (event: MouseEvent) => this.tabContextMenu(event);
+    const key = (event: KeyboardEvent) => this.tabKey(event);
+    const click = (event: MouseEvent) => this.tabClick(event);
+    nav.addEventListener('pointerdown', down);
+    nav.addEventListener('contextmenu', context);
+    nav.addEventListener('keydown', key);
+    nav.addEventListener('click', click, true);
+    onCleanup(() => {
+      nav.removeEventListener('pointerdown', down);
+      nav.removeEventListener('contextmenu', context);
+      nav.removeEventListener('keydown', key);
+      nav.removeEventListener('click', click, true);
+      this.endTabPress();
+      this.closeTabMenu();
+    });
+  });
+
+  /* Another screen, or the desk width: the menu goes. */
+  private readonly closeTabMenuOnMove = effect(() => {
+    this.url();
+    this.desktopViewport.active();
+    untracked(() => this.closeTabMenu());
+  });
+
+  /**
+   * The menu marks the open page only under the lit tab, so the mark and the tab bar agree: a
+   * view of Instellingen in a menu (Kortingen, Catalogusdata) lights Meer and is no current row.
+   */
+  menuRowCurrent(menu: TabMenu, row: TabMenuRow): boolean {
+    return this.phoneTab() === menu.tab && this.itemActive(row.item);
+  }
+
+  /**
+   * How a row's page arrives (nav-direction.ts reads the navigation's info): a page of the tab you
+   * are in comes in as a push from anywhere in it (Klanten from an order would slide back as a pop,
+   * being shallower). The tab root goes up, the page you are on or under keeps its own direction
+   * (under by path, Voorraad from Jaarinventaris, or by its parent, Catalogus PDF from its texts:
+   * liesUnder; a view of Instellingen by its query), and a page of another tab (Klanten picked on
+   * Meer) is a tab switch.
+   */
+  menuRowInfo(row: TabMenuRow): typeof TAB_MENU_PUSH | null {
+    const inTab = phoneTabForUrl(navItemUrl(row.item)) === this.phoneTab();
+    const under = row.item.query
+      ? this.itemActive(row.item)
+      : liesUnder(this.url(), row.item.link, (url) => parentOf(url)?.url ?? null);
+    return inTab && !row.item.tabRoot && !under ? TAB_MENU_PUSH : null;
+  }
+
+  closeTabMenu(returnFocus = false): void {
+    if (!this.tabMenu()) return;
+    const opener = this.tabMenuOpener;
+    this.tabMenu.set(null);
+    this.tabMenuHot.set(null);
+    this.tabMenuOpener = null;
+    this.watchTabMenu(false);
+    if (returnFocus) opener?.focus();
+  }
+
+  /**
+   * Arrows, Home and End walk the rows; Space opens the focused one, as Enter does (a link's own
+   * Space scrolls the page, and that scroll would close the menu); Tab leaves from its tab, onwards.
+   */
+  tabMenuKey(event: KeyboardEvent): void {
+    if (event.key === 'Tab') { this.closeTabMenu(true); return; }
+    const rows = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    const index = rows.indexOf(this.document.activeElement as HTMLElement);
+    if (event.key === ' ') { event.preventDefault(); rows[index]?.click(); return; }
+    const next = menuFocusIndex(event.key, index, rows.length);
+    if (next === null) return;
+    event.preventDefault();
+    rows[next].focus();
+  }
+
+  private menuTabLink(target: EventTarget | null): HTMLElement | null {
+    return target instanceof Element ? target.closest<HTMLElement>('.tabbar [data-tab-menu]') : null;
+  }
+
+  private tabPointerDown(event: PointerEvent): void {
+    /* A new press: an open menu closes, and this press's click is a tap again. */
+    this.endTabPress();
+    this.tabClickGuard = 0;
+    this.closeTabMenu();
+    const link = this.menuTabLink(event.target);
+    const press = link && startTabPress(link.dataset['tabMenu'] ?? '', event);
+    if (!link || !press) return;
+    this.tabPress = press;
+    this.watchTabPress(true);
+    this.tabHold = setTimeout(() => this.holdTabPress(link), TAB_MENU_HOLD_MS);
+  }
+
+  /** Held long enough: the menu opens with a short tick, and lifting the finger is no tap. */
+  private holdTabPress(link: HTMLElement): void {
+    if (this.tabHold !== null) clearTimeout(this.tabHold);
+    this.tabHold = null;
+    if (!this.tabPress || !link.isConnected) { this.endTabPress(); return; }
+    this.tabPress = { ...this.tabPress, opened: true };
+    this.tabClickGuard = Infinity;
+    this.openTabMenu(this.tabPress.tab, link);
+    this.document.defaultView?.navigator.vibrate?.(10);
+  }
+
+  /** No native callout on the bar. Android's own long press can come first: then it opens the menu. */
+  private tabContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    const link = this.menuTabLink(event.target);
+    if (link && this.tabPress && !this.tabPress.opened) this.holdTabPress(link);
+  }
+
+  private tabKey(event: KeyboardEvent): void {
+    const link = this.menuTabLink(event.target);
+    if (!link || !isMenuKey(event)) return;
+    event.preventDefault();
+    this.openTabMenu(link.dataset['tabMenu'] ?? '', link);
+  }
+
+  /* Capture, before RouterLink: the click that ends a long press never navigates. */
+  private tabClick(event: MouseEvent): void {
+    if (Date.now() >= this.tabClickGuard) return;
+    this.tabClickGuard = 0;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  private readonly tabPointerMove = (event: PointerEvent): void => {
+    const press = this.tabPress;
+    if (!press || event.pointerId !== press.pointerId) return;
+    if (pressWandered(press, event.clientX, event.clientY)) this.endTabPress();
+    else if (press.opened) this.tabMenuHot.set(this.menuRowAt(event.clientX, event.clientY));
+  };
+
+  /* Slid onto a row and let go there: that row opens. Elsewhere the menu stays. */
+  private readonly tabPointerUp = (event: PointerEvent): void => {
+    const press = this.tabPress;
+    if (!press || event.pointerId !== press.pointerId) return;
+    const row = press.opened && event.type === 'pointerup' ? this.menuRowAt(event.clientX, event.clientY) : null;
+    this.endTabPress();
+    if (row) this.chooseTabMenuRow(row);
+  };
+
+  private endTabPress(): void {
+    if (this.tabHold !== null) clearTimeout(this.tabHold);
+    this.tabHold = null;
+    if (this.tabPress) {
+      this.tabClickGuard = clickGuardAfter(this.tabPress, Date.now());
+      this.watchTabPress(false);
+    }
+    this.tabPress = null;
+    this.tabMenuHot.set(null);
+  }
+
+  private watchTabPress(on: boolean): void {
+    const method = on ? 'addEventListener' : 'removeEventListener';
+    this.document[method]('pointermove', this.tabPointerMove as EventListener, true);
+    this.document[method]('pointerup', this.tabPointerUp as EventListener, true);
+    this.document[method]('pointercancel', this.tabPointerUp as EventListener, true);
+  }
+
+  private openTabMenu(tab: string, link: HTMLElement): void {
+    const menu = tabMenuFor(tab, NAV_GROUPS);
+    const bar = link.closest('.tabbar')?.getBoundingClientRect();
+    if (!menu || !bar) return;
+    const box = link.getBoundingClientRect();
+    this.tabMenuOpener = link;
+    this.tabMenu.set({ ...menu, ...tabMenuPlacement(box.left + box.width / 2, bar.left, bar.right) });
+    this.watchTabMenu(true);
+    afterNextRender({
+      read: () => this.document.querySelector<HTMLElement>('.tabbar-menu [role="menuitem"]')?.focus({ preventScroll: true }),
+    }, { injector: this.injector });
+  }
+
+  private menuRowAt(x: number, y: number): string | null {
+    return this.document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-tab-menu-row]')?.dataset['tabMenuRow'] ?? null;
+  }
+
+  private chooseTabMenuRow(id: string): void {
+    const row = this.tabMenu()?.rows.find((candidate) => candidate.item.id === id);
+    this.closeTabMenu();
+    if (!row) return;
+    const info = this.menuRowInfo(row);
+    void this.router.navigateByUrl(navItemUrl(row.item), info ? { info } : undefined);
+  }
+
+  private watchTabMenu(on: boolean): void {
+    const method = on ? 'addEventListener' : 'removeEventListener';
+    /* The page's own scroll only (an element's scroll does not bubble): a long menu scrolling inside itself stays. */
+    this.document[method]('scroll', this.tabMenuScroll);
+    this.document[method]('keydown', this.tabMenuEscape as EventListener, true);
+  }
+
+  private readonly tabMenuScroll = (): void => this.closeTabMenu();
+
+  private readonly tabMenuEscape = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeTabMenu(true);
+  };
 
   /* The route progress line (shell-loading.ts), from a lazy chunk. */
   private readonly shellLoading = effect((onCleanup) => {

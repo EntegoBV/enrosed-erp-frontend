@@ -22,6 +22,9 @@ import {
   settlementSums, syncLine, unmatched, type SettlementFilter, type TicaPreset, type TicaTab,
 } from './tica-list-model';
 import { TicaSettlements } from './tica-settlements';
+import { TicaStockSettings } from './tica-stock-settings';
+import { ticaStockLabel, ticaStockNeedsAttention } from './tica-stock-rules';
+import { TicaSaleHistory } from './tica-sale-history';
 
 /** A caption or subtitle while nothing is known yet: keeps the line's height, never a false 0. */
 const NOT_KNOWN_YET = ' ';
@@ -38,13 +41,20 @@ const NOT_KNOWN_YET = ' ';
  * The sales of a period load whole (pages of 200, at most 10 000 lines).
  * Settlement logic and its sheets live in TicaSettlements, which stays
  * mounted on both tabs for ?settlement= links and unsaved-change guards.
+ * Codex's stock link (TicaStockSettings, its card and sheet with its own
+ * guard) sits under the sales table and stays mounted on both tabs too; a
+ * sale's stock state is the desk's Product sub or the amber line, and its
+ * history (TicaSaleHistory, ?sale=) opens from the row menu.
  * Area rules in tica-page.scss, all under app-tica-page (encapsulation off).
  */
 @Component({
   selector: 'app-tica-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
-  imports: [NgTemplateOutlet, FormsModule, RouterLink, Icon, PageHeader, Skeleton, Sheet, Segmented, ContextMenu, LoadError, TicaSettlements],
+  imports: [
+    NgTemplateOutlet, FormsModule, RouterLink, Icon, PageHeader, Skeleton, Sheet, Segmented, ContextMenu, LoadError,
+    TicaSettlements, TicaStockSettings, TicaSaleHistory,
+  ],
   templateUrl: './tica-page.html',
   styleUrl: './tica-page.scss',
 })
@@ -60,6 +70,7 @@ export class TicaPage {
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
   private statusBusy = false;
   readonly settlements = viewChild(TicaSettlements);
+  private readonly stockSettings = viewChild(TicaStockSettings);
   private readonly subbar = viewChild<ElementRef<HTMLElement>>('subbar');
 
   /* ------------------------------------------------------------ state */
@@ -231,6 +242,16 @@ export class TicaPage {
     return `${this.count(value)} ${value === 1 ? one : many}`;
   }
 
+  /** The amber line: the sale's stock waits on us; an unmatched line already says 'niet herkend', so not twice. */
+  stockAttention(line: TicaSale): string | null {
+    if (!ticaStockNeedsAttention(line) || (line.stockStatus === 'PRODUCT_UNMATCHED' && unmatched(line))) return null;
+    return [ticaStockLabel(line), line.stockMessage].filter(Boolean).join(' · ');
+  }
+  /** The desk's calm fact under the product: what this sale did to the stock (uit or vóór start the card says once). */
+  stockFact(line: TicaSale): string | null {
+    return line.stockStatus === 'POSTED' || line.stockStatus === 'REVERSED' ? ticaStockLabel(line) : null;
+  }
+
   /* ------------------------------------------------------------ guards */
 
   @HostListener('window:beforeunload', ['$event'])
@@ -241,6 +262,7 @@ export class TicaPage {
   async canDeactivate(): Promise<boolean> {
     if (this.saving()) return false;
     if (this.dirty() && !(await confirmLeave(this.ui, () => this.saveSettings()))) return false;
+    if (!(await this.stockSettings()?.canDeactivate() ?? true)) return false;
     return (await this.settlements()?.canDeactivate()) ?? true;
   }
 
@@ -322,6 +344,7 @@ export class TicaPage {
 
   lineMenuItems(line: TicaSale): ContextMenuItem[] {
     return [
+      { id: 'history', label: 'Verkoop en voorraad', hint: ticaStockLabel(line), iconName: 'recent' },
       ...(line.productId && !unmatched(line) ? [{ id: 'product', label: 'Product openen', hint: line.sku || undefined, iconName: 'stock' }] : []),
       { id: 'receipt', label: `Bon ${line.transactionNumber} tonen`, hint: `${this.moment(line.soldAt)} · regel ${line.lineNumber}`, iconName: 'receipt' },
       { id: 'article', label: 'Alle verkopen van dit artikel', hint: line.sku || line.beeyondArticleNumber || undefined, iconName: 'search' },
@@ -330,7 +353,8 @@ export class TicaPage {
 
   pickLine(line: TicaSale, id: string): void {
     this.lineMenu.set(null);
-    if (id === 'product' && line.productId) void this.router.navigate(['/products', line.productId]);
+    if (id === 'history') void this.router.navigate([], { relativeTo: this.route, queryParamsHandling: 'merge', queryParams: { sale: line.id } });
+    else if (id === 'product' && line.productId) void this.router.navigate(['/products', line.productId]);
     else if (id === 'receipt') this.query.set(line.transactionNumber);
     else if (id === 'article') this.query.set(line.sku || line.beeyondArticleNumber || line.description);
   }
@@ -395,7 +419,7 @@ export class TicaPage {
       this.status.set(status);
       this.statusError.set(null);
       this.now.set(Date.now());
-      if (previousSuccess !== undefined && status.lastSuccessAt !== previousSuccess) void this.loadSales();
+      if (previousSuccess !== undefined && status.lastSuccessAt !== previousSuccess) { void this.loadSales(); void this.stockSettings()?.reload(); }
     } catch (failure) {
       if (!this.destroyed) this.statusError.set(messageOf(failure, 'De verbindingsstatus kon niet worden geladen.'));
     } finally {

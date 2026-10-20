@@ -70,6 +70,8 @@ export function distinctOrderCount(items: readonly ExpectedLike[]): number {
 
 export interface ValueRow {
   quantity: number;
+  loosePieces?: number;
+  piecesPerUnit?: number;
   /** Landed cost per sales unit; null or 0 when unknown. */
   cost: number | null | undefined;
 }
@@ -81,14 +83,23 @@ export interface StockValue {
   withoutCost: number;
 }
 
+/** Sales-unit equivalent for valuation only; the stock book keeps exact whole units and loose pieces. */
+export function stockUnitEquivalent(row: { quantity: number; loosePieces?: number; piecesPerUnit?: number }): number {
+  const whole = Number.isFinite(row.quantity) ? row.quantity : 0;
+  const loose = Number.isFinite(row.loosePieces) ? row.loosePieces! : 0;
+  const factor = row.piecesPerUnit;
+  return whole + (Number.isInteger(factor) && factor! > 0 ? loose / factor! : loose);
+}
+
 /** Stock times landed cost; rows without a cost are counted apart, never valued at zero silently. */
 export function stockValue(rows: readonly ValueRow[]): StockValue {
   let cents = 0;
   let withoutCost = 0;
   for (const row of rows) {
-    if (!(row.quantity > 0)) continue;
+    const quantity = stockUnitEquivalent(row);
+    if (!(quantity > 0)) continue;
     if (row.cost === null || row.cost === undefined || !(row.cost > 0)) { withoutCost += 1; continue; }
-    cents += Math.round(row.quantity * row.cost * 100);
+    cents += Math.round(quantity * row.cost * 100);
   }
   return { value: cents / 100, withoutCost };
 }
@@ -114,6 +125,8 @@ export interface LevelLike {
   productId: number;
   locationId: number;
   quantity: number;
+  loosePieces?: number;
+  piecesPerUnit?: number;
 }
 
 /** The value at landed cost per location, for every location that holds stock. */
@@ -121,8 +134,9 @@ export function locationValues(levels: readonly LevelLike[], costOf: ReadonlyMap
   const cents = new Map<number, number>();
   for (const level of levels) {
     const cost = costOf.get(level.productId);
-    if (!(level.quantity > 0) || cost === null || cost === undefined || !(cost > 0)) continue;
-    cents.set(level.locationId, (cents.get(level.locationId) ?? 0) + Math.round(level.quantity * cost * 100));
+    const quantity = stockUnitEquivalent(level);
+    if (!(quantity > 0) || cost === null || cost === undefined || !(cost > 0)) continue;
+    cents.set(level.locationId, (cents.get(level.locationId) ?? 0) + Math.round(quantity * cost * 100));
   }
   return new Map([...cents].map(([id, value]) => [id, value / 100]));
 }
@@ -142,7 +156,7 @@ export function locationStock(
   const values = locationValues(own, costOf);
   const result = new Map<number, { products: number; value: number }>();
   for (const level of own) {
-    if (!(level.quantity > 0)) continue;
+    if (!(stockUnitEquivalent(level) > 0)) continue;
     const entry = result.get(level.locationId) ?? { products: 0, value: values.get(level.locationId) ?? 0 };
     entry.products += 1;
     result.set(level.locationId, entry);
@@ -150,15 +164,15 @@ export function locationStock(
   return result;
 }
 
-/** Pieces per product, summed over every location. */
+/** Sales-unit equivalents per product for valuation, summed over every location. */
 export function totalsByProduct(levels: readonly LevelLike[]): Map<number, number> {
   const totals = new Map<number, number>();
-  for (const level of levels) totals.set(level.productId, (totals.get(level.productId) ?? 0) + level.quantity);
+  for (const level of levels) totals.set(level.productId, (totals.get(level.productId) ?? 0) + stockUnitEquivalent(level));
   return totals;
 }
 
 /** "Zaltbommel 1.960 · Tica Brussel 8": the locations that hold stock, in the order given. */
-export function locationSplit(entries: readonly { name: string; quantity: number }[]): string {
-  return entries.filter((entry) => entry.quantity !== 0)
-    .map((entry) => `${entry.name} ${entry.quantity.toLocaleString('nl-BE')}`).join(' · ');
+export function locationSplit(entries: readonly { name: string; quantity: number; loosePieces?: number; piecesPerUnit?: number }[]): string {
+  return entries.filter((entry) => stockUnitEquivalent(entry) !== 0)
+    .map((entry) => `${entry.name} ${entry.quantity.toLocaleString('nl-BE')}${entry.loosePieces ? ` + ${entry.loosePieces.toLocaleString('nl-BE')} los` : ''}`).join(' · ');
 }

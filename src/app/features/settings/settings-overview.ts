@@ -12,6 +12,7 @@ import { ActivityEvent, Category, DiscountTier, HsCode } from '../../core/api/mo
 import { SalesApi } from '../../core/api/sales-api';
 import { StaffContact, StaffContactsApi } from '../../core/api/staff-contacts-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { phoneTabForUrl } from '../../core/platform/phone-tabs';
 import { PushSetup } from '../../core/platform/push';
 import { THEMES, Theme } from '../../core/platform/theme';
 import { Icon } from '../../shared/icon';
@@ -237,7 +238,7 @@ type Link = { path: string; query: Record<string, string> | null };
               <span class="ios-cell__trail"><span class="ios-cell__value">@if (orderTiers.value(); as tiers) { <span class="mo-fade">{{ countText(tiers.length, 'staffel', 'staffels') }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: orderTiers.error(), retry: 'tiers' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
-            <a class="ios-cell" [routerLink]="dutiesLink().path" [queryParams]="dutiesLink().query" [info]="push">
+            <a class="ios-cell" [routerLink]="dutiesLink().path" [queryParams]="dutiesLink().query" [info]="rowInfo(dutiesLink().path)">
               <span class="ios-cell__lead"><span class="ios-tile tone-amber" aria-hidden="true"><app-icon name="truck" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Douane</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value">@if (duties.value(); as codes) { <span class="mo-fade">{{ countText(codes.length, 'tarief', 'tarieven') }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: duties.error(), retry: 'duties' }" /> }</span></span>
@@ -255,7 +256,7 @@ type Link = { path: string; query: Record<string, string> | null };
               <span class="ios-cell__trail"><span class="ios-cell__value" [class.set-warn]="prices.settings()?.pricesVisible">@if (prices.settings(); as current) { <span class="mo-fade">{{ current.pricesVisible ? 'Zichtbaar' : 'Verborgen' }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: prices.error(), retry: 'prices' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
-            <a class="ios-cell" routerLink="/categories" [info]="push">
+            <a class="ios-cell" routerLink="/categories" [info]="rowInfo('/categories')">
               <span class="ios-cell__lead"><span class="ios-tile tone-green" aria-hidden="true"><app-icon name="grid" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Categorieën</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value">@if (categories.value(); as list) { <span class="mo-fade">{{ list.length }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: categories.error(), retry: 'categories' }" /> }</span></span>
@@ -376,6 +377,17 @@ export class SettingsOverview {
 
   /** Phone rows push (a query-only navigation would otherwise not animate). */
   readonly push = { nav: 'push' };
+
+  /**
+   * The info of a phone row that may leave Meer: a push while the page stays
+   * Instellingen's (Meer lit), none for a page another tab owns (Douane lights
+   * Inkoop, Categorieën Producten), so the plain rule fades the tab switch
+   * (nav-direction.ts) instead of sliding it in under another lit tab.
+   */
+  rowInfo(path: string): { nav: string } | null {
+    return phoneTabForUrl(path) === 'more' ? this.push : null;
+  }
+
   readonly companyLink: Link = { path: '/settings', query: { sectie: 'company' } };
   readonly dutiesLink = computed<Link>(() => this.douaneRoute()
     ? { path: '/douane', query: null }

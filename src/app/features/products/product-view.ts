@@ -1,6 +1,9 @@
 import { capitalize, customerReading, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesSetupText } from './product-sales-unit';
 import { effectiveOrderStep, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
+import { ProductChannelPrice } from './product-channel-price';
+import { StockMovementSource } from './stock-movement-source';
+import { looseStockText, stockAmountText, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
 import { afterRenderEffect, ChangeDetectionStrategy, Component, computed, DestroyRef, effect, ElementRef, inject, signal, viewChild, ViewEncapsulation } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -57,7 +60,7 @@ export type { ReceivedContainer } from './received-containers';
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     ProductPlacesLine, IosNav, ContextMenu, Icon, Sheet, LoadError, StockBookingSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -125,7 +128,7 @@ export type { ReceivedContainer } from './received-containers';
             <div class="pph-figs">
               <button type="button" (click)="scrollToStock()">
                 <small>Voorraad</small>
-                @if (stockLevels()) { <strong [class.is-bad]="stockTotal() < 0">{{ stockTotal() | num }}<em>{{ unitFor(product, stockTotal()) }}</em></strong><span>@for (part of locationLine(); track $index) {@if (!$first) { · }<span class="pph-nw">{{ part }}</span>}</span> }
+                @if (stockLevels()) { <strong [class.is-bad]="stockTotal() < 0">{{ stockTotal() | num }}<em>{{ unitFor(product, stockTotal()) }}</em></strong>@if (stockLooseTotal()) { <span>+ {{ looseText(stockLooseTotal(), product) }}</span> }<span>@for (part of locationLine(); track $index) {@if (!$first) { · }<span class="pph-nw">{{ part }}</span>}</span> }
                 @else if (product.inventoryKnown) { <strong>{{ product.stockQuantity | num }}<em>{{ unitFor(product, product.stockQuantity) }}</em></strong><span>in voorraad</span> }
                 @else { <strong>—</strong><span>nog niet bevestigd</span> }
               </button>
@@ -174,14 +177,14 @@ export type { ReceivedContainer } from './received-containers';
         <!-- 2 · Voorraad -->
         <section class="ios-section" id="stock-card" aria-labelledby="stock-card-title">
           <div class="ios-section__head"><h2 id="stock-card-title">Voorraad</h2>
-            @if (stockLevels()) { <span class="ios-section__trail">{{ stockTotal() | num }} {{ unitFor(product, stockTotal()) }}</span> }</div>
+            @if (stockLevels()) { <span class="ios-section__trail">{{ stockAmount({quantity: stockTotal(), loosePieces: stockLooseTotal()}, product) }}</span> }</div>
           <div class="ios-group">
             @if (stockLevels(); as levels) {
               @for (level of levels; track level.locationId) {
                 <button class="ios-cell" type="button" (click)="openBooking('RECOUNT', level.locationId)" [attr.aria-label]="'Hertelling op ' + level.name">
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ level.name }}</span>
                     <span class="ios-cell__sub">{{ level.kindLabel }} · {{ level.countsForWebsite ? 'alle verkoopkanalen' : 'enkel ter plaatse' }}</span></span>
-                  <span class="ios-cell__value num" [class.pph-zero]="!level.quantity">{{ level.quantity | num }}</span>
+                  <span class="ios-cell__value num" [class.pph-zero]="!level.quantity && !level.loosePieces">{{ stockAmount(level, product) }}</span>
                   <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                 </button>
               }
@@ -201,8 +204,8 @@ export type { ReceivedContainer } from './received-containers';
               @for (move of moves; track move.id) {
                 <div class="ios-cell pph-move">
                   <span class="ios-cell__body"><span class="ios-cell__title" [title]="move.kindLabel + (move.reference ? ' · ' + move.reference : '')">{{ move.kindLabel }}@if (move.reference) { · {{ move.reference }}}</span>
-                    <span class="ios-cell__sub">{{ move.at | dateTimeNl }}@if (move.actor) { · {{ move.actor }}}@if (move.locationName) { · {{ move.locationName }}}</span></span>
-                  <span class="pph-delta" [class.minus]="move.delta < 0">{{ move.delta > 0 ? '+' : '' }}{{ move.delta | num }}</span>
+                    <span class="ios-cell__sub">{{ move.at | dateTimeNl }}@if (move.actor) { · {{ move.actor }}}@if (move.locationName) { · {{ move.locationName }}}</span><app-stock-movement-source [move]="move" /></span>
+                  <span class="pph-delta" [class.minus]="move.delta * (move.unitPieces || 1) + (move.looseDelta || 0) < 0">{{ moveDelta(move, product) }}</span>
                 </div>
               } @empty {
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Nog geen voorraadbewegingen.</span></span></div>
@@ -237,6 +240,7 @@ export type { ReceivedContainer } from './received-containers';
               @else { <span class="ios-cell__value">—</span> }</div>
           </div>
           <p class="ios-section__foot">Prijzen excl. btw</p>
+          <app-product-channel-price [product]="product" />
         </section>
 
         <!-- 5 · Website & publicatie, read-only (B14) -->
@@ -608,11 +612,15 @@ export class ProductView {
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
+  readonly stockLooseTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + (level.loosePieces ?? 0), 0));
+  readonly stockAmount = stockAmountText;
+  readonly looseText = looseStockText;
+  readonly moveDelta = stockMovementDelta;
   /** The unit ("stuks", "bowls") alone with one location; otherwise "9.400 magazijn · 600 TICA". */
   readonly stockSummary = computed(() => {
     const levels = this.stockLevels() ?? [];
     if (levels.length <= 1) return productSalesUnit(this.product()).plural;
-    return levels.map((level) => `${level.quantity.toLocaleString('nl-BE')} ${level.name}`).join(' · ');
+    return levels.map((level) => `${stockAmountText(level, this.product())} ${level.name}`).join(' · ');
   });
 
   /* ---- the price, taken apart ---- */
@@ -661,7 +669,7 @@ export class ProductView {
   readonly locationLine = computed(() => {
     const levels = this.stockLevels() ?? [];
     if (levels.length <= 1) return ['in voorraad'];
-    return levels.map((level) => `${level.name} ${level.quantity.toLocaleString('nl-BE')}`);
+    return levels.map((level) => `${level.name} ${stockAmountText(level, this.product())}`);
   });
   /**
    * Every product's stock over all locations, asked once after the product
@@ -888,7 +896,7 @@ export class ProductView {
   /** The open Voorraad boeken sheet: which kind, on which location. */
   readonly bookingSheet = signal<{ kind: BookingKind; locationId: number | null } | null>(null);
   readonly bookingLevels = computed<BookingLevel[]>(() =>
-    (this.stockLevels() ?? []).map((level) => ({ locationId: level.locationId, name: level.name, quantity: level.quantity })));
+    (this.stockLevels() ?? []).map((level) => ({ locationId: level.locationId, name: level.name, quantity: level.quantity, loosePieces: level.loosePieces, piecesPerUnit: level.piecesPerUnit })));
 
   /** A location row opens a recount of that location; the buttons start on the first location with stock. */
   openBooking(kind: BookingKind, locationId?: number | null): void {

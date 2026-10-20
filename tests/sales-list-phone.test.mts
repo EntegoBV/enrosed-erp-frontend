@@ -17,6 +17,7 @@ import { parseTemplate } from '@angular/compiler';
  */
 const source = await readFile(new URL('../src/app/features/sales/sales-list.ts', import.meta.url), 'utf8');
 const partial = (await readFile(new URL('../src/styles/sales-list.scss', import.meta.url), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+const containerMenu = await readFile(new URL('../src/app/features/sales/sales-container-menu.ts', import.meta.url), 'utf8');
 const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(source)?.[1] ?? '';
 const phone = template.slice(template.indexOf('<div class="content sl--phone">'), template.indexOf('<ng-template #emptyState>'));
 const phoneRow = /<ng-template #phoneRow[\s\S]*?<\/ng-template>/.exec(template)?.[0] ?? '';
@@ -75,21 +76,39 @@ test('a chips row only when something applies: Actie vereist, Website and In ver
   }
 });
 
-test('partner containers and split orders are disclosure cells inside their customer, every figure kept', () => {
+test('partner containers and split orders are cells with the anatomy of a document inside their customer; the other figures go to the container menu', () => {
   const heads = phone.slice(phone.indexOf("@if (entry.kind === 'PARTNER_CONTAINER')"), phone.indexOf('<ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: entry.row, nested: false }" />'));
   assert.match(heads, /<button class="ios-cell sl-phead" type="button"\s+appSalesMenu [\s\S]*?\(salesMenu\)="openContainerMenu\(null, entry\)" aria-haspopup="dialog" aria-describedby="sales-menu-help"/);
   assert.equal(heads.split('(click)="toggleGroup(entry.key)"').length - 1, 2);
   assert.equal(heads.split('[attr.aria-expanded]="groupOpen(entry.key)"').length - 1, 2);
-  for (const figure of ['entry.summary.count', 'entry.summary.containerPieces', 'entry.summary.statuses', 'status.concept', 'status.inactive',
-    'entry.summary.attentionCount', 'entry.summary.totalEur', 'entry.summary.draftEur', 'entry.summary.receivedEur', 'entry.summary.remainingEur',
-    'entry.summary.creditEur', 'entry.purchaseOrderName', 'entry.purchaseOrderNumber', 'entry.summary.parts', 'entry.summary.pieces',
-    'entry.summary.unavailableCount', 'entry.summary.waitingCount', 'entry.summary.shippedCount', 'Leveringen gepland',
+  /* Emre, 2026-10-20: the heads were a heavier anatomy than the documents (an uppercase eyebrow, a badge per status, a
+     money line with cents). Now: title, sub, amber line; the total in trail euros and one status; a chevron. */
+  assert.equal(heads.split('@let head = phoneHeadOf(entry);').length - 1, 2);
+  for (const piece of ['<span class="sl-ptitle" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? \'Inkooporder \' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</span>',
+    '<span class="sl-ptitle">{{ entry.rows[0].order.number }}</span>', '<span class="sl-psub">{{ head.sub }}</span>',
+    '@if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }',
+    '<span class="sl-ptotal">{{ head.total }}</span>',
+    "@if (status.kind === 'open') { <span class=\"sl-pline sl-pline--open\" [class.sl-warn]=\"status.overdue\">{{ status.text }}</span> }",
+    "@else if (status.kind === 'tegoed') { <span class=\"sl-pline sl-pline--wrap sl-credit\">{{ status.text }}</span> }",
+    '<span class="wk-pill" [class]="salesTone(status.cls)">{{ status.text }}</span>',
     'De facturen hieronder volgen je huidige filters.', 'Elk deel heeft een eigen document- en leverstatus.']) {
-    assert.ok(heads.includes(figure), figure);
+    assert.ok(heads.includes(piece), piece);
   }
+  assert.equal(heads.split('<app-icon class="ios-cell__chev sl-pchev" name="chevron-right" [size]="16" />').length - 1, 2);
+  assert.doesNotMatch(heads, /sl-eyebrow|sl-pbadges|entry\.summary\.|\| eur|waarvan concept|incl\. btw/, 'no eyebrow, no badge row, no figure of the old head on the phone');
   assert.equal(heads.split('<ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: row, nested: true }" />').length - 1, 2);
+  assert.match(member('phoneHeadOf'), /entry\.kind === 'PARTNER_CONTAINER' \? containerHead\(entry, invoiceReceivable, todayIso\(\), reasons\) : splitHead\(entry, reasons\)/);
+  assert.match(member('phoneHeadOf'), /this\.rowAttention\(row\)/, 'the amber line reads the members as their own cells do');
+  /* What the head leaves out (pieces, ontvangen, tegoed, waarvan concept, the statuses) reads in the container menu's head. */
+  assert.match(template, /<app-sales-container-menu [^>]*\[facts\]="desktop\.active\(\) \? \[\] : containerHintOf\(menuContainer\)"/);
+  assert.match(member('containerHintOf'), /return containerHint\(container, invoiceReceivable, todayIso\(\)\);/, 'the hint knows what the head says beside its total');
+  const menu = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(containerMenu)?.[1] ?? '';
+  assert.ok(menu.includes('@for (fact of facts(); track $index) { · {{ fact }} }</p>'), 'after the customer and the name, on the head line');
+  assert.match(containerMenu, /readonly facts = input<readonly string\[\]>\(\[\]\);/);
   assert.ok(partial.includes('app-sales-list .sl-phead[aria-expanded=true] .sl-pchev{transform:rotate(90deg)}'));
+  assert.ok(partial.includes('app-sales-list .sl-phead .sl-ptitle{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}'), 'the name in two lines at most');
   assert.ok(partial.includes('app-sales-list .sl-swipe--nested>.sl-prow{padding-left:32px}'));
+  assert.doesNotMatch(partial, /sl-pbadges/);
 });
 
 test('the phone row: the number, kind · date and tags, the facts and the amber line; the trail with total, status and what is open', () => {
@@ -100,22 +119,28 @@ test('the phone row: the number, kind · date and tags, the facts and the amber 
     '(pointerdown)="startSwipe($event, row)"', '(wheel)="wheelSwipe($event, row)"', '(click)="blockWhenSwiped($event)"',
     '<span class="sl-ptitle">{{ row.order.number }}</span>', '{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}',
     '<span class="sl-tag">Partner</span>', '<span class="sl-pattn"><b>{{ attn.length }}</b>',
-    "{{ creditNoteRow(row) ? '− ' : '' }}{{ row.priced.totals.total | eur: (row.fulfillment || partner(row.order) ? 2 : 0) }}",
+    "{{ creditNoteRow(row) ? '− ' : '' }}{{ trailEuro(row.priced.totals.total) }}",
     '@if (row.priced.validation.freightPricingIssue && !creditNoteRow(row)) { <small class="warn-text">excl. vracht</small> }',
     '<span class="wk-pill" [class]="salesTone(status.cls)">{{ status.label }}</span>']) {
     assert.ok(link.includes(piece), piece);
   }
   assert.doesNotMatch(link.slice(2), /<a\s|<button\s/, 'nothing interactive inside the row link');
-  assert.match(link, /@case \('open'\) \{ <span class="sl-pline sl-pline--open" \[class\.sl-warn\]="lines\.trail\.overdue">\{\{ pay\.openEur \| eur \}\} open<\/span> \}/);
+  assert.match(link, /@case \('open'\) \{ <span class="sl-pline sl-pline--open" \[class\.sl-warn\]="lines\.trail\.overdue">\{\{ lines\.trail\.text \}\}<\/span> \}/);
+  /* One precision per trail (Inkoop's): whole euros for the total and what is open; the exact amounts are in the menu. */
+  assert.doesNotMatch(link, /\| eur/, 'no amount with cents on the phone trail');
+  assert.match(link, /!webOrder\(row\) && !\(nested && partner\(row\.order\) && channelCode\(row\.order\.salesChannel\) === 'PARTNER'\)\) \{ <span class="sl-tag sl-tag--channel">/,
+    "under a partner container the head stands for 'Partner & veiling'; a TICA or Beurs member keeps its tag");
   assert.match(link, /@case \('credit'\) \{ <span class="sl-pline sl-pline--wrap sl-credit">\{\{ lines\.trail\.text \}\}<\/span> \}/);
   assert.match(link, /@let day = dayParts\(lines\.trail\.text\);\s*<span class="sl-pline sl-pline--wrap"[^>]*>\{\{ day\.lead \}\}<span class="sl-nw">\{\{ day\.day \}\}<\/span><\/span>/);
   assert.doesNotMatch(link, /marge|cbm|sl-more/, 'Inhoud and marge leave the phone row; no ⋯ on the phone');
   assert.match(phoneRow, /@if \(canArchive\(row\)\) \{\s*<button class="swipe__archive"/);
   assert.match(phoneRow, /@if \(canDelete\(row\)\) \{\s*<button class="swipe__delete"/);
-  assert.match(member('phoneLinesOf'), /phoneLines\(this\.statusPartsOf\(row\), this\.paymentOf\(row\), isCreditNote\(row\.order\) \? this\.creditLine\(row\) : null\)/);
+  /* A credit note hands in only what it still holds: its pill says the rest (never 'verrekend · afgehandeld' beside 'Afgehandeld'). */
+  assert.match(member('phoneLinesOf'), /phoneLines\(this\.statusPartsOf\(row\), this\.paymentOf\(row\),\s*isCreditNote\(row\.order\) \? creditNoteSettlement\(row\.paymentSummary, row\.order\.status\)\.openEur : null\)/);
+  assert.doesNotMatch(phoneRow, /creditLine\(/);
 });
 
-test('the trail gives way before the number and sizes from its total: the day, tegoed and concept lines wrap; small phones get a 15 px number', () => {
+test('the trail gives way before the number and sizes from its total: the day and tegoed lines wrap; small phones get a 15 px number; one tag size', () => {
   assert.ok(partial.includes('app-sales-list .sl--phone{--ios-inset:4px}'));
   assert.ok(partial.includes('app-sales-list .sl-prow>.ios-cell__body,app-sales-list .sl-phead>.ios-cell__body{flex:1 1 auto}'));
   assert.ok(partial.includes('app-sales-list .sl-ptrail{flex:0 1 auto;gap:2px;max-width:48%}'));
@@ -127,12 +152,13 @@ test('the trail gives way before the number and sizes from its total: the day, t
   const plines = [...template.matchAll(/<span class="sl-pline( [^"]*)?"/g)].map((match) => match[1] ?? '');
   assert.ok(plines.length >= 4);
   for (const classes of plines) assert.match(classes, /sl-pline--(wrap|open)/, `every trail line but the open amount wraps: ${classes}`);
-  assert.ok(template.includes('<span class="sl-pline sl-pline--wrap">waarvan concept <span class="sl-nw">{{ entry.summary.draftEur | eur }}</span></span>'));
+  assert.doesNotMatch(phone, /waarvan concept/, "a container's concept share reads in its menu now, not on the trail");
   assert.ok(partial.includes('@media (max-width:374px){app-sales-list .sl-ptitle{font-size:15px}}'));
+  assert.ok(partial.includes('app-sales-list .sl-prow .sl-tag--channel{font-size:10.5px;letter-spacing:0;text-transform:none}'), 'no uppercase eyebrow tag in a phone cell');
   assert.ok(partial.includes('app-sales-list .sl-ptrail .wk-pill{max-width:100%;height:auto;'), 'a long status wraps in the trail');
 });
 
-test('on the phone the menu hint carries the Inhoud with m³ and marge (never on a credit note or partner document) and the money facts', () => {
+test('on the phone the menu hint carries the Inhoud with m³ and marge (never on a credit note or partner document) and the exact money facts', () => {
   const items = member('rowMenuItems');
   assert.match(items, /this\.desktop\.active\(\) \? \[this\.inhoudText\(row\)\] : \[this\.inhoudText\(row, true\), \.\.\.this\.phoneMoneyFacts\(row\)\]/);
   const inhoud = member('inhoudText');
@@ -141,7 +167,9 @@ test('on the phone the menu hint carries the Inhoud with m³ and marge (never on
   assert.match(inhoud, /if \(this\.partner\(row\.order\)\) return full \? row\.order\.extraLines\?\.\[0\]\?\.description \|\| 'Gekoppeld aan de partnercontainer' : '';/);
   assert.match(inhoud, /if \(full && totals\.marginPct\) parts\.push\(`marge \$\{new PctPipe\(\)\.transform\(totals\.marginPct, 0\)\}`\);/);
   const money = member('phoneMoneyFacts');
-  for (const fact of ['this.phoneLinesOf(row).unshown', 'ontvangen', 'gecrediteerd']) assert.ok(money.includes(fact), fact);
+  for (const fact of ['this.phoneLinesOf(row).unshown', 'ontvangen', 'gecrediteerd', 'roundedAway(pay.openEur)', 'verrekend', 'terugbetaald', 'roundedAway(credit.openEur)']) {
+    assert.ok(money.includes(fact), fact);
+  }
 });
 
 test('the fab and the iOS new-document sheet with its phone gutter', () => {

@@ -100,11 +100,13 @@
                     <span class="wk-td wk-td--wrap tl-cell" role="cell" data-hide="sm">
                       @if (unmatched(line)) { <span class="tl-warn">Niet herkend</span> }
                       @else { <a class="tl-link" [routerLink]="['/products', line.productId]">ERP-product ›</a> }
+                      @if (stockFact(line); as fact) { <span class="tl-sub">{{ fact }}</span> }
                     </span>
                     <span class="wk-td wk-td--num tl-cell tl-num" role="cell">{{ count(line.quantity) }}</span>
                     <span class="wk-td wk-td--num tl-cell tl-total" role="cell">{{ euro(line.netTotal) }}
                       @if (discountText(line); as off) { <small class="tl-sub">{{ off }} · {{ euro(line.grossTotal) }}</small> }</span>
                     <span class="wk-td" role="cell"></span>
+                    @if (stockAttention(line); as attn) { <span class="tl-attn" [attr.title]="attn"><b>1</b><span>{{ attn }}</span></span> }
                   </div>
                   <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon tl-more" type="button" aria-haspopup="menu"
                           [attr.aria-label]="'Acties voor ' + (line.description || 'deze regel')" (click)="openLineMenu($event, line)"><app-icon name="more" [size]="16" /></button>
@@ -117,7 +119,7 @@
           <p class="tl-foot tl-warn">Getoond: de nieuwste {{ count(lines().length) }} van {{ count(sales()!.totalLines) }} regels. De sommen tellen alles; kies een kortere periode voor de rest.</p>
         }
       }
-      <p class="tl-foot">Bedragen excl. btw na korting; ze tellen als omzet in kanaal TICA, zonder factuur of voorraadboeking.</p>
+      <p class="tl-foot">Bedragen excl. btw na korting; ze tellen als omzet in kanaal TICA, zonder factuur. Voorraad volgt de koppeling hieronder; elke correctie blijft in de geschiedenis.</p>
     } @else {
       <div #subbar class="wk-subbar tl-subbar">
         <div class="wk-chips" role="group" aria-label="Filter op status">
@@ -135,6 +137,7 @@
       </div>
     }
     <app-tica-settlements [desk]="true" [query]="query()" [filter]="settlementFilter()" [showList]="tab() === 'afrekeningen'" />
+    <ng-container *ngTemplateOutlet="stock" />
   </div>
 } @else {
   <div class="content tl tl--phone">
@@ -183,7 +186,8 @@
                 @for (line of day.lines; track line.id) {
                   <button class="ios-cell tl-prow" type="button" (click)="openLineMenu(null, line)">
                     <span class="ios-cell__body"><span class="tl-ptitle">{{ line.description || 'Artikel zonder omschrijving' }}</span>
-                      <span class="tl-psub">{{ saleTime(line.soldAt) }} · {{ count(line.quantity) }} st@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }</span></span>
+                      <span class="tl-psub">{{ saleTime(line.soldAt) }} · {{ count(line.quantity) }} st@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }</span>
+                      @if (stockAttention(line); as attn) { <span class="tl-pattn"><b>1</b><span>{{ attn }}</span></span> }</span>
                     <span class="ios-cell__trail tl-ptrail"><span class="tl-ptotal">{{ euro(line.netTotal) }}</span>
                       @if (discountText(line); as off) { <span class="tl-pline">{{ off }}</span> }</span>
                   </button>
@@ -206,8 +210,15 @@
       }
     }
     <app-tica-settlements [desk]="false" [query]="query()" [filter]="settlementFilter()" [showList]="tab() === 'afrekeningen'" />
+    <ng-container *ngTemplateOutlet="stock" />
   </div>
 }
+
+<!-- Codex's TICA-voorraad card and sheet under the sales; mounted on both tabs, so its unsaved-change guard and the
+     reload after an import always find it. -->
+<ng-template #stock>
+  <div class="tl-stock" [hidden]="tab() !== 'verkopen'"><app-tica-stock-settings (changed)="loadStatus(); loadSales()" /></div>
+</ng-template>
 
 <!-- The import's warnings: an error with its last attempt, fetching switched off or not set up, a failed status or start. -->
 <ng-template #banners>
@@ -262,6 +273,8 @@
   <app-context-menu class="tl-menu" [title]="menu.line.description || 'Verkoopregel'" [items]="lineMenuItems(menu.line)" [anchor]="menu.point"
                     [variant]="desktop.active() ? 'default' : 'ios'" cancelLabel="Annuleren" (pick)="pickLine(menu.line, $event.id)" (closed)="lineMenu.set(null)" />
 }
+<!-- A sale's revisions and stock movements (?sale=, from the row menu's Verkoop en voorraad). -->
+<app-tica-sale-history />
 
 @if (filtersOpen()) {
   <app-sheet variant="ios" title="Filters" (closed)="filtersOpen.set(false)">

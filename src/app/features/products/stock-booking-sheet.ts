@@ -7,6 +7,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
 import { productSalesUnit } from './product-sales-unit';
+import { stockAmountText } from './stock-quantity';
 import { receivedContainersFor, type ReceivedContainer } from './received-containers';
 import {
   bookingHelp, bookingKinds, bookingLabel, bookingNeedsContainer, bookingNotePlaceholder, bookingPreview, bookingReady,
@@ -54,7 +55,7 @@ export interface StockBooked {
               <span class="bk-field__label">{{ draft().kind === 'TRANSFER' ? 'Van' : 'Locatie' }}</span>
               <select class="select bk-field__control" [value]="draft().locationId ?? ''" (change)="setLocation($any($event.target).value)">
                 @for (level of levels(); track level.locationId) {
-                  <option [value]="level.locationId" [selected]="level.locationId === draft().locationId">{{ level.name }} ({{ count(level.quantity) }})</option>
+                  <option [value]="level.locationId" [selected]="level.locationId === draft().locationId">{{ level.name }} ({{ amount(level) }})</option>
                 }
               </select>
             </label>
@@ -64,7 +65,7 @@ export interface StockBooked {
                 <select class="select bk-field__control" (change)="setTarget($any($event.target).value)">
                   @for (level of levels(); track level.locationId) {
                     @if (level.locationId !== draft().locationId) {
-                      <option [value]="level.locationId" [selected]="level.locationId === draft().toLocationId">{{ level.name }} ({{ count(level.quantity) }})</option>
+                      <option [value]="level.locationId" [selected]="level.locationId === draft().toLocationId">{{ level.name }} ({{ amount(level) }})</option>
                     }
                   }
                 </select>
@@ -72,11 +73,23 @@ export interface StockBooked {
             }
           }
           <label class="bk-field">
-            <span class="bk-field__label">{{ draft().kind === 'RECOUNT' ? 'Geteld' : 'Aantal ' + units().plural }}</span>
+            <span class="bk-field__label">{{ draft().kind === 'RECOUNT' ? 'Getelde ' + units().plural : 'Aantal ' + units().plural }}</span>
             <input #quantity class="input bk-field__control bk-qty" type="text" inputmode="numeric" autocomplete="off"
-                   [attr.aria-label]="draft().kind === 'RECOUNT' ? 'Geteld' : 'Aantal ' + units().plural"
+                   [attr.aria-label]="draft().kind === 'RECOUNT' ? 'Getelde ' + units().plural : 'Aantal ' + units().plural"
                    [value]="raw()" (input)="setQuantity($any($event.target).value)" (keydown.enter)="submitFromField($event)" />
           </label>
+          @if (draft().kind === 'RECOUNT' && unitPieces() > 1) {
+            <label class="bk-field">
+              <span class="bk-field__label">Getelde losse {{ units().piece.other }}</span>
+              <input class="input bk-field__control bk-qty" type="text" inputmode="numeric" autocomplete="off"
+                     [attr.aria-label]="'Getelde losse ' + units().piece.other" [value]="looseRaw()"
+                     (input)="setLoose($any($event.target).value)" (keydown.enter)="submitFromField($event)" />
+              <small class="bk-hint">0 tot {{ unitPieces() - 1 }}; {{ unitPieces() }} {{ units().piece.other }} vormen één {{ units().singular }}.</small>
+            </label>
+          }
+          @if (draft().kind !== 'RECOUNT' && currentLevel()?.loosePieces) {
+            <p class="bk-hint bk-field--wide">Je boekt complete {{ units().plural }}. De {{ currentLevel()!.loosePieces }} losse {{ units().piece.other }} blijven op deze locatie.</p>
+          }
           @if (needsContainer()) {
             <label class="bk-field bk-field--wide">
               <span class="bk-field__label">Uit welke container?</span>
@@ -102,6 +115,9 @@ export interface StockBooked {
 
         @if (preview(); as view) {
           <div class="bk-preview" [class.is-short]="view.state === 'short'" [class.is-same]="view.state === 'same'" aria-live="polite">
+            @if (draft().kind === 'RECOUNT' && unitPieces() > 1) {
+              <span>{{ view.location }}: {{ amount(currentLevel()!) }} → <b>{{ recountAmount() }}</b></span>
+            } @else {
             @switch (view.state) {
               @case ('short') { <span>Meer dan er ligt op {{ view.location }} ({{ count(view.before) }})</span> }
               @case ('same') { <span>{{ view.location }} blijft op {{ count(view.before) }}</span> }
@@ -112,6 +128,7 @@ export interface StockBooked {
                 <span>{{ view.location }}: {{ count(view.before) }} → <b>{{ count(view.after) }}</b></span>
                 <em [class.plus]="view.delta > 0">{{ view.delta > 0 ? '+' : '' }}{{ count(view.delta) }}</em>
               }
+            }
             }
           </div>
         }
@@ -149,12 +166,17 @@ export class StockBookingSheet {
   readonly draft = signal<BookingDraft>({ kind: 'RECOUNT', locationId: null, toLocationId: null, quantity: null, note: '', containerId: null });
   /** The text in the count field; the draft holds what it means. */
   readonly raw = signal('');
+  readonly looseRaw = signal('');
   readonly busy = signal(false);
   private readonly loadedContainers = signal<ReceivedContainer[] | null>(null);
   readonly containersLoading = signal(false);
   private containersAsked = false;
 
   readonly units = computed(() => productSalesUnit(this.product()));
+  readonly currentLevel = computed(() => this.levels().find(level => level.locationId === this.draft().locationId));
+  readonly unitPieces = computed(() => this.currentLevel()?.piecesPerUnit ?? 1);
+  readonly recountAmount = computed(() => this.draft().quantity === null || this.draft().loosePieces === null
+    ? 'Vul een geldig aantal in' : stockAmountText({ quantity: this.draft().quantity!, loosePieces: this.draft().loosePieces ?? 0 }, this.product()));
   readonly subtitle = computed(() => bookingSubtitle(this.product().name, this.product().colour));
   readonly kindOptions = computed<SegmentOption[]>(() =>
     bookingKinds(this.levels().length).map((option) => ({ id: option.kind, label: option.label, icon: option.icon })));
@@ -222,11 +244,13 @@ export class StockBookingSheet {
   count(value: number): string {
     return value.toLocaleString('nl-BE');
   }
+  amount(level: BookingLevel): string { return stockAmountText(level, this.product()); }
 
   /** A draft with its count in the field ("6.000"), as prefilled, not typed. */
   private fill(draft: BookingDraft): void {
     this.draft.set(draft);
     this.raw.set(countText(draft.quantity));
+    this.looseRaw.set(countText(draft.loosePieces ?? 0));
     this.countTyped = false;
   }
 
@@ -242,7 +266,10 @@ export class StockBookingSheet {
     const level = this.levels().find((item) => item.locationId === locationId);
     this.draft.update((draft) => {
       const next = { ...draft, locationId };
-      if (draft.kind === 'RECOUNT') next.quantity = level?.quantity ?? null;
+      if (draft.kind === 'RECOUNT') {
+        next.quantity = level?.quantity ?? null;
+        next.loosePieces = level?.loosePieces ?? 0;
+      }
       if (draft.kind === 'TRANSFER' && draft.toLocationId === locationId) {
         next.toLocationId = this.levels().find((item) => item.locationId !== locationId)?.locationId ?? null;
       }
@@ -260,6 +287,11 @@ export class StockBookingSheet {
     this.raw.set(raw);
     this.countTyped = true;
     this.draft.update((draft) => ({ ...draft, quantity: parseCount(raw) }));
+  }
+  setLoose(raw: string): void {
+    this.looseRaw.set(raw);
+    this.countTyped = true;
+    this.draft.update(draft => ({ ...draft, loosePieces: parseCount(raw) }));
   }
 
   setContainer(raw: string): void {
@@ -289,7 +321,7 @@ export class StockBookingSheet {
       let saved: Product | null = null;
       switch (draft.kind) {
         case 'RECOUNT':
-          saved = await this.catalog.setStock(product.id, quantity, draft.locationId, note);
+          saved = await this.catalog.setStock(product.id, quantity, draft.locationId, note, draft.loosePieces ?? undefined);
           break;
         case 'TRANSFER':
           saved = await this.catalog.transferStock(product.id, draft.locationId!, draft.toLocationId!, quantity, note);
@@ -305,7 +337,8 @@ export class StockBookingSheet {
         default:
           saved = await this.catalog.takeOutStock(product.id, { locationId: draft.locationId, quantity, kind: 'DEMO', note });
       }
-      this.ui.toast(bookingToast({
+      this.ui.toast(draft.kind === 'RECOUNT' && this.unitPieces() > 1
+        ? `${preview.location}: ${this.recountAmount()} · hertelling geboekt` : bookingToast({
         kind: draft.kind, delta: preview.delta, quantity, location: preview.location, container: container?.name ?? null,
         toLocation: preview.to?.location ?? null, unit: this.units(),
       }));

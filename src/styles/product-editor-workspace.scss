@@ -344,6 +344,11 @@
     .product-mobile-metrics > button:first-child { margin-left: 0; padding-left: 0; border-left: 0; }
     .product-mobile-metrics small { color: var(--muted); font-size: 10.5px; font-weight: 500; line-height: 1.2; }
     .product-mobile-metrics b { font-size: 13px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .product-mobile-identity.has-loose-stock { grid-template-columns: 44px minmax(0, 1fr); }
+    .product-mobile-identity.has-loose-stock .product-mobile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr); }
+    .product-mobile-identity.has-loose-stock .product-mobile-metrics > button { min-width: 0; }
+    .product-mobile-identity.has-loose-stock .product-mobile-metrics > button:first-child { justify-items: start; text-align: left; }
+    .product-mobile-identity.has-loose-stock .product-mobile-metrics b { white-space: normal; overflow-wrap: anywhere; }
     .product-mobile-metrics > button:focus-visible, .product-mobile-photo:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
     .content.product-editor-page { padding: 0 14px calc(var(--safe-b) + 116px); }
     .product-editor-page > .subnav.erp-workspace__nav { top: var(--product-header-h); margin: 0 0 12px; width: 100%; padding: 6px 0 8px; border: 0; background: transparent; }

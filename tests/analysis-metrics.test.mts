@@ -12,6 +12,7 @@ import type {
 } from '../src/app/core/api/models.ts';
 import {
   inventoryAnalysis,
+  physicalInventoryQuantity,
   openPipelineQuotes,
   partnerFinancingAnalysis,
   piecesSoldByProduct,
@@ -232,6 +233,34 @@ test('only products sold per full carton are short of one; per display or per un
   ], [], { topLimit: 3 });
   assert.deepEqual(result.belowCarton.rows.map((row) => row.productId), [1, 2, 3]);
   assert.equal(result.belowCarton.count, 3);
+});
+
+test('physical stock labels count 95 stems while valuation and velocity retain selling units', () => {
+  const stem = { ...product({ id: 1, stock: 95 / 12, cost: 24, sales: 36 }),
+    packaging: { kind: 'DISPLAY', salesUnit: 'DISPLAY', piecesPerUnit: 12, orderStep: 'PACKAGE' } } as Product;
+  const sales = [
+    partnerDoc({ id: 1, date: '2026-05-20', docType: 'FACTUUR', status: 'VERZONDEN', container: 1,
+      lines: [{ productId: 1, quantity: 2 }] }),
+  ];
+  sales[0].order.purpose = 'STANDARD';
+  const result = inventoryAnalysis([stem], [], { sales, today: '2026-06-01', velocityDays: 14 });
+  assert.equal(physicalInventoryQuantity(stem), 95);
+  assert.deepEqual(result.physicalStock, { knownPieces: 95, valuedPieces: 95, saleablePieces: 95, partnerPieces: 24 });
+  assert.equal(result.stock.knownPieces, 95 / 12);
+  assert.equal(result.stock.costValueEur, 190);
+  assert.equal(result.stock.salesValueEur, 285);
+  assert.equal(result.stock.partnerCostValueEur, 48);
+  assert.equal(result.topCapital[0].stockPieces, 95 / 12);
+  assert.equal(result.velocity.piecesSold, 2);
+  assert.equal(result.velocity.weeklyPieces, 1);
+  assert.equal(stem.stockQuantity, 95 / 12);
+});
+
+test('physical stock counts leave ordinary pieces unchanged and preserve negative stock', () => {
+  assert.equal(physicalInventoryQuantity(product({ id: 1, stock: 7 })), 7);
+  const stem = { ...product({ id: 2, stock: -1 / 12 }),
+    packaging: { kind: 'DISPLAY', salesUnit: 'DISPLAY', piecesPerUnit: 12 } } as Product;
+  assert.equal(physicalInventoryQuantity(stem), -1);
 });
 
 test('inventory analysis separates current value, data gaps and carton attention', () => {

@@ -19,7 +19,7 @@ import { locationStock } from '../products/product-figures';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule, PageHeader, Sheet, Skeleton],
   template: `
-    <app-page-header [showBack]="true" backTo="/more" title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
+    <app-page-header [showBack]="true" title="Voorraadlocaties" subtitle="Waar je voorraad ligt en verkoopt">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
         + Locatie
       </button>
