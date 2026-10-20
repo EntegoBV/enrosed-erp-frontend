@@ -1312,12 +1312,14 @@ export class SalesList {
     }
     const labels = new Map<number, string>();
     for (const customer of this.customers()) {
+      if (customer.id == null) continue;
       const twin = (byName.get(customer.company.trim().toLowerCase()) ?? 0) > 1;
       labels.set(customer.id, twin && customer.city ? customer.company + ' · ' + customer.city : customer.company);
     }
     return labels;
   });
-  customerLabel(id: number): string {
+  customerLabel(id: number | null): string {
+    if (id == null) return 'Geen klant';
     return this.customerLabels().get(id) ?? this.customerById().get(id)?.company ?? 'Geen klant';
   }
 
