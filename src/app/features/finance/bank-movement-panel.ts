@@ -13,7 +13,7 @@ import { Ui, escapeHtml } from '../../shared/ui';
 import { FinanceState } from './finance-state';
 import { bankAccountKey } from './bank-reconciliation';
 import { bankTextOf, type BankText } from './bank-text';
-import { signedEur as signedMoney } from './finance-format';
+import { dayMonthYear, signedEur as signedMoney } from './finance-format';
 import { containerName } from '../purchasing/container-name';
 import { incomingPurposeLabel, paymentLocalDay, paymentMomentLabel } from './incoming-money';
 import { paymentPayeeLabel } from './cost-ledger';
@@ -1230,7 +1230,7 @@ export class BankMovementPanel {
       ...(!linked ? [{ id: 'link', label: 'Koppelen…', iconName: 'link' }, ...(row.amountEur < 0 ? [{ id: 'split', label: 'Splitsen…', iconName: 'list' }] : []),
         { id: 'book', label: 'Boeken als…', iconName: 'tag' }] : []),
       ...(linked && !row.classification ? [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }] : []),
-      ...(row.classification && !row.ticaSettlementId ? [{ id: 'unbook', label: 'Boeken als ongedaan maken', iconName: 'restore' }] : []),
+      ...(row.classification && !row.ticaSettlementId ? [{ id: 'unbook', label: row.classification === 'CANCELLATION' ? 'Annulatie van beide ongedaan maken' : 'Boeking ongedaan maken', iconName: 'restore' }] : []),
       ...(!row.classification && (linked || documents.length) ? [{ id: 'document', label: documents.length > 1 ? 'Gekoppelde documenten openen' : 'Gekoppeld document openen', iconName: 'document' }] : []),
       ...(this.canRemove(row) ? [{ id: 'withdraw', label: 'Intrekken', iconName: 'trash', danger: true, divider: true }] : []),
     ];
@@ -1287,8 +1287,11 @@ export class BankMovementPanel {
     if (row.classification) {
       const label = CLASSIFICATION_LABEL[row.classification];
       if (row.ticaSettlementId) return { text: label, reasons: [], open: false, sub: 'Verrekende commissie · netto-uitbetaling' };
-      if (row.classification === 'INTERNAL_TRANSFER') {
+      if (row.classification === 'INTERNAL_TRANSFER' || row.classification === 'CANCELLATION') {
         const other = row.transferLineId != null ? this.state.bankStatements().find(line => line.id === row.transferLineId) : undefined;
+        if (row.classification === 'CANCELLATION') return { text: label, reasons: [], open: false, sub: other
+          ? `⇄ ${this.titleOf(other)} · ${signedMoney(other.amountEur)} · ${dayMonthYear(this.state.lineDay(other))} · ${this.accountName(other.account)}`
+          : 'Tegenboeking niet geladen' };
         return { text: label, reasons: [], open: false, sub: other ? `⇄ ${this.accountName(other.account)} · ${legDistance(this.state.lineDay(row), this.state.lineDay(other))}` : 'Andere kant staat niet in Enrosed' };
       }
       return { text: label, reasons: [], open: false, sub: row.classification === 'VAT' ? vatPeriodLabel(row.vatPeriod) || row.classificationNote || null : row.classificationNote || null };

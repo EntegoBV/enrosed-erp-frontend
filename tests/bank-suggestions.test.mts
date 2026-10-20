@@ -4,7 +4,7 @@ import type { BankStatementLine } from '../src/app/core/api/banking-api.ts';
 import type { CompanyCost, PurchasePaymentRow, SalesOrderView } from '../src/app/core/api/models.ts';
 import { bankAllocationTargets } from '../src/app/features/finance/bank-allocation-targets.ts';
 import {
-  bankSearchMatches, legDistance, lineStatus, lineSuggestions, searchAmount, selectionTotals, transferCandidates, vatPeriodLabel, vatPeriods,
+  bankSearchMatches, cancellationCandidates, legDistance, lineStatus, lineSuggestions, searchAmount, selectionTotals, transferCandidates, vatPeriodLabel, vatPeriods,
 } from '../src/app/features/finance/bank-suggestions.ts';
 import type { SuggestionInput } from '../src/app/features/finance/bank-suggestions.ts';
 import type { ContainerPayable } from '../src/app/features/finance/payables.ts';
@@ -104,6 +104,28 @@ test('lineStatus: a booked line is BOOKED, linked lines LINKED', () => {
   assert.equal(lineStatus(line(1, 50, { salesPaymentId: 3 }), undefined), 'LINKED');
   const map = lineSuggestions(input({ lines: [line(9, -9000, { classification: 'VAT', allocated: true, reference: 'PO-2026-043' })], containers: [term] }));
   assert.equal(map.size, 0, 'a booked line gets no suggestion');
+});
+
+test('annulatie requires a free exact opposite, on any account or date; existing bookings are never overwritten', () => {
+  const debit = line(92, -279.96, { bookedAt: '2026-09-01T00:00:00Z', counterparty: 'IKEA' });
+  const refund = line(93, 279.96, { bookedAt: '2026-11-07T00:00:00Z', counterparty: 'IKEA' });
+  const anotherAccount = line(94, 279.96, { account: 'WISE' });
+  const all = [debit, refund, anotherAccount, line(95, 279.95), line(96, 279.97), line(97, -279.96),
+    line(98, 279.96, { allocated: true }), line(99, 279.96, { classification: 'OTHER' }),
+    line(100, 279.96, { salesPaymentId: 9 }), line(101, 279.96, { classification: 'TICA_SETTLEMENT' })];
+  const day = (row: BankStatementLine) => row.bookedAt.slice(0, 10);
+  assert.deepEqual(cancellationCandidates(debit, all, day).map(row => row.id), [94, 93]);
+  assert.deepEqual(cancellationCandidates(refund, all, day).map(row => row.id), [97, 92]);
+  assert.deepEqual(cancellationCandidates({ ...debit, classification: 'OTHER' }, all, day), []);
+  assert.deepEqual(cancellationCandidates(line(102, 0), [line(103, 0)], day), []);
+});
+
+test('annulatie remains actual cash in and out, including when a range contains just one leg', () => {
+  const debit = line(92, -279.96, { classification: 'CANCELLATION', transferLineId: 93, allocated: true });
+  const refund = line(93, 279.96, { classification: 'CANCELLATION', transferLineId: 92, allocated: true });
+  assert.equal(lineStatus(debit, undefined), 'BOOKED');
+  assert.deepEqual(selectionTotals([debit, refund]), { inEur: 279.96, outEur: 279.96, netEur: 0, internal: 0 });
+  assert.deepEqual(selectionTotals([debit]), { inEur: 0, outEur: 279.96, netEur: -279.96, internal: 0 });
 });
 
 test('search: every term matches a text or the amount in four ways', () => {

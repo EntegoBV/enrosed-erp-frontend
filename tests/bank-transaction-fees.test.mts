@@ -246,7 +246,7 @@ test('Boeken als › Bankkosten: "Algemene bankkost" stays a cost; "Bij een cont
   assert.match(template, /\{\{ containerSub\(container\) \}\}/, 'the supplier on every row');
   const Sheet = await selectedClass('../src/app/features/finance/book-as-sheet.ts', 'BookAsSheet',
     ['line', 'choice', 'note', 'period', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeFirst', 'feeRanked', 'feeShown', 'ready', 'chooseContainerFee', 'containerSub', 'book'],
-    { feeContainers, filterFeeContainers });
+    { feeContainers, filterFeeContainers, allocatedLine });
   const fee = line(113, -25.4, { reference: 'Kosten', bookedAt: '2026-10-14T09:00:00Z' });
   const booked: unknown[] = [], costs: unknown[] = [];
   const bookAsLine = signal<BankStatementLine | null>(fee);
@@ -479,7 +479,7 @@ test('the card sits at the top of the first tab, above the own upload; Boeken al
   assert.match(tab, /<button class="wk-link" [^>]*\(click\)="p\.openFeeBooking\('COMPANY', null\)">Algemene bankkost<\/button>/);
 
   const Sheet = await selectedClass('../src/app/features/finance/book-as-sheet.ts', 'BookAsSheet',
-    ['line', 'choice', 'note', 'period', 'leg', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeFirst', 'feeRanked', 'feeShown', 'reset'],
+    ['line', 'choice', 'note', 'period', 'leg', 'cancellationLeg', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeFirst', 'feeRanked', 'feeShown', 'reset'],
     { feeContainers, filterFeeContainers, NONE: 'none', FEE_ROWS: 8 });
   const bookAsFee = signal<unknown>(null);
   const state = {

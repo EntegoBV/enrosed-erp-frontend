@@ -20,7 +20,7 @@ import type { LineSuggestion } from './bank-suggestions';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { dayMonth as ddmm } from './cash-format';
 import { ContainerSplit } from './container-split';
-import { dayMonth, signedEur as signedMoney } from './finance-format';
+import { dayMonth, dayMonthYear, signedEur as signedMoney } from './finance-format';
 import { containerName } from '../purchasing/container-name';
 import { SERVER_PENDING } from './finance-state';
 import { feePaymentPart, goodsAfterFee } from './transaction-fees';
@@ -122,7 +122,13 @@ interface InvoiceBlock {
           @case ('BOOKED') {
             <section class="wk-section">
               <h3 class="wk-section__title">Geboekt als {{ classLabel(row) }}</h3>
-              @if (row.classification === 'INTERNAL_TRANSFER') { <p class="fin-txd__line">{{ transferText(row) }}</p> }
+              @if (row.classification === 'INTERNAL_TRANSFER' || row.classification === 'CANCELLATION') { <p class="fin-txd__line">{{ transferText(row) }}</p> }
+              @if (row.classification === 'CANCELLATION') {
+                <p class="fin-hint">Afschrijving en terugbetaling zijn samen geboekt. Ongedaan maken maakt beide bankregels vrij.</p>
+                @if (row.transferLineId) { <button class="fin-inline-btn" type="button" (click)="state.inspectRelated({ kind: 'line', id: row.transferLineId })">Tegenboeking bekijken</button> }
+              } @else if (!row.ticaSettlementId) {
+                <p class="fin-hint">Wil je deze boeking wijzigen of koppelen aan een tegenboeking? Maak eerst de boeking ongedaan.</p>
+              }
               @if (row.classification === 'VAT' && row.vatPeriod) { <p class="fin-txd__line">{{ vatLabel(row.vatPeriod) }}</p> }
               @if (row.ticaSettlementId && row.ticaSettlementAmountEur != null) {
                 <p class="fin-txd__line">Afrekening {{ row.ticaSettlementAmountEur | eur }} · bankverschil {{ row.amountEur - row.ticaSettlementAmountEur | eur }}</p>
@@ -233,7 +239,7 @@ interface InvoiceBlock {
                 </section>
               }
               <section class="wk-section fin-txd__offer">
-                <div><b>Geen factuur of kost?</b><small>Overboeking, bankkosten, btw, lening, privé</small></div>
+                <div><b>Anders boeken of ontvangen document kiezen</b><small>Annulatie, aankoopfactuur of creditnota, overboeking, bankkosten, btw</small></div>
                 <button class="wk-btn wk-btn--sm" type="button" (click)="state.bookAsLine.set(row)">Boeken als…</button>
               </section>
             }
@@ -296,7 +302,7 @@ interface InvoiceBlock {
         @switch (status()) {
           @case ('BOOKED') {
             @if (row.ticaSettlementId) { <button class="wk-btn btn" type="button" (click)="state.openTicaSettlement(row.ticaSettlementId)">TICA-afrekening ›</button> }
-            @else { <button class="wk-btn btn" type="button" [disabled]="state.linking() !== null" (click)="state.unclassifyLine(row)">Ongedaan maken</button> }
+            @else { <button class="wk-btn btn" type="button" [disabled]="state.linking() !== null" (click)="state.unclassifyLine(row)">{{ row.classification === 'CANCELLATION' ? 'Annulatie van beide ongedaan maken' : 'Boeking ongedaan maken' }}</button> }
             <button class="wk-btn btn" type="button" (click)="next()">Volgende</button>
           }
           @case ('LINKED') {
@@ -747,12 +753,23 @@ export class TransactionDetail extends BankMovementPanel {
     effect(() => {
       if (this.allocationStep() === 'payments' && !this.existingCount() && !this.localLoading() && this.selected()) untracked(() => this.allocationStep.set('documents'));
     });
+    /* A choice in Boeken als reuses the Odoo importer, including its preview and duplicate checks. */
+    effect(() => {
+      const requested = this.state.receivedDocumentLine();
+      const selected = this.selected();
+      if (requested == null || selected?.id !== requested || this.lineId() !== requested) return;
+      untracked(() => {
+        this.view.set('search');
+        this.setAllocationStep('new');
+        this.state.receivedDocumentLine.set(null);
+      });
+    });
     /* A best match on a document or term is chosen in the state machine too, so its preview, duplicate check and fields apply. */
     effect(() => {
       const target = this.best();
       const loaded = this.localDocuments().length;
       untracked(() => {
-        if (!target || !this.isNewTarget(target) || !loaded || this.selected()?.id !== this.lineId()) return;
+        if (!target || !this.isNewTarget(target) || !loaded || this.selected()?.id !== this.lineId() || this.allocationStep() === 'new') return;
         const key = this.targetKey(target);
         if (this.localSelectedKey() === key) return;
         const document = this.localDocuments().find((row) => row.key === key);
@@ -910,8 +927,9 @@ export class TransactionDetail extends BankMovementPanel {
   classLabel(row: BankStatementLine): string { return row.classification ? CLASSIFICATION_LABEL[row.classification] : ''; }
   transferText(row: BankStatementLine): string {
     const other = row.transferLineId != null ? this.state.bankStatements().find((line) => line.id === row.transferLineId) : undefined;
-    if (!other) return 'Andere kant staat niet in Enrosed';
+    if (!other) return row.classification === 'CANCELLATION' ? 'Tegenboeking niet geladen' : 'Andere kant staat niet in Enrosed';
     const amount = `${other.amountEur > 0 ? '+' : '−'} ${euro.format(Math.abs(other.amountEur))}`;
+    if (row.classification === 'CANCELLATION') return `Tegenboeking: ${this.titleOf(other)} · ${amount} · ${dayMonthYear(this.state.lineDay(other))} · ${this.accountName(other.account)}`;
     return `⇄ ${this.accountName(other.account)} ${amount} · ${legDistance(this.state.lineDay(row), this.state.lineDay(other))}`;
   }
   vatLabel(period: string): string { return vatPeriodLabel(period); }

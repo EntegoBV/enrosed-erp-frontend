@@ -43,7 +43,7 @@ export interface BankAccount {
   countsInCash?: boolean;
 }
 /** "Boeken als…": a bank transaction that pays no invoice or cost. Plain text on the server (spec D3). */
-export type BankClassification = 'INTERNAL_TRANSFER' | 'VAT' | 'LOAN' | 'CAPITAL' | 'PRIVATE' | 'OTHER' | 'TICA_SETTLEMENT';
+export type BankClassification = 'INTERNAL_TRANSFER' | 'CANCELLATION' | 'VAT' | 'LOAN' | 'CAPITAL' | 'PRIVATE' | 'OTHER' | 'TICA_SETTLEMENT';
 export interface BankClassificationRequest { classification: BankClassification; note: string | null; transferLineId: number | null; vatPeriod: string | null; }
 /**
  * One part of POST …/{id}/purchase-payment. `purchaseOrderId` lets one

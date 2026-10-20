@@ -7,10 +7,12 @@ import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import type { LinkTarget } from './bank-change-preview';
 import { bankTextOf } from './bank-text';
-import { dayMonth } from './finance-format';
+import { dayMonthYear } from './finance-format';
 import { FinanceState, formatEuro } from './finance-state';
 import { OdooConnectionPanel } from './odoo-connection-panel';
 import { OdooSyncState } from './odoo-sync-state';
+import { containerName, containerNumberHint } from '../purchasing/container-name';
+import type { CostLedgerRow } from './cost-ledger';
 
 const signed = (value: number): string => `${value > 0 ? '+' : '−'} ${formatEuro(Math.abs(value))}`;
 const amountOf = (target: LinkTarget): number => target.kind === 'cost-new' || target.kind === 'sales-new' ? target.openEur
@@ -105,9 +107,13 @@ export class ExactLinksSheet {
       <div body class="fin-sheet">
         <p class="fin-hint">Deze betalingen zijn al geregistreerd. Zoek de bijbehorende banktransactie en koppel ze; registreer ze niet opnieuw.</p>
         @for (item of state.unbanked(); track item.kind + '#' + item.id) {
-          <div class="fin-bank-pending__row"><span><b>{{ item.row.description }}</b><small>{{ day(item.paidOn) }} · {{ item.row.party || item.row.reference }}</small></span>
+          @let context = paymentContext(item.row);
+          <div class="fin-bank-pending__row"><span><b>{{ context.title }}</b>
+            @if (context.reference) { <small class="fin-bank-pending__reference">{{ context.reference }}</small> }
+            @if (context.phase) { <small>{{ context.phase }}</small> }
+            <small>{{ context.party ? context.party + ' · ' : '' }}{{ day(item.paidOn) }}</small></span>
             <strong>{{ item.amountEur | eur }}</strong>
-            <button class="wk-btn wk-btn--sm" type="button" (click)="state.searchTransaction({ amountEur: item.amountEur, paidOn: item.paidOn ?? state.today(), party: item.row.party, description: item.row.description, incoming: item.amountEur < 0 })">Transactie zoeken</button></div>
+            <button class="wk-btn wk-btn--sm" type="button" (click)="state.searchTransaction({ amountEur: item.amountEur, paidOn: item.paidOn ?? state.today(), party: context.party, description: context.searchDescription, incoming: item.amountEur < 0 })">Transactie zoeken</button></div>
         }
         @for (payment of state.pendingReceipts(); track payment.id) {
           <div class="fin-bank-pending__row"><span><b>{{ payment.orderNumber }}</b><small>{{ state.accountLabel(payment.bankAccount) || 'Rekening nog te kiezen' }}</small></span>
@@ -121,7 +127,19 @@ export class ExactLinksSheet {
 })
 export class UnbankedSheet {
   readonly state = inject(FinanceState);
-  day(value: string | null): string { return dayMonth(value); }
+  day(value: string | null): string { return dayMonthYear(value); }
+  paymentContext(row: CostLedgerRow): { title: string; reference: string | null; phase: string | null; party: string | null; searchDescription: string } {
+    const payment = row.payment;
+    if (!payment) return { title: row.description, reference: row.reference, phase: null, party: row.party,
+      searchDescription: [row.description, row.reference].filter(Boolean).join(' · ') };
+    const title = containerName({ id: payment.orderId, number: payment.orderNumber, alias: payment.orderAlias });
+    const reference = containerNumberHint(title, payment.orderNumber);
+    const order = this.state.purchaseViews().find((view) => view.order.id === payment.orderId)?.order;
+    const supplier = (payment.payee ?? 'SUPPLIER') === 'SUPPLIER' && order
+      ? this.state.suppliers().find((candidate) => candidate.id === order.supplierId)?.name : null;
+    const phase = [row.description, payment.invoiceNumber ? `Factuur ${payment.invoiceNumber}` : null].filter(Boolean).join(' · ');
+    return { title, reference, phase, party: supplier || row.party, searchDescription: [title, reference, phase].filter(Boolean).join(' · ') };
+  }
 }
 
 /** ⋯ › "Gearchiveerde rekeningen": history stays; restore. */

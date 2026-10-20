@@ -27,7 +27,7 @@ export const KIND_LABEL: Record<ForecastKind, string> = { CUSTOMER: 'Klant', PAR
 export type ForecastLayer = 'BASE' | 'SCENARIO';
 export type ForecastRule = 'tica' | 'invoices' | 'quotes' | 'openQuotes' | 'partner' | 'containers' | 'costs' | 'vat';
 export const CLASSIFICATION_LABEL: Record<BankClassification, string> = { INTERNAL_TRANSFER: 'Interne overboeking',
-  VAT: 'Btw', LOAN: 'Lening', CAPITAL: 'Kapitaal', PRIVATE: 'Privé', OTHER: 'Andere', TICA_SETTLEMENT: 'TICA-uitbetaling' };
+  CANCELLATION: 'Annulatie', VAT: 'Btw', LOAN: 'Lening', CAPITAL: 'Kapitaal', PRIVATE: 'Privé', OTHER: 'Andere', TICA_SETTLEMENT: 'TICA-uitbetaling' };
 export type ForecastSource =
   | { type: 'cost'; costId: number } | { type: 'recurring'; recurringId: number } | { type: 'container'; orderId: number }
   | { type: 'invoice'; salesOrderId: number } | { type: 'quote'; salesOrderId: number }
