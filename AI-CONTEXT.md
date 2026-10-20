@@ -557,6 +557,33 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   rendered by the children inside the faded body. `.mo-fade` fills
   backwards only, so the stacking context lasts --dur-1 after a tab switch;
   hoisting them would move the children's state (N10) into the page.
+- Round 2, Bezoekers (2026-10-21, design/analyses2 §B.10, §C.10, WP4): six
+  figures Bezoekers ("per dag geteld": the visitor hash changes daily, so
+  never "unieke", on the home tile neither) · Sessies · Paginaweergaven (the
+  old "Bezoeken") · Pagina's per sessie (foot: duur) · Offertepagina geopend
+  · Aanvragen: the website's documents in the ERP (`hasWebsiteCustomerMessage
+  || isWebOrder`, no credit note, no invoice made from a quote, on the
+  documentdatum; `websiteRequestRows`), loaded with `SalesApi.orders()` +
+  `customers()` beside the report ("—" when they fail). Aanvragen (tile, last
+  funnel step) and Productpagina's (kind tile, funnel step) open the Analyses
+  drill-down via `AnDrillHost` (views in `drill-website.ts`, type-only, rows
+  in `website-analytics-math.ts`, tests/analyses-drill-website.test.mts); the
+  catalogue (handle → family `publicHandle` → first active variant) loads on
+  the first products open, an unknown handle links to its website page.
+  Figures show only "▲ 12 %": the desk tool row says "t.o.v. vorige n dagen ·
+  bijgewerkt hh:mm", has the `[how]` slot (the page projects Hoe gerekend)
+  and ends with "Dit toestel uitsluiten"; the hint paragraph and the footer
+  went (their text is HOW_TEXTS.website). The funnel is unordered "what a
+  session opened" ending in Aanvraag verstuurd; Contactpagina is a line
+  under it. Bronnen are shares of sessions: the backend books a source once,
+  on a session's first page (WebsiteVisitService, D-W1), compares with the
+  previous window up to the same clock time and lists 200 pages (grouped
+  per product over the languages). `AnalyticsApi.websiteReport(days, force)`
+  keeps an answer a minute per period; Vernieuwen forces. Google zoeken: no
+  "Wat valt op" (its merk clause is the Klikken foot, `brandLine`),
+  aandachtspunten show title + one evidence line (`searchInsightEvidenceLine`)
+  + link, "je" and "20 %" throughout; GA4 and Search Console lose their inner
+  heads (range + status stay as one line).
 
 **Left out** (stop line, critique B9): nothing of the critique's package list
 is open. Kept on purpose: Inkoop's phone container filter and supplier stay
