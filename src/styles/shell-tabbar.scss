@@ -163,7 +163,8 @@
   padding: 6px;
   border: 1px solid var(--glass-edge);
   border-radius: var(--ios-radius, 22px);
-  background: var(--glass-bg-strong);
+  /* Denser than the bar's glass: the menu sits over list text, which must not read through its rows. */
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: var(--glass-shadow), var(--glass-highlight);
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
@@ -176,6 +177,7 @@
 .tabbar-menu.tabbar-menu--leaving { pointer-events: none; animation: mo-fade-out var(--dur-1, 120ms) var(--ease-in, ease-in) forwards; }
 @keyframes tabbar-menu-in { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .tabbar-menu { animation-name: mo-fade-in; } }
+@media (prefers-reduced-transparency: reduce) { .tabbar-menu { background: var(--surface); } }
 .tabbar-menu__row {
   display: flex;
   align-items: center;
