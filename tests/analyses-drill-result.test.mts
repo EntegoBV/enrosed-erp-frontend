@@ -217,3 +217,16 @@ test('D-O7, D-O4, Omzet\'s count: Resultaat reads Verkoop\'s missing-cost rule, 
   assert.deepEqual(withMissing.byChannel.map((row) => [row.channel, row.missingCostLines]), [['DIRECT', 2], ['WEBSITE', 0]], 'the channel with the lines reads "—"');
   assert.equal(withTicaResult(withMissing, days).byChannel.find((row) => row.channel === 'TICA')?.missingCostLines, 0);
 });
+
+test('the page (source): one "Alle kosten ›" with the period (D-O9), month bars and Per maand open the month, a Totaal row', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(new URL('../src/app/features/analyses/analyses-page.ts', import.meta.url), 'utf8');
+  assert.equal(page.match(/alle kosten ›/gi)?.length, 1);
+  assert.match(page, /<a class="wk-btn" routerLink="\/costs" \[queryParams\]="costsQuery\(\)">Alle kosten ›<\/a>/);
+  assert.match(page, /\(picked\)="openMonth\(\$event\)"/);
+  assert.match(page, /<tfoot><tr><td>Totaal<\/td>/);
+  assert.match(page, /\(click\)="openResultChannel\(null\)"/, 'Algemene kosten');
+  const bars = await readFile(new URL('../src/app/features/analyses/result-month-bars.ts', import.meta.url), 'utf8');
+  assert.match(bars, /readonly picked = output<string>\(\)/);
+  assert.doesNotMatch(bars, /an-mbars__plot" aria-hidden="true"/, 'the month buttons are not hidden from assistive tech');
+});

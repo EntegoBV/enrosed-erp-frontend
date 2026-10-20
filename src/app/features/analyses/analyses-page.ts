@@ -1143,7 +1143,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               @let t = report().totals;
               <!-- Counts in each product's sales unit (D-V3); Inkoopimpact opens it per product and per supplier, the order cards below are the rest. -->
               <div class="an-kpis" [attr.aria-busy]="filtering()">
-                @if (t.affectedLines > 0) {
+                @if (t.totalLossValueEur !== 0) {
                   <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" data-kpi="impact" (click)="openImpact()"><ng-container *ngTemplateOutlet="impactBody; context: { $implicit: t }" /></button>
                 } @else {
                   <div class="an-kpi" data-kpi="impact"><ng-container *ngTemplateOutlet="impactBody; context: { $implicit: t }" /></div>

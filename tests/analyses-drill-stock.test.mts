@@ -151,3 +151,17 @@ test('Nulvoorraad with lastSold: nothing on order first, then the last sold, nev
   const zero = inventoryAnalysis(shelf, expected, { lastSold: new Map([[3, '2026-09-01'], [4, '2026-10-01'], [2, '2026-10-15']]) }).zeroStock;
   assert.deepEqual(zero.rows.map((row) => row.productId), [4, 3, 1, 2]);
 });
+
+test('empty states, and the page reads the rules (source): omdoos, no pace on a failed sales load, every row', async () => {
+  const empty = inventoryAnalysis([], []);
+  assert.equal(stockValueView(empty.capital, empty.gapRows.unvalued, { costValueEur: 0, salesValueEur: 0, upliftEur: 0 }, 'cost', unit, String).empty,
+    'Nog geen voorraad met een kostprijs.');
+  assert.equal(incomingView([], 0, { container: String, supplier: String, cost: () => 0 }, null).empty, 'Niets onderweg: geen bestelde of vertrokken containers.');
+  assert.deepEqual(qualityViews(empty.gapRows, { unknown: 0, unvalued: 0, missingCarton: 0, negative: 0 }, unit).map((view) => view.rows.length), [0, 0, 0, 0]);
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(new URL('../src/app/features/analyses/analyses-page.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /outer carton/, '"omdoos" everywhere on the tab');
+  assert.match(page, /sales: this\.failed\('verkoop'\) \? undefined : this\.salesOrders\(\)/, 'D-V4');
+  assert.match(page, /weeksLabel\(row\.weeksLeft\)/, 'D-V6: the shelf weeks, not the weeks with what is on the water');
+  assert.doesNotMatch(page, /st\/week/, 'D-V3');
+});

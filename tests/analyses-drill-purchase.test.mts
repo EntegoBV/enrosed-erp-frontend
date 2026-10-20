@@ -147,3 +147,14 @@ test('Inkoopimpact: per product and per supplier the lines add up to the known i
   assert.deepEqual(perProduct.rows[0].link, { path: ['/products', 1] });
   assert.equal(perSupplier.rows[0].link, undefined, 'a supplier has no screen of its own here');
 });
+
+test('empty states, and the scorecard no longer links /suppliers/:id (source, D-V1)', async () => {
+  assert.equal(impactViews([], { totalLossValueEur: 0, unvaluedLossPieces: 0 }, '', String)[0].empty, 'Geen tekorten of schade in deze selectie.');
+  assert.equal(partnersOpenView([], 0, String).empty, 'Niets meer te ontvangen van partners.');
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(new URL('../src/app/features/analyses/analyses-page.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /\['\/suppliers', card\.supplierId\]/);
+  assert.match(page, /\(click\)="openSupplier\(card\)"/);
+  assert.doesNotMatch(page, /Open order ›/, 'the order name is the link');
+  assert.doesNotMatch(page, /tellen pas mee zodra hun ontvangstwaarde/, 'the valuation banner went: the Zonder waarde tile says it');
+});
