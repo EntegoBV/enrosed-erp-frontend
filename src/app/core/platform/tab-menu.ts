@@ -61,6 +61,30 @@ export function tabMenuFor(tab: string, groups: readonly NavGroup[]): TabMenu | 
   return { tab, label: group.short ?? group.label, rows: [...roots, ...pages] };
 }
 
+/** The path of a router URL, without query string or fragment. */
+function pathOf(url: string): string {
+  const cut = url.search(/[?#]/);
+  const path = cut < 0 ? url : url.slice(0, cut);
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
+}
+
+/**
+ * True when the screen at url lies under the page at link: on it, below its
+ * path (an exact row too: Jaarinventaris lies under Voorraad), or below it
+ * by the parent chain `up` names (page-parent.ts parentOf: the Catalogus
+ * PDF's texts lie under Catalogus PDF). Picked from the menu, that page is
+ * the way up, so App.menuRowInfo leaves its direction to nav-direction.ts.
+ */
+export function liesUnder(url: string, link: string, up: (url: string) => string | null): boolean {
+  const seen = new Set<string>();
+  for (let at: string | null = url; at !== null && !seen.has(at); at = up(at)) {
+    seen.add(at);
+    const path = pathOf(at);
+    if (path === link || path.startsWith(link + '/')) return true;
+  }
+  return false;
+}
+
 /** A finger, pen or mouse button held on a tab with a menu. */
 export interface TabPress {
   tab: MenuTab;

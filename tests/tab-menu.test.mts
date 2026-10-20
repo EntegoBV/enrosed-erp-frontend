@@ -7,11 +7,12 @@ import { NAV_GROUPS, meerItems, navItemActive, navItemUrl } from '../src/app/cor
 import type { NavItem } from '../src/app/core/platform/nav-items.ts';
 import {
   TAB_MENU_CLICK_GUARD_MS, TAB_MENU_HOLD_MS, TAB_MENU_PUSH, TAB_MENU_SLOP_PX, TAB_MENU_WIDTH, clickGuardAfter, hasTabMenu, isMenuKey,
-  menuFocusIndex, pressWandered, startTabPress, tabMenuFor, tabMenuPlacement,
+  liesUnder, menuFocusIndex, pressWandered, startTabPress, tabMenuFor, tabMenuPlacement,
 } from '../src/app/core/platform/tab-menu.ts';
 import type { MenuTab, TabMenu, TabMenuRow } from '../src/app/core/platform/tab-menu.ts';
 import { PHONE_TABS, phoneTabForUrl } from '../src/app/core/platform/phone-tabs.ts';
 import { navDirection } from '../src/app/core/platform/nav-direction.ts';
+import { parentOf } from '../src/app/core/platform/page-parent.ts';
 
 /* The phone tab bar's long press (2026-10-20): Verkoop, Inkoop and Producten open their pages above the tab. */
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -32,11 +33,11 @@ function isolate(source: string, name: string, members: string[], globals: Recor
   const exports: Record<string, any> = {}; vm.runInNewContext(js, { exports, ...globals }); return exports[name];
 }
 const App = isolate(shell, 'App', ['tabMenuKey'], { menuFocusIndex });
-const AppRows = isolate(shell, 'App', ['menuRowCurrent', 'menuRowInfo'], { phoneTabForUrl, navItemUrl, TAB_MENU_PUSH });
+const AppRows = isolate(shell, 'App', ['menuRowCurrent', 'menuRowInfo'], { phoneTabForUrl, navItemUrl, TAB_MENU_PUSH, liesUnder, parentOf });
 
 /* The shell at a URL: its lit tab and its active items as the real phone-tabs.ts and nav-items.ts give them. */
 function shellAt(url: string): { menuRowCurrent(menu: TabMenu, row: TabMenuRow): boolean; menuRowInfo(row: TabMenuRow): unknown } {
-  return Object.assign(new AppRows(), { phoneTab: () => phoneTabForUrl(url), itemActive: (item: NavItem) => navItemActive(item, url) });
+  return Object.assign(new AppRows(), { url: () => url, phoneTab: () => phoneTabForUrl(url), itemActive: (item: NavItem) => navItemActive(item, url) });
 }
 const MENUS = (['sales', 'purchasing', 'products'] as MenuTab[]).map((tab) => tabMenuFor(tab, NAV_GROUPS)!);
 
@@ -229,6 +230,23 @@ test('the menu\'s current row and the lit tab agree: a row is marked only under 
   assert.equal(shellAt('/settings?sectie=discounts').menuRowCurrent(sales, discounts), false);
 });
 
+test('liesUnder: on a page, below its path, or below it by the parent chain', () => {
+  const up = (url: string) => parentOf(url)?.url ?? null;
+  assert.equal(liesUnder('/stock', '/stock', up), true);
+  assert.equal(liesUnder('/stock/?locatie=2#rij', '/stock', up), true);
+  assert.equal(liesUnder('/stock/inventaris', '/stock', up), true);
+  assert.equal(liesUnder('/stock/inventaris/telling/3', '/stock/inventaris', up), true);
+  assert.equal(liesUnder('/catalog/texts', '/catalog-export', up), true);
+  assert.equal(liesUnder('/prospects/4?tab=notities', '/prospects', up), true);
+  /* a longer sibling, a page above, a sibling and no parent at all */
+  assert.equal(liesUnder('/stock-locations', '/stock', up), false);
+  assert.equal(liesUnder('/stock', '/stock/inventaris', up), false);
+  assert.equal(liesUnder('/catalog-export', '/catalog/texts', up), false);
+  assert.equal(liesUnder('/customers', '/tica', up), false);
+  /* a parent chain that loops ends */
+  assert.equal(liesUnder('/a', '/c', (url) => (url === '/a' ? '/b' : '/a')), false);
+});
+
 test('a row picked from the menu moves once and the right way: a push in the tab, a tab switch from Meer', () => {
   const [sales, purchasing, products] = MENUS;
   const row = (menu: TabMenu, id: string) => menu.rows.find((candidate) => candidate.item.id === id)!;
@@ -245,6 +263,20 @@ test('a row picked from the menu moves once and the right way: a push in the tab
   /* the tab root, and a page you are under, go up */
   assert.equal(pick('/customers', sales, 'sales'), 'pop');
   assert.equal(pick('/stock/inventaris/telling/3', products, 'inventory'), 'pop');
+  assert.equal(pick('/prospects/4', sales, 'prospects'), 'pop');
+  /* ... also when the row lights only on its own path (Voorraad is exact) or the way up is a parent (the texts' Catalogus PDF) */
+  assert.equal(pick('/stock/inventaris', products, 'stock'), 'pop');
+  assert.equal(pick('/stock/inventaris/telling/3', products, 'stock'), 'pop');
+  assert.equal(pick('/stock/inventaris/afsluiting/2026?stap=waarde', products, 'stock'), 'pop');
+  assert.equal(pick('/catalog/texts', products, 'catalog-export'), 'pop');
+  /* the page you are on stays, a sibling or a page above you is still a push */
+  assert.equal(pick('/stock?locatie=2', products, 'stock'), 'none');
+  assert.equal(pick('/stock', products, 'inventory'), 'push');
+  assert.equal(pick('/catalog/texts', products, 'stock'), 'push');
+  assert.equal(pick('/catalog-export', products, 'stock-locations'), 'push');
+  /* a view of Instellingen is the page you are on by its query only: another view of it still pushes */
+  assert.equal(pick('/settings?sectie=company', sales, 'discounts'), 'push');
+  assert.equal(pick('/settings?sectie=discounts', sales, 'discounts'), 'none');
   /* from another tab it is a tab switch: Klanten picked on Meer or on Home, Kortingen (Meer's) from Verkoop */
   assert.equal(pick('/more', sales, 'customers'), 'tab');
   assert.equal(pick('/dashboard', sales, 'customers'), 'tab');

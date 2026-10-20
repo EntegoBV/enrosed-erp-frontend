@@ -28,9 +28,11 @@ import { installStaffTouchPolicy } from './core/platform/staff-touch-policy';
 import { installReducedMotionScroll } from './core/platform/reduced-motion';
 import type { ReducedMotionWindow } from './core/platform/reduced-motion';
 import { NavHistory } from './core/platform/nav-history-service';
+import { parentOf } from './core/platform/page-parent';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
 import {
-  TAB_MENU_HOLD_MS, TAB_MENU_PUSH, clickGuardAfter, isMenuKey, menuFocusIndex, pressWandered, startTabPress, tabMenuFor, tabMenuPlacement,
+  TAB_MENU_HOLD_MS, TAB_MENU_PUSH, clickGuardAfter, isMenuKey, liesUnder, menuFocusIndex, pressWandered, startTabPress, tabMenuFor,
+  tabMenuPlacement,
 } from './core/platform/tab-menu';
 import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
@@ -507,12 +509,17 @@ export class App {
   /**
    * How a row's page arrives (nav-direction.ts reads the navigation's info): a page of the tab you
    * are in comes in as a push from anywhere in it (Klanten from an order would slide back as a pop,
-   * being shallower). The tab root goes up, the page you are on or under keeps its own direction,
-   * and a page of another tab (Klanten picked on Meer) is a tab switch.
+   * being shallower). The tab root goes up, the page you are on or under keeps its own direction
+   * (under by path, Voorraad from Jaarinventaris, or by its parent, Catalogus PDF from its texts:
+   * liesUnder; a view of Instellingen by its query), and a page of another tab (Klanten picked on
+   * Meer) is a tab switch.
    */
   menuRowInfo(row: TabMenuRow): typeof TAB_MENU_PUSH | null {
     const inTab = phoneTabForUrl(navItemUrl(row.item)) === this.phoneTab();
-    return inTab && !row.item.tabRoot && !this.itemActive(row.item) ? TAB_MENU_PUSH : null;
+    const under = row.item.query
+      ? this.itemActive(row.item)
+      : liesUnder(this.url(), row.item.link, (url) => parentOf(url)?.url ?? null);
+    return inTab && !row.item.tabRoot && !under ? TAB_MENU_PUSH : null;
   }
 
   closeTabMenu(returnFocus = false): void {

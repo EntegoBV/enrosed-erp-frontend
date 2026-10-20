@@ -278,8 +278,22 @@ Catalogusdata: `/settings?sectie=…`) stay Instellingen's and light Meer,
 so the menu marks them current under no tab. Picked from the menu, a page
 of the lit tab arrives as a push from anywhere in it (`menuRowInfo`:
 Klanten from an order never slides back as a pop); the tab root and a
-page you are under go up; a page of another tab (Klanten picked on Meer)
-is a tab switch. One navigation per pick, so the tab pill moves once.
+page you are on or under keep the plain rule, so they go up: under by
+path, an exact row too (Voorraad from Jaarinventaris), or by `parentOf`
+(Catalogus PDF from its texts; `liesUnder` in tab-menu.ts); a view of
+Instellingen only by its query. A page of another tab (Klanten picked on
+Meer) is a tab switch. One navigation per pick, so the tab pill moves once.
+Instellingen's phone rows push only while their page lights Meer
+(`SettingsOverview.rowInfo`): Douane (Inkoop) and Categorieën (Producten)
+name no direction and fade as a tab switch.
+Open for Emre: the open login-request count stays on the phone Meer tab,
+though Login-aanvragen now lights Verkoop. Kept so
+for now because the Verkoop tab's number is the bell's (`actionCount`,
+"the two cannot drift apart"); the count still shows on the Login-aanvragen
+row of the Verkoop menu, on Meer's Verkoop group and as a Home task. If he
+wants it on Verkoop, the tab sums both as the desk's group header does
+(`groupCountKeys`); the 680-899 rail's Meer keeps its count either way
+(Login-aanvragen is not in that rail; shell-contract.test.mts).
 
 **Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
 "Aangemeld als …", the bell) over the kit's inset groups rendered from
@@ -3260,7 +3274,8 @@ Contract: scratchpad redesign/company/design.md + critique.md (the critique wins
   follows the query live; visited views stay mounted and hidden
   (`[hidden]` + an explicit `display:none` rule), so a draft survives a tab
   switch. Desk: a `wk-subbar` tab strip (replaceUrl); phone: pushed screens
-  (`info: {nav: 'push'}`), back = history, else the overview. The way up
+  (`info: {nav: 'push'}`; a row to another tab's page, Douane or
+  Categorieën, names none: `rowInfo`, a tab switch), back = history, else the overview. The way up
   (desk crumb, phone fallback, Verwijderde items' phone fallback) is
   `/settings/overzicht`: its own path, because NavHistory keys "the last URL
   seen" by path and a parent on the open view's path would resolve to the
