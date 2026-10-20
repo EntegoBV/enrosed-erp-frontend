@@ -338,9 +338,9 @@ export class CatalogApi {
   /** Manual stock correction after a recount; the product PUT leaves stock alone. */
   /** Sets the count at one location; without a location the warehouse. */
   setStock(productId: number, quantity: number, locationId: number | null = null,
-           reference: string | null = null): Promise<Product> {
+           reference: string | null = null, loosePieces?: number): Promise<Product> {
     return firstValueFrom(
-      this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity, locationId, reference }));
+      this.http.post<Product>(api(`/api/products/${productId}/stock`), { quantity, locationId, reference, ...(loosePieces === undefined ? {} : { loosePieces }) }));
   }
 
   /** Pieces leaving the shelf as broken or as a demo for a customer. */

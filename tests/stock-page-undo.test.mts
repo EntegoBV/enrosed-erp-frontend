@@ -25,7 +25,7 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 
-function harness(server: { quantity: number } | 'down') {
+function harness(server: { quantity: number; loosePieces?: number } | 'down') {
   const exports: { StockPage?: new () => any } = {};
   vm.runInNewContext(javascript, { exports, undoAllowed, messageOf: (_failure: unknown, fallback: string) => fallback });
   const page = new exports.StockPage!();
@@ -40,7 +40,7 @@ function harness(server: { quantity: number } | 'down') {
     catalog: {
       productStock: async () => {
         if (server === 'down') throw new Error('offline');
-        return [{ locationId: 1, quantity: server.quantity, name: 'Zaltbommel' }, { locationId: 2, quantity: 8, name: 'Tica Brussel' }];
+        return [{ locationId: 1, quantity: server.quantity, loosePieces: server.loosePieces, name: 'Zaltbommel' }, { locationId: 2, quantity: 8, name: 'Tica Brussel' }];
       },
       setStock: async (productId: number, quantity: number, locationId: number, reference: string) => {
         writes.push({ productId, quantity, locationId, reference });
@@ -78,4 +78,24 @@ test('a group without any cost has no value (shown "—"), never "€ 0"', () =>
   assert.equal(knownValueSum([]), null);
   assert.equal(knownValueSum([null, 12.5, undefined, 0.1, 0.2]), 12.8);
   assert.equal(knownValueSum([0]), 0, 'a known zero stays a figure');
+});
+
+
+test('a loose stem sold after an inline count blocks undo even when complete displays are unchanged', async () => {
+  const { page, writes, toasts } = harness({ quantity: 7, loosePieces: 10 });
+  page.levels.set([{ productId: 7, locationId: 1, quantity: 7, loosePieces: 11, piecesPerUnit: 12 }]);
+  await page.undoQuantity(7, 1, 8, 7, 11);
+  assert.equal(writes.length, 0);
+  assert.equal(toasts.at(-1)?.type, 'err');
+  assert.equal(page.levels()[0].loosePieces, 10);
+  assert.equal(page.levels()[0].piecesPerUnit, 12);
+});
+
+test('patching a complete-unit count preserves its physical loose contents and unit factor', () => {
+  const { page } = harness({ quantity: 7, loosePieces: 11 });
+  page.levels.set([{ productId: 7, locationId: 1, quantity: 7, loosePieces: 11, piecesPerUnit: 12 }]);
+  page.storeLevel(7, 1, 8);
+  assert.equal(page.levels()[0].quantity, 8);
+  assert.equal(page.levels()[0].loosePieces, 11);
+  assert.equal(page.levels()[0].piecesPerUnit, 12);
 });

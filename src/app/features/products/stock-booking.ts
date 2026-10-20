@@ -14,6 +14,8 @@ export interface BookingLevel {
   locationId: number;
   name: string;
   quantity: number;
+  loosePieces?: number;
+  piecesPerUnit?: number;
 }
 
 /** What the sheet holds while it is being filled in. */
@@ -25,6 +27,7 @@ export interface BookingDraft {
   toLocationId: number | null;
   /** The counted figure for a recount, else how many; null while the field is empty or invalid. */
   quantity: number | null;
+  loosePieces?: number | null;
   note: string;
   /** The received container a damage or shortage report points at. */
   containerId: number | null;
@@ -125,7 +128,7 @@ export function bookingNeedsContainer(kind: BookingKind): boolean {
 /** The location a fresh sheet opens on: the asked one, else the first with stock, else the first. */
 export function defaultBookingLocation(levels: readonly BookingLevel[], asked?: number | null): number | null {
   if (asked != null && levels.some((level) => level.locationId === asked)) return asked;
-  return (levels.find((level) => level.quantity > 0) ?? levels[0])?.locationId ?? asked ?? null;
+  return (levels.find((level) => level.quantity > 0 || (level.loosePieces ?? 0) > 0) ?? levels[0])?.locationId ?? asked ?? null;
 }
 
 /** "Naar" defaults to the first other location. */
@@ -136,6 +139,7 @@ export function defaultTargetLocation(levels: readonly BookingLevel[], from: num
 /** A fresh draft: a recount starts on the figure that lies there, the others on an empty field. */
 export function newBookingDraft(kind: BookingKind, levels: readonly BookingLevel[], locationId?: number | null): BookingDraft {
   const from = defaultBookingLocation(levels, locationId);
+  const level = levels.find(level => level.locationId === from);
   return {
     kind,
     locationId: from,
@@ -143,6 +147,7 @@ export function newBookingDraft(kind: BookingKind, levels: readonly BookingLevel
     quantity: kind === 'RECOUNT' ? levels.find((level) => level.locationId === from)?.quantity ?? null : null,
     note: '',
     containerId: null,
+    ...((level?.piecesPerUnit ?? 1) > 1 ? { loosePieces: level?.loosePieces ?? 0 } : {}),
   };
 }
 
@@ -160,7 +165,9 @@ export function refreshBookingDraft(draft: BookingDraft, levels: readonly Bookin
   const quantity = draft.kind === 'RECOUNT' && !countTyped
     ? levels.find((level) => level.locationId === locationId)?.quantity ?? draft.quantity
     : draft.quantity;
-  return { ...draft, locationId, toLocationId, quantity };
+  const level = levels.find(level => level.locationId === locationId);
+  return { ...draft, locationId, toLocationId, quantity,
+    ...((level?.piecesPerUnit ?? 1) > 1 ? { loosePieces: draft.kind === 'RECOUNT' && !countTyped ? level?.loosePieces ?? 0 : draft.loosePieces ?? 0 } : {}) };
 }
 
 /** The count as the field shows it: Dutch thousands ("6.000"), which parseCount reads back. */
@@ -187,6 +194,7 @@ export function switchBookingKind(draft: BookingDraft, kind: BookingKind, levels
       ? (draft.toLocationId !== null && draft.toLocationId !== draft.locationId ? draft.toLocationId : defaultTargetLocation(levels, draft.locationId))
       : null,
     containerId: bookingNeedsContainer(kind) ? draft.containerId : null,
+    ...((level?.piecesPerUnit ?? 1) > 1 ? { loosePieces: level?.loosePieces ?? 0 } : {}),
   };
 }
 
@@ -213,7 +221,8 @@ export function bookingPreview(draft: BookingDraft, levels: readonly BookingLeve
   const before = level?.quantity ?? fallbackBefore;
   if (draft.kind === 'RECOUNT') {
     const delta = draft.quantity - before;
-    return { state: delta === 0 ? 'same' : 'change', location, before, after: draft.quantity, delta, to: null };
+    const looseChanged = (draft.loosePieces ?? level?.loosePieces ?? 0) !== (level?.loosePieces ?? 0);
+    return { state: delta === 0 && !looseChanged ? 'same' : 'change', location, before, after: draft.quantity, delta, to: null };
   }
   const after = before - draft.quantity;
   if (after < 0) return { state: 'short', location, before, after, delta: -draft.quantity, to: null };
@@ -232,7 +241,12 @@ export function bookingPreview(draft: BookingDraft, levels: readonly BookingLeve
 export function bookingReady(draft: BookingDraft, levels: readonly BookingLevel[], fallbackBefore = 0): boolean {
   const preview = bookingPreview(draft, levels, fallbackBefore);
   if (!preview || draft.quantity === null) return false;
-  if (draft.kind === 'RECOUNT') return preview.state === 'change';
+  if (draft.kind === 'RECOUNT') {
+    const level = levelOf(levels, draft.locationId);
+    const loose = draft.loosePieces ?? 0, pieces = level?.piecesPerUnit ?? 1;
+    if (pieces > 1 && (draft.loosePieces === null || !Number.isSafeInteger(loose) || loose < 0 || loose >= pieces)) return false;
+    return preview.state === 'change';
+  }
   if (!(draft.quantity > 0) || preview.state === 'short') return false;
   if (draft.kind === 'TRANSFER') return preview.state === 'move';
   return true;

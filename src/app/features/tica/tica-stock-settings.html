@@ -1,0 +1,73 @@
+<section class="ts-card" aria-labelledby="tica-stock-title" [attr.aria-busy]="loading()">
+  <div class="ts-head">
+    <app-icon name="stock" [size]="21" />
+    <div><h2 id="tica-stock-title">TICA-voorraad</h2>
+      @if (settings(); as settings) {
+        <p>{{ settings.enabled ? 'Verkopen werken de gekoppelde voorraad bij' : 'Automatische voorraadkoppeling staat uit' }}@if (settings.fromDate) { · vanaf {{ day(settings.fromDate) }}}</p>
+      } @else { <p>{{ loading() ? 'Voorraadkoppeling laden…' : 'Status niet beschikbaar' }}</p> }
+    </div>
+    <button class="btn btn--sm" type="button" [disabled]="!settings() || loading() || saving()" (click)="open()">{{ settings()?.enabled ? 'Instellingen' : 'Instellen' }}</button>
+  </div>
+  @if (error(); as error) { <p class="ts-error" role="alert">{{ error }} <button class="linklike" type="button" (click)="reload()">Opnieuw proberen</button></p> }
+  @if (settings(); as settings) {
+    @if (settings.enabled) {
+      <div class="ts-summary">
+        <span><b>{{ settings.postedLineCount }}</b> verkoopregels verwerkt</span>
+        @if (settings.pendingLineCount) { <span class="ts-attention"><b>{{ settings.pendingLineCount }}</b> vragen aandacht · zie de voorraadstatus bij de verkoopregel</span> }
+      </div>
+    }
+    @for (location of settings.locations; track location.sourceLocation) {
+      @if (location.stockLocationId) {
+        <a class="ts-location" routerLink="/stock" [queryParams]="{ locatie: location.stockLocationId }">
+          <span>{{ location.sourceLocation }} <small>Voorraad op {{ location.stockLocationName }}</small></span><app-icon name="chevron-right" [size]="15" />
+        </a>
+      }
+    }
+  }
+</section>
+
+@if (editing()) {
+@if (settings(); as settings) {
+  <app-sheet title="TICA-voorraad koppelen" variant="ios" (closed)="close()">
+    <div body class="ts-form">
+      <p class="ts-intro">TICA-verkopen verlagen de voorraad op de gekozen locatie. Retouren en broncorrecties worden met een eigen regel in de voorraadgeschiedenis verwerkt.</p>
+      <label class="ts-toggle"><input type="checkbox" [ngModel]="draft().enabled" (ngModelChange)="setEnabled($event)" [disabled]="saving()" /><span>Voorraad automatisch bijwerken</span></label>
+      <label class="field"><span>Vanaf verkoopdatum</span>
+        <input class="input" type="date" [ngModel]="draft().fromDate" (ngModelChange)="setFromDate($event)" [disabled]="saving() || settings.configurationLocked" />
+        <small>Kies de eerste dag waarvan de verkopen nog niet in de huidige TICA-voorraad verwerkt zijn. Brusselse tijd.</small>
+      </label>
+      @if (settings.configurationLocked) { <p class="ts-hint">De startdatum ligt vast omdat er al verkopen zijn verwerkt. Eerdere voorraadboekingen blijven bewaard.</p> }
+      <h3>Voorraadlocatie per vestiging</h3>
+      @for (location of settings.locations; track location.sourceLocation) {
+        <label class="field"><span>{{ location.sourceLocation }}</span>
+          <select class="select" [ngModel]="draft().locations[$index].stockLocationId ?? ''" (ngModelChange)="setLocation(location.sourceLocation, $event)" [disabled]="saving() || location.locked">
+            <option value="">Nog niet gekoppeld</option>
+            @for (option of locations(); track option.id) { <option [value]="option.id" [disabled]="!option.active">{{ option.name }}{{ option.active ? '' : ' · inactief' }}</option> }
+          </select>
+          @if (location.locked) { <small>Deze locatie ligt vast voor de al verwerkte verkopen.</small> }
+          @else { <small>Alleen de voorraad op deze locatie verandert.</small> }
+        </label>
+      } @empty { <p class="ts-hint">Haal eerst TICA-verkopen op. Daarna verschijnen de vestigingen hier.</p> }
+      <a routerLink="/stock-locations">Voorraadlocaties beheren ›</a>
+      @if (settings.productUnits.length) {
+        <h3>Wat verkoopt TICA per artikel?</h3>
+        <p class="ts-hint">Kies of één TICA-artikel één los stuk of een volledig display is. Los verkochte stukken blijven exact als complete displays en losse inhoud in de voorraad staan.</p>
+        @for (unit of settings.productUnits; track unit.productId) {
+          <label class="field"><span>{{ productLabel(unit.productId) }}</span>
+            <select class="select" [ngModel]="draft().productUnits[$index].sourceUnit ?? ''" (ngModelChange)="setProductUnit(unit.productId, $event)" [disabled]="saving() || unit.locked">
+              @if (unit.productSalesUnit === 'DISPLAY') { <option value="">Nog bevestigen</option> }
+              <option value="PIECE">Eén {{ pieceLabel(unit.productId) }}</option>
+              @if (unit.productSalesUnit === 'DISPLAY') { <option value="DISPLAY">Volledig display van {{ unit.piecesPerUnit }}</option> }
+            </select>
+            <small>ERP-eenheid: {{ unit.productSalesUnit === 'DISPLAY' ? 'display van ' + unit.piecesPerUnit : pieceLabel(unit.productId) }}.{{ unit.locked ? ' Vastgelegd bij de eerste voorraadboeking.' : '' }}</small>
+          </label>
+        }
+      }
+      <p class="ts-hint">Een onbekend product, een ontbrekende locatie of een afwijkende verkoopeenheid vraagt eerst aandacht. De verkoop blijft wel in de omzet staan.</p>
+      <p class="ts-hint">Na opslaan verwerkt de eerstvolgende geslaagde import ook eerdere verkopen vanaf de gekozen startdatum. Uitschakelen bewaart de voorraadboekingen die al zijn gemaakt.</p>
+      @if (formError(); as error) { <p class="ts-error" role="alert">{{ error }}</p> }
+    </div>
+    <div foot class="ts-foot"><button class="btn" type="button" [disabled]="saving()" (click)="close()">Sluiten</button><button class="btn btn--primary" type="button" [disabled]="saving() || !dirty()" (click)="save()">{{ saving() ? 'Opslaan…' : 'Opslaan' }}</button></div>
+  </app-sheet>
+}
+}

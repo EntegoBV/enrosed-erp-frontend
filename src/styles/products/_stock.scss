@@ -109,13 +109,13 @@ app-stock-page .book-action i { display: grid; place-items: center; width: 30px;
 app-stock-page .book-action .book-action__warn { border-color: #eddcb9; background: var(--warn-soft); color: var(--warn); }
 app-stock-page .history-title { margin: 14px 0 4px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 app-stock-page .history-list { margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
-app-stock-page .history-list li { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+app-stock-page .history-list li { display: grid; grid-template-columns: 70px minmax(0, 1fr) minmax(0, 150px); align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 app-stock-page .history-delta { color: var(--ok); font-weight: 750; }
 app-stock-page .history-delta--minus { color: var(--danger); }
 app-stock-page .history-what { display: grid; min-width: 0; }
 app-stock-page .history-what b { font-size: 12.5px; font-weight: 650; }
 app-stock-page .history-what small { color: var(--muted); font-size: 11px; }
-app-stock-page .history-after { color: var(--muted); font-size: 12px; white-space: nowrap; }
+app-stock-page .history-after { color: var(--muted); font-size: 12px; text-align: right; overflow-wrap: anywhere; }
 app-stock-page .history-more { display: flex; justify-content: center; width: 100%; padding: 9px 0 2px; border: 0; background: transparent; color: var(--rose-dark); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
 app-stock-page .sheet--ios .sk-book { padding: 0 16px; }
 
@@ -163,3 +163,9 @@ app-stock-page .skp-qty {
   color: inherit; font: inherit; font-size: 16px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums;
 }
 app-stock-page .skp-demo__head { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+
+@media (max-width: 679px) {
+  app-stock-page .history-list li { grid-template-columns: 64px minmax(0, 1fr); }
+  app-stock-page .history-after { grid-column: 2; text-align: left; }
+  app-stock-page .skp-end { max-width: 116px; }
+}

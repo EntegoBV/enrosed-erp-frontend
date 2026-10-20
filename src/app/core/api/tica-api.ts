@@ -4,6 +4,21 @@ import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 
 export type TicaNotificationMode = 'DAILY' | 'SALES' | 'SALES_AND_DAILY' | 'NONE';
+export type TicaStockStatus = 'DISABLED' | 'BEFORE_START' | 'PRODUCT_UNMATCHED' | 'LOCATION_UNMAPPED' | 'UNIT_MISMATCH' | 'INVALID_QUANTITY' | 'POSTED' | 'REVERSED';
+export interface TicaStockSettingsWrite {
+  enabled: boolean;
+  fromDate: string | null;
+  locations: { sourceLocation: string; stockLocationId: number | null }[];
+  productUnits: { productId: number; sourceUnit: 'PIECE' | 'DISPLAY' | null }[];
+}
+export interface TicaStockSettings extends TicaStockSettingsWrite {
+  timezone: string;
+  configurationLocked: boolean;
+  locations: { sourceLocation: string; stockLocationId: number | null; stockLocationName: string | null; locked: boolean }[];
+  postedLineCount: number;
+  pendingLineCount: number;
+  productUnits: { productId: number; sourceUnit: 'PIECE' | 'DISPLAY' | null; productSalesUnit: 'PIECE' | 'DISPLAY'; piecesPerUnit: number; locked: boolean }[];
+}
 export interface TicaSettings {
   notificationMode: TicaNotificationMode;
   summaryTime: string;
@@ -45,6 +60,16 @@ export interface TicaSale {
   mappingStatus: 'MATCHED' | 'UNMATCHED';
   firstSeenAt: string;
   updatedAt: string;
+  stockStatus?: TicaStockStatus;
+  stockMessage?: string | null;
+  stockProductId?: number | null;
+  stockLocationId?: number | null;
+  /** Applied sales units: positive for sales, negative for returns. */
+  stockQuantity?: number | null;
+  stockPieces?: number | null;
+  stockUnitPieces?: number | null;
+  stockSourceUnit?: 'PIECE' | 'DISPLAY' | null;
+  stockUpdatedAt?: string | null;
 }
 export interface TicaSalesPage {
   from: string;
@@ -58,6 +83,27 @@ export interface TicaSalesPage {
   netTotal: number;
   unmatchedLineCount: number;
   lines: TicaSale[];
+}
+export interface TicaSaleHistory {
+  saleId: number;
+  revisions: {
+    id: number;
+    recordedAt: string;
+    sourceSoldAt: string;
+    active: boolean;
+    quantity: number;
+    grossTotal: number;
+    netTotal: number;
+    productId: number | null;
+    sku: string | null;
+    description: string;
+    stockStatus: TicaStockStatus;
+    stockQuantity: number;
+    stockProductId: number | null;
+    stockLocationId: number | null;
+    movements: { id: number; at: string; delta: number; quantityAfter: number; kind: string; reference: string | null; productId: number; locationId: number;
+      looseDelta: number; loosePiecesAfter: number; unitPieces: number | null; sourceQuantity: number | null; sourceUnit: 'PIECE' | 'DISPLAY' | null }[];
+  }[];
 }
 export interface TicaAnalyticsDay {
   date: string;
@@ -118,6 +164,15 @@ export class TicaApi {
   }
   sync(): Promise<{ queued: boolean }> {
     return firstValueFrom(this.http.post<{ queued: boolean }>(api('/api/tica/sync'), {}));
+  }
+  stockSettings(): Promise<TicaStockSettings> {
+    return firstValueFrom(this.http.get<TicaStockSettings>(api('/api/tica/stock-settings')));
+  }
+  saveStockSettings(settings: TicaStockSettingsWrite): Promise<TicaStockSettings> {
+    return firstValueFrom(this.http.put<TicaStockSettings>(api('/api/tica/stock-settings'), settings));
+  }
+  saleHistory(id: number): Promise<TicaSaleHistory> {
+    return firstValueFrom(this.http.get<TicaSaleHistory>(api(`/api/tica/sales/${id}/history`)));
   }
   analytics(): Promise<TicaAnalyticsDay[]> {
     return firstValueFrom(this.http.get<TicaAnalyticsDay[]>(api('/api/tica/analytics')));

@@ -63,3 +63,13 @@ test('a count line and a closing product both fit the adapter', () => {
   assert.equal(inventoryUnit(line).piecesPerDisplay, 8);
   assert.equal(inventoryUnit(article).plural, 'stuks');
 });
+
+test('a physical-piece count preserves display size as context without labelling 95 pieces as displays', () => {
+  units.rememberUnitNames(NAMES);
+  const physical = inventoryUnit({ unitKey: 'bowl', salesUnit: 'DISPLAY', piecesPerUnit: 12, quantityBasis: 'BASE_PIECE' });
+  assert.equal(physical.isDisplay, false);
+  assert.equal(physical.plural, 'bowls');
+  const legacy = inventoryUnit({ unitKey: 'bowl', salesUnit: 'DISPLAY', piecesPerUnit: 12 });
+  assert.equal(legacy.isDisplay, true);
+  assert.equal(legacy.plural, 'displays');
+});

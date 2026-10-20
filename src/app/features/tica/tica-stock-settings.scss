@@ -1,0 +1,35 @@
+:host { display: block; min-width: 0; margin-bottom: 24px; }
+.ts-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.ts-head { display: flex; align-items: center; gap: 12px; padding: 18px 20px; }
+.ts-head > app-icon { flex: none; color: var(--rose-dark); }
+.ts-head > div { flex: 1; min-width: 0; }
+.ts-head h2 { margin: 0; font-size: 16px; }
+.ts-head p { margin: 5px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.ts-summary { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 0 20px 14px; font-size: 12px; color: var(--muted); }
+.ts-attention { color: var(--warn); }
+.ts-location { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line); text-decoration: none; font-size: 12px; }
+.ts-location span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ts-location small { display: block; color: var(--muted); margin-top: 3px; }
+.ts-form { line-height: 1.5; }
+.ts-intro, .ts-hint { color: var(--muted); font-size: 13px; }
+.ts-intro { margin: 0 0 18px; }
+.ts-toggle { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; font-size: 14px; font-weight: 650; }
+.ts-toggle input { width: 20px; height: 20px; accent-color: var(--rose); }
+.ts-form h3 { margin: 24px 0 12px; font-size: 14px; }
+.ts-form .field { margin-bottom: 16px; }
+.ts-form .field > span { font-size: 13px; font-weight: 650; }
+.ts-form .field small { display: block; font-size: 12px; color: var(--muted); margin-top: 5px; }
+.ts-form .input, .ts-form .select { width: 100%; min-height: 44px; }
+.ts-form > a { font-size: 13px; }
+.ts-hint { margin: 12px 0; }
+.ts-error { padding: 12px 20px; color: var(--danger); background: var(--danger-soft); font-size: 13px; overflow-wrap: anywhere; }
+.ts-form .ts-error { padding: 12px; border-radius: 8px; }
+.ts-foot { display: flex; width: 100%; justify-content: flex-end; gap: 10px; }
+@media (max-width: 679px) {
+  .ts-head { padding: 16px; flex-wrap: wrap; }
+  .ts-head > div { flex-basis: calc(100% - 40px); }
+  .ts-head .btn { width: 100%; min-height: 44px; }
+  .ts-summary, .ts-location { padding-inline: 16px; }
+  .ts-form { padding: 8px 16px 20px; }
+  .ts-foot .btn { flex: 1; }
+}

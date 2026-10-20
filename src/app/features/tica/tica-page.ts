@@ -10,11 +10,14 @@ import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, confirmLeave } from '../../shared/ui';
 import { ticaDate, ticaMoment, ticaPreset, ticaRangeError, ticaToday } from './tica-format';
 import { TicaSettlements } from './tica-settlements';
+import { TicaStockSettings } from './tica-stock-settings';
+import { ticaStockLabel, ticaStockNeedsAttention } from './tica-stock-rules';
+import { TicaSaleHistory } from './tica-sale-history';
 
 @Component({
   selector: 'app-tica-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, Icon, PageHeader, Skeleton, Sheet, TicaSettlements],
+  imports: [FormsModule, RouterLink, Icon, PageHeader, Skeleton, Sheet, TicaSettlements, TicaStockSettings, TicaSaleHistory],
   templateUrl: './tica-page.html',
   styleUrl: './tica-page.scss',
 })
@@ -28,6 +31,9 @@ export class TicaPage {
   private pollTimer: ReturnType<typeof setTimeout> | undefined;
   private statusBusy = false;
   private readonly settlements = viewChild(TicaSettlements);
+  private readonly stockSettings = viewChild(TicaStockSettings);
+  readonly stockLabel = ticaStockLabel;
+  readonly stockNeedsAttention = ticaStockNeedsAttention;
 
   readonly status = signal<TicaStatus | null>(null);
   readonly settings = signal<TicaSettings | null>(null);
@@ -114,6 +120,7 @@ export class TicaPage {
   async canDeactivate(): Promise<boolean> {
     if (this.saving()) return false;
     if (this.dirty() && !(await confirmLeave(this.ui, () => this.saveSettings()))) return false;
+    if (!(await this.stockSettings()?.canDeactivate() ?? true)) return false;
     return (await this.settlements()?.canDeactivate()) ?? true;
   }
 
@@ -172,7 +179,7 @@ export class TicaPage {
       if (this.destroyed) return;
       this.status.set(status);
       this.statusError.set(null);
-      if (previousSuccess !== undefined && status.lastSuccessAt !== previousSuccess) void this.loadSales();
+      if (previousSuccess !== undefined && status.lastSuccessAt !== previousSuccess) { void this.loadSales(); void this.stockSettings()?.reload(); }
     } catch (failure) {
       if (!this.destroyed) this.statusError.set(messageOf(failure, 'De verbindingsstatus kon niet worden geladen.'));
     } finally {
