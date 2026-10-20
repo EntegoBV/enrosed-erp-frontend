@@ -21,7 +21,7 @@ export interface WebsiteAnalyticsReport {
     /** Visitors seen in the last half hour, whatever the period. */
     activeNow: number;
   };
-  /** The same window one period earlier. */
+  /** The same window one period earlier, up to the same clock time (D-W3). */
   previous: { visits: number; visitors: number; sessions: number; quoteSessions: number };
   perDay: { date: string; visits: number; visitors: number }[];
   perHour: { hour: number; visits: number; visitors: number }[];
@@ -29,6 +29,7 @@ export interface WebsiteAnalyticsReport {
   kinds: { kind: WebsitePageKind; visits: number }[];
   countries: { country: string | null; visits: number; visitors: number }[];
   cities: { city: string; country: string; visits: number }[];
+  /** `visits` counts sessions: a source is booked on a session's first page (D-W1). */
   sources: { source: string; kind: 'DIRECT' | 'SEARCH' | 'SOCIAL' | 'CAMPAIGN' | 'SITE'; visits: number }[];
   /** Visits per weekday (Monday first) and hour, Brussels time. */
   hours: number[][];
@@ -139,13 +140,23 @@ export interface GoogleWebsiteReport {
   realtime: GoogleAnalyticsSource<{ activeUsers: number; windowMinutes: number }>;
 }
 
+const WEBSITE_REPORT_KEEP_MS = 60_000;
+
 @Injectable({ providedIn: 'root' })
 export class AnalyticsApi {
   private readonly http = inject(HttpClient);
+  /** One answer per period, kept a minute: the Overzicht's Bezoekers row and the tab ask for the same 30 days (D-W13). */
+  private readonly websiteAnswers = new Map<number, { at: number; answer: Promise<WebsiteAnalyticsReport> }>();
 
-  websiteReport(days: number): Promise<WebsiteAnalyticsReport> {
-    return firstValueFrom(this.http.get<WebsiteAnalyticsReport>(
+  /** `force` (the tab's Vernieuwen) asks the server again; a failed answer is never kept. */
+  websiteReport(days: number, force = false): Promise<WebsiteAnalyticsReport> {
+    const kept = this.websiteAnswers.get(days);
+    if (!force && kept && Date.now() - kept.at < WEBSITE_REPORT_KEEP_MS) return kept.answer;
+    const answer = firstValueFrom(this.http.get<WebsiteAnalyticsReport>(
       api(`/api/analytics/website?days=${days}`)));
+    this.websiteAnswers.set(days, { at: Date.now(), answer });
+    answer.catch(() => { if (this.websiteAnswers.get(days)?.answer === answer) this.websiteAnswers.delete(days); });
+    return answer;
   }
 
   googleWebsiteReport(days: number): Promise<GoogleWebsiteReport> {

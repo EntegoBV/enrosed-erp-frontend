@@ -5,7 +5,8 @@ import { bars, countryWithFlag, shortDate } from '../home-figures';
 import { HomeWidget, count, counted } from './home-w';
 
 /**
- * Website (spec-home §6.8): the week's unique visitors and visits, seven
+ * Website (spec-home §6.8): the week's visitors (counted per day, so never
+ * "unieke": analyses2 D-W4) and visits, seven
  * bars with today darkest (each with its day's visitors and visits on
  * hover), and Vandaag · Voorop · Bron (country and source names wrap, never
  * cut), plus "Aanvullen n producten" as the block's one inline link
@@ -22,7 +23,7 @@ import { HomeWidget, count, counted } from './home-w';
         <div class="home-w__split">
           <div class="home-w__lead">
             <span class="home-w__value">{{ count(web.totals.visitors) }}</span>
-            <span class="home-w__line">{{ web.totals.visitors === 1 ? 'unieke bezoeker' : 'unieke bezoekers' }} · {{ counted(web.totals.visits, 'bezoek', 'bezoeken') }}</span>
+            <span class="home-w__line">{{ web.totals.visitors === 1 ? 'bezoeker' : 'bezoekers' }} · {{ counted(web.totals.visits, 'bezoek', 'bezoeken') }}</span>
           </div>
           <div class="home-w__bars home-w__bars--days home-w__raise" role="img" [attr.aria-label]="barsLabel()" (click)="openCard()">
             @for (bar of days(); track bar.key) {
