@@ -31,6 +31,7 @@ import { HomeMarkt } from './widgets/home-markt';
 import { HomeOntvangen } from './widgets/home-ontvangen';
 import { HomePartners } from './widgets/home-partners';
 import { HomeResultaat } from './widgets/home-resultaat';
+import { HomeTica } from './widgets/home-tica';
 import { HomeVerkoop } from './widgets/home-verkoop';
 import { HomeVoorraad } from './widgets/home-voorraad';
 import { HomeWebsite } from './widgets/home-website';
@@ -69,8 +70,9 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
  * per row; from 1280 px, on a short day, the first Ook nog rows follow) beside
  * Kas, Verkoop and Resultaat, with Inkoop & containers under Te doen - from
  * 1280 px both columns end on one line, their last card taking the rest. Then
- * the Agenda card and Meer cijfers. "Alle n" (and ?alle=1) opens every open
- * point in one sheet, with the ranking explained underneath.
+ * the Agenda card and Meer cijfers (TICA first, the full width). "Alle n"
+ * (and ?alle=1) opens every open point in one sheet, with the ranking
+ * explained underneath.
  *
  * The layout uses media queries only (home-desk.scss): no container query
  * may sit above the planner sheets, the bell or a menu. The page keeps a
@@ -83,6 +85,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
   imports: [
     NgTemplateOutlet, RouterLink, Icon, Skeleton, Sheet, ContextMenu, NotificationBell, PageHeader, DashboardSearchConsole, HomeDeskAgenda,
     HomeKas, HomeVerkoop, HomeResultaat, HomeInkoop, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite, HomeMarkt,
+    HomeTica,
   ],
   providers: [HomeWide],
   template: `
@@ -210,6 +213,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
         <a class="wk-link" routerLink="/analyses/overview">Alle analyses <span aria-hidden="true">›</span></a>
       </header>
       <div class="home-desk__more">
+        <app-home-tica variant="desk" />
         <app-home-ontvangen variant="desk" />
         <app-home-voorraad variant="desk" />
         <app-home-partners variant="desk" />

@@ -23,6 +23,7 @@ import { HomeMarkt } from './widgets/home-markt';
 import { HomeOntvangen } from './widgets/home-ontvangen';
 import { HomePartners } from './widgets/home-partners';
 import { HomeResultaat } from './widgets/home-resultaat';
+import { HomeTica } from './widgets/home-tica';
 import { HomeVerkoop } from './widgets/home-verkoop';
 import { HomeVoorraad } from './widgets/home-voorraad';
 import { HomeWebsite } from './widgets/home-website';
@@ -55,7 +56,7 @@ const MENU: ContextMenuItem[] = [
   imports: [
     NgTemplateOutlet, RouterLink, Icon, IosNav, Skeleton, ContextMenu, NotificationBell, PlannerCards, AgendaStrip, DashboardSearchConsole,
     HomeAddSheet, HomeTaskCells, HomeKas, HomeVerkoop, HomeInkoop, HomeResultaat, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite,
-    HomeMarkt,
+    HomeMarkt, HomeTica,
   ],
   template: `
     @let t = data.tasks();
@@ -126,6 +127,7 @@ const MENU: ContextMenuItem[] = [
         <div class="ios-section__head"><h2 id="home-figures-title">Cijfers</h2><a class="ios-section__link" routerLink="/analyses/overview">Analyses</a></div>
         <div class="ios-widgets">
           <app-home-verkoop variant="phone" />
+          <app-home-tica variant="phone" />
           <app-home-inkoop variant="phone" />
           <app-home-resultaat variant="phone" />
           <app-home-ontvangen variant="phone" />

@@ -82,6 +82,8 @@ app-home-desk-agenda { display: block; }
    stays at the top of each card. Search Console over two columns, Markt one strip (home-widgets). */
 .home-desk__more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .home-desk__more > app-dashboard-search-console { grid-column: 1 / -1; }
+/* TICA takes a row of its own at both widths: beside the others it would leave a hole in the grid. */
+.home-desk__more .home-w--tica { grid-column: 1 / -1; }
 .home-desk__more .search-summary { border-radius: 16px; }
 /* Search Console spans two columns beside Website: both end on the row's line (the card fills its host). */
 .home-desk__more > app-dashboard-search-console { display: flex; flex-direction: column; }

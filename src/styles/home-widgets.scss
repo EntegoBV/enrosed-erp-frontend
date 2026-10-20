@@ -16,7 +16,7 @@
 
 app-dashboard-home, app-home-desk, app-home-phone { display: block; }
 app-home-w, app-home-kas, app-home-verkoop, app-home-inkoop, app-home-resultaat, app-home-ontvangen, app-home-voorraad, app-home-partners,
-app-home-website, app-home-markt { display: contents; }
+app-home-website, app-home-markt, app-home-tica { display: contents; }
 /* In an ios-group the row's host carries the group's separator line. */
 .ios-group > app-home-markt { display: block; }
 
@@ -117,6 +117,15 @@ app-home-website, app-home-markt { display: contents; }
 .home-w__bar-col small { color: var(--muted); font-size: 10.5px; line-height: 1; }
 .home-w--website .home-w__bar { background: color-mix(in srgb, #3b76b3 24%, var(--surface)); }
 .home-w--website .home-w__bar.is-current { background: #3b76b3; }
+.home-w--tica .home-w__bar { background: color-mix(in srgb, #c7851d 26%, var(--surface)); }
+.home-w--tica .home-w__bar.is-current { background: #c7851d; }
+
+/* ---- TICA: on a wide card (the desk's full row) the four figures sit beside the lead and the bars. */
+.home-tica__body { display: grid; gap: 9px; min-width: 0; }
+@container (min-width: 760px) {
+  .home-tica__body { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: end; gap: 0 28px; }
+  .home-tica__body > .home-w__figs { padding: 0 0 0 24px; border-top: 0; border-left: 1px solid var(--line); }
+}
 
 /* ---- Inkoop & containers: the next arrivals */
 .home-w__events { display: grid; margin: 0; padding: 0; list-style: none; }

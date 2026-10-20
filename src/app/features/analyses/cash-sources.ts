@@ -123,6 +123,8 @@ export class CashData {
   private readonly bankLoaded = signal(false);
   private schedulesRound = -1;
   private readonly failed = signal<Record<string, true>>({});
+  /** The last round's TICA sales (the analytics days) failed: the home's TICA card reads "— · Opnieuw". */
+  readonly ticaSalesFailed = computed(() => !!this.failed()['TICA-verkopen']);
 
   /**
    * Loads when nothing is loaded yet, when the last round was for another day,
