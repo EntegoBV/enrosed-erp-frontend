@@ -509,13 +509,25 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   The verb stays "Bewaren" (critique B3; the base said "Bewaar", Inkoop's
   receipt screens say "Bewaren"; the app is mixed, about 65 "Opslaan" to 71
   "Bewaren/Bewaar"): a switch to "Opslaan" is the orchestrator's call.
-  Containerkost (`container-cost-analysis.ts`) has no component styles left;
-  on the phone each container opens a sheet with every figure (critique B1).
+  Containerkost (`container-cost-analysis.ts`): on the phone each container
+  opens a sheet with every figure (critique B1). Analyses round 2 (2026-10-21,
+  design/analyses2 §B.7, §C.6): default filter "Nog niet volledig afgerekend"
+  (`'open'`; `active` reads "Alle containers"); tiles Afspraak · Werkelijk
+  betaald ("n betalingen") · Nog te betalen ("op n containers" = `openCount`,
+  remaining > 0) · Verwachte/Definitieve externe kost, in cents; one card
+  "Verschil met de afspraak" whose lines add up to the net with "Tegoed
+  leverancier" (`supplierCreditEur`) and, only when ≥ € 0,50 is left,
+  "Overig · afronding" (`varianceLines`), the Enrosed-kost + betaalresultaat
+  line under a divider. Afspraak, Nog te betalen, each non-zero line and a
+  several-products Per eenheid range open the Analyses drill-down
+  (`AnDrillHost`; views in the pure `drill-container-cost.ts`, sum rule in
+  tests/analyses-drill-container-cost.test.mts). Its few new rules sit in the
+  component's own `styles` (analyses-tabs.scss is at its budget).
   Its table folds instead of scrolling (critique N23): below 1440 Open
   sits under Betaald and "Afrekening & PDF" is an icon button (title and
   aria-label keep the words); below 1280 the status goes under the name and
-  Per eenheid under Verwachte kost, and the figure labels read "Afgesproken"
-  / "Verwachte kost" with "externe kost · " in the sub. `.cc-table` stays a
+  Per eenheid under Verwachte kost, and the last figure reads "Verwachte
+  kost" with "externe kost · " in the sub. `.cc-table` stays a
   scroll region as the last resort (position: relative, so the visually
   hidden header text cannot widen the page) and shades an edge that can
   still scroll. On the phone row 2
@@ -1228,7 +1240,13 @@ cijfers'.
   sales, purchases, products, families, suppliers, website (7 d), costs,
   incoming payments, partner financing, customers, planner and the bell;
   each source fails on its own (`stateOf`/`combined`: loading, ready,
-  failed - the last good data stays). It shares the root `CashData` with
+  failed - the last good data stays). With the sales come the TICA days
+  (`ticaDays`/`ticaState`) and with the products the stock per location
+  (`stockLevels`), outside the HomeSource set (design/analyses2 D-H1, D-H2):
+  Resultaat dit jaar is `withTicaResult(resultAnalysis(…))` as Analyses
+  ("—" on result and margin without TICA) and Bekende voorraadkost counts
+  every location (`withAllLocations`; warehouse only when the levels
+  failed); a failure is named in the status (tests/home-analyses-parity). It shares the root `CashData` with
   Analyses and builds the 6-month forecast with `cashOptionsOf(
   DEFAULT_CASH_LOCATION, …)` at idle (the same lowest point as Analyses),
   the Kas headline (`home-cash.ts`), the Vooruitblik, the ranked tasks and
