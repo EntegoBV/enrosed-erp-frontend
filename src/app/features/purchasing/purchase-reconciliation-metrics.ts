@@ -70,12 +70,17 @@ export function containerCostRows(
     || right.view.order.id - left.view.order.id);
 }
 
-/** Sum server amounts without netting away supplier overruns against customs savings. */
+/**
+ * Sum server amounts without netting away supplier overruns against customs savings.
+ * The supplier credit is its own part of the variance (the server's forecast is
+ * paid + open − credit), so the difference rows add up with it (design/analyses2 D-C1);
+ * openCount counts the containers with something still to pay (D-C2).
+ */
 export function containerCostTotals(rows: readonly ContainerCostRow[]) {
   const total = {
     plannedEur: 0, paidEur: 0, remainingEur: 0, forecastEur: 0, varianceEur: 0,
-    overpaidEur: 0, settledSavingEur: 0, additionalEur: 0,
-    finalizedCount: 0, provisionalCount: 0,
+    overpaidEur: 0, settledSavingEur: 0, additionalEur: 0, supplierCreditEur: 0,
+    finalizedCount: 0, provisionalCount: 0, paymentCount: 0, openCount: 0,
   };
   for (const { reconciliation } of rows) {
     const amounts = reconciliation.totals;
@@ -84,11 +89,14 @@ export function containerCostTotals(rows: readonly ContainerCostRow[]) {
     total.remainingEur += amounts.remainingEur;
     total.forecastEur += amounts.forecastExternalEur;
     total.varianceEur += amounts.varianceEur;
+    total.supplierCreditEur += amounts.supplierCreditEur ?? 0;
     if (amounts.finalized) total.finalizedCount++;
     else total.provisionalCount++;
+    if (Math.round(amounts.remainingEur * 100) > 0) total.openCount++;
     for (const stream of reconciliation.streams) {
       total.overpaidEur += stream.overpaidEur;
       total.settledSavingEur += stream.settledSavingEur;
+      total.paymentCount += stream.paymentCount ?? 0;
       if (stream.payee === 'OTHER') total.additionalEur += stream.paidEur;
     }
   }
@@ -98,7 +106,10 @@ export function containerCostTotals(rows: readonly ContainerCostRow[]) {
     remainingEur: cents(total.remainingEur), forecastEur: cents(total.forecastEur),
     varianceEur: cents(total.varianceEur), overpaidEur: cents(total.overpaidEur),
     settledSavingEur: cents(total.settledSavingEur), additionalEur: cents(total.additionalEur),
+    supplierCreditEur: cents(total.supplierCreditEur),
   };
 }
+
+export type ContainerCostTotals = ReturnType<typeof containerCostTotals>;
 
 function cents(value: number): number { return Math.round(value * 100) / 100; }
