@@ -992,7 +992,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
           <div><h2 id="stock-title">Voorraad</h2><p>Locaties, correcties, schade en bewegingen</p></div>
           <span class="spacer"></span>
           @if (!isNew() && stockLevels(); as levels) {
-            <strong class="num stock-now">{{ stockTotal() | num }} {{ salesUnit(draft()).plural }}</strong>
+            <strong class="num stock-now">{{ workspaceStockLabel() }}</strong>
           }
         </div>
         <div class="card__body">

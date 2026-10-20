@@ -56,7 +56,7 @@
           <label class="field"><span>{{ productLabel(unit.productId) }}</span>
             <select class="select" [ngModel]="draft().productUnits[$index].sourceUnit ?? ''" (ngModelChange)="setProductUnit(unit.productId, $event)" [disabled]="saving() || unit.locked">
               @if (unit.productSalesUnit === 'DISPLAY') { <option value="">Nog bevestigen</option> }
-              <option value="PIECE">Eén losse {{ pieceLabel(unit.productId) }}</option>
+              <option value="PIECE">Eén {{ pieceLabel(unit.productId) }}</option>
               @if (unit.productSalesUnit === 'DISPLAY') { <option value="DISPLAY">Volledig display van {{ unit.piecesPerUnit }}</option> }
             </select>
             <small>ERP-eenheid: {{ unit.productSalesUnit === 'DISPLAY' ? 'display van ' + unit.piecesPerUnit : pieceLabel(unit.productId) }}.{{ unit.locked ? ' Vastgelegd bij de eerste voorraadboeking.' : '' }}</small>
