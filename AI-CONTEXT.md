@@ -1871,8 +1871,8 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   te ontvangen once it is on (e.g. the home's `payment=open` link). Then an
   `ios-section` per customer (head = name, trail = count) with an `ios-group`
   of `#phoneRow` cells in the same `.swipe` wrapper: number, 'kind · date' +
-  channel / Partner tag (no channel tag under a partner container; one tag
-  size, no uppercase), a muted facts line only for web and delivery facts,
+  channel / Partner tag (no 'Partner & veiling' tag under a partner
+  container, TICA / Beurs keep theirs; one tag size, no uppercase), a muted facts line only for web and delivery facts,
   the amber line; trail = total ('− ', `excl. vracht`), status pill, third
   line `phoneLines` ('€ x open', warn when overdue; a credit note only
   '€ x tegoed' while one is open, never 'verrekend · afgehandeld' beside its
@@ -1888,15 +1888,22 @@ mobiel", grouped per customer as Inkoop groups per supplier.
   container") are `ios-cell sl-phead` cells with a document's anatomy, pure
   in the model (`containerHead`, `splitHead`, `containerPill`): name (two
   lines max) / split number, sub ('Partnercontainer · n facturen' or 'n
-  documenten' with a credit note; 'Gesplitste order · 2 delen'), the amber
-  line (members waiting + first reason); trail = total and ONE status: '€ x
-  open' (warn when overdue), else one pill (all settled with a payment
-  'Betaald', any concept 'Concept', else the most frequent); a split shows its
-  delivery in one pill; a chevron that rotates, members indented below. The
-  rest of the old head (exact total, waarvan concept, per-status counts,
-  pieces in the container, ontvangen / tegoed incl. btw: `containerHint`) sits
-  after the name in the container menu's head (hold or right-click;
-  `SalesContainerMenu [facts]`, phone only; the desk head keeps every figure). Same swipe, long press (the
+  documenten' with a credit note; 'Gesplitste order · 2 delen · n stuks'),
+  the amber line as a document cell reads it (badge = every task of the
+  members, each reason once: '2 Betaling opvolgen · Tegoed af te handelen');
+  trail = total and ONE status: '€ x open' (warn when overdue), else '€ x
+  tegoed' while a credit note holds one, else one pill (all settled with a
+  payment 'Betaald', any concept 'Concept', else the most frequent); a split
+  shows its delivery in one pill ('Deel 2 wacht op voorraad' once the other
+  part shipped); a chevron that rotates, members indented below. The rest of
+  the old head sits after the name in the container menu's head
+  (`containerHint(entry, receivable, today)`, which reads the same status as
+  the head: exact total when rounded, signed '− € x'; the members per status
+  whenever the head shows no pill or they differ, a concept with its share
+  '1 concept (€ 3.000,00)', a label's ' · ' in brackets; pieces in the
+  container; ontvangen, open / tegoed only when the head did not say it
+  exactly, incl. btw; hold or right-click; `SalesContainerMenu [facts]`,
+  phone only; the desk head keeps every figure). Same swipe, long press (the
   directive), menu as an iOS sheet, fab '+ Order' / 'Container kiezen'; the
   new-document sheet is `variant="ios"` with the `.sl-new` phone gutter. The
   old `sales-document-navigation` component is deleted (its types live in the

@@ -359,8 +359,8 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                   @for (entry of section.entries; track entry.key) {
                     @if (entry.kind === 'PARTNER_CONTAINER') {
                       <!-- The container inside its customer, with a document's anatomy: its name, 'Partnercontainer · n facturen'
-                           and the amber line; the total and one status. Its other figures sit in the head of its menu (hold
-                           it or right-click); a tap opens its documents in place. -->
+                           and the amber line; the total and one status ('€ x open', '€ x tegoed' or a pill). Its other figures
+                           sit in the head of its menu (hold it or right-click); a tap opens its documents in place. -->
                       @let head = phoneHeadOf(entry);
                       <button class="ios-cell sl-phead" type="button"
                               appSalesMenu [appSalesMenuDisabled]="containerDeletingId() !== null || deletingOrderId() !== null || archivingOrderId() !== null"
@@ -371,12 +371,13 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         <span class="ios-cell__body">
                           <span class="sl-ptitle" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? 'Inkooporder ' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</span>
                           <span class="sl-psub">{{ head.sub }}</span>
-                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.first) }}</span></span> }
+                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }
                         </span>
                         <span class="ios-cell__trail sl-ptrail">
                           <span class="sl-ptotal">{{ head.total }}</span>
                           @if (head.status; as status) {
                             @if (status.kind === 'open') { <span class="sl-pline sl-pline--open" [class.sl-warn]="status.overdue">{{ status.text }}</span> }
+                            @else if (status.kind === 'tegoed') { <span class="sl-pline sl-pline--wrap sl-credit">{{ status.text }}</span> }
                             @else { <span class="wk-pill" [class]="salesTone(status.cls)">{{ status.text }}</span> }
                           }
                         </span>
@@ -390,8 +391,8 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         }
                       </div>
                     } @else if (entry.kind === 'SPLIT_ORDER') {
-                      <!-- The split order the same way: its number, 'Gesplitste order · 2 delen', the amber line; the total and
-                           its delivery in one pill. Each part keeps its own document and delivery status below. -->
+                      <!-- The split order the same way: its number, 'Gesplitste order · 2 delen · n stuks', the amber line; the
+                           total and its delivery in one pill. Each part keeps its own document and delivery status below. -->
                       @let head = phoneHeadOf(entry);
                       <button class="ios-cell sl-phead" type="button" [id]="entry.key + '-toggle'" [attr.aria-expanded]="groupOpen(entry.key)"
                               [attr.aria-controls]="entry.key + '-parts'" (click)="toggleGroup(entry.key)"
@@ -399,7 +400,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
                         <span class="ios-cell__body">
                           <span class="sl-ptitle">{{ entry.rows[0].order.number }}</span>
                           <span class="sl-psub">{{ head.sub }}</span>
-                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.first) }}</span></span> }
+                          @if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }
                         </span>
                         <span class="ios-cell__trail sl-ptrail">
                           <span class="sl-ptotal">{{ head.total }}</span>
@@ -547,8 +548,8 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
     <!-- A phone row: the document number, its customer is the section above; the trail holds the total, the status and
          what is open, in whole euros. Inhoud, marge and the exact amounts sit in the menu's Openen hint. Under a partner
-         container no channel tag: the head says it. Drag left for the bin, drag right for the archive; hold it for the
-         same choices as a menu. -->
+         container no 'Partner & veiling' tag: the head says it; TICA or Beurs keep theirs. Drag left for the bin, drag
+         right for the archive; hold it for the same choices as a menu. -->
     <ng-template #phoneRow let-row let-nested="nested">
       @let attn = rowAttention(row);
       @let status = statusOf(row);
@@ -581,7 +582,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
            (click)="blockWhenSwiped($event)">
           <span class="ios-cell__body">
             <span class="sl-ptitle">{{ row.order.number }}</span>
-            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row) && !(nested && partner(row.order))) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }</span>
+            <span class="sl-psub">{{ documentLabelOf(row) }} · {{ row.order.orderDate | dateNl }}@if (channelCode(row.order.salesChannel) !== 'DIRECT' && !webOrder(row) && !(nested && partner(row.order) && channelCode(row.order.salesChannel) === 'PARTNER')) { <span class="sl-tag sl-tag--channel">{{ channelLabel(row.order.salesChannel) }}</span> }@if (partner(row.order) && !nested && channelCode(row.order.salesChannel) !== 'PARTNER') { <span class="sl-tag">Partner</span> }</span>
             @if (lines.facts.length) {
               <span class="sl-psub">@for (part of lines.facts; track $index) {@if (!$first) { · }<span class="sl-part" [class]="part.cls ? salesTone(part.cls) : ''">{{ part.text }}</span>}</span>
             }
@@ -1865,7 +1866,7 @@ export class SalesList {
   }
   /** On the phone the container menu's head carries what the head cell leaves out; the desk head shows it all. */
   containerHintOf(container: SalesContainerGroup): string[] {
-    return containerHint(container);
+    return containerHint(container, invoiceReceivable, todayIso());
   }
 
   /* ---- the phone list: the round filter button and its sheet, the chips that apply ---------------------------- */

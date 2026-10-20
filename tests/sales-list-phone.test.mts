@@ -86,9 +86,10 @@ test('partner containers and split orders are cells with the anatomy of a docume
   assert.equal(heads.split('@let head = phoneHeadOf(entry);').length - 1, 2);
   for (const piece of ['<span class="sl-ptitle" [attr.title]="entry.purchaseOrderNumber && entry.purchaseOrderNumber !== entry.purchaseOrderName ? \'Inkooporder \' + entry.purchaseOrderNumber : null">{{ entry.purchaseOrderName }}</span>',
     '<span class="sl-ptitle">{{ entry.rows[0].order.number }}</span>', '<span class="sl-psub">{{ head.sub }}</span>',
-    '@if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.first) }}</span></span> }',
+    '@if (head.attention; as attn) { <span class="sl-pattn"><b>{{ attn.count }}</b><span>{{ keepEuro(attn.text) }}</span></span> }',
     '<span class="sl-ptotal">{{ head.total }}</span>',
     "@if (status.kind === 'open') { <span class=\"sl-pline sl-pline--open\" [class.sl-warn]=\"status.overdue\">{{ status.text }}</span> }",
+    "@else if (status.kind === 'tegoed') { <span class=\"sl-pline sl-pline--wrap sl-credit\">{{ status.text }}</span> }",
     '<span class="wk-pill" [class]="salesTone(status.cls)">{{ status.text }}</span>',
     'De facturen hieronder volgen je huidige filters.', 'Elk deel heeft een eigen document- en leverstatus.']) {
     assert.ok(heads.includes(piece), piece);
@@ -100,7 +101,7 @@ test('partner containers and split orders are cells with the anatomy of a docume
   assert.match(member('phoneHeadOf'), /this\.rowAttention\(row\)/, 'the amber line reads the members as their own cells do');
   /* What the head leaves out (pieces, ontvangen, tegoed, waarvan concept, the statuses) reads in the container menu's head. */
   assert.match(template, /<app-sales-container-menu [^>]*\[facts\]="desktop\.active\(\) \? \[\] : containerHintOf\(menuContainer\)"/);
-  assert.match(member('containerHintOf'), /return containerHint\(container\);/);
+  assert.match(member('containerHintOf'), /return containerHint\(container, invoiceReceivable, todayIso\(\)\);/, 'the hint knows what the head says beside its total');
   const menu = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(containerMenu)?.[1] ?? '';
   assert.ok(menu.includes('@for (fact of facts(); track $index) { · {{ fact }} }</p>'), 'after the customer and the name, on the head line');
   assert.match(containerMenu, /readonly facts = input<readonly string\[\]>\(\[\]\);/);
@@ -127,7 +128,8 @@ test('the phone row: the number, kind · date and tags, the facts and the amber 
   assert.match(link, /@case \('open'\) \{ <span class="sl-pline sl-pline--open" \[class\.sl-warn\]="lines\.trail\.overdue">\{\{ lines\.trail\.text \}\}<\/span> \}/);
   /* One precision per trail (Inkoop's): whole euros for the total and what is open; the exact amounts are in the menu. */
   assert.doesNotMatch(link, /\| eur/, 'no amount with cents on the phone trail');
-  assert.match(link, /!webOrder\(row\) && !\(nested && partner\(row\.order\)\)\) \{ <span class="sl-tag sl-tag--channel">/, 'under a partner container the head names the channel');
+  assert.match(link, /!webOrder\(row\) && !\(nested && partner\(row\.order\) && channelCode\(row\.order\.salesChannel\) === 'PARTNER'\)\) \{ <span class="sl-tag sl-tag--channel">/,
+    "under a partner container the head stands for 'Partner & veiling'; a TICA or Beurs member keeps its tag");
   assert.match(link, /@case \('credit'\) \{ <span class="sl-pline sl-pline--wrap sl-credit">\{\{ lines\.trail\.text \}\}<\/span> \}/);
   assert.match(link, /@let day = dayParts\(lines\.trail\.text\);\s*<span class="sl-pline sl-pline--wrap"[^>]*>\{\{ day\.lead \}\}<span class="sl-nw">\{\{ day\.day \}\}<\/span><\/span>/);
   assert.doesNotMatch(link, /marge|cbm|sl-more/, 'Inhoud and marge leave the phone row; no ⋯ on the phone');

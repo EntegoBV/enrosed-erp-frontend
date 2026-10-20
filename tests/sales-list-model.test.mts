@@ -150,8 +150,8 @@ test('a partner container head: its documents in the sub, the total in trail eur
     money({ 2: { remainingEur: 18145.27 } }), TODAY, reasons);
   assert.deepEqual({ ...busy, total: plain(busy.total), status: busy.status && { ...busy.status, text: plain(busy.status.text) } }, {
     sub: 'Partnercontainer · 2 facturen', total: '€ 36.291',
-    status: { kind: 'open', text: '€ 18.145 open', cls: '', overdue: true }, attention: { count: 1, first: 'Betaling opvolgen' },
-  }, 'anything open: the amount, warn once overdue; no pill beside it');
+    status: { kind: 'open', text: '€ 18.145 open', cls: '', overdue: true }, attention: { count: 2, text: 'Betaling opvolgen · Vervallen' },
+  }, 'anything open: the amount, warn once overdue; no pill beside it; the amber line as the member cell reads it');
   const settled = containerHead(container([note, paid], { totalEur: 7941.14, statuses: [status('Afgehandeld', 'ok'), status('Betaald', 'ok')] }),
     money({}), TODAY, noReasons);
   assert.equal(settled.sub, 'Partnercontainer · 2 documenten', 'a credit note among them: documenten');
@@ -161,26 +161,60 @@ test('a partner container head: its documents in the sub, the total in trail eur
   assert.equal(plain(containerHead(container([note], { totalEur: -991.1 }), money({}), TODAY, noReasons).total), '− € 991', 'a negative sum reads as a credit total');
 });
 
-test('the container menu hint holds what the head leaves out: exact total and concept share, the statuses, the pieces, the money in', () => {
-  const hint = (summary: Partial<SalesContainerGroup['summary']>) => containerHint(container([doc(1), doc(2)], summary)).map(plain);
+test('the amber line of a head counts every task of its members and names each reason once', () => {
+  const overdue = doc(1, { invoiceDueDate: '2026-10-01' }), late = doc(2, { invoiceDueDate: '2026-10-02' }), note = doc(3, { docType: 'CREDITNOTA', status: 'UITGEREIKT' });
+  const reasons = (row: SalesOrderView): string[] => (row.order.docType === 'CREDITNOTA' ? ['Tegoed af te handelen'] : ['Betaling opvolgen']);
+  const head = (rows: SalesOrderView[]) => containerHead(container(rows), money({ 1: { remainingEur: 500 }, 2: { remainingEur: 400 }, 3: { creditEur: 800 } }), TODAY, reasons);
+  assert.deepEqual(head([overdue, note]).attention, { count: 2, text: 'Betaling opvolgen · Tegoed af te handelen' }, 'one invoice to chase, one tegoed: both named');
+  assert.deepEqual(head([overdue, late]).attention, { count: 2, text: 'Betaling opvolgen' }, 'two invoices to chase');
+});
+
+test('nothing open but a credit note still holds a tegoed: the head says the tegoed, never Betaald beside the amber tegoed task', () => {
+  const rows = [doc(1, { status: 'BETAALD' }), doc(2, { status: 'BETAALD' }), doc(3, { docType: 'CREDITNOTA', status: 'UITGEREIKT' })];
+  const entry = container(rows, { totalEur: 12000, statuses: [status('Betaald', 'ok', 2), status('Tegoed open', 'gold')], creditEur: 800 });
+  const receivable = money({ 1: { receivedEur: 6000 }, 2: { receivedEur: 6000 }, 3: { creditEur: 800 } });
+  const head = containerHead(entry, receivable, TODAY, (row) => (row.order.id === 3 ? ['Tegoed af te handelen'] : []));
+  assert.deepEqual({ ...head.status!, text: plain(head.status!.text) }, { kind: 'tegoed', text: '€ 800 tegoed', cls: '', overdue: false });
+  assert.deepEqual(head.attention, { count: 1, text: 'Tegoed af te handelen' });
+  assert.deepEqual(containerHint(entry, receivable, TODAY).map(plain), ['2 betaald, 1 tegoed open'], 'the menu adds the members, not the tegoed again');
+  assert.deepEqual(containerHint({ ...entry, summary: { ...entry.summary, creditEur: 800.5 } }, money({ 3: { creditEur: 800.5 } }), TODAY).map(plain),
+    ['2 betaald, 1 tegoed open', '€ 800,50 tegoed', 'incl. btw'], 'the exact tegoed when the head rounded it');
+});
+
+test('the container menu hint holds what the head leaves out: exact total, the statuses with the concept share, the pieces, the money in', () => {
+  const hint = (summary: Partial<SalesContainerGroup['summary']>, rows = [doc(1), doc(2)], open: Record<number, Partial<ListReceivable>> = {}) =>
+    containerHint(container(rows, summary), money(open), TODAY).map(plain);
   assert.deepEqual(hint({ totalEur: 24519.9, statuses: [status('Betaald', 'ok', 2)], containerPieces: 1968, receivedEur: 24519.9 }),
     ['€ 24.519,90 excl. btw', '1.968 stuks in container', '€ 24.519,90 ontvangen', 'incl. btw'], 'one status: the pill says it');
   assert.deepEqual(hint({ totalEur: 7000, draftCount: 1, draftEur: 3000, statuses: [status('Concept', 'neutral', 1, { concept: true }), status('Verzonden', 'rose'),
     status('Geannuleerd', 'neutral', 1, { inactive: true })], remainingEur: 4840.5, creditEur: 991.1 }),
-  ['waarvan concept € 3.000,00', '1 concept, 1 verzonden, 1 geannuleerd (buiten totaal)', '€ 4.840,50 open', '€ 991,10 tegoed', 'incl. btw']);
-  assert.deepEqual(hint({ totalEur: 7000, remainingEur: 7000, statuses: [status('Verzonden', 'rose')] }), [], 'whole amounts the trail already shows exactly');
+  ['1 concept (€ 3.000,00), 1 verzonden, 1 geannuleerd (buiten totaal)', '€ 4.840,50 open', '€ 991,10 tegoed', 'incl. btw'],
+  'the concept share on its own status, said once');
+  assert.deepEqual(hint({ totalEur: 7941, remainingEur: 7941, statuses: [status('Uitgereikt · niet gemaild', 'rose')] }, [doc(1, { status: 'UITGEREIKT' })], { 1: { remainingEur: 7941 } }),
+    ['1 uitgereikt (niet gemaild)'], "the head shows '€ x open' and no pill: the one status reads here; whole amounts the trail shows exactly stay out");
+  assert.deepEqual(hint({ totalEur: 7941, remainingEur: 3000, receivedEur: 4941, statuses: [status('Betaald', 'ok'), status('Uitgereikt · niet gemaild', 'rose')] },
+    [doc(1, { status: 'BETAALD' }), doc(2, { status: 'UITGEREIKT' })], { 2: { remainingEur: 3000 } }),
+  ['1 betaald, 1 uitgereikt (niet gemaild)', '€ 4.941,00 ontvangen', 'incl. btw'], "a label's own ' · ' never reads as a fact of its own");
+  const note = doc(3, { docType: 'CREDITNOTA', status: 'BETAALD' });
+  assert.deepEqual(hint({ totalEur: -6374.71, statuses: [status('Afgehandeld', 'ok')] }, [note]), ['− € 6.374,71 excl. btw'], 'signed as the head writes it');
+  assert.deepEqual(hint({ totalEur: -1999.5, draftCount: 1, draftEur: -3000, statuses: [status('Concept', 'neutral', 1, { concept: true }), status('Betaald', 'ok')] },
+    [doc(1, { status: 'BETAALD' }), doc(2, { docType: 'CREDITNOTA', status: 'CONCEPT' })]), ['− € 1.999,50 excl. btw', '1 concept (− € 3.000,00), 1 betaald']);
 });
 
-test('a split order head: n delen, the delivery in one pill in the desk order, the amber line over its parts', () => {
-  const split = (summary: Partial<SalesSplitGroup['summary']>): SalesSplitGroup => ({ kind: 'SPLIT_ORDER', key: 'split-g-7', groupId: 'g', rootOrderId: 1,
-    rows: [doc(1), doc(2)], summary: { parts: 2, totalEur: 1200.4, pieces: 240, unavailableCount: 0, waitingCount: 0, shippedCount: 0, ...summary } });
+test('a split order head: n delen and its pieces, the delivery in one pill in the desk order, the amber line over its parts', () => {
+  const split = (summary: Partial<SalesSplitGroup['summary']>, rows = [doc(1), doc(2)]): SalesSplitGroup => ({ kind: 'SPLIT_ORDER', key: 'split-g-7', groupId: 'g',
+    rootOrderId: 1, rows, summary: { parts: 2, totalEur: 1200.4, pieces: 240, unavailableCount: 0, waitingCount: 0, shippedCount: 0, ...summary } });
   const pill = (summary: Partial<SalesSplitGroup['summary']>) => splitHead(split(summary), noReasons).status?.text;
   const head = splitHead(split({}), (row) => (row.order.id === 2 ? ['Bestelling nog te verzenden'] : []));
-  assert.deepEqual({ ...head, total: plain(head.total) }, { sub: 'Gesplitste order · 2 delen', total: '€ 1.200',
-    status: { kind: 'pill', text: 'Leveringen gepland', cls: 'blue', overdue: false }, attention: { count: 1, first: 'Bestelling nog te verzenden' } });
-  assert.equal(splitHead(split({ parts: 1 }), noReasons).sub, 'Gesplitste order · 1 van 2 delen');
+  assert.deepEqual({ ...head, total: plain(head.total) }, { sub: 'Gesplitste order · 2 delen · 240 stuks', total: '€ 1.200',
+    status: { kind: 'pill', text: 'Leveringen gepland', cls: 'blue', overdue: false }, attention: { count: 1, text: 'Bestelling nog te verzenden' } });
+  assert.equal(splitHead(split({ parts: 1, pieces: 1240 }), noReasons).sub, 'Gesplitste order · 1 van 2 delen · 1.240 stuks');
+  assert.equal(splitHead(split({ pieces: 0 }), noReasons).sub, 'Gesplitste order · 2 delen');
   assert.deepEqual([pill({ unavailableCount: 2, waitingCount: 1 }), pill({ waitingCount: 1, shippedCount: 1 }), pill({ shippedCount: 1 }), pill({ shippedCount: 2 }), pill({ pieces: 0 })],
     ['2 niet beschikbaar', 'Wacht op voorraad', 'Deels verzonden', 'Verzonden', undefined]);
+  const parts = [doc(1, { goodsShippedAt: '2026-10-14T10:00:00Z' }, { fulfillment: { part: 1, status: 'SHIPPED' } }),
+    doc(2, {}, { fulfillment: { part: 2, status: 'WAITING_FOR_STOCK' } })];
+  assert.equal(splitHead(split({ waitingCount: 1, shippedCount: 1 }, parts), noReasons).status?.text, 'Deel 2 wacht op voorraad', 'one part shipped: the pill names the part that waits');
 });
 
 test('the Document sub names the linked documents as text', () => {

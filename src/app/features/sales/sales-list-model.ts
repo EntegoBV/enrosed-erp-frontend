@@ -280,16 +280,17 @@ const SETTLED = new Set(['Betaald', 'Afgehandeld', 'Gecrediteerd']);
 
 /**
  * A head cell with a document's anatomy. sub: 'Partnercontainer · 2 facturen'
- * or 'Gesplitste order · 2 delen'; total: trail euros, signed; status: the one
- * thing beside it, what is open or one pill; attention: the amber line, how
- * many members wait on us and the first reason.
+ * or 'Gesplitste order · 2 delen · 240 stuks'; total: trail euros, signed;
+ * status: the one thing beside it, what is open, a tegoed or one pill;
+ * attention: the amber line as a document cell reads it, every task of the
+ * members in the badge and each reason once.
  */
 export interface PhoneHead {
   sub: string;
   total: string;
-  /** open: text '€ x open', warn once overdue; pill: text is the label, cls its status class. */
-  status: { kind: 'open' | 'pill'; text: string; cls: string; overdue: boolean } | null;
-  attention: { count: number; first: string } | null;
+  /** open: '€ x open', warn once overdue; tegoed: '€ x tegoed' (a credit note's trail line); pill: the label, cls its status class. */
+  status: { kind: 'open' | 'tegoed' | 'pill'; text: string; cls: string; overdue: boolean } | null;
+  attention: { count: number; text: string } | null;
 }
 
 /** '− € 991' for a negative sum, as a credit note's total reads. */
@@ -297,9 +298,15 @@ function signedTrail(value: number): string {
   return cents(value) < 0 ? `− ${trailEuro(-value)}` : trailEuro(value);
 }
 
+/** The exact figure with the same sign: '− € 6.374,71', never '€ -6.374,71'. */
+function signedEuro(value: number): string {
+  return cents(value) < 0 ? `− ${euro(-value)}` : euro(value);
+}
+
+/** '2 Betaling opvolgen · Tegoed af te handelen': two tasks, both named; three overdue invoices read '3 Betaling opvolgen'. */
 function headAttention(rows: readonly SalesOrderView[], reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead['attention'] {
-  const waiting = rows.map(reasonsOf).filter((reasons) => reasons.length > 0);
-  return waiting.length ? { count: waiting.length, first: waiting[0][0] } : null;
+  const reasons = rows.flatMap((row) => [...reasonsOf(row)]);
+  return reasons.length ? { count: reasons.length, text: [...new Set(reasons)].join(' · ') } : null;
 }
 
 /**
@@ -320,30 +327,41 @@ export function containerPill(statuses: readonly SalesContainerStatus[]): { labe
   return { label: best.label, cls: best.cls };
 }
 
-/** A partner container's head: '€ x open' while its invoices hold money, else one pill for its members. */
+/** What a container's head says beside its total: what its invoices hold, else a credit note's open tegoed, else one pill. */
+function containerStatus(entry: SalesContainerGroup, money: ListMoney): PhoneHead['status'] {
+  if (money.openEur > 0) return { kind: 'open', text: `${trailEuro(money.openEur)} open`, cls: '', overdue: money.overdueCount > 0 };
+  if (money.tegoedEur > 0) return { kind: 'tegoed', text: `${trailEuro(money.tegoedEur)} tegoed`, cls: '', overdue: false };
+  const pill = containerPill(entry.summary.statuses);
+  return pill ? { kind: 'pill', text: pill.label, cls: pill.cls, overdue: false } : null;
+}
+
+/** A partner container's head: '€ x open' while its invoices hold money, '€ x tegoed' while only a credit note does, else one pill. */
 export function containerHead(entry: SalesContainerGroup, receivableOf: (row: SalesOrderView) => ListReceivable, today: string,
   reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead {
-  const money = listMoney(entry.rows, receivableOf, today);
   const credits = entry.rows.some((row) => row.order.docType === 'CREDITNOTA');
-  const pill = containerPill(entry.summary.statuses);
   return {
     sub: `Partnercontainer · ${credits ? countText(entry.rows.length, 'document', 'documenten') : countText(entry.rows.length, 'factuur', 'facturen')}`,
     total: signedTrail(entry.summary.totalEur),
-    status: money.openEur > 0 ? { kind: 'open', text: `${trailEuro(money.openEur)} open`, cls: '', overdue: money.overdueCount > 0 }
-      : pill ? { kind: 'pill', text: pill.label, cls: pill.cls, overdue: false } : null,
+    status: containerStatus(entry, listMoney(entry.rows, receivableOf, today)),
     attention: headAttention(entry.rows, reasonsOf),
   };
 }
 
-/** A split order's head: its delivery in one pill, the first that applies in the desk head's order. */
+/**
+ * A split order's head: its pieces in the sub, its delivery in one pill, the
+ * first that applies in the desk head's order. One part waiting while the
+ * other has shipped names that part ('Deel 2 wacht op voorraad').
+ */
 export function splitHead(entry: SalesSplitGroup, reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead {
   const { parts, unavailableCount, waitingCount, shippedCount, pieces } = entry.summary;
+  const waitingPart = waitingCount === 1 && shippedCount > 0 ? entry.rows.find((row) => !CLOSED.has(row.order.status) && !row.order.goodsShippedAt
+    && row.fulfillment?.status === 'WAITING_FOR_STOCK')?.fulfillment?.part ?? null : null;
   const pill = unavailableCount ? { text: `${unavailableCount} niet beschikbaar`, cls: 'gold' }
-    : waitingCount ? { text: 'Wacht op voorraad', cls: 'gold' }
+    : waitingCount ? { text: waitingPart ? `Deel ${waitingPart} wacht op voorraad` : 'Wacht op voorraad', cls: 'gold' }
     : shippedCount ? { text: shippedCount >= parts ? 'Verzonden' : 'Deels verzonden', cls: 'ok' }
     : pieces > 0 ? { text: 'Leveringen gepland', cls: 'blue' } : null;
   return {
-    sub: `Gesplitste order · ${parts === 2 ? '2 delen' : `${parts} van 2 delen`}`,
+    sub: `Gesplitste order · ${parts === 2 ? '2 delen' : `${parts} van 2 delen`}${pieces > 0 ? ` · ${new Intl.NumberFormat('nl-BE').format(pieces)} stuks` : ''}`,
     total: signedTrail(entry.summary.totalEur),
     status: pill ? { kind: 'pill', ...pill, overdue: false } : null,
     attention: headAttention(entry.rows, reasonsOf),
@@ -352,23 +370,28 @@ export function splitHead(entry: SalesSplitGroup, reasonsOf: (row: SalesOrderVie
 
 /**
  * What the phone head leaves to the container menu's head: the exact total
- * when the trail rounded it and what of it is concept, the members per
- * status when they differ, the pieces in the container, the money in and
- * the open credit (incl. btw). Nothing the head already says.
+ * when the trail rounded it; the members per status unless the head's one
+ * pill says it all, the concept with its share ('1 concept (€ 3.000,00)'),
+ * a label's own ' · ' in brackets so it never reads as a fact of its own;
+ * the pieces in the container; the money in and the credit (incl. btw) when
+ * the head's '€ x open' or '€ x tegoed' did not say it exactly. Signed amounts
+ * as the head writes them.
  */
-export function containerHint(entry: SalesContainerGroup): string[] {
+export function containerHint(entry: SalesContainerGroup, receivableOf: (row: SalesOrderView) => ListReceivable, today: string): string[] {
   const summary = entry.summary;
+  const money = listMoney(entry.rows, receivableOf, today);
+  const status = containerStatus(entry, money);
   const facts: string[] = [];
-  const total = roundedAway(summary.totalEur) ? `${euro(summary.totalEur)} excl. btw` : '';
-  const draft = summary.draftCount && summary.issuedCount ? `waarvan concept ${euro(summary.draftEur)}` : '';
-  if (total || draft) facts.push(total && draft ? `${total}, ${draft}` : total || draft);
-  if (summary.statuses.length > 1) {
-    facts.push(summary.statuses.map((status) => `${status.count} ${status.label.toLocaleLowerCase('nl-BE')}${status.inactive ? ' (buiten totaal)' : ''}`).join(', '));
+  if (roundedAway(summary.totalEur)) facts.push(`${signedEuro(summary.totalEur)} excl. btw`);
+  if (summary.statuses.length > (status?.kind === 'pill' ? 1 : 0)) {
+    facts.push(summary.statuses.map((member) => `${member.count} ${member.label.toLocaleLowerCase('nl-BE').replace(/ · (.+)$/, ' ($1)')}`
+      + (member.concept && summary.issuedCount ? ` (${signedEuro(summary.draftEur)})` : '') + (member.inactive ? ' (buiten totaal)' : '')).join(', '));
   }
   if (summary.containerPieces !== null) facts.push(`${new Intl.NumberFormat('nl-BE').format(summary.containerPieces)} stuks in container`);
-  const money = [roundedAway(summary.remainingEur) ? `${euro(summary.remainingEur)} open` : '',
-    summary.receivedEur > 0 ? `${euro(summary.receivedEur)} ontvangen` : '', summary.creditEur > 0 ? `${euro(summary.creditEur)} tegoed` : ''].filter(Boolean);
-  if (money.length) facts.push(...money, 'incl. btw');
+  const tegoedSaid = status?.kind === 'tegoed' && cents(money.tegoedEur) === cents(summary.creditEur) && !roundedAway(summary.creditEur);
+  const inclVat = [roundedAway(summary.remainingEur) ? `${euro(summary.remainingEur)} open` : '',
+    summary.receivedEur > 0 ? `${euro(summary.receivedEur)} ontvangen` : '', summary.creditEur > 0 && !tegoedSaid ? `${euro(summary.creditEur)} tegoed` : ''].filter(Boolean);
+  if (inclVat.length) facts.push(...inclVat, 'incl. btw');
   return facts;
 }
 
