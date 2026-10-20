@@ -617,7 +617,7 @@ export class BankMovementPanel {
   readonly outgoingCandidates = computed<OutgoingMatch[]>(() => {
     const result: OutgoingMatch[] = [];
     for (const cost of this.state.costs()) for (const payment of cost.payments ?? []) {
-      if (!payment.id || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== -Math.sign(this.selected()?.amountEur ?? -1)) continue;
+      if (!payment.id || payment.settlementOffset || cost.ticaSettlementId || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== -Math.sign(this.selected()?.amountEur ?? -1)) continue;
       result.push({ ownerId: cost.id!, key: 'cost:' + payment.id, kind: 'cost', id: payment.id, title: cost.party || cost.description,
         detail: [cost.description, cost.reference, payment.note].filter(Boolean).join(' · '), paidOn: payment.paidOn, amountEur: payment.amountEur });
     }
@@ -1173,7 +1173,7 @@ export class BankMovementPanel {
       ...(!linked ? [{ id: 'link', label: 'Koppelen…', iconName: 'link' }, { id: 'split', label: 'Splitsen…', iconName: 'list' },
         { id: 'book', label: 'Boeken als…', iconName: 'tag' }] : []),
       ...(linked && !row.classification ? [{ id: 'unlink', label: 'Koppeling losmaken', iconName: 'unlink' }] : []),
-      ...(row.classification ? [{ id: 'unbook', label: 'Boeken als ongedaan maken', iconName: 'restore' }] : []),
+      ...(row.classification && !row.ticaSettlementId ? [{ id: 'unbook', label: 'Boeken als ongedaan maken', iconName: 'restore' }] : []),
       ...(!row.classification && (linked || documents.length) ? [{ id: 'document', label: documents.length > 1 ? 'Gekoppelde documenten openen' : 'Gekoppeld document openen', iconName: 'document' }] : []),
       ...(this.canRemove(row) ? [{ id: 'withdraw', label: 'Intrekken', iconName: 'trash', danger: true, divider: true }] : []),
     ];
@@ -1227,6 +1227,7 @@ export class BankMovementPanel {
   koppeling(row: BankStatementLine): Koppeling | null {
     if (row.classification) {
       const label = CLASSIFICATION_LABEL[row.classification];
+      if (row.ticaSettlementId) return { text: label, reasons: [], open: false, sub: 'Verrekende commissie · netto-uitbetaling' };
       if (row.classification === 'INTERNAL_TRANSFER') {
         const other = row.transferLineId != null ? this.state.bankStatements().find(line => line.id === row.transferLineId) : undefined;
         return { text: label, reasons: [], open: false, sub: other ? `⇄ ${this.accountName(other.account)} · ${legDistance(this.state.lineDay(row), this.state.lineDay(other))}` : 'Andere kant staat niet in Enrosed' };

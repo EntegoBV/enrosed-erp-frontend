@@ -19,20 +19,20 @@ export type Iso = string;   // 'YYYY-MM-DD'
 export type ForecastCertainty = 'FIXED' | 'EXPECTED' | 'ESTIMATED' | 'SCENARIO';
 export const CERTAINTY_LABEL: Record<ForecastCertainty, string> = { FIXED: 'Vast', EXPECTED: 'Verwacht', ESTIMATED: 'Geschat', SCENARIO: 'Scenario' };
 export type ForecastKind = 'CUSTOMER' | 'PARTNER' | 'QUOTE' | 'OPEN_QUOTE' | 'CREDIT' | 'SUPPLIER' | 'LOGISTICS'
-  | 'INSPECTION' | 'OTHER_CONTAINER' | 'IMPORT_VAT' | 'COST' | 'RECURRING' | 'VAT' | 'SALES';
+  | 'INSPECTION' | 'OTHER_CONTAINER' | 'IMPORT_VAT' | 'COST' | 'RECURRING' | 'VAT' | 'SALES' | 'TICA';
 export const KIND_LABEL: Record<ForecastKind, string> = { CUSTOMER: 'Klant', PARTNER: 'Partner', QUOTE: 'Offerte',
   OPEN_QUOTE: 'Open offerte', CREDIT: 'Tegoed', SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport',
   INSPECTION: 'Inspectie', OTHER_CONTAINER: 'Bijkomend', IMPORT_VAT: 'Btw bij invoer', COST: 'Kost',
-  RECURRING: 'Vaste kost', VAT: 'Btw', SALES: 'Verkoop' };
+  RECURRING: 'Vaste kost', VAT: 'Btw', SALES: 'Verkoop', TICA: 'TICA-afrekening' };
 export type ForecastLayer = 'BASE' | 'SCENARIO';
-export type ForecastRule = 'invoices' | 'quotes' | 'openQuotes' | 'partner' | 'containers' | 'costs' | 'vat';
+export type ForecastRule = 'tica' | 'invoices' | 'quotes' | 'openQuotes' | 'partner' | 'containers' | 'costs' | 'vat';
 export const CLASSIFICATION_LABEL: Record<BankClassification, string> = { INTERNAL_TRANSFER: 'Interne overboeking',
-  VAT: 'Btw', LOAN: 'Lening', CAPITAL: 'Kapitaal', PRIVATE: 'Privé', OTHER: 'Andere' };
+  VAT: 'Btw', LOAN: 'Lening', CAPITAL: 'Kapitaal', PRIVATE: 'Privé', OTHER: 'Andere', TICA_SETTLEMENT: 'TICA-uitbetaling' };
 export type ForecastSource =
   | { type: 'cost'; costId: number } | { type: 'recurring'; recurringId: number } | { type: 'container'; orderId: number }
   | { type: 'invoice'; salesOrderId: number } | { type: 'quote'; salesOrderId: number }
   | { type: 'vat'; year: number; quarter: number } | { type: 'advance'; orderId: number; rowId: number }
-  | { type: 'credit' } | { type: 'stock' };
+  | { type: 'credit' } | { type: 'stock' } | { type: 'tica'; settlementId: number };
 
 export interface ForecastItem {
   key: string; layer: ForecastLayer; rule: ForecastRule | null;   // null only for SALES and scenario VAT
@@ -119,6 +119,8 @@ export interface CashForecastInput {
   bankLines: ForecastBankLine[];     // official lines only
   openCosts: ForecastOpenCost[]; recurring: ForecastRecurring[];
   containerRows: ForecastContainerRow[]; orders: ForecastOrder[];
+  ticaReceivables?: { id: number; reference: string; location: string; dueDate: Iso | null; netReceivable: number }[];
+  ticaVatIncomplete?: boolean;
   invoices: ForecastInvoice[]; openCreditEur: number; advanceRows: ForecastAdvanceRow[];
   quotes: ForecastQuote[]; openQuotes: ForecastOpenQuote[];
   vatQuarters: ForecastVatQuarter[]; paidVatPeriods: string[]; importVatDeferred: boolean;
@@ -212,7 +214,7 @@ export const PIN_MIN_EUR = 5000;
 const STALE_DAYS = 14;
 const PAST_REGISTER_ROWS = 10;
 const CONTAINER_KINDS: ReadonlySet<ForecastKind> = new Set(['SUPPLIER', 'LOGISTICS', 'INSPECTION', 'OTHER_CONTAINER']);
-const RULES: readonly ForecastRule[] = ['invoices', 'quotes', 'openQuotes', 'partner', 'containers', 'costs', 'vat'];
+const RULES: readonly ForecastRule[] = ['tica', 'invoices', 'quotes', 'openQuotes', 'partner', 'containers', 'costs', 'vat'];
 const PAYEE_LABEL: Record<ForecastOrderPayment['payee'], string> = { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport',
   SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten' };
 
@@ -463,7 +465,7 @@ export function balanceHistory(movements: readonly ForecastMovement[], accounts:
 /* ============================================================ likelyPaid */
 
 const LIKELY_KINDS_OUT: ReadonlySet<ForecastKind> = new Set(['SUPPLIER', 'LOGISTICS', 'INSPECTION', 'OTHER_CONTAINER', 'COST']);
-const LIKELY_KINDS_IN: ReadonlySet<ForecastKind> = new Set(['CUSTOMER', 'PARTNER']);
+const LIKELY_KINDS_IN: ReadonlySet<ForecastKind> = new Set(['CUSTOMER', 'PARTNER', 'TICA']);
 const TAX_OFFICE = ['fod fin', 'spf fin', 'btw', 'tva'];
 
 function quarterEndOf(source: ForecastSource): Iso | null {
@@ -850,6 +852,15 @@ function baseItems(input: CashForecastInput): ForecastItem[] {
   for (const order of input.orders) {
     const draft = importVatDraft(input, order, stored.get(order.orderId) ?? null, 'BASE');
     if (draft) drafts.push(draft);
+  }
+  for (const row of input.ticaReceivables ?? []) {
+    if (toCents(row.netReceivable) <= 0) continue;
+    drafts.push({ key: `tica:${row.id}`, layer: 'BASE', rule: 'tica', kind: 'TICA',
+      certainty: row.dueDate ? 'FIXED' : 'EXPECTED', ruleDate: row.dueDate ?? today,
+      ruleText: row.dueDate ? `netto-uitbetaling · vervalt ${dm(row.dueDate)}` : 'netto-uitbetaling · geen vervaldag · nu',
+      pastText: row.dueDate ? `vervallen ${dm(row.dueDate)} · nu` : undefined, pastCertainty: 'EXPECTED',
+      amountCents: toCents(row.netReceivable), title: `TICA ${row.reference}`, party: row.location, orderId: null,
+      source: { type: 'tica', settlementId: row.id }, references: [row.reference] });
   }
   for (const invoice of input.invoices) if (toCents(invoice.remainingEur) > 0) drafts.push(invoiceDraft(invoice, today));
   if (toCents(input.openCreditEur) > 0) {
@@ -1242,7 +1253,7 @@ function pinsOf(items: readonly ForecastItem[], horizonEnd: Iso): ForecastPin[] 
 }
 
 const inOutlook = (item: ForecastItem): boolean => item.layer === 'BASE'
-  && (item.kind === 'COST' || CONTAINER_KINDS.has(item.kind) || item.kind === 'CREDIT' || item.source.type === 'invoice');
+  && (item.kind === 'COST' || CONTAINER_KINDS.has(item.kind) || item.kind === 'CREDIT' || item.source.type === 'invoice' || item.source.type === 'tica');
 
 function reconciliationOf(core: Core, excludedAccounts: CashForecast['excludedAccounts']): ForecastReconciliation {
   const { input, options, horizonEnd } = core;

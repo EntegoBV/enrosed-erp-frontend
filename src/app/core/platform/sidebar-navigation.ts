@@ -10,6 +10,7 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (
     path.startsWith('/sales')
+    || path === '/tica'
     || path.startsWith('/revisions')
     || path.startsWith('/customers')
     || path.startsWith('/klantlogins')

@@ -5,6 +5,7 @@ import { saveBlob } from '../../core/api/download';
 import { messageOf, readableFailure } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
 import { Skeleton } from '../../shared/skeleton';
+import { OdooImportMonitor } from './odoo-import-monitor';
 import { OdooSyncState } from './odoo-sync-state';
 
 /**
@@ -15,17 +16,24 @@ import { OdooSyncState } from './odoo-sync-state';
 @Component({
   selector: 'app-odoo-connection-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Skeleton],
+  imports: [Icon, Skeleton, OdooImportMonitor],
   template: `
     <section class="odoo-card" aria-labelledby="odoo-title" [attr.aria-busy]="loading() || checking() || syncing()">
       <div class="odoo-head">
         <span class="odoo-icon"><app-icon name="exchange" [size]="18" /></span>
-        <div class="odoo-heading"><h2 id="odoo-title">Bankverbinding via Odoo</h2><p>{{ loading() ? 'Verbinding controleren…' : ready() ? 'Laatste import: ' + (status()?.lastSyncAt ? moment(status()!.lastSyncAt!) : 'nog niet uitgevoerd') : connectionLabel() }}</p></div>
+        <div class="odoo-heading"><h2 id="odoo-title">Bankverbinding via Odoo</h2><p>{{ loading() ? 'Verbinding controleren…' : ready() ? 'Laatste geslaagde import: ' + (lastSuccessAt() ? moment(lastSuccessAt()!) : 'nog niet uitgevoerd') : connectionLabel() }}</p></div>
         <div class="odoo-head-actions">
           @if (ready()) { <button class="odoo-button" type="button" [disabled]="busy()" (click)="syncBank()"><app-icon name="refresh" [size]="15" />{{ syncing() ? 'Ophalen…' : 'Transacties ophalen' }}</button> }
           <button class="odoo-button odoo-button--details" type="button" [attr.aria-expanded]="detailsOpen()" aria-controls="odoo-connection-details" (click)="detailsOpen.set(!detailsOpen())">Details <app-icon [name]="detailsOpen() ? 'chevron-up' : 'chevron-down'" [size]="14" /></button>
         </div>
       </div>
+      @if (status()?.autoBankSync; as automatic) {
+        <div class="odoo-auto-sync"><app-icon name="repeat" [size]="15" /><span>
+          {{ automatic.enabled ? 'Banktransacties worden elke ' + automatic.intervalHours + ' uur automatisch opgehaald.' : 'Automatisch ophalen van banktransacties staat uit.' }}
+          @if (automatic.enabled && automatic.nextRunAt) { <small>Volgende controle: {{ moment(automatic.nextRunAt) }}</small> }
+        </span></div>
+      }
+      <div class="odoo-import-status"><app-odoo-import-monitor kind="linc" /></div>
       @if (detailsOpen()) {
         <div id="odoo-connection-details">
           <p class="odoo-description">{{ description() }}</p>
@@ -111,6 +119,9 @@ import { OdooSyncState } from './odoo-sync-state';
     .odoo-heading { flex: 1; min-width: 0; }
     h2 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: -.01em; }
     .odoo-heading p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+    .odoo-auto-sync { display: flex; gap: 8px; padding: 0 18px 14px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .odoo-auto-sync app-icon { flex: none; margin-top: 2px; }
+    .odoo-auto-sync small { display: block; margin-top: 3px; font-size: 11px; }
     .odoo-badge { padding: 5px 9px; border-radius: 999px; font-size: 11px; font-weight: 650; color: var(--rose-dark); background: var(--rose-soft); white-space: nowrap; }
     .odoo-badge--muted { color: var(--muted); background: var(--surface-2); }
     .odoo-description { margin: 15px 18px 0; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
@@ -124,6 +135,7 @@ import { OdooSyncState } from './odoo-sync-state';
     .odoo-sync-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 10px 18px 17px; font-size: 11px; line-height: 1.5; color: var(--muted); }
     .odoo-sync-meta b { font-weight: 550; }
     .odoo-loading { padding: 20px 18px 10px; }
+    .odoo-import-status { padding: 0 18px 16px; }
     .odoo-notice { display: grid; gap: 4px; margin: 0 18px 14px; padding: 11px 13px; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     .odoo-notice--error { color: #a32c2c; background: #fff0ef; }
     .odoo-notice--warning { color: #87551c; background: #fff5e6; }
@@ -171,7 +183,8 @@ import { OdooSyncState } from './odoo-sync-state';
       .odoo-document { grid-template-columns: minmax(0, 1fr); gap: 7px; }
       .odoo-document-value { display: flex; justify-content: space-between; gap: 10px; text-align: left; }
       .odoo-document-foot { align-items: flex-start; flex-direction: column; }
-      .odoo-notice { margin: 0 14px 14px; }
+      .odoo-import-status { padding: 0 18px 16px; }
+    .odoo-notice { margin: 0 14px 14px; }
       .odoo-tabs button { min-height: 38px; padding: 6px 10px; }
       .odoo-file { min-height: 36px; }
     }
@@ -195,6 +208,7 @@ export class OdooConnectionPanel implements OnInit {
     return result && (this.detailsOpen() || !result.complete || result.conflicts > 0 || result.skippedNonEur > 0) ? result : null;
   });
   readonly ready = this.sync.ready;
+  readonly lastSuccessAt = this.sync.lastSuccessAt;
   readonly busy = this.sync.busy;
   readonly connectionLabel = computed(() => {
     if (!this.status()) return 'Niet beschikbaar';

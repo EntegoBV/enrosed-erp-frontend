@@ -9,7 +9,7 @@ import {
 test('every link of the sidebar and Meer before the redesign is still there', () => {
   const urls = allNavUrls();
   for (const url of [
-    '/dashboard', '/sales', '/revisions', '/customers', '/klantlogins', '/prospects', '/contactaanvragen', '/countries',
+    '/dashboard', '/sales', '/tica', '/revisions', '/customers', '/klantlogins', '/prospects', '/contactaanvragen', '/countries',
     '/settings?sectie=discounts', '/purchasing', '/suppliers', '/douane', '/products', '/stock',
     '/stock/inventaris', '/stock-locations', '/barcodes', '/categories', '/settings?sectie=catalog-data',
     '/catalog-export', '/analyses/cash', '/analyses/overview', '/analyses/sales', '/analyses/inventory',

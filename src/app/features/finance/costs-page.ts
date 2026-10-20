@@ -272,7 +272,7 @@ export class CostsPage {
   });
   /** Bank's sub line: "{label} opgehaald {hh:mm}" (an older import: "{d mmm}") per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
   private readonly bankSub = computed(() => {
-    const at = this.sync.status()?.lastSyncAt ?? null;
+    const at = this.sync.lastSuccessAt();
     const time = at ? syncMoment(at, this.state.today()) : null;
     return this.state.accountsView().map((account) => account.source === 'ODOO' ? `${account.label} ${time ? 'opgehaald ' + time : 'nog niet opgehaald'}` : `${account.label} handmatig`).join(' · ') || null;
   });

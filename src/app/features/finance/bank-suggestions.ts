@@ -113,7 +113,7 @@ function candidatesOf(line: BankStatementLine, input: SuggestionInput, linkedRec
     }
   }
   for (const cost of input.costs) for (const payment of cost.payments ?? []) {
-    if (!payment.id || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== (outgoing ? 1 : -1)) continue;
+    if (!payment.id || payment.settlementOffset || cost.ticaSettlementId || payment.bankStatementLineId != null || !payment.amountEur || Math.sign(payment.amountEur) !== (outgoing ? 1 : -1)) continue;
     out.push({ target: { kind: 'cost-existing', costId: cost.id!, costPaymentId: payment.id, title: `Kost · ${cost.description}`, amountEur: Math.abs(payment.amountEur),
       paidOn: payment.paidOn, account: payment.account ? label(payment.account) : null, proofCount: 0 },
     amountEur: Math.abs(payment.amountEur), existing: true, open: false, po: null, invoices: [], reference: cost.reference ?? null, party: cost.party ?? null, day: payment.paidOn });

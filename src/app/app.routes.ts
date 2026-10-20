@@ -62,6 +62,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/sales/sales-list').then((m) => m.SalesList),
   },
   {
+    path: 'tica',
+    title: 'TICA verkopen',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./features/tica/tica-page').then((m) => m.TicaPage),
+  },
+  {
     path: 'sales/:id/edit',
     title: 'Verkooporder',
     canActivate: [authGuard],

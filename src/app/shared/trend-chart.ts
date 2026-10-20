@@ -9,7 +9,7 @@ export interface TrendSeries {
   dates: string[];
   values: number[];
   /** The accent series carries the area wash; a reference series stays muted. */
-  tone?: 'accent' | 'muted';
+  tone?: 'accent' | 'muted' | 'blue';
 }
 
 interface Point { t: number; v: number; x: number; y: number; date: string }
@@ -39,7 +39,7 @@ interface Tick { at: number; label: string }
       @if (l.lines.length > 1) {
         <ul class="tc-legend" aria-label="Reeksen">
           @for (line of l.lines; track line.label) {
-            <li><i [class.is-muted]="line.tone === 'muted'"></i>{{ line.label }}</li>
+            <li><i [class.is-muted]="line.tone === 'muted'" [class.is-blue]="line.tone === 'blue'"></i>{{ line.label }}</li>
           }
         </ul>
       }
@@ -55,17 +55,17 @@ interface Tick { at: number; label: string }
             <text class="tc-axis" [attr.x]="tick.at" [attr.y]="l.bottom + 15" text-anchor="middle">{{ tick.label }}</text>
           }
           @for (line of l.lines; track line.label) {
-            @if (line.tone !== 'muted') {
+            @if (line.tone !== 'muted' && line.tone !== 'blue') {
               <path class="tc-area" [attr.d]="line.area" />
             }
-            <path class="tc-line" [class.tc-line--muted]="line.tone === 'muted'" [attr.d]="line.path" />
+            <path class="tc-line" [class.tc-line--muted]="line.tone === 'muted'" [class.tc-line--blue]="line.tone === 'blue'" [attr.d]="line.path" />
             @if (line.sparse) {
               @for (point of line.points; track point.t) {
-                <circle class="tc-dot" [class.tc-dot--muted]="line.tone === 'muted'" [attr.cx]="point.x" [attr.cy]="point.y" r="3" />
+                <circle class="tc-dot" [class.tc-dot--muted]="line.tone === 'muted'" [class.tc-dot--blue]="line.tone === 'blue'" [attr.cx]="point.x" [attr.cy]="point.y" r="3" />
               }
             }
             @if (line.end; as end) {
-              <circle class="tc-dot tc-dot--end" [class.tc-dot--muted]="line.tone === 'muted'" [attr.cx]="end.x" [attr.cy]="end.y" r="4" />
+              <circle class="tc-dot tc-dot--end" [class.tc-dot--muted]="line.tone === 'muted'" [class.tc-dot--blue]="line.tone === 'blue'" [attr.cx]="end.x" [attr.cy]="end.y" r="4" />
             }
           }
           @for (mark of l.extremes; track mark.kind) {
@@ -74,7 +74,7 @@ interface Tick { at: number; label: string }
           @if (hover(); as h) {
             <line class="tc-cross" [attr.x1]="h.x" [attr.x2]="h.x" [attr.y1]="l.top" [attr.y2]="l.bottom" />
             @for (row of h.rows; track row.label) {
-              <circle class="tc-dot tc-dot--hover" [class.tc-dot--muted]="row.muted" [attr.cx]="row.x" [attr.cy]="row.y" r="4.5" />
+              <circle class="tc-dot tc-dot--hover" [class.tc-dot--muted]="row.muted" [class.tc-dot--blue]="row.blue" [attr.cx]="row.x" [attr.cy]="row.y" r="4.5" />
             }
           }
         </svg>
@@ -82,7 +82,7 @@ interface Tick { at: number; label: string }
           <div class="tc-tip" [class.tc-tip--left]="h.flip" [style.left.px]="h.x" [style.top.px]="l.top">
             <time>{{ h.date }}</time>
             @for (row of h.rows; track row.label) {
-              <span><i [class.is-muted]="row.muted"></i><b>{{ row.value }}</b>
+              <span><i [class.is-muted]="row.muted" [class.is-blue]="row.blue"></i><b>{{ row.value }}</b>
                 @if (h.rows.length > 1) { <small>{{ row.label }}</small> }</span>
             }
           </div>
@@ -106,6 +106,8 @@ interface Tick { at: number; label: string }
     .tc-line--muted{stroke:var(--muted-2);stroke-width:1.6}
     .tc-dot{fill:var(--rose);stroke:var(--surface);stroke-width:2}
     .tc-dot--muted{fill:var(--muted-2)}
+    .tc-line--blue{stroke:var(--blue);stroke-dasharray:5 3}
+    .tc-dot--blue{fill:var(--blue)}
     .tc-cross{stroke:var(--line-strong);stroke-width:1;shape-rendering:crispEdges}
     .tc-tip{position:absolute;z-index:2;display:grid;gap:3px;min-width:96px;margin-left:12px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);box-shadow:var(--sh-2);font-size:11.5px;pointer-events:none;transform:translateY(-4px)}
     .tc-tip--left{margin-left:-12px;transform:translate(-100%,-4px)}
@@ -115,6 +117,7 @@ interface Tick { at: number; label: string }
     .tc-tip small,.tc-legend li{color:var(--muted);font-size:10.5px}
     .tc-tip i,.tc-legend i{display:inline-block;width:12px;height:0;border-top:2px solid var(--rose);border-radius:2px}
     .tc-tip i.is-muted,.tc-legend i.is-muted{border-top-color:var(--muted-2)}
+    .tc-tip i.is-blue,.tc-legend i.is-blue{border-top-color:var(--blue);border-top-style:dashed}
     .tc-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 6px;padding:0;list-style:none}
     .tc-legend li{display:flex;align-items:center;gap:6px}
     .tc-empty{display:grid;place-content:center;gap:8px;justify-items:center;color:var(--muted);font-size:11.5px}
@@ -136,7 +139,7 @@ export class TrendChart {
 
   readonly width = signal(640);
   readonly hover = signal<{ x: number; date: string; flip: boolean;
-    rows: { label: string; value: string; x: number; y: number; muted: boolean }[] } | null>(null);
+    rows: { label: string; value: string; x: number; y: number; muted: boolean; blue: boolean }[] } | null>(null);
   private focusIndex = -1;
 
   constructor() {
@@ -265,6 +268,7 @@ export class TrendChart {
         value: this.format(point.v, this.decimals()),
         x: point.x, y: point.y,
         muted: line.tone === 'muted',
+        blue: line.tone === 'blue',
       };
     });
     this.hover.set({

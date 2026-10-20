@@ -159,3 +159,10 @@ test('suggestion titles name a container as the linked rows do (containerName); 
     if (title) assert.equal(title, `Inkoop · ${containerName({ id: 31, alias, number })} · 2e termijn`, 'the same rule as containerName');
   }
 });
+
+test('TICA commission offset is paid without bank cash and must never be suggested against an outgoing transfer', () => {
+  const offset = cost(99, { party: 'TICA', reference: '267653273', openEur: 0, ticaSettlementId: 9,
+    payments: [{ id: 17, paidOn: '2026-10-13', amountEur: 41.67, account: null, bankStatementLineId: null, note: null, settlementOffset: true }] });
+  const transfer = line(999, -41.67, { counterparty: 'TICA', reference: '267653273' });
+  assert.equal(lineSuggestions(input({ lines: [transfer], costs: [offset] })).size, 0);
+});

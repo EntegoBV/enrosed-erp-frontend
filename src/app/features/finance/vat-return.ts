@@ -1,3 +1,4 @@
+import type { TicaAnalyticsDay, TicaSettlement } from '../../core/api/tica-api';
 import type { Clearance, PurchaseOrderView, SalesOrderView } from '../../core/api/models';
 import type { ReturnLine } from './finance-metrics';
 
@@ -15,7 +16,7 @@ export type GridCode = '00' | '01' | '02' | '03' | '44' | '45' | '46' | '47' | '
   | '81' | '82' | '83' | '84' | '85' | '86' | '87' | '88' | '54' | '55' | '56' | '57' | '59' | '61' | '62' | '63' | '64';
 
 export interface GridRow {
-  kind: 'cost' | 'sales' | 'container';
+  kind: 'cost' | 'sales' | 'container' | 'tica';
   id: number;
   date: string;
   title: string;
@@ -83,6 +84,9 @@ export interface VatReturn {
   unknown: ReturnLine[];
   notReceived: ContainerLine[];
   lateCount: number;
+  /** TICA documents or sales still outside the confirmed Belgian VAT source. */
+  ticaPendingCount: number;
+  ticaSalesIncomplete: boolean;
 }
 
 const GRIDS: readonly { code: GridCode; kader: Grid['kader']; label: string }[] = [
@@ -186,7 +190,7 @@ function dayMonthYear(day: string): string {
 
 /** Places every line, document and container of the quarter in its grids and adds the form up. */
 export function vatReturn(year: number, quarter: number, lines: readonly ReturnLine[], sales: readonly SalesDocLine[], containers: readonly ContainerLine[],
-                          settings: { importVatDeferred: boolean; today: string }): VatReturn {
+                          settings: { importVatDeferred: boolean; today: string; ticaSettlements?: readonly TicaSettlement[]; ticaSales?: readonly TicaAnalyticsDay[] }): VatReturn {
   const { from, to } = quarterRange(year, quarter);
   const grids = new Map<GridCode, Grid>(GRIDS.map((grid) => [grid.code, { ...grid, eur: 0, rows: [] }]));
   const put = (code: GridCode, row: GridRow): void => { grids.get(code)!.rows.push(row); };
@@ -232,6 +236,24 @@ export function vatReturn(year: number, quarter: number, lines: readonly ReturnL
     put('54', row(badges));
   }
 
+  const tica = [...new Map((settings.ticaSettlements ?? []).map(row => [row.id, row])).values()];
+  let ticaPendingCount = 0;
+  // The verified source format is Belgian Brussels at 21%; other regimes require review rather than an assumed grid.
+  const belgian21 = (row: TicaSettlement): boolean => row.location.trim().toLocaleLowerCase('nl-BE') === 'tica - brussel'
+    && row.salesExcl >= 0 && Math.abs(Math.round(cents(row.salesExcl) * .21) - cents(row.salesVat)) <= 2;
+  const reconciled = (row: TicaSettlement): boolean => Math.abs(cents(row.reconciliationDifference)) <= 2;
+  for (const settlement of tica) {
+    if (!inQuarter(settlement.documentDate)) continue;
+    if (settlement.status === 'DRAFT' || !belgian21(settlement)) { ++ticaPendingCount; continue; }
+    if (!reconciled(settlement)) ++ticaPendingCount;
+    const row: GridRow = { kind: 'tica', id: settlement.id, date: settlement.documentDate,
+      title: `TICA-afrekening ${settlement.reference}`, sub: settlement.location, reference: settlement.reference,
+      baseEur: settlement.salesExcl, vatEur: settlement.salesVat, badges: ['bevestigde afrekening', ...(!reconciled(settlement) ? ['omzetcontrole gewijzigd · te controleren'] : [])] };
+    put('03', row); put('54', row);
+  }
+  const ticaSalesIncomplete = (settings.ticaSales ?? []).some(day => inQuarter(day.date) && cents(day.revenueExcl) !== 0
+    && !tica.some(row => row.status !== 'DRAFT' && belgian21(row) && reconciled(row) && row.periodFrom <= day.date && row.periodTo >= day.date));
+
   const notReceived: ContainerLine[] = [];
   let openClearanceCount = 0;
   for (const container of containers) {
@@ -273,13 +295,13 @@ export function vatReturn(year: number, quarter: number, lines: readonly ReturnL
   const eur = (code: GridCode): number => cents(grids.get(code)!.eur);
   const dueCents = eur('54') + eur('55') + eur('56') + eur('57') + eur('63');
   const deductibleCents = eur('59') + eur('64');
-  const ready = settings.today > to && unconfirmedCount === 0 && unknown.length === 0 && openClearanceCount === 0;
+  const ready = settings.today > to && unconfirmedCount === 0 && unknown.length === 0 && openClearanceCount === 0 && ticaPendingCount === 0 && !ticaSalesIncomplete;
   return {
     year, quarter, from, to, filingDeadline: filingDeadline(year, quarter),
     grids: [...grids.values()],
     totals: { dueEur: dueCents / 100, deductibleEur: deductibleCents / 100, payableEur: Math.max(0, dueCents - deductibleCents) / 100, refundEur: Math.max(0, deductibleCents - dueCents) / 100 },
     status: ready ? 'ready' : 'provisional',
-    unconfirmedCount, openClearanceCount, unknown, notReceived, lateCount,
+    unconfirmedCount, openClearanceCount, unknown, notReceived, lateCount, ticaPendingCount, ticaSalesIncomplete,
   };
 }
 
@@ -290,11 +312,13 @@ export function vatReturnCsv(result: VatReturn): string {
     const text = typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value;
     return /[;"\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
   };
-  const status = result.status === 'ready' ? 'KLAAR' : `VOORLOPIG · ${result.unconfirmedCount + result.unknown.length + result.openClearanceCount} te bevestigen`;
+  const status = result.status === 'ready' ? 'KLAAR' : `VOORLOPIG · ${result.unconfirmedCount + result.unknown.length + result.openClearanceCount + result.ticaPendingCount} te bevestigen`;
   const lines = [
     `${status} · btw-aangifte ${result.year} Q${result.quarter} · ${dayMonthYear(result.from)} tot ${dayMonthYear(result.to)} · indienen vóór ${dayMonthYear(result.filingDeadline)}`,
     ['Kader', 'Rooster', 'Omschrijving', 'Bedrag', 'Document', 'Datum', 'Partij', 'Referentie', 'Basis', 'Btw', 'Opmerking'].join(';'),
   ];
+  if (result.ticaSalesIncomplete) lines.push('VOORLOPIG · TICA-verkopen zonder bevestigde afrekening; btw nog onvolledig');
+  if (result.ticaPendingCount) lines.push(`VOORLOPIG · ${result.ticaPendingCount} TICA-afrekening(en) nog te controleren`);
   for (const grid of result.grids) {
     lines.push([grid.kader, grid.code, grid.label, grid.eur, null, null, null, null, null, null, null].map(cell).join(';'));
     for (const row of grid.rows) {

@@ -17,6 +17,7 @@ interface PaymentRow {
   /** The account label of the bank line, else the account name the payment was noted with. */
   account: string;
   banked: boolean;
+  offset: boolean;
   /** The bank line holding it, for "{account} · {dd/mm} · {−€} ›" (line=). */
   lineId: number | null;
   lineText: string;
@@ -44,13 +45,14 @@ interface PaymentRow {
               <span class="fin-payment__day">{{ day(row.paidOn) }}</span>
               <b>{{ row.amountEur | eur }}</b>
               <span class="fin-payment__where">
-                @if (row.banked && row.lineId !== null) { <button class="wk-link" type="button" (click)="state.openLine(row.lineId)">{{ row.lineText }} ›</button> }
+                @if (row.offset) { <button class="wk-link" type="button" (click)="state.openTicaSettlement(cost().ticaSettlementId!)">Verrekend in TICA-afrekening ›</button> }
+                @else if (row.banked && row.lineId !== null) { <button class="wk-link" type="button" (click)="state.openLine(row.lineId)">{{ row.lineText }} ›</button> }
                 @else if (row.banked) { {{ row.account }} }
                 @else { @if (row.account) { {{ row.account }} · } <span class="wk-amount--warn">nog niet op de bank</span>
                   @if (row.payment) { <button class="wk-link" type="button" (click)="search(row)">Transactie zoeken</button> } }
               </span>
-              <span class="fin-payment__bank" [class.is-off]="!row.banked" [attr.title]="row.banked ? 'Op de bank genoteerd' : 'Nog niet op de bank'"><app-icon name="bank" [size]="15" /></span>
-              <button class="fin-payment__menu" type="button" [attr.aria-label]="'Acties voor de betaling van ' + day(row.paidOn)" [disabled]="state.saving()" (click)="menu(row, $event)"><app-icon name="more" [size]="16" /></button>
+              @if (!row.offset) { <span class="fin-payment__bank" [class.is-off]="!row.banked" [attr.title]="row.banked ? 'Op de bank genoteerd' : 'Nog niet op de bank'"><app-icon name="bank" [size]="15" /></span>
+              <button class="fin-payment__menu" type="button" [attr.aria-label]="'Acties voor de betaling van ' + day(row.paidOn)" [disabled]="state.saving()" (click)="menu(row, $event)"><app-icon name="more" [size]="16" /></button> }
             </li>
           }
         </ul>
@@ -74,14 +76,14 @@ export class CostPaymentsSection {
       return payments.map((payment) => {
         const line = (payment.bankStatementLineId != null ? lines.get(payment.bankStatementLineId) : undefined)
           ?? (payment.id ? banked.get(`kostbetaling#${payment.id}`) : undefined);
-        return { key: `p${payment.id ?? payment.paidOn}`, payment, paidOn: payment.paidOn, amountEur: payment.amountEur,
+        return { key: `p${payment.id ?? payment.paidOn}`, payment, paidOn: payment.paidOn, amountEur: payment.amountEur, offset: !!payment.settlementOffset,
           account: line ? this.state.accountLabel(bankAccountKey(line.account)) : payment.account ?? '', banked: !!line, lineId: line?.id ?? null, lineText: line ? this.lineText(line) : '' };
       });
     }
     /* A cost paid before payments existed: its date is the one full payment. */
     if (!cost.paidOn) return [];
     const line = cost.id ? banked.get(`kost#${cost.id}`) : undefined;
-    return [{ key: 'legacy', payment: null, paidOn: cost.paidOn, amountEur: cashTotalOf(cost),
+    return [{ key: 'legacy', payment: null, offset: !!cost.ticaSettlementId, paidOn: cost.paidOn, amountEur: cashTotalOf(cost),
       account: line ? this.state.accountLabel(bankAccountKey(line.account)) : '', banked: !!line, lineId: line?.id ?? null, lineText: line ? this.lineText(line) : '' }];
   });
   readonly overpaid = computed(() => Math.max(0, Math.round(Math.sign(cashTotalOf(this.cost())) * (paidOf(this.cost()) - cashTotalOf(this.cost())) * 100)) / 100);
@@ -111,6 +113,7 @@ export class CostPaymentsSection {
 
   /** ⋯ on a row: onto the bank when the bank does not hold it yet; off the cost (the bank line stays). A legacy payment goes through 'Weer open zetten'. */
   menu(row: PaymentRow, event: MouseEvent): void {
+    if (row.offset) return;
     const cost = this.cost();
     const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
     const anchor = this.state.desk() ? { x: rect.left, y: rect.bottom + 6 } : null;

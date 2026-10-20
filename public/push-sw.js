@@ -1,7 +1,7 @@
 /*
  * Service worker for Enrosed push notifications.
  *
- * The backend sends {kind, title, body, url}. Beyond showing the native
+ * The backend sends {kind, title, body, url, tag?}. Beyond showing the native
  * notification, every open app window gets a message with the kind: a new
  * sale makes the app play the cash register even while you are working in it.
  */
@@ -26,7 +26,9 @@ self.addEventListener('push', (event) => {
       body,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
-      tag: kind + ':' + (kind === 'contact-inquiry' || kind === 'login-request' ? url : body.slice(0, 40)),
+      // A stable notice id replaces a retried delivery instead of stacking
+      // another system banner. Older senders retain their existing grouping.
+      tag: typeof data.tag === 'string' && data.tag.trim() ? data.tag : kind + ':' + (kind === 'contact-inquiry' || kind === 'login-request' ? url : body.slice(0, 40)),
       data: { url },
     });
   })());

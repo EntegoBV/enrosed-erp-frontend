@@ -31,6 +31,11 @@ export class OdooSyncState {
   readonly documentsError = signal('');
 
   readonly ready = computed(() => !!this.status()?.enabled && !!this.status()?.configured);
+  /** A failed scheduled attempt must never look like a successful bank import. */
+  readonly lastSuccessAt = computed(() => {
+    const status = this.status();
+    return status?.autoBankSync ? status.autoBankSync.lastSuccessAt : status?.lastSyncAt ?? null;
+  });
   readonly busy = computed(() => this.loading() || this.checking() || this.syncing());
   /** Something to look at: a failure, an incomplete import, conflicts, skipped lines, or a connection still to set up. */
   readonly attention = computed(() => {

@@ -7,6 +7,7 @@ import type {
   BankBalance, CashForecastSettings, CompanyCost, CompanyProfile, Customer, IncomingPaymentRow, PartnerAdvanceSchedule, PartnerFinancing,
   Product, PurchaseOrderForecast, PurchaseOrderView, PurchasePaymentRow, RecurringCost, SalesOrderView, Supplier,
 } from '../../core/api/models';
+import { TicaApi, TicaAnalyticsDay, TicaSettlement } from '../../core/api/tica-api';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { bankAccountKey, bankCheckpoint, canonicalBankAccount } from '../finance/bank-reconciliation';
@@ -71,6 +72,9 @@ export class CashData {
   private readonly sourcing = inject(SourcingApi);
   private readonly sales = inject(SalesApi);
   private readonly cashApi = inject(CashForecastApi);
+  private readonly ticaApi = inject(TicaApi);
+  readonly ticaSettlements = signal<TicaSettlement[]>([]);
+  readonly ticaSales = signal<TicaAnalyticsDay[]>([]);
 
   /** idle: never asked; loading: the first or a new round is under way; ready: at least one round finished. */
   readonly state = signal<'idle' | 'loading' | 'ready'>('idle');
@@ -139,10 +143,12 @@ export class CashData {
     this.generation.update((value) => value + 1);
     const failed: Record<string, true> = {};
     try {
-      const [accounts, balances, recurring, payments, company, forecasts, settings] = await Promise.allSettled([
+      const [accounts, balances, recurring, payments, company, forecasts, settings, tica, ticaSales] = await Promise.allSettled([
         this.banking.accounts(), this.finance.bankBalances(), this.finance.recurringCosts(), this.sourcing.purchasePayments(),
-        this.sales.company(), this.cashApi.forecasts(), this.cashApi.settings(),
+        this.sales.company(), this.cashApi.forecasts(), this.cashApi.settings(), this.ticaApi.settlements(), this.ticaApi.analytics(),
       ] as const);
+      if (tica.status === 'fulfilled') this.ticaSettlements.set(tica.value); else failed['TICA-afrekeningen'] = true;
+      if (ticaSales.status === 'fulfilled') this.ticaSales.set(ticaSales.value); else failed['TICA-verkopen'] = true;
       if (accounts.status === 'fulfilled') this.bankAccounts.set(accounts.value); else failed['bank'] = true;
       if (balances.status === 'fulfilled') this.balances.set(balances.value); else failed['bank'] = true;
       if (recurring.status === 'fulfilled') this.recurring.set(recurring.value); else failed['vaste kosten'] = true;
@@ -215,7 +221,7 @@ export class CashData {
     if (this.state() === 'idle' || !this.bankLoaded()) return null;
     return {
       today, bankAccounts: this.bankAccounts(), balances: this.balances(), statements: this.statements(), incomingPayments: page.incomingPayments,
-      costs: page.costs, recurring: this.recurring(), purchaseViews: page.purchases, purchasePayments: this.purchasePayments(), suppliers: page.suppliers,
+      ticaSettlements: this.ticaSettlements(), ticaSales: this.ticaSales(), costs: page.costs, recurring: this.recurring(), purchaseViews: page.purchases, purchasePayments: this.purchasePayments(), suppliers: page.suppliers,
       salesOrders: page.salesOrders, customers: page.customers, advanceSchedules: this.advanceSchedules(), company: this.company(),
       forecasts: this.forecasts(), settings: this.settings(), products: page.products, statementsFrom: this.statementsFrom(),
     };

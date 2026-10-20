@@ -26,6 +26,30 @@ export interface OdooConnectionStatus {
   lastSync: OdooBankSyncResult | null;
   companyName?: string | null;
   journalCount?: number | null;
+  autoBankSync?: {
+    enabled: boolean;
+    intervalHours: number;
+    retryMinutes: number;
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    nextRunAt: string | null;
+    lastCode: string | null;
+  };
+}
+
+interface OdooImportSchedule {
+  enabled: boolean; lastAttemptAt: string | null; lastSuccessAt: string | null; nextRunAt: string | null; lastCode: string | null;
+}
+export interface OdooTicaStatus extends OdooImportSchedule {
+  intervalHours: number; retryMinutes: number;
+  lastReport: { scanned: number; imported: number; existing: number; pending: number; complete: boolean; code: string } | null;
+  pendingCount: number; pendingReasons: Record<string, number>;
+  pendingDocuments: { moveId: number; reference: string; sourceState: string; code: string; lastSeenAt: string; settlementId: number | null }[];
+}
+export interface OdooLincStatus extends OdooImportSchedule {
+  configured: boolean;
+  lastReport: { scanned: number; registered: number; existing: number; pending: number; complete: boolean; code: string;
+    items: { documentId: number; reference: string; code: string; bankStatementLineId: number | null; companyCostId: number | null }[] } | null;
 }
 
 export type OdooDocumentDirection = 'incoming' | 'outgoing';
@@ -64,6 +88,9 @@ export interface OdooDocumentPage {
 @Injectable({ providedIn: 'root' })
 export class OdooApi {
   private readonly http = inject(HttpClient);
+
+  ticaImportStatus(): Promise<OdooTicaStatus> { return firstValueFrom(this.http.get<OdooTicaStatus>(api('/api/odoo/tica-creditnotes/status'))); }
+  lincImportStatus(): Promise<OdooLincStatus> { return firstValueFrom(this.http.get<OdooLincStatus>(api('/api/odoo/linc-costs/status'))); }
 
   status(): Promise<OdooConnectionStatus> {
     return firstValueFrom(this.http.get<OdooConnectionStatus>(api('/api/odoo/status')));

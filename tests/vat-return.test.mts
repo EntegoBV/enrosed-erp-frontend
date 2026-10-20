@@ -180,3 +180,48 @@ test('71 and 72 are never both filled; the CSV says what state the return is in'
   assert.deepEqual([mixed.unconfirmedCount, mixed.unknown.length, mixed.openClearanceCount], [1, 1, 1]);
   assert.match(vatReturnCsv(mixed), /^VOORLOPIG · 3 te bevestigen/, 'regimes and clearances add up in the header');
 });
+
+test('verified Brussels TICA settlement feeds real settlement rows in 03/54 and commission input VAT only once', () => {
+  const tica = { id: 9, status: 'OPEN', reference: '267653273', location: 'TICA - Brussel', documentDate: '2026-10-19', periodFrom: '2026-10-12', periodTo: '2026-10-18',
+    salesExcl: 344.35, salesVat: 72.31, commissionExcl: 34.44, commissionVat: 7.23, netReceivable: 374.99 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const commission = cost({ id: 99, date: '2026-10-19', amountExclEur: 34.44, amountInclEur: 41.67, costKind: 'SERVICES', ticaSettlementId: 9 });
+  const result = vatReturn(2026, 4, lines([commission]), [], [], { ...settings, today: '2027-01-01', ticaSettlements: [tica, tica] });
+  assert.deepEqual([eur(result, '03'), eur(result, '54'), eur(result, '82'), eur(result, '59')], [344.35, 72.31, 34.44, 7.23]);
+  assert.equal(result.totals.payableEur, 65.08);
+  assert.equal(rows(result, '03')[0].kind, 'tica');
+  assert.equal(rows(result, '03')[0].id, 9);
+  assert.equal(rows(result, '49').length, 0, 'self-billing settlement creditnote is not a sales reversal');
+  assert.equal(rows(result, '64').length, 0);
+  assert.equal(result.status, 'ready');
+  assert.match(vatReturnCsv(result), /TICA-afrekening 267653273/);
+  const unsupported = vatReturn(2026, 4, [], [], [], { ...settings, today: '2027-01-01', ticaSettlements: [{ ...tica, location: 'TICA - Aalsmeer' }] });
+  assert.equal(unsupported.ticaPendingCount, 1);
+  assert.equal(unsupported.status, 'provisional');
+  assert.equal(eur(unsupported, '54'), 0, 'no guessed Belgian VAT for another branch');
+});
+test('draft TICA settlements and uncovered portal sales keep the VAT return provisional', () => {
+  const tica = { id: 9, status: 'DRAFT', reference: '267653273', location: 'TICA - Brussel', documentDate: '2026-10-19', periodFrom: '2026-10-12', periodTo: '2026-10-18',
+    salesExcl: 344.35, salesVat: 72.31 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const daily = [{ date: '2026-10-17', transactionCount: 5, quantity: 7, revenueExcl: 344.35, goodsCostEur: 100, missingCostLines: 0 }];
+  const draft = vatReturn(2026, 4, [], [], [], { ...settings, today: '2027-01-01', ticaSettlements: [tica], ticaSales: daily });
+  assert.equal(draft.status, 'provisional');
+  assert.equal(draft.ticaPendingCount, 1);
+  assert.equal(draft.ticaSalesIncomplete, true);
+  assert.equal(eur(draft, '03'), 0);
+  assert.match(vatReturnCsv(draft), /TICA-verkopen zonder bevestigde afrekening/);
+  const booked = vatReturn(2026, 4, [], [], [], { ...settings, today: '2027-01-01', ticaSettlements: [{ ...tica, status: 'OPEN' }], ticaSales: daily });
+  assert.equal(booked.ticaSalesIncomplete, false);
+  assert.equal(booked.status, 'ready');
+});
+
+test('a corrected portal period leaves already booked TICA VAT immutable but requires review', () => {
+  const changed = { id: 9, status: 'OPEN', reference: '267653273', location: 'TICA - Brussel', documentDate: '2026-10-19', periodFrom: '2026-10-12', periodTo: '2026-10-18',
+    salesExcl: 344.35, salesVat: 72.31, reconciliationDifference: 15 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const daily = [{ date: '2026-10-17', transactionCount: 5, quantity: 7, revenueExcl: 359.35, goodsCostEur: 100, missingCostLines: 0 }];
+  const result = vatReturn(2026, 4, [], [], [], { ...settings, today: '2027-01-01', ticaSettlements: [changed], ticaSales: daily });
+  assert.equal(eur(result, '54'), 72.31);
+  assert.equal(result.status, 'provisional');
+  assert.equal(result.ticaPendingCount, 1);
+  assert.equal(result.ticaSalesIncomplete, true);
+  assert.ok(rows(result, '54')[0].badges.includes('omzetcontrole gewijzigd · te controleren'));
+});
