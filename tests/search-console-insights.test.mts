@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { deriveSearchConsoleInsights, searchConsolePageLink, searchInsightPriorityLabel } from '../src/app/features/analyses/search-console-insights.ts';
+import { deriveSearchConsoleInsights, searchConsolePageLink, searchInsightEvidenceLine, searchInsightPriorityLabel } from '../src/app/features/analyses/search-console-insights.ts';
 import type { GoogleAnalyticsSource, GoogleSearchData, SearchPerformance } from '../src/app/core/api/analytics-api.ts';
 
 const metrics = (clicks = 162, impressions = 2170, position = 9.5604): SearchPerformance => ({ clicks, impressions, ctr: impressions ? clicks / impressions : 0, position });
@@ -23,7 +23,8 @@ test('more clicks and a higher average position stay distinct; CTR change is per
   assert.ok(Math.abs(actual.trend!.position.delta! - 1.1213) < .000001);
   assert.equal(actual.insights.some(insight => insight.id === 'click-decline'), false);
   assert.doesNotMatch(actual.summary, /verslechter|slechter|algoritme/);
-  assert.match(actual.summary, /63,6% meer/);
+  assert.match(actual.summary, /63,6 % meer/);
+  assert.equal(actual.brandLine, null, 'no merk clause without brand queries');
 });
 
 test('only confirmed, equal, adjacent calendar periods produce a comparison', () => {
@@ -130,7 +131,8 @@ test('brand evidence is a lower bound from returned queries, not the complement 
   const actual = deriveSearchConsoleInsights(input);
   const insight = actual.insights.find(row => row.id === 'brand-discovery')!;
   assert.match(insight.evidence[0], /Minstens 110 van 162/); assert.match(insight.evidence[0], /67,9/);
-  assert.match(actual.summary, /63,6% meer/); assert.match(actual.summary, /Minstens 67,9 %/);
+  assert.match(actual.summary, /63,6 % meer/); assert.match(actual.summary, /Minstens 67,9 %/);
+  assert.equal(actual.brandLine, 'Minstens 67,9 % via merkzoektermen', 'the merk clause alone is the Klikken foot (analyses2 C.10)');
   assert.equal(actual.queryMix?.reportedQueries, 4); assert.equal(actual.queryMix?.scope, 'returned-queries');
   assert.doesNotMatch(insight.explanation, /geen groothandelsvraag|slechte doelgroep/);
 });
@@ -144,7 +146,7 @@ test('a substantial click decline is evidence to inspect, never a fabricated tec
 
 test('a confirmed drop to zero keeps the comparative warning ahead of low-volume guidance', () => {
   const actual = deriveSearchConsoleInsights({ ...source({ totals: metrics(0, 0, 0) }), status: 'NO_DATA' });
-  assert.equal(actual.trend?.clicks.percent, -100); assert.match(actual.summary, /100% minder/);
+  assert.equal(actual.trend?.clicks.percent, -100); assert.match(actual.summary, /100 % minder/);
   assert.equal(actual.insights[0].id, 'click-decline'); assert.equal(actual.lowVolume, true);
   assert.equal(actual.insights[1].id, 'low-volume');
 });
@@ -159,4 +161,25 @@ test('derivation does not mutate the input report or its row order', () => {
   const before = JSON.stringify(input);
   const freeze = (value: any): any => { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value); } return value; };
   deriveSearchConsoleInsights(freeze(input)); assert.equal(JSON.stringify(input), before);
+});
+
+test('percentages keep their space and the texts say je, never u (analyses2 D-W16, D-W17)', () => {
+  const decline = deriveSearchConsoleInsights(source({ totals: metrics(40, 1000, 7) }));
+  const text = JSON.stringify(decline);
+  assert.doesNotMatch(text, /\d%/, 'every percentage reads "20 %"');
+  assert.doesNotMatch(text, /\bu\b/, 'one form of address: je');
+  assert.match(decline.insights.find(row => row.id === 'click-decline')!.evidence[0], /\(−?-?59,6 %\)/);
+  const low = deriveSearchConsoleInsights(source({ totals: metrics(1, 20, 4), comparison: null }));
+  assert.match(low.insights[0].explanation, /voordat je hieruit/);
+});
+
+test('an aandachtspunt shows one evidence line: its figures, after the page path when it is about one page', () => {
+  const actual = deriveSearchConsoleInsights(source({ pages: [
+    { page: 'https://enrosed.com/nl/products/bowl/?email=private@example.com', ...metrics(0, 500, 5) },
+  ] }));
+  const low = actual.insights.find(row => row.id === 'low-ctr')!;
+  assert.equal(searchInsightEvidenceLine(low), '/nl/products/bowl/ · 0 klikken uit 500 vertoningen · CTR 0 % · gemiddelde positie 5.');
+  const decline = deriveSearchConsoleInsights(source({ totals: metrics(40, 1000, 7) })).insights.find(row => row.id === 'click-decline')!;
+  assert.equal(searchInsightEvidenceLine(decline), decline.evidence[0], 'without a page the first figures line');
+  assert.doesNotMatch(searchInsightEvidenceLine(low), /private@example/);
 });

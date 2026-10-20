@@ -32,7 +32,7 @@ export class AnVisitorsRow implements OnInit {
   readonly value = computed(() => { const report = this.report(); return report ? wholeNumber(report.totals.visitors) : '—'; });
   readonly line = computed(() => {
     const report = this.report();
-    if (report) return `${plural(report.funnel?.quoteSessions ?? 0, 'sessie', 'sessies')} met offerte-interesse`;
+    if (report) return `${plural(report.funnel?.quoteSessions ?? 0, 'sessie', 'sessies')} op de offertepagina`;
     return this.failed() ? 'Bezoekerscijfers niet beschikbaar' : 'Bezoekerscijfers laden…';
   });
   readonly delta = computed(() => { const report = this.report(); return report ? deltaMeta(report.totals.visitors, report.previous.visitors) : null; });
