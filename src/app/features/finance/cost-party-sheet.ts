@@ -91,12 +91,32 @@ const IBAN = /^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$/;
               }
             </select></label>
         </div>
-        @if (draft().id && !state.desk()) {
+        @if (draft().id) {
+          <div class="fin-group fin-field--wide" [class.ios-group]="!state.desk()">
+            @if (draft().aliases?.length) {
+              <div class="fin-field fin-field--wide"><span>Andere namen voor deze partij</span>
+                @for (alias of state.costPartyAliases(); track alias.party.id) {
+                  <div class="fin-hint">{{ alias.party.name }} · <button class="wk-link" type="button" [disabled]="state.saving()" (click)="state.restoreCostParty(alias)">Weer apart tonen</button></div>
+                }
+              </div>
+            } @else {
+              <label class="fin-field fin-field--wide"><span>Samenvoegen met</span>
+                <select class="select" [ngModel]="mergeTargetId()" (ngModelChange)="mergeTargetId.set($event)">
+                  <option [ngValue]="null">Kies de naam die je wilt behouden</option>
+                  @for (party of mergeTargets(); track party.id) { <option [ngValue]="party.id">{{ party.name }}</option> }
+                </select>
+                <span class="fin-hint">Gebruik dit voor twee namen van dezelfde partij. De oorspronkelijke naam blijft bewaard en kan weer apart worden getoond.</span>
+              </label>
+              <button class="btn" type="button" [disabled]="state.saving() || !mergeTargetId()" (click)="merge()">Samenvoegen</button>
+            }
+          </div>
+        }
+        @if (draft().id && !draft().aliases?.length && !state.desk()) {
           <div class="ios-group fin-field--wide"><button class="ios-cell ios-cell--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCostParty(draft())">Uit de lijst halen</button></div>
         }
       </div>
       <div foot style="display:contents">
-        @if (draft().id && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCostParty(draft())">Uit de lijst halen</button> }
+        @if (draft().id && !draft().aliases?.length && state.desk()) { <button class="btn btn--danger" type="button" [disabled]="state.saving()" (click)="state.deleteCostParty(draft())">Uit de lijst halen</button> }
         <span class="spacer"></span>
         <button class="btn btn--primary" type="button" [disabled]="state.saving() || !canSave()" (click)="save()">{{ state.saving() ? 'Bezig…' : draft().id ? 'Bewaren' : 'Toevoegen' }}</button>
       </div>
@@ -108,6 +128,8 @@ export class CostPartySheet {
   readonly draft = linkedSignal<CostParty>(() => this.state.costPartyDraft() ?? blankCostParty());
   readonly customCategory = signal(false);
   readonly customVat = signal(false);
+  readonly mergeTargetId = linkedSignal<number | null>(() => { this.state.costPartyDraft(); return null; });
+  readonly mergeTargets = computed(() => this.state.costParties().filter((party) => party.id !== this.draft().id));
 
   readonly categories = computed(() => categoryChoices([...this.state.costs().map((cost) => cost.category), ...this.state.recurring().map((row) => row.category)]));
   readonly categoryChoice = computed(() => {
@@ -194,5 +216,11 @@ export class CostPartySheet {
   save(): void {
     if (!this.canSave()) return;
     void this.state.saveCostParty(this.draft());
+  }
+
+  merge(): void {
+    const targetId = this.mergeTargetId();
+    const source = this.state.costParties().find((party) => party.id === this.draft().id);
+    if (targetId && source) this.state.mergeCostParty(source, targetId);
   }
 }

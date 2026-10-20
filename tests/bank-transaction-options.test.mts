@@ -1,8 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bankAmountsMatch, bankAmountDifference, bankTransactionAllocated, bankTransactionDay, bankTransactionOptions } from '../src/app/shared/bank-transaction-options.ts';
-import type { BankStatementLine } from '../src/app/core/api/banking-api.ts';
+import { bankAmountsMatch, bankAmountDifference, bankTransactionAllocated, bankTransactionDay, bankTransactionOptions, reconcilableBankTransactions } from '../src/app/shared/bank-transaction-options.ts';
+import type { BankAccount, BankStatementLine } from '../src/app/core/api/banking-api.ts';
 const row = (id: number, amountEur: number, extra = {}): BankStatementLine => ({ id, amountEur, account: 'BE12 1234 5678', bookedAt: '2026-10-01T22:15:00Z', timeZone: 'Europe/Brussels', reference: 'Factuur 42', counterparty: 'Enrosed klant', ...extra } as BankStatementLine);
+
+test('picker hides historical duplicates on connected accounts including aliases, but keeps real manual accounts', () => {
+  const accounts = [{ key: 'BE94731074082814', source: 'ODOO', aliases: ['KBC zichtrekening'], archived: false },
+    { key: 'OLD', source: 'MANUAL', aliases: [], archived: true }] as BankAccount[];
+  const lines = [row(1, -363, { account: 'KBC zichtrekening', source: null }),
+    row(2, -363, { account: 'BE94 7310 7408 2814', source: 'ODOO' }),
+    row(3, -363, { account: 'BE94731074082814', source: 'MANUAL' }),
+    row(4, -363, { account: 'CASH', source: 'MANUAL' }),
+    row(5, -363, { account: 'OLD', source: 'MANUAL' })];
+  assert.deepEqual(reconcilableBankTransactions(lines, accounts).map(line => line.id), [2, 4]);
+  assert.equal(lines.length, 5, 'historical rows remain intact');
+});
+
+test('imported rows identify connected accounts before registry backfill', () => {
+  const lines = [row(1, -100, { source: null }), row(2, -100, { source: 'ODOO' }), row(3, -50, { account: 'OTHER', source: 'MANUAL' })];
+  assert.deepEqual(reconcilableBankTransactions(lines, []).map(line => line.id), [2, 3]);
+});
 
 test('picker separates incoming and outgoing, sorts available exact amounts first and retains allocated context', () => {
   const rows = [row(1, 20), row(2, -20), row(3, 30), row(4, 20, { allocated: true }), row(5, 20, { salesPaymentId: 90 })];

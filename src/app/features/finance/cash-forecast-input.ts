@@ -344,6 +344,7 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
       payments: sources.purchasePayments.filter((payment) => payment.orderId === order.id).map((payment) => ({
         id: payment.id, paidOn: payment.paidOn, amountEur: finite(payment.amountEur), label: payment.label ?? '', payee: payment.payee ?? 'SUPPLIER',
         lineId: payment.bankStatementLineId ?? null, accountLabel: statementAccount(payment.bankStatementLineId), creditOffset: !!payment.creditOffset,
+        originLabel: payment.origin ? [(payment.origin.source === 'OTHER_COMPANY' ? `Betaald door ${payment.origin.payerName}` : 'Betaald via oude bankrekening'), payment.origin.note].filter(Boolean).join(' · ') : null,
       })),
       invoiceNumbers: (view.invoices ?? []).map((invoice) => invoice.number).filter(Boolean),
       inspectionViaSupplier: !!order.inspectionViaSupplier,

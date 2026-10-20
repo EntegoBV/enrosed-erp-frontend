@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normaliseParty, partyKey, rankParties } from '../src/app/features/finance/party-suggestions.ts';
+import { costPartyLookup, normaliseParty, partyKey, rankParties } from '../src/app/features/finance/party-suggestions.ts';
 import type { PartyCandidate } from '../src/app/features/finance/party-suggestions.ts';
+import type { CostParty } from '../src/app/core/api/models.ts';
 
 const candidates: PartyCandidate[] = [
   { name: 'TICA Trends & Trade', stored: true, count: 12, detail: 'Beurs & stand · 21 % · TICA' },
@@ -44,4 +45,16 @@ test('diacritics, case and extra spaces never get in the way', () => {
   assert.equal(partyKey('  DPD   Belgium '), 'dpd belgium', 'the key keeps diacritics, like the server');
   assert.equal(partyKey('Café'), 'café');
   assert.equal(partyKey(null), '');
+});
+
+test('explicit merged bank names resolve to one party without combining similar suppliers', () => {
+  const canonical: CostParty = { id: 192, name: 'LINC & PARTNERS NV', aliases: ['Linc & Partners', 'Linc  Partners Nv'],
+    category: 'BOEKHOUDER', vatPct: 21, salesChannel: null, iban: null, country: 'BE', vatNumber: null, vatRegime: 'BE' };
+  const lookup = costPartyLookup([canonical]);
+  assert.equal(lookup.get(partyKey(' linc  partners nv ')), canonical);
+  assert.equal(lookup.get(partyKey('Linc & Partners')), canonical);
+  assert.equal(lookup.get(partyKey('LINC & PARTNERS NV')), canonical);
+  assert.equal(lookup.get(partyKey('Linc Holding NV')), undefined);
+  assert.equal(costPartyLookup([{ ...canonical, aliases: [] }]).get(partyKey('Linc & Partners')), undefined,
+    'restoring a name releases it from the canonical lookup');
 });

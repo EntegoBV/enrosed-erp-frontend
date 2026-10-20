@@ -8,7 +8,7 @@ import {
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
   PartnerCreditProposal, PurchasePaymentWrite, SupplierCreditOffsetWrite, SupplierCreditUpdate, SupplierCreditWrite,
-  PurchaseInvoice, PurchaseInvoiceWrite, PaymentSplitResult, BankPartHigher, PaymentPartRequest,
+  PurchaseInvoice, PurchaseInvoiceWrite, PaymentSplitResult, BankPartHigher, PaymentPartRequest, PurchasePaymentOrigin,
 } from './models';
 import {
   PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions, purchasePdfQuery,
@@ -315,6 +315,12 @@ export class SourcingApi {
   }
 
   /** Every payment on every container from a day on: what left the bank for purchasing. */
+  setPaymentOrigin(paymentId: number, origin: PurchasePaymentOrigin | null): Promise<PurchasePaymentOrigin | null> {
+    return origin === null
+      ? firstValueFrom(this.http.delete<null>(api(`/api/purchase-payment-origins/${paymentId}`)))
+      : firstValueFrom(this.http.put<PurchasePaymentOrigin>(api(`/api/purchase-payment-origins/${paymentId}`), origin));
+  }
+
   purchasePayments(from?: string | null): Promise<PurchasePaymentRow[]> {
     let params = new HttpParams();
     if (from) params = params.set('from', from);

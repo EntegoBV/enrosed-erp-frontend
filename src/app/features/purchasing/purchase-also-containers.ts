@@ -111,7 +111,7 @@ export function alsoContainerOptions(payables: readonly ContainerPayable[], orde
   if (extra) {
     const views = new Map((extra.views ?? []).map((view) => [view.order.id, view]));
     for (const payment of extra.payments ?? []) {
-      if (payment.orderId === ownOrderId || payment.bankStatementLineId != null || payment.creditOffset || !(cents(payment.amountEur) > 0)
+      if (payment.orderId === ownOrderId || payment.bankStatementLineId != null || payment.creditOffset || payment.origin != null || !(cents(payment.amountEur) > 0)
         || (payment.payee ?? 'SUPPLIER') !== payee) continue;
       const view = views.get(payment.orderId);
       if (view?.order.archivedAt) continue;

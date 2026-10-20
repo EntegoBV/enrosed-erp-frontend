@@ -281,12 +281,12 @@ export function inspectionSplitEur(payment: { amount: number; currency: Currency
  * them together (bank-part's withPaymentIds): the inspection keeps its
  * amount, the goods take the rest, so no second inspection is booked.
  */
-export function transferCompanions<T extends { id: number; payee?: string | null; paidOn: string; amountEur: number; bankStatementLineId?: number | null }>(
+export function transferCompanions<T extends { id: number; payee?: string | null; paidOn: string; amountEur: number; bankStatementLineId?: number | null; origin?: unknown }>(
   part: { id: number; payee?: string | null; paidOn: string; bankStatementLineId?: number | null }, payments: readonly T[], skip: readonly number[] = [],
 ): T[] {
   if ((part.payee ?? 'SUPPLIER') !== 'SUPPLIER' || part.bankStatementLineId != null) return [];
   return payments.filter(payment => payment.id !== part.id && !skip.includes(payment.id) && payment.payee === 'SEPARATE'
-    && payment.bankStatementLineId == null && payment.paidOn === part.paidOn && payment.amountEur > 0);
+    && payment.bankStatementLineId == null && payment.origin == null && payment.paidOn === part.paidOn && payment.amountEur > 0);
 }
 
 /** The payment as the sheet shows it before the link. */

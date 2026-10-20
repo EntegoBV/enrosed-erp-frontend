@@ -1,3 +1,4 @@
+import { paymentOriginLabel } from '../src/app/features/purchasing/purchase-payment-origin.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -14,7 +15,7 @@ const parsed = ts.createSourceFile('container-payment-tree.ts', source, ts.Scrip
 const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed,
   parsed.statements.filter(node => !ts.isImportDeclaration(node)))), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
 const exports: Record<string, any> = {};
-vm.runInNewContext(javascript, { exports, invoiceComparison, invoiceCoverage, invoiceFileText, invoiceLine, primaryInvoice, Intl });
+vm.runInNewContext(javascript, { exports, paymentOriginLabel, invoiceComparison, invoiceCoverage, invoiceFileText, invoiceLine, primaryInvoice, Intl });
 const tree = (view: PurchaseOrderView, rows: PurchasePaymentRow[], lines: Record<number, string>): PayeeBranch[] =>
   JSON.parse(JSON.stringify(exports['containerPaymentTree'](view, rows,
     (row: PurchasePaymentRow) => row.bankStatementLineId != null ? { accountLabel: lines[row.bankStatementLineId] ?? '', day: '' } : null,
@@ -152,4 +153,16 @@ test('a payee with nothing agreed, paid or invoiced reads as one "… · geen" l
   assert.equal(empty({ ...base, paidEur: 180 }), false);
   assert.equal(empty({ ...base, invoiceFiles: [{ documentId: 1, text: 'x', name: 'x' }] }), false);
   assert.equal(empty({ ...base, payee: 'SEPARATE', viaSupplier: 'Factuur via leverancier · CI-2026-140' }), false);
+});
+
+
+test('external payments retain money and date while showing their payer instead of an unresolved bank link', () => {
+  const payment = row(901, { amountEur: 9375.69, origin: { source: 'OTHER_COMPANY', payerName: 'Entego', note: 'oude bankrekening' } });
+  const branches = tree(view(), [payment], {});
+  const supplier = branches.find(branch => branch.payee === 'SUPPLIER')!;
+  const node = [...supplier.payments, ...supplier.terms.flatMap(term => term.payments)].find(item => item.id === 901)!;
+  assert.equal(node.bank, 'Betaald door Entego · oude bankrekening');
+  assert.equal(node.amountEur, 9375.69);
+  assert.equal(node.paidOn, payment.paidOn);
+  assert.equal(node.lineId, null);
 });

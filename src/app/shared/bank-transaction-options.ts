@@ -1,4 +1,20 @@
-import type { BankStatementLine } from '../core/api/banking-api';
+import type { BankAccount, BankStatementLine } from '../core/api/banking-api';
+
+export const bankTransactionAccountKey = (value: string): string => {
+  const key = (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
+  return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
+};
+
+/** Same source rule as the bank ledger: an imported account supersedes its historical manual registrations. */
+export function reconcilableBankTransactions(rows: readonly BankStatementLine[], accounts: readonly BankAccount[]): BankStatementLine[] {
+  const registry = new Map<string, BankAccount>();
+  for (const account of accounts) for (const key of [account.key, ...(account.aliases ?? [])]) registry.set(bankTransactionAccountKey(key), account);
+  const accountOf = (row: BankStatementLine) => registry.get(bankTransactionAccountKey(row.account));
+  const canonical = (row: BankStatementLine) => bankTransactionAccountKey(accountOf(row)?.key ?? row.account);
+  const imported = new Set(accounts.filter(account => account.source === 'ODOO').map(account => bankTransactionAccountKey(account.key)));
+  for (const row of rows) if (row.source === 'ODOO') imported.add(canonical(row));
+  return rows.filter(row => !accountOf(row)?.archived && (row.source === 'ODOO' || !imported.has(canonical(row))));
+}
 
 /** Allowed reconciliation difference; compare integer cents without rewriting either amount. */
 export const BANK_MATCH_TOLERANCE_CENTS = 2;

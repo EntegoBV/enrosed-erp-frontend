@@ -1287,7 +1287,14 @@ export const PAYMENT_TERMS: { value: PaymentTerms; label: string; instalments: I
 export type Payee = 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER';
 
 /** One amount paid on a purchase order, kept as it left the bank. */
+export interface PurchasePaymentOrigin {
+  source: 'OLD_BANK_ACCOUNT' | 'OTHER_COMPANY';
+  payerName: string | null;
+  note: string | null;
+}
+
 export interface PurchasePayment {
+  origin?: PurchasePaymentOrigin | null;
   id: number;
   orderId: number;
   paidOn: string;
@@ -1399,6 +1406,7 @@ export interface SupplierCreditOffsetWrite {
 
 /** One payment on a container as the bank saw it, with the container it went to. */
 export interface PurchasePaymentRow {
+  origin?: PurchasePaymentOrigin | null;
   id: number;
   orderId: number;
   orderNumber: string | null;
@@ -2909,6 +2917,8 @@ export interface CompanyCost {
 export interface CostParty {
   id: number | null;
   name: string;
+  /** Preserved names merged into this party; used to avoid duplicate suggestions. */
+  aliases?: string[];
   category: string | null;
   vatPct: number | null;
   /** A built-in channel or a fair code. */

@@ -79,7 +79,9 @@ export interface ForecastContainerRow { key: string; orderId: number; payee: 'SU
   due: 'ORDERED' | 'SHIPPED' | 'FREIGHT' | 'ARRIVED' | null; termLabel: string | null; remainingEur: number; concept: boolean; }
 export interface ForecastOrderLine { productId: number | null; name: string; quantity: number; externalEur: number; pricingEur: number;
   listUnitEur: number | null; historicUnitEur: number | null; paceUnitsPerWeek: number; aheadUnits: number; }
-export interface ForecastOrderPayment { id: number; paidOn: Iso; amountEur: number; label: string; payee: 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER';
+export interface ForecastOrderPayment {
+  originLabel?: string | null;
+  id: number; paidOn: Iso; amountEur: number; label: string; payee: 'SUPPLIER' | 'LOGISTICS' | 'SEPARATE' | 'OTHER';
   lineId: number | null; accountLabel: string | null; creditOffset: boolean; }
 export interface ForecastOrder {
   orderId: number; number: string; alias: string | null; status: 'CONCEPT' | 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
@@ -1550,7 +1552,7 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
 
   const dated: PoFlowRow[] = [];
   for (const payment of order.payments) {
-    const status = payment.creditOffset ? 'verrekend tegoed' : payment.lineId !== null
+    const status = payment.originLabel ? payment.originLabel : payment.creditOffset ? 'verrekend tegoed' : payment.lineId !== null
       ? `● ${payment.accountLabel ?? 'op de bank'} · gekoppeld` : 'niet op de bank';
     dated.push({ date: payment.paidOn, approx: false, title: payment.label || PAYEE_LABEL[payment.payee], status, amountEur: toEur(-toCents(payment.amountEur)), kind: 'paid', lineId: payment.lineId });
   }

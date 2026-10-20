@@ -1,3 +1,5 @@
+import { PurchasePaymentOriginEditor } from './purchase-payment-origin-editor';
+import { paymentOriginLabel } from './purchase-payment-origin';
 import { bankAmountsMatch } from '../../shared/bank-transaction-options';
 import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -141,7 +143,7 @@ let nextSheetId = 0;
 @Component({
   selector: 'app-purchase-payment-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, NgTemplateOutlet, Sheet, Segmented, DateField, PurchasePaymentScope, Icon, EurPipe, BankTransactionPicker],
+  imports: [FormsModule, NgTemplateOutlet, Sheet, Segmented, DateField, PurchasePaymentScope, Icon, EurPipe, BankTransactionPicker, PurchasePaymentOriginEditor],
   template: `
     @let pay = draft();
     <app-sheet [title]="pay.id ? 'Betaling aanpassen' : 'Betaling noteren'" variant="ios" [wide]="true" (closed)="cancel.emit()">
@@ -218,6 +220,8 @@ let nextSheetId = 0;
                 } @else if (part.onBank) {
                   <li class="pay-sheet__line"><span class="pay-sheet__lineicon" aria-hidden="true"><app-icon name="bank" [size]="15" /></span>
                     <span class="pay-sheet__linecopy"><b>{{ dayShort(part.paidOn) }} · {{ part.amountEur | eur }}</b><small>Staat op de bank</small></span></li>
+                } @else if (part.payment.origin) {
+                  <li class="pay-sheet__line"><span class="pay-sheet__linecopy"><b>{{ originLabel(part.payment.origin) }}</b><small>{{ dayShort(part.paidOn) }} · {{ part.amountEur | eur }}</small></span></li>
                 } @else if (grouped()) {
                   <li class="pay-sheet__line pay-sheet__line--open">
                     <span class="pay-sheet__linecopy"><b>{{ dayShort(part.paidOn) }} · nog niet op de bank</b></span>
@@ -399,6 +403,11 @@ let nextSheetId = 0;
             <span class="hint">Een gekoppelde banktransactie is al het bewijs; een bestand is optioneel.</span>
           </section>
         }
+        @if (!creditOffset()) {
+          @for (part of parts(); track part.id) {
+            <app-purchase-payment-origin-editor [payment]="part.payment" [disabled]="busy() || !!pay.bankLinkPending || !!pay.pendingLines?.length" (changed)="originChanged.emit()" />
+          }
+        }
         @if (pay.bankLinkError) { <p class="pay-sheet__note pay-sheet__note--warn" role="alert">{{ pay.bankLinkError }}</p> }
         <div class="form-grid pay-sheet__grid" [attr.inert]="pay.bankLinkPending ? '' : null">
           @if (grouped()) {
@@ -507,6 +516,9 @@ let nextSheetId = 0;
                 </div>
               </div>
             </details>
+          }
+          @else if (inspectionOriginBlocked() && pay.payee === 'SUPPLIER') {
+            <p class="hint span-2">Inspectie afsplitsen is niet beschikbaar bij deze betaalbron.</p>
           }
           <div class="field span-2 pay-sheet__label-field">
             <label [for]="ids + '-label'">Omschrijving <span class="opt"></span></label>
@@ -778,6 +790,8 @@ export class PurchasePaymentSheet {
   readonly removeProof = output<PurchaseDocument>();
   readonly removePart = output<LedgerPart>();
   readonly openDocument = output<number>();
+  readonly originChanged = output<void>();
+  readonly originLabel = paymentOriginLabel;
 
   readonly ids = `payment-sheet-${++nextSheetId}`;
   readonly proofAccept = PROOF_ACCEPT;
@@ -1021,6 +1035,7 @@ export class PurchasePaymentSheet {
   }
   /** 'Transactie toevoegen': the picker opens for that part; picking for another part drops the other part's picks. */
   pickFor(partId: number): void {
+    if (this.parts().find(part => part.id === partId)?.payment.origin) return;
     this.picking.set(partId);
     if (this.draft().pendingPartId !== partId) this.patch.emit({ pendingPartId: partId, pendingLines: [], surplus: null, ...this.noForeignPart });
   }
@@ -1031,6 +1046,7 @@ export class PurchasePaymentSheet {
    * before goes back to the stored payment, the comparison shows what follows.
    */
   pickLine(partId: number, line: BankStatementLine | null): void {
+    if (this.parts().find(part => part.id === partId)?.payment.origin) return;
     if (!line) return;
     const pending = this.draft().pendingPartId === partId ? this.draft().pendingLines ?? [] : [];
     const lines = [...pending.filter(item => item.id !== line.id), line];
@@ -1079,10 +1095,11 @@ export class PurchasePaymentSheet {
   }
 
   /* ---- Inspectie afsplitsen: a saved goods payment to the supplier that also paid the inspection */
+  readonly inspectionOriginBlocked = computed(() => this.parts().some(part => part.payment?.origin != null));
   readonly showInspectionSplit = computed(() => {
     const pay = this.draft();
     return this.roundOnServer() && !!pay.id && pay.payee === 'SUPPLIER' && this.originalPayee() === 'SUPPLIER' && !this.creditOffset()
-      && !this.grouped() && pay.instalmentDue !== 'FREIGHT' && !this.lineHasInspection() && !pay.surplus;
+      && !this.grouped() && !this.inspectionOriginBlocked() && pay.instalmentDue !== 'FREIGHT' && !this.lineHasInspection() && !pay.surplus;
   });
   readonly splitBlocked = computed(() => inspectionSplitBlocked(this.pendingPlan()));
   readonly splitValid = computed(() => {

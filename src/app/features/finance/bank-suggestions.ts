@@ -135,7 +135,7 @@ function candidatesOf(line: BankStatementLine, input: SuggestionInput, linkedRec
     const groups = new Map<number, number>();
     for (const payment of input.purchasePayments) if (payment.groupId != null) groups.set(payment.groupId, (groups.get(payment.groupId) ?? 0) + 1);
     for (const payment of input.purchasePayments) {
-      if (payment.bankStatementLineId != null || payment.creditOffset || !(payment.amountEur > 0)) continue;
+      if (payment.bankStatementLineId != null || payment.creditOffset || payment.origin != null || !(payment.amountEur > 0)) continue;
       const order = nameOfContainer(payment.orderAlias, payment.orderNumber, payment.orderId);
       out.push({ target: { kind: 'purchase-existing', orderId: payment.orderId, paymentId: payment.id, title: `Inkoop · ${order}${payment.label ? ' · ' + payment.label : ''}`,
         amountEur: payment.amountEur, paidOn: payment.paidOn, currency: payment.currency ?? 'EUR', amount: payment.amount ?? payment.amountEur, account: null, proofCount: 0,

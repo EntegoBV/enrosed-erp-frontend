@@ -188,3 +188,13 @@ test('TICA commission offset is paid without bank cash and must never be suggest
   const transfer = line(999, -41.67, { counterparty: 'TICA', reference: '267653273' });
   assert.equal(lineSuggestions(input({ lines: [transfer], costs: [offset] })).size, 0);
 });
+
+
+test('another company or old account never proposes a second bank payment', () => {
+  const transfer = line(991, -12480, { reference: 'PO-2026-031', counterparty: 'Supplier' });
+  const paid = payment(991);
+  assert.equal(lineSuggestions(input({ lines: [transfer], purchasePayments: [paid] })).get(991)?.target.kind, 'purchase-existing');
+  for (const source of ['OTHER_COMPANY', 'OLD_BANK_ACCOUNT'] as const) {
+    assert.equal(lineSuggestions(input({ lines: [transfer], purchasePayments: [{ ...paid, origin: { source, payerName: source === 'OTHER_COMPANY' ? 'Entego' : null, note: null } }] })).has(991), false);
+  }
+});

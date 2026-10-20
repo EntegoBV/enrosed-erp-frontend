@@ -6,6 +6,13 @@ import type { OdooDocument } from './odoo-api';
 import type { BankStatementLine } from './banking-api';
 import { BankBalance, CompanyCost, CostParty, CostPayment, Fair, RecurringCost } from './models';
 
+export interface CostPartyAlias {
+  party: CostParty;
+  targetId: number;
+  mergedAt: string;
+  mergedBy: string;
+}
+
 export interface CostOdooSource {
   snapshot: { document: OdooDocument; netEur: number; vatEur: number; totalEur: number; supplierCountry: string | null };
   documents: { odooAttachmentId: number; mediaAssetId: number; name: string; kind: string }[];
@@ -113,6 +120,18 @@ export class FinanceApi {
   /* The "Aan wie" list: the server learns a name from every booking, the list edits the defaults. */
   costParties(): Promise<CostParty[]> {
     return firstValueFrom(this.http.get<CostParty[]>(api('/api/cost-parties')));
+  }
+
+  costPartyAliases(id: number): Promise<CostPartyAlias[]> {
+    return firstValueFrom(this.http.get<CostPartyAlias[]>(api(`/api/cost-parties/${id}/aliases`)));
+  }
+
+  mergeCostParty(id: number, targetId: number): Promise<CostParty> {
+    return firstValueFrom(this.http.post<CostParty>(api(`/api/cost-parties/${id}/merge`), { targetId }));
+  }
+
+  restoreCostParty(id: number): Promise<CostParty> {
+    return firstValueFrom(this.http.post<CostParty>(api(`/api/cost-parties/${id}/restore`), {}));
   }
 
   createCostParty(party: CostParty): Promise<CostParty> {

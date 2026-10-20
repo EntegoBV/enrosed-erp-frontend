@@ -1,3 +1,4 @@
+import { paymentOriginLabel } from './purchase-payment-origin';
 import type { ContextMenuItem } from '../../shared/context-menu';
 import {
   PAYEE_ICON, PAYEE_LABEL, PAYEE_ORDER, nettedCarrierDue, type LedgerCredit, type LedgerRow, type LedgerTerm, type LedgerTodo, type PayeeLedger,
@@ -201,6 +202,7 @@ export function settleWith(row: LedgerRow, terms: readonly Pick<LedgerTerm, 'due
  */
 export function bankProofLine(row: LedgerRow): string | null {
   if (row.creditOffset) return 'verrekend tegoed';
+  if (row.parts?.length && row.parts.every(part => part.payment?.origin)) return [...new Set(row.parts.map(part => paymentOriginLabel(part.payment?.origin)))].join(' · ');
   const parts = row.bank?.total ?? 1;
   const linked = row.bank?.linked ?? (row.onBank ? 1 : 0);
   let text: string | null;
@@ -218,7 +220,7 @@ export function bankProofLine(row: LedgerRow): string | null {
  * offset, or part of a payment in parts on the bank).
  */
 export function bankProofSub(row: LedgerRow): string | null {
-  return row.creditOffset || (row.bank?.linked ?? 0) > 0 || row.hasProof ? bankProofLine(row) : null;
+  return row.creditOffset || row.parts?.some(part => !!part.payment?.origin) || (row.bank?.linked ?? 0) > 0 || row.hasProof ? bankProofLine(row) : null;
 }
 
 /** Status text colour through the kit's amount classes: warn, ok (green) or muted. */

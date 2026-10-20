@@ -6,7 +6,7 @@ import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import { BankingApi, BankAccount, BankMovementRequest, BankPurchasePaymentPart, BankPurchaseSharePart, BankStatementLine } from '../../core/api/banking-api';
 import { CashForecastApi } from '../../core/api/cash-forecast-api';
-import { FinanceApi } from '../../core/api/finance-api';
+import { FinanceApi, type CostPartyAlias } from '../../core/api/finance-api';
 import { MediaApi } from '../../core/api/media-api';
 import { MediaAssetSummary } from '../../core/api/media-models';
 import {
@@ -56,7 +56,7 @@ import type { PeriodId } from './finance-sections';
 import type { FinanceMenu } from './finance-section';
 import { FinanceLocation, NO_ACCOUNT, financeQueryParams, parseFinanceLocation, patchLocation } from './finance-url';
 import { incomingMoneyTotals, invoiceReceivable, paymentLocalDay, receivableTotals, uniqueIncomingPayments } from './incoming-money';
-import { partyKey } from './party-suggestions';
+import { costPartyLookup, partyKey } from './party-suggestions';
 import type { PartyCandidate } from './party-suggestions';
 import { containerPayables, daysBetween, payableTotals, payablesFor } from './payables';
 import { containerPaymentTree, type PayeeBranch } from './container-payment-tree';
@@ -647,7 +647,7 @@ export class FinanceState {
         if (!payments.length && row.paidOn && cost.id && !cost.ticaSettlementId) {
           rows.push({ kind: 'kost' as MarkerKind, id: cost.id, paidOn: row.paidOn, amountEur: row.amountEur, linkedLineId: cost.bankStatementLineId ?? null, row, costId: cost.id });
         }
-      } else if (row.payment && row.paidOn && !row.payment.creditOffset) {
+      } else if (row.payment && row.paidOn && !row.payment.creditOffset && row.payment.origin == null) {
         // A credit offset left no bank: never 'zonder bankkoppeling', never in the attention count or the matching.
         rows.push({ kind: 'containerbetaling' as MarkerKind, id: row.payment.id, paidOn: row.paidOn, amountEur: row.amountEur,
           linkedLineId: row.payment.bankStatementLineId ?? null, row, costId: null });
@@ -802,14 +802,15 @@ export class FinanceState {
   readonly representativeName = computed(() => this.company()?.fiscalRepresentativeName?.trim() || null);
 
   /* "Aan wie": the stored list, and the names the bookings know */
-  private readonly partyByKey = computed(() => new Map(this.costParties().map((party) => [partyKey(party.name), party])));
+  private readonly partyByKey = computed(() => costPartyLookup(this.costParties()));
   /** Per name key: how often it was booked, and the defaults of the newest cost or recurring cost on it (outgoing bank lines only count). */
   private readonly partyBookings = computed(() => {
     const memory = new Map<string, PartyBooking>();
     const note = (raw: string | null | undefined, date: string, defaults: { category: string; vatPct: number | null; salesChannel: string | null } | null): void => {
-      const key = partyKey(raw);
+      const canonical = this.partyByKey().get(partyKey(raw));
+      const key = partyKey(canonical?.name ?? raw);
       if (!key) return;
-      const name = (raw ?? '').trim().replace(/\s+/g, ' ');
+      const name = canonical?.name ?? (raw ?? '').trim().replace(/\s+/g, ' ');
       const known = memory.get(key);
       if (!known) {
         memory.set(key, { name, count: 1, lastDate: date, category: defaults?.category ?? null, vatPct: defaults?.vatPct ?? null, salesChannel: defaults?.salesChannel ?? null });
@@ -839,7 +840,7 @@ export class FinanceState {
     const year = this.today().slice(0, 4);
     const map = new Map<string, PartyFigures>();
     for (const cost of this.costs()) {
-      const key = partyKey(cost.party);
+      const key = partyKey(this.costPartyFor(cost.party)?.name ?? cost.party);
       if (!key) continue;
       const row = map.get(key) ?? { count: 0, exclEur: 0, lastDate: null };
       if (cost.date.startsWith(year)) {
@@ -874,7 +875,7 @@ export class FinanceState {
   }
 
   partyFiguresFor(name: string | null | undefined): PartyFigures {
-    return this.partyFigures().get(partyKey(name)) ?? { count: 0, exclEur: 0, lastDate: null };
+    return this.partyFigures().get(partyKey(this.costPartyFor(name)?.name ?? name)) ?? { count: 0, exclEur: 0, lastDate: null };
   }
 
   /* ------------------------------------------------------- page chrome */
@@ -1993,10 +1994,60 @@ export class FinanceState {
   /* ----------------------------------------------------------- aan wie */
 
   readonly costPartyDraft = signal<CostParty | null>(null);
+  readonly costPartyAliases = signal<CostPartyAlias[]>([]);
 
   /** The party sheet: a stored name to edit, or a new one (with a name typed elsewhere, when given). */
   openCostParty(party: CostParty | null, name = ''): void {
     this.costPartyDraft.set(party ? { ...party } : blankCostParty(name));
+    this.costPartyAliases.set([]);
+    if (party?.id) void this.loadCostPartyAliases(party.id);
+  }
+
+  private async loadCostPartyAliases(id: number): Promise<void> {
+    try {
+      const aliases = await this.finance.costPartyAliases(id);
+      if (this.costPartyDraft()?.id === id) this.costPartyAliases.set(aliases);
+    } catch (failure: unknown) {
+      if (this.costPartyDraft()?.id === id) this.ui.toast(messageOf(failure, 'Andere namen laden mislukt'), 'err');
+    }
+  }
+
+  mergeCostParty(source: CostParty, targetId: number): void {
+    const target = this.costParties().find((row) => row.id === targetId);
+    if (!source.id || !target || target.id === source.id || this.saving()) return;
+    this.ui.confirm({
+      title: 'Namen samenvoegen',
+      message: `${escapeHtml(source.name)} wordt een andere naam voor ${escapeHtml(target.name)}. Facturen en betalingen blijven behouden. Je kunt de naam later weer apart tonen.`,
+      confirmLabel: 'Samenvoegen',
+    }, async () => {
+      this.saving.set(true);
+      try {
+        const saved = await this.finance.mergeCostParty(source.id!, targetId);
+        await this.reload(['parties']);
+        this.openCostParty(saved);
+        this.ui.toast(`Samengevoegd bij ${saved.name}`, 'ok');
+      } catch (failure: unknown) {
+        this.ui.toast(messageOf(failure, 'Samenvoegen mislukt'), 'err');
+      } finally {
+        this.saving.set(false);
+      }
+    });
+  }
+
+  async restoreCostParty(alias: CostPartyAlias): Promise<void> {
+    if (!alias.party.id || this.saving()) return;
+    this.saving.set(true);
+    try {
+      const restored = await this.finance.restoreCostParty(alias.party.id);
+      await this.reload(['parties']);
+      const current = this.costParties().find((row) => row.id === this.costPartyDraft()?.id);
+      if (current) this.openCostParty(current);
+      this.ui.toast(`${restored.name} staat weer apart in de lijst`, 'ok');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'Naam herstellen mislukt'), 'err');
+    } finally {
+      this.saving.set(false);
+    }
   }
 
   /** Creates or updates a name in the list; a new name renames the bookings on the old one (the server cascades). */

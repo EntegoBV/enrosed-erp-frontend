@@ -1,3 +1,4 @@
+import { paymentOriginLabel } from '../src/app/features/purchasing/purchase-payment-origin.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -48,7 +49,7 @@ function mount() {
   const input = Object.assign((initial?: unknown) => signal(initial), { required: () => signal<unknown>(undefined) });
   const outputs: Record<string, unknown[]> = {};
   vm.runInNewContext(javascript, {
-    exports, computed, signal, linkedSignal, untracked, input, nextSheetId: 0,
+    exports, computed, signal, linkedSignal, untracked, input, nextSheetId: 0, paymentOriginLabel,
     output: () => ({ emit: () => undefined }),
     inject: (token: symbol) => token === tokens.viewport ? { active: signal(true) }
       : { options: signal([{ key: 'KBC', label: 'KBC' }]), loading: signal(false), load: async () => undefined },
@@ -79,6 +80,23 @@ const part = (payment: any, proofs: any[] = []) => ({ id: payment.id, payment, p
   amountEur: payment.amountEur, bankStatementLineId: payment.bankStatementLineId ?? null, onBank: payment.bankStatementLineId != null, proofs });
 const draft = (payment: any, values: any = {}) => ({ id: payment.id, amount: payment.amount, amountInput: String(payment.amount), currency: payment.currency,
   paidOn: payment.paidOn, label: payment.label, payee: payment.payee, files: [], settles: false, instalmentDue: payment.instalmentDue, groupIds: [payment.id], ...values });
+
+test('inspection split is unavailable for other companies and old bank accounts until the origin is cleared', () => {
+  const { sheet } = mount();
+  const unlinked = { ...goods, bankStatementLineId: null };
+  sheet.draft.set(draft(unlinked));
+  sheet.originalPayee.set('SUPPLIER');
+  sheet.parts.set([part(unlinked)]);
+  assert.equal(sheet.showInspectionSplit(), true);
+  for (const source of ['OTHER_COMPANY', 'OLD_BANK_ACCOUNT']) {
+    sheet.parts.set([part({ ...unlinked, origin: { source, payerName: 'Entego' } })]);
+    assert.equal(sheet.showInspectionSplit(), false);
+    assert.equal(sheet.inspectionOriginBlocked(), true);
+  }
+  sheet.parts.set([part(unlinked)]);
+  assert.equal(sheet.showInspectionSplit(), true);
+  assert.match(template, /Inspectie afsplitsen is niet beschikbaar bij deze betaalbron/);
+});
 
 test('Betaalbewijs lists the bank transaction first, then every file, and counts only what it lists', () => {
   const { sheet } = mount();

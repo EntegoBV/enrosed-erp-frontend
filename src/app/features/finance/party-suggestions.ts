@@ -1,3 +1,5 @@
+import type { CostParty } from '../../core/api/models';
+
 /*
  * The "Aan wie" suggestions: who to offer while a name is being typed, in
  * which order. Shared by the cost, recurring and bank movement forms. No
@@ -18,6 +20,16 @@ export interface PartyCandidate {
 /** The server's name key: lower-cased, trimmed, inner whitespace collapsed; diacritics stay. */
 export function partyKey(name: string | null | undefined): string {
   return (name ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Only explicit server merges combine names; similar suppliers remain separate. */
+export function costPartyLookup(parties: readonly CostParty[]): Map<string, CostParty> {
+  const lookup = new Map<string, CostParty>();
+  for (const party of parties) {
+    lookup.set(partyKey(party.name), party);
+    for (const alias of party.aliases ?? []) lookup.set(partyKey(alias), party);
+  }
+  return lookup;
 }
 
 /** The matching form of a name: lower-cased, diacritics stripped, spaces collapsed. "Café Ede" matches "cafe ede". */

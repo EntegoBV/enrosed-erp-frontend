@@ -1,3 +1,4 @@
+import { paymentOriginLabel } from '../purchasing/purchase-payment-origin';
 import type {
   Instalment, Payee, PurchaseInvoice, PurchaseOrderView, PurchasePaymentRow, PurchaseReconciliationStream,
 } from '../../core/api/models';
@@ -93,6 +94,7 @@ export function containerPaymentTree(
   const flag = !!view.order.inspectionViaSupplier;
   const bankOf = (row: PurchasePaymentRow): string => {
     if (row.creditOffset) return 'verrekend tegoed';
+    if (row.origin) return paymentOriginLabel(row.origin)!;
     const found = line(row);
     if (!found) return 'niet op de bank';
     const shared = payeeOf(row) === 'SEPARATE' && row.bankStatementLineId != null

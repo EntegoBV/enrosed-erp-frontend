@@ -1,3 +1,4 @@
+import { paymentOriginLabel } from '../src/app/features/purchasing/purchase-payment-origin.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -16,7 +17,7 @@ const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.up
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 const menus: Record<string, any> = {};
-vm.runInNewContext(javascript, { exports: menus, PAYEE_LABEL, PAYEE_ORDER, PAYEE_ICON, nettedCarrierDue, Intl });
+vm.runInNewContext(javascript, { exports: menus, paymentOriginLabel, PAYEE_LABEL, PAYEE_ORDER, PAYEE_ICON, nettedCarrierDue, Intl });
 const ids = (items: { id: string }[]) => Array.from(items, item => item.id);
 
 function doc(id: number, name: string): PurchaseDocument {
@@ -104,4 +105,13 @@ test('a bridge amount carries its sign in front of the euro: − € 0,01, never
   assert.equal(plain(menus['signedEur'](1234.5)), '€ 1.234,50');
   assert.equal(plain(menus['signedEur'](-0.001)), '€ 0,00', 'less than a cent is no amount');
   assert.equal(plain(menus['signedEur'](Number.NaN)), '€ 0,00');
+});
+
+
+test('external origin is visible without pretending there is a bank link or uploaded proof', () => {
+  const item = row({ parts: [{ id: 1, payment: { origin: { source: 'OTHER_COMPANY', payerName: 'Entego', note: 'oude bankrekening' } }, bankStatementLineId: null }] as any });
+  assert.equal(menus['bankProofLine'](item), 'Betaald door Entego · oude bankrekening');
+  assert.equal(menus['bankProofSub'](item), 'Betaald door Entego · oude bankrekening');
+  assert.equal(item.proven, false);
+  assert.equal(menus['transferAddable'](item), false);
 });

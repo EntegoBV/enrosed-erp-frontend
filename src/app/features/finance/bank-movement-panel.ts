@@ -657,7 +657,7 @@ export class BankMovementPanel {
     for (const payment of this.state.payments()) if (payment.groupId != null) groups.set(payment.groupId, (groups.get(payment.groupId) ?? 0) + 1);
     for (const payment of this.state.payments()) {
       // A credit offset left no bank: it is never offered for a bank line.
-      if (payment.bankStatementLineId != null || payment.creditOffset || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
+      if (payment.bankStatementLineId != null || payment.creditOffset || payment.origin != null || !(payment.amountEur > 0) || (this.selected()?.amountEur ?? -1) > 0) continue;
       const parts = payment.groupId != null ? groups.get(payment.groupId) ?? 0 : 0;
       // The PO number under an alias only: a title that is the number does not say it twice.
       result.push({ ownerId: payment.orderId, key: 'purchase:' + payment.id, kind: 'purchase', id: payment.id, title: payment.orderAlias || payment.orderNumber || 'Container',

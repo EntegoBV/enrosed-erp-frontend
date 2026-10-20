@@ -1,17 +1,11 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
-import { BankingApi, type BankStatementLine } from '../core/api/banking-api';
+import { BankingApi, type BankAccount, type BankStatementLine } from '../core/api/banking-api';
 import { messageOf } from '../core/api/errors';
 import { bankTransactionAllocated, bankTransactionDay, bankTransactionOptions, type BankDirection } from './bank-transaction-options';
-import { bankAmountDifference } from './bank-transaction-options';
+import { bankAmountDifference, bankTransactionAccountKey as accountKey, reconcilableBankTransactions } from './bank-transaction-options';
 import { bankTextOf, type BankText } from '../features/finance/bank-text';
 import { EurPipe } from './pipes';
 import { Skeleton } from './skeleton';
-
-/** An account key as the ledger merges it: an IBAN without spaces, else the upper-cased name. */
-const accountKey = (value: string): string => {
-  const key = (value ?? '').trim().replace(/\s+/g, ' ').toUpperCase();
-  return /^[A-Z]{2}[0-9]{2}[A-Z0-9 ]{11,34}$/.test(key) ? key.replace(/ /g, '') : key;
-};
 
 /** Inline in payment sheets: no nested modal or fixed-position container. */
 @Component({
@@ -80,9 +74,10 @@ export class BankTransactionPicker implements OnInit {
   readonly filterDirection = signal<BankDirection>('ANY');
   /** Account labels by key and by alias: the picker names the account as Kosten & bank does, never its raw key. */
   private readonly labels = signal<ReadonlyMap<string, string>>(new Map());
+  private readonly accounts = signal<readonly BankAccount[]>([]);
   readonly matches = computed(() => {
     const excluded = new Set(this.exclude());
-    return bankTransactionOptions(this.rows().filter(row => !excluded.has(row.id)), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact());
+    return bankTransactionOptions(reconcilableBankTransactions(this.rows(), this.accounts()).filter(row => !excluded.has(row.id)), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact());
   });
   ngOnInit(): void { if (this.startOpen()) { this.expanded.set(true); void this.load(); } }
   readonly allocated = bankTransactionAllocated;
@@ -96,12 +91,14 @@ export class BankTransactionPicker implements OnInit {
   async load(): Promise<void> {
     if (this.loading()) return;
     this.loading.set(true); this.error.set('');
-    void this.api.accounts().then((accounts) => {
+    try {
+      const [accounts, rows] = await Promise.all([this.api.accounts(), this.api.list()]);
       const labels = new Map<string, string>();
       for (const account of accounts) for (const key of [account.key, ...(account.aliases ?? [])]) labels.set(accountKey(key), account.label);
       this.labels.set(labels);
-    }).catch(() => { /* the raw key stays readable */ });
-    try { this.rows.set(await this.api.list()); }
+      this.accounts.set(accounts);
+      this.rows.set(rows);
+    }
     catch (failure) { this.error.set(messageOf(failure, 'Banktransacties laden mislukt.')); }
     finally { this.loading.set(false); }
   }
