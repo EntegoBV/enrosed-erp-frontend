@@ -376,7 +376,10 @@
   /* "Interne overboeking" is wider than the 112 px column: the chip takes two lines rather than cutting the word. */
   .fin-tx__status .wk-pill { height: auto; min-height: 20px; padding-block: 2px; line-height: 1.2; white-space: normal; }
   .fin-tx-foot { padding: 10px 16px 12px; border-top: 1px solid var(--line); }
-  .bank-searched { margin: 0 0 10px; }
+  .bank-searched { min-width: 0; margin: 0 0 10px;
+    .wk-chip { max-width: 100%; height: auto; min-height: 28px; padding-block: 6px; align-items: flex-start; border-radius: 14px; line-height: 1.4; white-space: normal; }
+    .bank-searched__text { min-width: 0; overflow-wrap: anywhere; }
+    .wk-chip__x { flex: none; margin-top: 1px; } }
 
   @container wk-pane (max-width: 1023.98px) {
     .fin-geld { grid-template-columns: repeat(2, minmax(0, 1fr)); .fin-geld__cell:nth-child(3) { border-left: 0; } .fin-geld__cell:nth-child(n + 3) { border-top: 1px solid var(--line); } }

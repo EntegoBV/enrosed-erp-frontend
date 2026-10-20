@@ -73,7 +73,7 @@ interface Koppeling { text: string; sub: string | null; reasons: string[]; open:
     @if (error() && !selected()) { <p class="fin-error" role="alert">{{ error() }}</p> }
     @if (!compact()) {
       @if (state.searchedFrom(); as from) {
-        <div class="bank-searched"><span class="wk-chip is-on">Gezocht vanuit: {{ from }}<button class="wk-chip__x" type="button" aria-label="Zoekopdracht wissen" (click)="clearSearched()"><app-icon name="close" [size]="11" /></button></span></div>
+        <div class="bank-searched"><span class="wk-chip is-on"><span class="bank-searched__text">Gezocht vanuit: {{ from }}</span><button class="wk-chip__x" type="button" aria-label="Zoekopdracht wissen" (click)="clearSearched()"><app-icon name="close" [size]="11" /></button></span></div>
       }
     }
     @if (state.desk()) {

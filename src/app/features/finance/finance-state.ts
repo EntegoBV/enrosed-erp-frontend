@@ -2539,7 +2539,7 @@ export class FinanceState {
   searchTransaction(payment: { amountEur: number; paidOn: string; party?: string | null; description?: string | null; account?: string | null; incoming?: boolean }): void {
     const amount = Math.abs(round2(payment.amountEur)).toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const account = payment.account ? this.canonicalAccount(payment.account) : '';
-    this.searchedFrom.set([payment.party, payment.description].filter(Boolean).join(' · ') || null);
+    this.searchedFrom.set([payment.description, payment.party].filter(Boolean).join(' · ') || null);
     this.searchedQuery = amount;
     this.unbankedOpen.set(false);
     this.go({ view: 'bank', tab: 'movements', dir: payment.incoming ? 'in' : 'out', link: '', q: amount,
