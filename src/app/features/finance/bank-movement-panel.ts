@@ -30,6 +30,7 @@ import { amountInputText, parsePurchasePaymentAmount } from '../purchasing/purch
 import { inspectionRestOffered, invoiceFileText, invoiceLine, invoiceTermsLine, paymentRoundOnServer } from '../purchasing/purchase-invoices';
 import { splitTransfer } from '../purchasing/purchase-transfer-split';
 import { feeFits, feePaymentPart, goodsAfterFee } from './transaction-fees';
+import type { FeeCard } from './transaction-fees';
 import {
   adjustConsequence, carveForeignText, carveText, foreignLinkWarning, linkChange, linkNotice, pendingLinkPlan, surplusQuestion, transferCompanions,
   type BankPartSurplus, type ForeignLink, type LinkChangeRow,
@@ -602,7 +603,7 @@ export class BankMovementPanel {
   }
   reuseLocalSales(match: BankMatch): void { if (!this.busy()) { this.chooseMatch(match); this.allocationMode.set('sales'); this.allocationStep.set('payments'); } }
   /**
-   * "Zelf opladen…" (Factuur of uitgave, outgoing only; outside Peppol): the
+   * "Factuur of bon zelf opladen" (Factuur of uitgave, outgoing only; outside Peppol): the
    * file dialog at once, then the own registration of this transaction (the
    * cost sheet with the files queued, the atomic cost-registration). The
    * detail stays open behind it, so a cancelled sheet leaves it as it was.
@@ -815,6 +816,10 @@ export class BankMovementPanel {
   containerSplitOffered(): boolean { return false; }
   /** Opens the split with this payment's container ticked on this payment (the transaction detail overrides it). */
   openContainerSplit(_payment: { id: number; ownerId: number }): void { /* no split here */ }
+  /** "Transactiekosten" at the top of 'Factuur of uitgave': only the transaction detail has it. */
+  feeCard(): FeeCard | null { return null; }
+  /** Its actions open Boeken als on Bankkosten (the transaction detail overrides it). */
+  openFeeBooking(_where: 'COMPANY' | 'CONTAINER', _orderId: number | null): void { /* no card here */ }
   async linkOutgoing(): Promise<void> {
     if (!this.canLinkOutgoing()) return;
     const line = this.selected()!, rows = this.chosenOutgoing();

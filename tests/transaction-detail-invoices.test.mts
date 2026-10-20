@@ -181,7 +181,7 @@ test("'Aanpassen' on an invoice with data opens the sheet on that invoice and sa
   assert.match(template, /@if \(invoice\.edit; as edit\) \{ <button class="wk-link" type="button" \[disabled\]="invoiceBusy\(\)" \(click\)="editInvoice\(edit\)">Aanpassen<\/button> \}/);
 });
 
-test('templates: the Factuur blocks with their actions and the hosted sheet; "Zelf opladen…" on the first tab, the third tab Peppol / Odoo only', async () => {
+test('templates: the Factuur blocks with their actions and the hosted sheet; "Factuur of bon zelf opladen" on the first tab, the third tab Peppol / Odoo only', async () => {
   const factuur = source.slice(source.indexOf('@if (invoiceBlocks().length) {'), source.indexOf("@if (linkedOrder(); as view) {"));
   assert.match(factuur, /@for \(block of invoiceBlocks\(\); track block\.key\)/);
   assert.match(factuur, /\(click\)="openInvoiceFile\(invoice\)">Bestand ↗<\/button>/);
@@ -193,7 +193,9 @@ test('templates: the Factuur blocks with their actions and the hosted sheet; "Ze
   const steps = await read('../src/app/features/finance/bank-allocation-steps.ts');
   const documents = steps.slice(steps.indexOf("@if (p.allocationStep() === 'documents' || only() === 'preview') {"), steps.indexOf('<label class="bank-alloc-search"><span>Zoek in ENROSED</span>'));
   assert.match(documents, /@if \(row\.amountEur < 0\) \{/, 'outgoing lines only');
-  assert.match(documents, /<b>Zelf opladen<\/b><p>Factuur of bon, buiten Peppol<\/p><\/div><button [^>]*\(click\)="p\.uploadOwnInvoice\(\)">Zelf opladen…<\/button>/);
+  // 2026-10-20: the title said 'Zelf opladen' and so did its button.
+  assert.match(documents, /<b>Factuur of bon zelf opladen<\/b><p>Buiten Peppol, als pdf of foto<\/p><\/div><button [^>]*\(click\)="p\.uploadOwnInvoice\(\)">Opladen…<\/button>/);
+  assert.equal(documents.includes('Zelf opladen'), false);
   assert.match(steps, /\(click\)="p\.setAllocationStep\('new'\)">Peppol \/ Odoo<\/button>\n\s*<\/div>/);
   for (const gone of ['Nog te registreren', 'Uitgave registreren', 'Factuur of bon zelf registreren', 'newCostFromBank']) assert.equal(steps.includes(gone), false, gone);
 });

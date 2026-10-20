@@ -11,7 +11,8 @@ import type { ContainerPayable } from './payables';
  * the amount, the PO / invoice / cost reference in the bank text, the name,
  * whether it is still open and how close an existing payment's day is; a
  * small charge next to a supplier transfer as that container's
- * Transactiekosten (2026-10-19), and Boeken als' container choice. The
+ * Transactiekosten (2026-10-19; its own transfer first, pairedTransfer,
+ * 2026-10-20), and Boeken als' container choice. The
  * status chip of each line (Gekoppeld, Geboekt als, Suggestie, Te koppelen),
  * the "{k} exacte suggesties koppelen" set, the search of Transacties and its
  * In · Uit line. Pure, only type imports (the caller hands in
@@ -210,6 +211,57 @@ export function feeText(line: Pick<BankStatementLine, 'counterparty' | 'referenc
   return FEE_WORDS.test(normal(`${line.counterparty ?? ''} ${line.reference ?? ''}`));
 }
 
+/** KBC's own words on the charge of a foreign transfer: 'Aanrekening kosten Buitenlandse overschrijving Referentie … Zie bijlage' (never 'Aanrekening beheerskosten'). */
+const FOREIGN_FEE_WORDS = /\baanrekening\s+kosten\b|\b(buitenlandse|internationale)\s+overschrijving\b/;
+
+/**
+ * A small outgoing line that reads as a bank's charge (the charge words, or
+ * KBC's 'Aanrekening kosten' / 'Buitenlandse overschrijving'): a transfer's
+ * Transactiekosten. The transfer itself ('Internationale overschrijving',
+ * thousands of euro) never is one.
+ */
+export function feeLike(line: Pick<BankStatementLine, 'amountEur' | 'counterparty' | 'reference'>): boolean {
+  if (!(line.amountEur < 0) || Math.abs(cents(line.amountEur)) > FEE_MAX_EUR * 100) return false;
+  return feeText(line) || FOREIGN_FEE_WORDS.test(normal(`${line.counterparty ?? ''} ${line.reference ?? ''}`));
+}
+
+/**
+ * The transfer a charge belongs to (live KBC data via Odoo: each foreign
+ * transfer is followed the same day by its own fee line with the next id,
+ * 65 '… Internationale overschrijving …' − € 11.565,11 and 64 'Aanrekening
+ * kosten …' − € 38,01, no shared reference): an outgoing line of the same
+ * account, not a charge itself, larger, booked within three days. The same
+ * day first, then the nearest id (on a tie the higher one: the transfer
+ * comes before its fee), then the nearest day. Null for a line that is no
+ * charge, or with none.
+ */
+export function pairedTransfer(fee: BankStatementLine, lines: readonly BankStatementLine[],
+  dayOf: (line: BankStatementLine) => string = (line) => line.bookedAt.slice(0, 10), account: (key: string) => string = (key) => key): BankStatementLine | null {
+  if (!feeLike(fee)) return null;
+  const day = dayOf(fee), own = account(fee.account), size = Math.abs(cents(fee.amountEur));
+  const rows = lines.filter((other) => other.id !== fee.id && other.amountEur < 0 && Math.abs(cents(other.amountEur)) > size && account(other.account) === own
+    && other.classification !== 'INTERNAL_TRANSFER' && !feeLike(other))
+    .map((other) => ({ other, gap: Math.abs(days(day, dayOf(other))), apart: Math.abs(other.id - fee.id) }))
+    .filter((row) => row.gap <= 3)
+    .sort((a, b) => Number(a.gap > 0) - Number(b.gap > 0) || a.apart - b.apart || Number(b.other.id > fee.id) - Number(a.other.id > fee.id) || a.gap - b.gap);
+  return rows[0]?.other ?? null;
+}
+
+/** The containers a bank line pays, the largest part first (several on a split transfer). */
+export function linkedContainers(lineId: number, payments: readonly PurchasePaymentRow[]): number[] {
+  const sums = new Map<number, number>();
+  for (const payment of payments) if (payment.bankStatementLineId === lineId && !payment.creditOffset) sums.set(payment.orderId, (sums.get(payment.orderId) ?? 0) + cents(payment.amountEur));
+  return [...sums.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([orderId]) => orderId);
+}
+
+/** The containers an unlinked line's best match and its other candidates point at, best first. */
+export function suggestedContainers(suggestion: Pick<LineSuggestion, 'target' | 'others'> | undefined): number[] {
+  if (!suggestion) return [];
+  const ids = [suggestion.target, ...suggestion.others.map((other) => other.target)]
+    .map((target) => target.kind === 'purchase-existing' || target.kind === 'term-new' || target.kind === 'container-fee' ? target.orderId : null);
+  return [...new Set(ids.filter((id): id is number => id !== null))];
+}
+
 /**
  * The supplier transfers near a line: the containers whose supplier payment
  * sits on another bank line of the same account within `withinDays`,
@@ -232,18 +284,22 @@ function nearSupplierTransfers(line: BankStatementLine, lines: readonly BankStat
 }
 
 /**
- * A small outgoing line whose text says charge, within three days of a
- * supplier transfer on the same account: that container's Transactiekosten
- * (the nearest transfer). Null otherwise.
+ * A charge (feeLike) on a container: the container of its own transfer
+ * (pairedTransfer, once that one is linked; the largest part of a split),
+ * else the nearest supplier transfer on the same account within three days.
+ * Null otherwise.
  */
-function containerFee(line: BankStatementLine, input: SuggestionInput, day: (line: BankStatementLine) => string): ContainerFee | null {
-  if (line.amountEur >= 0 || Math.abs(cents(line.amountEur)) > FEE_MAX_EUR * 100 || !feeText(line)) return null;
-  const near = nearSupplierTransfers(line, input.lines, input.purchasePayments, day, input.accountKey ?? ((key) => key), 3)[0];
-  if (!near) return null;
-  const payment = input.purchasePayments.find((row) => row.orderId === near.orderId);
-  const supplier = input.supplierOf?.(near.orderId) ?? '';
-  return { kind: 'container-fee', orderId: near.orderId,
-    label: `Transactiekosten · ${nameOfContainer(payment?.orderAlias, payment?.orderNumber, near.orderId)}${supplier ? ` (${supplier})` : ''}` };
+function containerFee(line: BankStatementLine, input: SuggestionInput, day: (line: BankStatementLine) => string): { fee: ContainerFee; reasons: string[] } | null {
+  if (!feeLike(line)) return null;
+  const account = input.accountKey ?? ((key: string) => key);
+  const transfer = pairedTransfer(line, input.lines, day, account);
+  const paired = transfer ? linkedContainers(transfer.id, input.purchasePayments)[0] : undefined;
+  const orderId = paired ?? nearSupplierTransfers(line, input.lines, input.purchasePayments, day, account, 3)[0]?.orderId;
+  if (orderId === undefined) return null;
+  const payment = input.purchasePayments.find((row) => row.orderId === orderId);
+  const supplier = input.supplierOf?.(orderId) ?? '';
+  return { fee: { kind: 'container-fee', orderId, label: `Transactiekosten · ${nameOfContainer(payment?.orderAlias, payment?.orderNumber, orderId)}${supplier ? ` (${supplier})` : ''}` },
+    reasons: ['kosten in mededeling', paired !== undefined ? 'bij de overschrijving' : 'naast betaling leverancier'] };
 }
 
 /**
@@ -272,7 +328,7 @@ export function lineSuggestions(input: SuggestionInput): Map<number, LineSuggest
     const pattern = costPattern(line, input, day, byId);
     if (pattern) { result.set(line.id, { lineId: line.id, target: pattern, score: SUGGESTED_SCORE, reasons: ['zoals vorige keren'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) }); continue; }
     const fee = containerFee(line, input, (row) => input.lineDay ? input.lineDay(row) : row.bookedAt.slice(0, 10));
-    if (fee) result.set(line.id, { lineId: line.id, target: fee, score: SUGGESTED_SCORE, reasons: ['kosten in mededeling', 'naast betaling leverancier'], amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) });
+    if (fee) result.set(line.id, { lineId: line.id, target: fee.fee, score: SUGGESTED_SCORE, reasons: fee.reasons, amountMatches: false, exact: false, changesAmount: false, others: ranked.slice(0, 3) });
   }
   return result;
 }
@@ -346,14 +402,16 @@ export interface FeeContainer { orderId: number; number: string; alias: string |
 export interface RankedFeeContainer extends FeeContainer { near: string | null; party: boolean; }
 
 /**
- * "Bij een container…" under Bankkosten: the containers whose supplier
- * payment sits on a bank line of the same account within five days of this
- * line come first (nearest first), then those of the same counterparty (a
- * line with it paid the container, or the bank text names the supplier),
- * then the rest by PO number, newest first.
+ * "Bij een container…" under Bankkosten: `first` (the containers of this
+ * charge's own transfer, from the detail's Transactiekosten card) leads,
+ * then the containers whose supplier payment sits on a bank line of the
+ * same account within five days of this line (nearest first), then those of
+ * the same counterparty (a line with it paid the container, or the bank
+ * text names the supplier), then the rest by PO number, newest first.
  */
 export function feeContainers(line: BankStatementLine, containers: readonly FeeContainer[], lines: readonly BankStatementLine[], payments: readonly PurchasePaymentRow[],
-  dayOf: (line: BankStatementLine) => string, account: (key: string) => string = (key) => key): RankedFeeContainer[] {
+  dayOf: (line: BankStatementLine) => string, account: (key: string) => string = (key) => key, first: readonly number[] = []): RankedFeeContainer[] {
+  const lead = (orderId: number): number => { const index = first.indexOf(orderId); return index < 0 ? Infinity : index; };
   const near = new Map(nearSupplierTransfers(line, lines, payments, dayOf, account, 5).map((row, index) => [row.orderId, { ...row, index }]));
   const party = compact(line.counterparty);
   const text = compact(`${line.counterparty ?? ''} ${line.reference ?? ''}`);
@@ -366,8 +424,9 @@ export function feeContainers(line: BankStatementLine, containers: readonly FeeC
   return containers.map((container) => {
     const close = near.get(container.orderId);
     const supplier = compact(container.supplier);
-    return { ...container, near: close ? gapText(close.days) : null, party: sameParty.has(container.orderId) || (supplier.length > 3 && text.includes(supplier)) };
-  }).sort((a, b) => (near.get(a.orderId)?.index ?? Infinity) - (near.get(b.orderId)?.index ?? Infinity) || Number(b.party) - Number(a.party)
+    return { ...container, near: first.includes(container.orderId) ? 'bij de overschrijving' : close ? gapText(close.days) : null,
+      party: sameParty.has(container.orderId) || (supplier.length > 3 && text.includes(supplier)) };
+  }).sort((a, b) => lead(a.orderId) - lead(b.orderId) || (near.get(a.orderId)?.index ?? Infinity) - (near.get(b.orderId)?.index ?? Infinity) || Number(b.party) - Number(a.party)
     || b.number.localeCompare(a.number, 'nl', { numeric: true }));
 }
 

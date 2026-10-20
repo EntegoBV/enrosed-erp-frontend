@@ -721,7 +721,7 @@ test('purchase EUR entry permits two cents but rejects three and local cost hand
   await panel.openAllocation(bank); panel.chooseLocalDocument(panel.localDocuments()[0]);
   panel.purchaseAmountInput.set('99,98'); assert.equal(panel.canLinkLocal(), true); assert.equal(panel.localPreview()!.differenceEur, -0.02);
   panel.purchaseAmountInput.set('99,97'); assert.equal(panel.canLinkLocal(), false);
-  // "Zelf opladen…" (2026-10-19): the file dialog first, then the own registration with the files queued; the detail stays open behind it.
+  // "Factuur of bon zelf opladen" (2026-10-19): the file dialog first, then the own registration with the files queued; the detail stays open behind it.
   const photo = { name: 'bon.jpg' };
   let handedOff: any = null; (state as any).pickFiles = async () => [photo]; (state as any).openCostFromBank = (line: any, prefill: any, files: any) => { handedOff = { line, prefill, files }; };
   await panel.uploadOwnInvoice(); assert.equal(handedOff.line, bank); assert.deepEqual([Object.keys(handedOff.prefill), handedOff.files], [[], [photo]]); assert.equal(panel.selected(), bank);

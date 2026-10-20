@@ -14,6 +14,16 @@ import type { Currency } from '../../core/api/models';
 
 export const FEE_LABEL = 'Transactiekosten';
 
+/**
+ * The detail's "Transactiekosten" card on an open charge (2026-10-20): the
+ * line about its transfer, "Bij {container} boeken" when that transfer pays
+ * one container, else "Container kiezen…" with `first` (the transfer's
+ * containers, or those its best match points at) leading the picker.
+ */
+export interface FeeCard { text: string; book: { orderId: number; label: string } | null; first: readonly number[]; }
+/** Boeken als opened on Bankkosten by that card: Algemene bankkost, or at a container (chosen, or `first` leading). The sheet takes it once. */
+export interface BookAsFee { lineId: number; where: 'COMPANY' | 'CONTAINER'; orderId: number | null; first: readonly number[]; }
+
 const cents = (value: number): number => Math.round(value * 100);
 
 /** The fee as a part of POST …/purchase-payment: a line of its own, or beside the goods of a new term. */

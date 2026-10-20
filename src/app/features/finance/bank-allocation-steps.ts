@@ -11,8 +11,9 @@ import { dayMonthYear, signedEur } from './finance-format';
  * terms in ENROSED, with the full preview of the old allocation sheet), "Al
  * genoteerd" (payments noted in Inkoop or Kosten without a bank line; shown
  * only with something in it, 2026-10-19) and "Peppol / Odoo" (received
- * invoices). An own invoice or receipt outside Peppol is "Zelf opladen…" on
- * the first tab (2026-10-19). The state machine is the detail's own (it is a
+ * invoices). An own invoice or receipt outside Peppol is "Factuur of bon zelf
+ * opladen" on the first tab (2026-10-19), under the detail's Transactiekosten
+ * card on a charge (2026-10-20). The state machine is the detail's own (it is a
  * BankMovementPanel); `only="preview"` shows just the chosen document's
  * preview (the "Details" of a best match).
  */
@@ -40,8 +41,17 @@ import { dayMonthYear, signedEur } from './finance-format';
           @if (p.allocationStep() === 'documents' || only() === 'preview') {
             @if (!p.localDocument() && only() !== 'preview') {
             @if (row.amountEur < 0) {
+              @if (p.feeCard(); as fee) {
+                <!-- A charge with its transfer (KBC books each foreign transfer's fee as its own line): Boeken als on Bankkosten, booked there with Boeken. -->
+                <div class="bank-alloc-create bank-alloc-create--fee"><div><b>Transactiekosten</b><p>{{ fee.text }}</p></div>
+                  <span class="bank-alloc-create__actions">
+                    @if (fee.book; as book) { <button class="btn btn--primary" type="button" [disabled]="p.busy()" (click)="p.openFeeBooking('CONTAINER', book.orderId)">{{ book.label }}</button> }
+                    @else { <button class="btn" type="button" [disabled]="p.busy()" (click)="p.openFeeBooking('CONTAINER', null)">Container kiezen…</button> }
+                    <button class="wk-link" type="button" [disabled]="p.busy()" (click)="p.openFeeBooking('COMPANY', null)">Algemene bankkost</button>
+                  </span></div>
+              }
               <!-- Peppol is Belgian only: an own invoice or a receipt goes up here, as a new cost with this transaction (Emre, 2026-10-19). -->
-              <div class="bank-alloc-create"><div><b>Zelf opladen</b><p>Factuur of bon, buiten Peppol</p></div><button class="btn" type="button" [disabled]="p.busy()" (click)="p.uploadOwnInvoice()">Zelf opladen…</button></div>
+              <div class="bank-alloc-create"><div><b>Factuur of bon zelf opladen</b><p>Buiten Peppol, als pdf of foto</p></div><button class="btn" type="button" [disabled]="p.busy()" (click)="p.uploadOwnInvoice()">Opladen…</button></div>
             }
             <p class="fin-hint">Kies een factuur, uitgave of inkooptermijn die al in ENROSED staat. De bankbetaling wordt daarop afgepunt.</p>
             <label class="bank-alloc-search"><span>Zoek in ENROSED</span><input class="input" type="search" placeholder="Naam, factuur, datum of bedrag" [value]="p.localSearch()" (input)="p.localSearch.set($any($event.target).value)" /></label>
@@ -147,7 +157,7 @@ import { dayMonthYear, signedEur } from './finance-format';
               }
             }
           } @else if (p.allocationStep() === 'new') {
-            <!-- Received documents only: an own upload is 'Zelf opladen…' on the first tab, never a second box here. -->
+            <!-- Received documents only: an own upload is 'Factuur of bon zelf opladen' on the first tab, never a second box here. -->
             <p class="fin-hint">Kies een ontvangen {{ row.amountEur < 0 ? 'factuur' : 'creditnota' }}; het document blijft bij de kost.</p>
             <input class="input" type="search" placeholder="Factuurnummer, leverancier of bedrag" aria-label="Zoek ontvangen documenten" [value]="p.receivedSearch()" (input)="p.receivedSearch.set($any($event.target).value)" />
             @if (p.receivedError()) { <p class="fin-error" role="alert">{{ p.receivedError() }} <button class="fin-inline-btn" type="button" [disabled]="p.busy() || p.receivedLoading()" (click)="p.loadReceivedInvoices()">Opnieuw laden</button></p> }

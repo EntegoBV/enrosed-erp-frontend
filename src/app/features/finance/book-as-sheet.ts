@@ -20,7 +20,9 @@ const FEE_ROWS = 8;
  * prefilled); bank fees of a container's transfer go "Bij een container…" as
  * its Transactiekosten instead (Emre, 2026-10-19: Bijkomende kosten, never a
  * company cost; the containers with a supplier transfer near this line come
- * first). An internal transfer (with its other leg), a VAT payment of a
+ * first). The detail's Transactiekosten card opens it already on Bankkosten
+ * (FinanceState.openBookAsFee), its transfer's containers leading; Boeken
+ * still books. An internal transfer (with its other leg), a VAT payment of a
  * quarter, a loan, capital, private money or something else is booked on the
  * line itself, which then leaves "Te koppelen". A server without the
  * 2026-10-16 round knows only the first two.
@@ -102,14 +104,17 @@ export class BookAsSheet {
   readonly feeWhere = signal<'COMPANY' | 'CONTAINER'>('COMPANY');
   readonly feeOrder = signal<number | null>(null);
   readonly feeQuery = signal('');
-  /** Non-concept, non-archived containers, the ones with a supplier transfer near this line first (feeContainers). */
+  /** The containers of this charge's own transfer, from the detail's Transactiekosten card: they lead the picker. */
+  readonly feeFirst = signal<readonly number[]>([]);
+  /** Non-concept, non-archived containers: the transfer's own (feeFirst), then those with a supplier transfer near this line (feeContainers). */
   readonly feeRanked = computed<RankedFeeContainer[]>(() => {
     const row = this.line();
     if (!row) return [];
     const suppliers = new Map(this.state.suppliers().filter((item) => item.id != null).map((item) => [item.id!, item.name]));
     const containers = this.state.purchaseViews().filter((view) => view.order.status !== 'CONCEPT' && !view.order.archivedAt)
       .map((view) => ({ orderId: view.order.id, number: view.order.number, alias: view.order.alias ?? null, supplier: suppliers.get(view.order.supplierId ?? -1) ?? '' }));
-    return feeContainers(row, containers, this.state.bankStatements(), this.state.payments(), (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key));
+    return feeContainers(row, containers, this.state.bankStatements(), this.state.payments(), (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key),
+      this.feeFirst());
   });
   readonly feeShown = computed(() => {
     const rows = filterFeeContainers(this.feeRanked(), this.feeQuery()).slice(0, FEE_ROWS);
@@ -150,17 +155,27 @@ export class BookAsSheet {
     return true;
   });
 
+  /** The line by its id: a refreshed list keeps what is chosen. */
+  private readonly lineKey = computed(() => this.line()?.id ?? null);
+
   constructor() {
-    /* A new line: no choice yet, the nearest other leg and the quarter before the line's preselected. */
-    effect(() => {
-      const row = this.line();
-      untracked(() => {
-        this.choice.set(null); this.note.set(''); this.error.set(''); this.feeWhere.set('COMPANY'); this.feeOrder.set(null); this.feeQuery.set('');
-        this.leg.set(this.legs()[0] ? String(this.legs()[0].id) : NONE);
-        this.period.set(this.periods().preferred);
-        void row;
-      });
-    });
+    effect(() => { const id = this.lineKey(); untracked(() => this.reset(id)); });
+  }
+
+  /**
+   * A new line: no choice yet, the nearest other leg and the quarter before the line's preselected; from the detail's
+   * Transactiekosten card (FinanceState.bookAsFee, taken once) on Bankkosten, at its container when that one can be
+   * picked, with the transfer's containers leading, or on Algemene bankkost.
+   */
+  reset(id: number | null): void {
+    const preset = this.state.bookAsFee();
+    if (preset) this.state.bookAsFee.set(null);
+    const fee = preset && preset.lineId === id ? preset : null;
+    this.choice.set(fee ? 'BANKKOSTEN' : null); this.note.set(''); this.error.set(''); this.feeWhere.set(fee?.where ?? 'COMPANY'); this.feeQuery.set('');
+    this.feeFirst.set(fee?.first ?? []);
+    this.feeOrder.set(fee?.orderId != null && this.feeRanked().some((row) => row.orderId === fee.orderId) ? fee.orderId : null);
+    this.leg.set(this.legs()[0] ? String(this.legs()[0].id) : NONE);
+    this.period.set(this.periods().preferred);
   }
 
   close(): void { if (!this.busy()) this.state.bookAsLine.set(null); }

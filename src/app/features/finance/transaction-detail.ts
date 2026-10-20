@@ -15,7 +15,7 @@ import { BankAllocationSteps } from './bank-allocation-steps';
 import { KEEP_LABEL, changePreview } from './bank-change-preview';
 import type { ChangePreview, KeepAs, LinkTarget } from './bank-change-preview';
 import { BankMovementPanel } from './bank-movement-panel';
-import { legDistance, lineStatus, vatPeriodLabel } from './bank-suggestions';
+import { allocatedLine, feeLike, legDistance, lineStatus, linkedContainers, pairedTransfer, suggestedContainers, vatPeriodLabel } from './bank-suggestions';
 import type { LineSuggestion } from './bank-suggestions';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { dayMonth as ddmm } from './cash-format';
@@ -24,6 +24,7 @@ import { dayMonth, signedEur as signedMoney } from './finance-format';
 import { containerName } from '../purchasing/container-name';
 import { SERVER_PENDING } from './finance-state';
 import { feePaymentPart, goodsAfterFee } from './transaction-fees';
+import type { FeeCard } from './transaction-fees';
 
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const WEEKDAY_LONG = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -368,9 +369,41 @@ export class TransactionDetail extends BankMovementPanel {
   });
   /**
    * A cost pattern or a container's Transactiekosten: the hint above the three ways, booked with one button
-   * ("Kost · Telefoon & internet · zoals de vorige 3 keer", "Transactiekosten · PO-2026-005 (Yunnan Pubei)").
+   * ("Kost · Telefoon & internet · zoals de vorige 3 keer", "Transactiekosten · PO-2026-005 (Yunnan Pubei)"). The
+   * Transactiekosten card below says the latter itself, so the hint steps aside while it shows.
    */
-  readonly pattern = computed(() => { const target = this.suggestion()?.target; return target?.kind === 'cost-pattern' || target?.kind === 'container-fee' ? target.label : null; });
+  readonly pattern = computed(() => {
+    const target = this.suggestion()?.target;
+    if (target?.kind === 'cost-pattern') return target.label;
+    return target?.kind === 'container-fee' && !this.feeCardState() ? target.label : null;
+  });
+  /**
+   * "Transactiekosten" at the top of 'Factuur of uitgave' (Emre, 2026-10-20): an open charge (feeLike) with the
+   * transfer it belongs to (pairedTransfer; KBC books each foreign transfer's fee as its own line the same day). Its
+   * transfer pays one container: "Bij {container} boeken"; several or none: "Container kiezen…", the transfer's
+   * containers (else those its best match points at) leading. Both, and "Algemene bankkost", open Boeken als on
+   * Bankkosten: he books there with Boeken, never in one click. Not on money in, a linked or booked line, or no charge.
+   */
+  private readonly feeCardState = computed<FeeCard | null>(() => {
+    const row = this.line();
+    if (!row || allocatedLine(row) || !feeLike(row)) return null;
+    const lines = this.state.bankStatements().filter((line) => this.state.officialBankLine(line) && !this.state.archivedBankLine(line));
+    const transfer = pairedTransfer(row, lines, (line) => this.state.lineDay(line), (key) => this.state.canonicalAccount(key));
+    if (!transfer) return { text: 'Hoort deze kost bij een container?', book: null, first: [] };
+    const text = `Bij de overschrijving aan ${this.titleOf(transfer)} · ${signedMoney(transfer.amountEur)} · ${dayMonth(this.state.lineDay(transfer))}`;
+    const linked = linkedContainers(transfer.id, this.state.payments());
+    if (linked.length === 1) {
+      const payment = this.state.payments().find((item) => item.orderId === linked[0]);
+      return { text, book: { orderId: linked[0], label: `Bij ${this.orderName(payment ?? { orderId: linked[0] })} boeken` }, first: linked };
+    }
+    return { text, book: null, first: linked.length ? linked : suggestedContainers(this.suggestionOf(transfer)) };
+  });
+  override feeCard(): FeeCard | null { return this.feeCardState(); }
+  override openFeeBooking(where: 'COMPANY' | 'CONTAINER', orderId: number | null): void {
+    const row = this.line(), card = this.feeCardState();
+    if (!row || !card) return;
+    this.state.openBookAsFee(row, { where, orderId: where === 'CONTAINER' ? orderId : null, first: where === 'CONTAINER' ? card.first : [] });
+  }
   readonly preview = computed(() => {
     const row = this.line(), target = this.best();
     if (!row || !target) return null;

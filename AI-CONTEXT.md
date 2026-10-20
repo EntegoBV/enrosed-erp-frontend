@@ -652,9 +652,24 @@ native selects styled as capsules (critique B10).
   or, for USD/CNY, `feeEur`; 'Betaling houden' offers Transactiekosten of
   the container and Koersverschil (no Bankkosten: a fee never lands twice).
   The Inkoop payment sheet has a 'Transactiekosten' chip for Bijkomend.
+- A charge and its transfer (2026-10-20, live KBC data: each foreign
+  transfer is followed the same day by its own fee line with the next id,
+  no shared reference). `pairedTransfer` (bank-suggestions.ts) pairs an
+  outgoing `feeLike` line (charge words, 'Aanrekening kosten', 'Buitenlandse
+  overschrijving'; at most € 100) with an outgoing non-charge of the same
+  account within 3 days: same day, nearest id (a tie: the higher), nearest
+  day. The suggestion takes that transfer's container once it is linked
+  (`linkedContainers`, largest part), else the nearby supplier transfer. The
+  detail's first tab has a 'Transactiekosten' card above the own upload
+  (`feeCard`): 'Bij {container} boeken' for one container, else 'Container
+  kiezen…' (the transfer's containers, else its best match's, lead), and
+  'Algemene bankkost'; each opens Boeken als on Bankkosten through
+  `FinanceState.openBookAsFee` (taken once by the sheet's `reset`), never
+  booking in one click. The container-fee hint above steps aside meanwhile.
 - Own invoices and the PI (Emre, 2026-10-19). An open outgoing line's first
-  tab has 'Zelf opladen…' (`uploadOwnInvoice`: the file dialog first, then
-  the cost sheet with the files queued); the third tab is 'Peppol / Odoo'
+  tab has 'Factuur of bon zelf opladen' with 'Opladen…' (`uploadOwnInvoice`:
+  the file dialog first, then the cost sheet with the files queued); the
+  third tab is 'Peppol / Odoo'
   only. A linked line's 'Factuur' has one block per part (`invoiceBlocks`):
   a container payee's invoices and files (`payeeInvoices`: an inspection
   via the supplier takes the supplier's, 'Nog geen factuur' never for

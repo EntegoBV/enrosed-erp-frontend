@@ -10,7 +10,9 @@ import { changePreview } from '../src/app/features/finance/bank-change-preview.t
 import type { LinkTarget } from '../src/app/features/finance/bank-change-preview.ts';
 import { runLink } from '../src/app/features/finance/bank-link-actions.ts';
 import type { LinkApis, LinkChoice } from '../src/app/features/finance/bank-link-actions.ts';
-import { feeContainers, feeText, filterFeeContainers, lineSuggestions } from '../src/app/features/finance/bank-suggestions.ts';
+import { allocatedLine, feeContainers, feeLike, feeText, filterFeeContainers, lineSuggestions, linkedContainers, pairedTransfer, suggestedContainers } from '../src/app/features/finance/bank-suggestions.ts';
+import { bankTextOf } from '../src/app/features/finance/bank-text.ts';
+import { dayMonth, signedEur } from '../src/app/features/finance/finance-format.ts';
 import type { FeeContainer, SuggestionInput } from '../src/app/features/finance/bank-suggestions.ts';
 import { FEE_LABEL, feeFits, feePaymentPart, feeSharePart, goodsAfterFee } from '../src/app/features/finance/transaction-fees.ts';
 import { linkChange } from '../src/app/features/purchasing/purchase-payment-links.ts';
@@ -243,7 +245,7 @@ test('Boeken als › Bankkosten: "Algemene bankkost" stays a cost; "Bij een cont
   assert.match(template, />Bij een container…<\/label>/);
   assert.match(template, /\{\{ containerSub\(container\) \}\}/, 'the supplier on every row');
   const Sheet = await selectedClass('../src/app/features/finance/book-as-sheet.ts', 'BookAsSheet',
-    ['line', 'choice', 'note', 'period', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeRanked', 'feeShown', 'ready', 'chooseContainerFee', 'containerSub', 'book'],
+    ['line', 'choice', 'note', 'period', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeFirst', 'feeRanked', 'feeShown', 'ready', 'chooseContainerFee', 'containerSub', 'book'],
     { feeContainers, filterFeeContainers });
   const fee = line(113, -25.4, { reference: 'Kosten', bookedAt: '2026-10-14T09:00:00Z' });
   const booked: unknown[] = [], costs: unknown[] = [];
@@ -277,4 +279,158 @@ test('Inkoop: "Aan wie? Bijkomend" offers a Transactiekosten chip that fills the
   const chip = source.slice(source.indexOf("@if (pay.payee === 'OTHER' && !creditOffset()) {"), source.indexOf('Transactiekosten</button>') + 25);
   assert.match(chip, /\(click\)="patch\.emit\(\{ label: 'Transactiekosten' \}\)">Transactiekosten<\/button>/);
   assert.match(chip, /\[attr\.aria-pressed\]="pay\.label === 'Transactiekosten'"/);
+});
+
+/* ---- a charge and its own transfer (live KBC data via Odoo, 2026-10-20): pairedTransfer, the suggestion, the detail's card */
+
+const KBC_FEE = 'Aanrekening kosten Buitenlandse overschrijving Referentie 00352036270000EE Zie bijlage';
+const transfer = (id: number, amountEur: number, day: string, values: Partial<BankStatementLine> = {}) => line(id, amountEur, { counterparty: 'XIAONING GUAN',
+  reference: 'XIAONING GUAN Internationale overschrijving 15609142110300025035 BIC: CZCBCN2X 2ND BEAR CONTAINER', bookedAt: `${day}T08:00:00Z`, ...values });
+const charge = (id: number, amountEur: number, day: string, values: Partial<BankStatementLine> = {}) => line(id, amountEur, { reference: KBC_FEE, bookedAt: `${day}T08:05:00Z`, ...values });
+// Line 65 is followed the same day by its own fee 64 (the next id, no shared reference); 63/62 the same day; on 18 sep a third pair.
+const t65 = transfer(65, -11565.11, '2026-09-28'), f64 = charge(64, -38.01, '2026-09-28');
+const t63 = transfer(63, -11403.38, '2026-09-28'), f62 = charge(62, -37.81, '2026-09-28');
+const t41 = transfer(41, -10240, '2026-09-18'), f40 = charge(40, -33.88, '2026-09-18');
+const kbc = [t65, f64, t63, f62, t41, f40];
+const dayOf = (row: BankStatementLine) => row.bookedAt.slice(0, 10);
+
+test("pairedTransfer: KBC's 'Aanrekening kosten' finds its own transfer, also with two fees on one day", () => {
+  assert.equal(pairedTransfer(f64, kbc, dayOf)?.id, 65);
+  assert.equal(pairedTransfer(f62, kbc, dayOf)?.id, 63, 'the nearest id: never the other transfer of that day');
+  assert.equal(pairedTransfer(f40, kbc, dayOf)?.id, 41);
+  assert.equal(feeLike(f64), true);
+  assert.equal(feeLike(t65), false, 'the transfer itself is no charge');
+  assert.equal(feeLike(line(67, -12.5, { reference: 'Aanrekening beheerskosten zichtrekening' })), false, "the account's own charge stays out (review 2026-10-20)");
+  assert.equal(feeLike(line(67, -38.01, { reference: 'Buitenlandse overschrijving Referentie 0035' })), true);
+});
+
+test('pairedTransfer: none for a line that is no charge, for money in, on another account or with nothing within three days', () => {
+  assert.equal(pairedTransfer(t65, kbc, dayOf), null, 'the transfer');
+  assert.equal(pairedTransfer(line(66, -30, { reference: 'Overschrijving', bookedAt: '2026-09-28T09:00:00Z' }), kbc, dayOf), null, 'no charge words');
+  assert.equal(pairedTransfer({ ...f64, amountEur: 38.01 }, kbc, dayOf), null, 'money in');
+  assert.equal(pairedTransfer({ ...f64, account: 'BE00 WISE' }, kbc, dayOf), null);
+  assert.equal(pairedTransfer(charge(90, -35, '2026-10-02'), kbc, dayOf), null, 'four days after the transfers');
+  assert.equal(pairedTransfer(charge(90, -35, '2026-10-01'), kbc, dayOf)?.id, 65, 'three days: still, the nearest id');
+  assert.equal(pairedTransfer(f64, [f64, transfer(65, -30, '2026-09-28')], dayOf), null, 'a transfer is larger than its charge');
+  assert.equal(pairedTransfer(f64, [f64, { ...t65, classification: 'INTERNAL_TRANSFER' }], dayOf), null, 'an own transfer has no foreign charge');
+  assert.equal(pairedTransfer(f64, [f64, f62, t65], dayOf)?.id, 65, 'another charge is never the transfer');
+});
+
+test('pairedTransfer: the same day before the nearest id, the nearest id before the nearest day', () => {
+  const fee = charge(70, -35, '2026-09-29');
+  assert.equal(pairedTransfer(fee, [fee, transfer(71, -9000, '2026-09-30'), transfer(50, -9000, '2026-09-29')], dayOf)?.id, 50);
+  const later = charge(80, -35, '2026-10-01');
+  assert.equal(pairedTransfer(later, [later, transfer(81, -9000, '2026-10-03'), transfer(60, -9000, '2026-09-30')], dayOf)?.id, 81);
+});
+
+test("the suggestion takes the charge's own transfer once it is linked; else the nearest supplier transfer as before", () => {
+  const t65Linked = { ...t65, allocated: true }, t63Linked = { ...t63, allocated: true };
+  const on65 = payment(4, { bankStatementLineId: 65, amountEur: 11565.11 });
+  const on63 = payment(5, { orderId: 40, orderNumber: 'PO-2026-006', bankStatementLineId: 63, amountEur: 11403.38 });
+  const both = input([t65Linked, f64, t63Linked, f62], { purchasePayments: [on65, on63] });
+  const suggestions = lineSuggestions(both);
+  assert.deepEqual(json(suggestions.get(64)!.target), { kind: 'container-fee', orderId: 39, label: 'Transactiekosten · PO-2026-005 (Yunnan Pubei)' });
+  assert.deepEqual(json(suggestions.get(62)!.target), { kind: 'container-fee', orderId: 40, label: 'Transactiekosten · PO-2026-006 (Yunnan Pubei)' },
+    "fee 62 is 63's, not the larger transfer of that day");
+  assert.deepEqual(suggestions.get(62)!.reasons, ['kosten in mededeling', 'bij de overschrijving']);
+  const unlinked = lineSuggestions(input([t65Linked, f64, t63, f62], { purchasePayments: [on65] })).get(62)!;
+  assert.equal((unlinked.target as { orderId: number }).orderId, 39, 'its transfer not linked yet: the supplier transfer that day');
+  assert.deepEqual(unlinked.reasons, ['kosten in mededeling', 'naast betaling leverancier']);
+  const logistics = lineSuggestions(input([{ ...t65Linked, counterparty: 'Forwarder' }, f64], { purchasePayments: [{ ...on65, payee: 'LOGISTICS' }] })).get(64)!;
+  assert.equal((logistics.target as { orderId: number }).orderId, 39, 'whoever the transfer paid for the container');
+  assert.deepEqual(linkedContainers(65, [on65, payment(6, { orderId: 40, bankStatementLineId: 65, amountEur: 20000 })]), [40, 39], 'a split: the largest part first');
+});
+
+/* The detail's card: the real members of TransactionDetail, the rest of the class and its services replaced. */
+async function feeCardDetail(row: BankStatementLine, lines: BankStatementLine[], payments: PurchasePaymentRow[], suggestions = new Map<number, unknown>()) {
+  const Detail = await selectedClass('../src/app/features/finance/transaction-detail.ts', 'TransactionDetail', ['pattern', 'feeCardState', 'feeCard', 'openFeeBooking', 'orderName'],
+    { allocatedLine, feeLike, pairedTransfer, linkedContainers, suggestedContainers, signedMoney: signedEur, dayMonth, containerName });
+  const opened: unknown[] = [];
+  const detail = new Detail();
+  Object.assign(detail, {
+    line: () => row, titleOf: (other: BankStatementLine) => bankTextOf(other).title, suggestion: () => suggestions.get(row.id),
+    suggestionOf: (other: BankStatementLine) => suggestions.get(other.id),
+    state: { bankStatements: () => lines, officialBankLine: () => true, archivedBankLine: () => false, lineDay: dayOf, canonicalAccount: (key: string) => key,
+      payments: () => payments, openBookAsFee: (line: BankStatementLine, fee: unknown) => opened.push([line.id, json(fee)]) },
+  });
+  return { detail, opened };
+}
+const linked65 = { ...t65, allocated: true };
+const on65 = payment(4, { bankStatementLineId: 65, amountEur: 11565.11 });
+const card = (detail: any) => { const value = json(detail.feeCard()) as { text: string }; return { ...value, text: plain(value.text) }; };
+
+test("the card: the transfer's one container is 'Bij PO-… boeken', opening Boeken als there; 'Algemene bankkost' beside it", async () => {
+  const containerFee = { lineId: 64, target: { kind: 'container-fee', orderId: 39, label: 'Transactiekosten · PO-2026-005 (Yunnan Pubei)' }, others: [] };
+  const { detail, opened } = await feeCardDetail(f64, [linked65, f64], [on65], new Map([[64, containerFee]]));
+  assert.deepEqual(card(detail), { text: 'Bij de overschrijving aan XIAONING GUAN · − € 11.565,11 · 28 sep', book: { orderId: 39, label: 'Bij PO-2026-005 boeken' }, first: [39] });
+  assert.equal(detail.pattern(), null, 'the hint above steps aside: the card says it');
+  detail.openFeeBooking('CONTAINER', 39);
+  detail.openFeeBooking('COMPANY', null);
+  assert.deepEqual(opened, [[64, { where: 'CONTAINER', orderId: 39, first: [39] }], [64, { where: 'COMPANY', orderId: null, first: [] }]], 'never booked in one click');
+  const alias = await feeCardDetail(f64, [linked65, f64], [{ ...on65, orderAlias: 'Culinan' }]);
+  assert.equal(alias.detail.feeCard().book.label, 'Bij Culinan boeken');
+});
+
+test("the card: a transfer on several containers or none is 'Container kiezen…' with its containers first; no transfer asks", async () => {
+  const split = await feeCardDetail(f64, [linked65, f64], [on65, payment(6, { orderId: 40, orderNumber: 'PO-2026-006', bankStatementLineId: 65, amountEur: 20000 })]);
+  assert.deepEqual(card(split.detail), { text: 'Bij de overschrijving aan XIAONING GUAN · − € 11.565,11 · 28 sep', book: null, first: [40, 39] });
+  split.detail.openFeeBooking('CONTAINER', null);
+  assert.deepEqual(split.opened, [[64, { where: 'CONTAINER', orderId: null, first: [40, 39] }]]);
+  const match = { lineId: 65, target: { kind: 'purchase-existing', orderId: 41, paymentId: 9 }, others: [{ target: { kind: 'term-new', orderId: 42 } }, { target: { kind: 'cost-new', costId: 3 } }] };
+  const open = await feeCardDetail(f64, [t65, f64], [], new Map([[65, match]]));
+  assert.deepEqual(json(open.detail.feeCard()).first, [41, 42], "an unlinked transfer: the containers its best matches point at");
+  assert.equal(json(open.detail.feeCard()).book, null);
+  const alone = await feeCardDetail(f64, [f64], []);
+  assert.deepEqual(json(alone.detail.feeCard()), { text: 'Hoort deze kost bij een container?', book: null, first: [] });
+});
+
+test('the card: not on money in, a linked or booked charge, or a line that is no charge', async () => {
+  for (const row of [{ ...f64, amountEur: 38.01 }, { ...f64, allocated: true }, { ...f64, classification: 'OTHER' as const }, linked65, line(66, -30, { reference: 'Overschrijving' })]) {
+    const { detail } = await feeCardDetail(row, [linked65, row], [on65]);
+    assert.equal(detail.feeCard(), null, `${row.id} ${row.amountEur}`);
+  }
+  const pattern = { lineId: 64, target: { kind: 'cost-pattern', label: 'Kost · Bankkosten · zoals de vorige 2 keer' }, others: [] };
+  const { detail } = await feeCardDetail(f64, [linked65, f64], [on65], new Map([[64, pattern]]));
+  assert.equal(detail.pattern(), 'Kost · Bankkosten · zoals de vorige 2 keer', 'a cost pattern keeps its hint beside the card');
+  assert.equal(suggestedContainers(undefined).length, 0);
+});
+
+test('the card sits at the top of the first tab, above the own upload; Boeken als takes its choice once, the transfer\'s containers leading', async () => {
+  const steps = await readFile(new URL('../src/app/features/finance/bank-allocation-steps.ts', import.meta.url), 'utf8');
+  const tab = steps.slice(steps.indexOf('@if (row.amountEur < 0) {'), steps.indexOf('<label class="bank-alloc-search">'));
+  assert.ok(tab.indexOf('<b>Transactiekosten</b>') > 0 && tab.indexOf('<b>Transactiekosten</b>') < tab.indexOf('<b>Factuur of bon zelf opladen</b>'));
+  assert.match(tab, /@if \(p\.feeCard\(\); as fee\) \{/);
+  assert.match(tab, /@if \(fee\.book; as book\) \{ <button class="btn btn--primary" [^>]*\(click\)="p\.openFeeBooking\('CONTAINER', book\.orderId\)">\{\{ book\.label \}\}<\/button> \}/);
+  assert.match(tab, /@else \{ <button class="btn" [^>]*\(click\)="p\.openFeeBooking\('CONTAINER', null\)">Container kiezen…<\/button> \}/);
+  assert.match(tab, /<button class="wk-link" [^>]*\(click\)="p\.openFeeBooking\('COMPANY', null\)">Algemene bankkost<\/button>/);
+
+  const Sheet = await selectedClass('../src/app/features/finance/book-as-sheet.ts', 'BookAsSheet',
+    ['line', 'choice', 'note', 'period', 'leg', 'busy', 'error', 'feeWhere', 'feeOrder', 'feeQuery', 'feeFirst', 'feeRanked', 'feeShown', 'reset'],
+    { feeContainers, filterFeeContainers, NONE: 'none', FEE_ROWS: 8 });
+  const bookAsFee = signal<unknown>(null);
+  const state = {
+    bookAsLine: signal<BankStatementLine | null>(f64), bookAsFee, bankStatements: () => [linked65, f64, t41], payments: () => [on65], lineDay: dayOf, canonicalAccount: (key: string) => key,
+    suggestions: () => new Map(), suppliers: () => [{ id: 8, name: 'Yunnan Pubei' }],
+    purchaseViews: () => [{ order: { id: 39, number: 'PO-2026-005', status: 'ONTVANGEN', supplierId: 8 } }, { order: { id: 40, number: 'PO-2026-006', status: 'BESTELD', supplierId: 8 } },
+      { order: { id: 41, number: 'PO-2026-007', status: 'CONCEPT', supplierId: 8 } }],
+  };
+  Object.defineProperty(Sheet.prototype, 'state', { get: () => state, configurable: true });
+  const sheet = new Sheet();
+  Object.assign(sheet, { legs: () => [], periods: () => ({ preferred: '2026-Q3', options: [] }) });
+  bookAsFee.set({ lineId: 64, where: 'CONTAINER', orderId: 39, first: [39] });
+  sheet.reset(64);
+  assert.deepEqual([sheet.choice(), sheet.feeWhere(), sheet.feeOrder(), bookAsFee()], ['BANKKOSTEN', 'CONTAINER', 39, null], 'on Bij een container, its container chosen');
+  assert.deepEqual(sheet.feeShown().map((row: any) => [row.number, row.near]), [['PO-2026-005', 'bij de overschrijving'], ['PO-2026-006', null]]);
+  bookAsFee.set({ lineId: 64, where: 'CONTAINER', orderId: null, first: [40, 39] });
+  sheet.reset(64);
+  assert.deepEqual([sheet.feeOrder(), sheet.feeShown().map((row: any) => row.number)], [null, ['PO-2026-006', 'PO-2026-005']], 'Container kiezen: nothing chosen, the transfer\'s first');
+  bookAsFee.set({ lineId: 64, where: 'CONTAINER', orderId: 41, first: [41] });
+  sheet.reset(64);
+  assert.equal(sheet.feeOrder(), null, 'a container the picker does not offer (a concept) is never chosen unseen');
+  bookAsFee.set({ lineId: 64, where: 'COMPANY', orderId: null, first: [] });
+  sheet.reset(64);
+  assert.deepEqual([sheet.choice(), sheet.feeWhere()], ['BANKKOSTEN', 'COMPANY']);
+  bookAsFee.set({ lineId: 99, where: 'CONTAINER', orderId: 39, first: [39] });
+  sheet.reset(64);
+  assert.deepEqual([sheet.choice(), sheet.feeWhere(), sheet.feeOrder(), bookAsFee()], [null, 'COMPANY', null, null], "another line's choice is dropped");
 });

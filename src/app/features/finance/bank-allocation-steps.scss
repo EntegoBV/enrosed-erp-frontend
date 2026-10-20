@@ -37,6 +37,8 @@
 .bank-alloc-create { display: flex; align-items: center; gap: 18px; justify-content: space-between; padding: 15px; margin: 14px 0 22px; border: 1px solid var(--line, #dde1e6); border-radius: 12px; }
 .bank-alloc-create p { font-size: 12px; color: var(--muted, #667085); margin: 5px 0 0; }
 .bank-alloc-create button { flex-shrink: 0; }
+.bank-alloc-create--fee { margin-bottom: 10px; }
+.bank-alloc-create__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; }
 @media (max-width: 600px) { .bank-alloc-amounts { grid-template-columns: 1fr; }.bank-alloc-tabs button { padding: 10px 4px; font-size: 12px; }.bank-alloc-create { align-items: flex-start; flex-direction: column; }.bank-alloc-document { padding: 12px; gap: 10px; }.bank-alloc-movement { padding: 14px; } }
 
 .bank-alloc-purchase-docs { display: grid; justify-items: start; gap: 7px; margin: 14px 0; font-size: 12px; overflow-wrap: anywhere; }

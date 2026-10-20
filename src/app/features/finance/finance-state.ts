@@ -63,6 +63,7 @@ import { reconciliationStatusLabel } from '../purchasing/purchase-reconciliation
 import { shareToast } from '../purchasing/purchase-payment-share';
 import { containerName } from '../purchasing/container-name';
 import { feePaymentPart } from './transaction-fees';
+import type { BookAsFee } from './transaction-fees';
 import type { OpenCost } from './payables';
 import { containerLines, salesDocLines, vatReturn, vatReturnCsv } from './vat-return';
 import type { VatReturn } from './vat-return';
@@ -1225,7 +1226,7 @@ export class FinanceState {
    * Starts from known cash facts only; the document must supply its VAT
    * treatment and invoice date. `prefill` starts from more: Bankkosten and
    * Rente (Boeken als), or the latest cost of a cost pattern. `files` are
-   * queued on the sheet ("Zelf opladen…" picks them first).
+   * queued on the sheet ("Factuur of bon zelf opladen" picks them first).
    */
   openCostFromBank(line: BankStatementLine, prefill: Partial<CompanyCost> = {}, files: readonly File[] = []): void {
     if (this.saving()) return;
@@ -2288,6 +2289,13 @@ export class FinanceState {
   private searchedQuery: string | null = null;
   /** "Boeken als…" on this line. */
   readonly bookAsLine = signal<BankStatementLine | null>(null);
+  /** Boeken als opened by the detail's Transactiekosten card: already on Bankkosten (the sheet takes it once). */
+  readonly bookAsFee = signal<BookAsFee | null>(null);
+  /** "Bij PO-… boeken", "Container kiezen…" or "Algemene bankkost" on that card: the sheet on that choice, booked with its own Boeken. */
+  openBookAsFee(line: BankStatementLine, fee: Omit<BookAsFee, 'lineId'>): void {
+    this.bookAsFee.set({ lineId: line.id, ...fee });
+    this.bookAsLine.set(line);
+  }
   /** "Splitsen…" from the list (⋯, key S): the detail opens this line in its split, then clears it. */
   readonly splitOnOpen = signal<number | null>(null);
   /** "{k} exacte suggesties koppelen". */
