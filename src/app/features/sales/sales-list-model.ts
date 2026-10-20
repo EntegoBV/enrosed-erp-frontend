@@ -6,7 +6,7 @@
  * imports.
  */
 import type { SalesOrder, SalesOrderView } from '../../core/api/models';
-import type { SalesListEntry } from './sales-list-groups';
+import type { SalesContainerGroup, SalesContainerStatus, SalesListEntry, SalesSplitGroup } from './sales-list-groups';
 
 export type SalesTab = 'OFFERTE' | 'FACTUUR' | 'ARCHIEF';
 export type SalesScope = 'STANDARD' | 'PARTNER' | 'ALL';
@@ -35,9 +35,31 @@ export function countText(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/** Euros as the eur pipe writes them ('€ 2.480,15'). */
+export function euro(value: number, decimals = 2): string {
+  return new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: decimals, minimumFractionDigits: decimals })
+    .format(Number.isFinite(value) ? value : 0);
+}
+
 /** Whole euros, the way the subbar and the captions read ('€ 2.480'). */
 export function wholeEuro(value: number): string {
-  return new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0, minimumFractionDigits: 0 }).format(value);
+  return euro(value, 0);
+}
+
+/**
+ * An amount on a phone trail: whole euros, as Inkoop's trails and the
+ * document totals read; under one euro it keeps its cents, so a small rest
+ * never reads '€ 0 open'.
+ */
+export function trailEuro(value: number): string {
+  const amount = cents(value);
+  return euro(amount / 100, amount !== 0 && Math.abs(amount) < 100 ? 2 : 0);
+}
+
+/** The trail gave up cents on this amount: the exact figure belongs in the menu's hint. */
+export function roundedAway(value: number): boolean {
+  const amount = cents(value);
+  return Math.abs(amount) >= 100 && amount % 100 !== 0;
 }
 
 /** Lowercase without accents: 'Café' finds 'cafe'. */
@@ -228,10 +250,11 @@ const DAY_FACT = /^(geldig tot|vervalt) /;
 
 /**
  * The phone row. facts: the website and delivery facts, the muted line under
- * the number. trail: the third trailing line, what is open (the component
- * prints pay.openEur; warn once overdue), else a credit note's tegoed line,
- * else the day of 'geldig tot' / 'vervalt'. unshown: the day the trail gives
- * up for the open amount, for the menu's Openen hint.
+ * the number. trail: the third trailing line, '€ x open' (warn once overdue),
+ * else '€ x tegoed' while a credit note still holds one (its pill says the
+ * rest: never 'verrekend · afgehandeld' beside 'Afgehandeld'), else the day
+ * of 'geldig tot' / 'vervalt'; amounts in trail euros. unshown: the day the
+ * trail gives up for the open amount, for the menu's Openen hint.
  */
 export interface PhoneLines {
   facts: LinePart[];
@@ -239,12 +262,114 @@ export interface PhoneLines {
   unshown: string | null;
 }
 
-export function phoneLines(parts: readonly LinePart[], pay: Pick<PaymentCell, 'state' | 'overdue'>, creditLine: string | null): PhoneLines {
+/** tegoedEur: what a credit note still holds (null on any other document). */
+export function phoneLines(parts: readonly LinePart[], pay: Pick<PaymentCell, 'state' | 'overdue' | 'openEur'>, tegoedEur: number | null): PhoneLines {
   const facts = parts.filter((part) => !DAY_FACT.test(part.text));
   const dated = parts.find((part) => DAY_FACT.test(part.text)) ?? null;
-  if (pay.state === 'open') return { facts, trail: { kind: 'open', text: '', overdue: pay.overdue }, unshown: dated?.text ?? null };
-  if (pay.state === 'credit' && creditLine) return { facts, trail: { kind: 'credit', text: creditLine, overdue: false }, unshown: dated?.text ?? null };
+  if (pay.state === 'open') return { facts, trail: { kind: 'open', text: `${trailEuro(pay.openEur)} open`, overdue: pay.overdue }, unshown: dated?.text ?? null };
+  if (pay.state === 'credit' && cents(tegoedEur) > 0) {
+    return { facts, trail: { kind: 'credit', text: `${trailEuro(tegoedEur!)} tegoed`, overdue: false }, unshown: dated?.text ?? null };
+  }
   return { facts, trail: dated ? { kind: 'day', text: dated.text, overdue: dated.cls === 'danger' } : { kind: 'none', text: '', overdue: false }, unshown: null };
+}
+
+/* ---- the phone's partner-container and split-order heads (2026-10-20) ------------------------------------------ */
+
+/** Member pills that leave nothing to do with the money. */
+const SETTLED = new Set(['Betaald', 'Afgehandeld', 'Gecrediteerd']);
+
+/**
+ * A head cell with a document's anatomy. sub: 'Partnercontainer · 2 facturen'
+ * or 'Gesplitste order · 2 delen'; total: trail euros, signed; status: the one
+ * thing beside it, what is open or one pill; attention: the amber line, how
+ * many members wait on us and the first reason.
+ */
+export interface PhoneHead {
+  sub: string;
+  total: string;
+  /** open: text '€ x open', warn once overdue; pill: text is the label, cls its status class. */
+  status: { kind: 'open' | 'pill'; text: string; cls: string; overdue: boolean } | null;
+  attention: { count: number; first: string } | null;
+}
+
+/** '− € 991' for a negative sum, as a credit note's total reads. */
+function signedTrail(value: number): string {
+  return cents(value) < 0 ? `− ${trailEuro(-value)}` : trailEuro(value);
+}
+
+function headAttention(rows: readonly SalesOrderView[], reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead['attention'] {
+  const waiting = rows.map(reasonsOf).filter((reasons) => reasons.length > 0);
+  return waiting.length ? { count: waiting.length, first: waiting[0][0] } : null;
+}
+
+/**
+ * The members in one pill: all settled with something paid 'Betaald', any
+ * concept 'Concept', else the most frequent status; a tie goes to what still
+ * asks for something, then to list order. Cancelled members count only when
+ * nothing else is left.
+ */
+export function containerPill(statuses: readonly SalesContainerStatus[]): { label: string; cls: string } | null {
+  const live = statuses.filter((status) => !status.inactive);
+  const pool = live.length ? live : statuses;
+  if (!pool.length) return null;
+  if (pool.every((status) => SETTLED.has(status.label)) && pool.some((status) => status.label === 'Betaald')) return { label: 'Betaald', cls: 'ok' };
+  const concept = pool.find((status) => status.concept);
+  if (concept) return { label: concept.label, cls: concept.cls };
+  const best = pool.reduce((lead, status) => status.count > lead.count
+    || (status.count === lead.count && SETTLED.has(lead.label) && !SETTLED.has(status.label)) ? status : lead);
+  return { label: best.label, cls: best.cls };
+}
+
+/** A partner container's head: '€ x open' while its invoices hold money, else one pill for its members. */
+export function containerHead(entry: SalesContainerGroup, receivableOf: (row: SalesOrderView) => ListReceivable, today: string,
+  reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead {
+  const money = listMoney(entry.rows, receivableOf, today);
+  const credits = entry.rows.some((row) => row.order.docType === 'CREDITNOTA');
+  const pill = containerPill(entry.summary.statuses);
+  return {
+    sub: `Partnercontainer · ${credits ? countText(entry.rows.length, 'document', 'documenten') : countText(entry.rows.length, 'factuur', 'facturen')}`,
+    total: signedTrail(entry.summary.totalEur),
+    status: money.openEur > 0 ? { kind: 'open', text: `${trailEuro(money.openEur)} open`, cls: '', overdue: money.overdueCount > 0 }
+      : pill ? { kind: 'pill', text: pill.label, cls: pill.cls, overdue: false } : null,
+    attention: headAttention(entry.rows, reasonsOf),
+  };
+}
+
+/** A split order's head: its delivery in one pill, the first that applies in the desk head's order. */
+export function splitHead(entry: SalesSplitGroup, reasonsOf: (row: SalesOrderView) => readonly string[]): PhoneHead {
+  const { parts, unavailableCount, waitingCount, shippedCount, pieces } = entry.summary;
+  const pill = unavailableCount ? { text: `${unavailableCount} niet beschikbaar`, cls: 'gold' }
+    : waitingCount ? { text: 'Wacht op voorraad', cls: 'gold' }
+    : shippedCount ? { text: shippedCount >= parts ? 'Verzonden' : 'Deels verzonden', cls: 'ok' }
+    : pieces > 0 ? { text: 'Leveringen gepland', cls: 'blue' } : null;
+  return {
+    sub: `Gesplitste order · ${parts === 2 ? '2 delen' : `${parts} van 2 delen`}`,
+    total: signedTrail(entry.summary.totalEur),
+    status: pill ? { kind: 'pill', ...pill, overdue: false } : null,
+    attention: headAttention(entry.rows, reasonsOf),
+  };
+}
+
+/**
+ * What the phone head leaves to the container menu's head: the exact total
+ * when the trail rounded it and what of it is concept, the members per
+ * status when they differ, the pieces in the container, the money in and
+ * the open credit (incl. btw). Nothing the head already says.
+ */
+export function containerHint(entry: SalesContainerGroup): string[] {
+  const summary = entry.summary;
+  const facts: string[] = [];
+  const total = roundedAway(summary.totalEur) ? `${euro(summary.totalEur)} excl. btw` : '';
+  const draft = summary.draftCount && summary.issuedCount ? `waarvan concept ${euro(summary.draftEur)}` : '';
+  if (total || draft) facts.push(total && draft ? `${total}, ${draft}` : total || draft);
+  if (summary.statuses.length > 1) {
+    facts.push(summary.statuses.map((status) => `${status.count} ${status.label.toLocaleLowerCase('nl-BE')}${status.inactive ? ' (buiten totaal)' : ''}`).join(', '));
+  }
+  if (summary.containerPieces !== null) facts.push(`${new Intl.NumberFormat('nl-BE').format(summary.containerPieces)} stuks in container`);
+  const money = [roundedAway(summary.remainingEur) ? `${euro(summary.remainingEur)} open` : '',
+    summary.receivedEur > 0 ? `${euro(summary.receivedEur)} ontvangen` : '', summary.creditEur > 0 ? `${euro(summary.creditEur)} tegoed` : ''].filter(Boolean);
+  if (money.length) facts.push(...money, 'incl. btw');
+  return facts;
 }
 
 /**

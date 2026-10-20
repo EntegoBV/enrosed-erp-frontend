@@ -15,7 +15,7 @@ import { STATUS_LABEL } from './quote-status';
     <app-sheet [title]="reviewing() ? 'Container verwijderen' : 'Partnercontainer ' + (container().purchaseOrderName || '#' + container().purchaseOrderId)" [wide]="reviewing()" (closed)="close()">
       <div body>
         @if (!reviewing()) {
-          <p class="container-menu__who">{{ customerName() }} · {{ container().purchaseOrderName || 'Inkoop #' + container().purchaseOrderId }}@if (container().purchaseOrderNumber && container().purchaseOrderNumber !== container().purchaseOrderName) { · inkooporder {{ container().purchaseOrderNumber }} }</p>
+          <p class="container-menu__who">{{ customerName() }} · {{ container().purchaseOrderName || 'Inkoop #' + container().purchaseOrderId }}@if (container().purchaseOrderNumber && container().purchaseOrderNumber !== container().purchaseOrderName) { · inkooporder {{ container().purchaseOrderNumber }} }@for (fact of facts(); track $index) { · {{ fact }} }</p>
           <div class="desk-actions">
             <a class="desk-action" [routerLink]="['/purchasing', container().purchaseOrderId]" [queryParams]="{ section: 'payments' }" (click)="close()"><i aria-hidden="true">›</i><span><b>Container openen</b><small>Inkooporder en alle voorschotfacturen</small></span></a>
             <button class="desk-action desk-action--danger" type="button" [disabled]="externalBusy()" (click)="check()"><i aria-hidden="true">×</i><span><b>Container verwijderen…</b><small>Controleer de inkooporder en gekoppelde voorschotfacturen</small></span></button>
@@ -48,6 +48,8 @@ import { STATUS_LABEL } from './quote-status';
 export class SalesContainerMenu implements OnDestroy {
   readonly container = input.required<SalesContainerGroup>();
   readonly customerName = input('');
+  /** The phone list's head cell says only the total and one status: its other figures read here, after the name. */
+  readonly facts = input<readonly string[]>([]);
   readonly externalBusy = input(false);
   readonly closed = output<void>();
   readonly deleted = output<PartnerContainerDeletionResult>();
