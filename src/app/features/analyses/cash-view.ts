@@ -341,7 +341,7 @@ export function unlinkedLines(input: CashForecastInput): { count: number; eur: n
 export function dataQuality(input: CashForecastInput, forecast: CashForecast): QualityLine[] {
   const lines: QualityLine[] = [];
   if (input.ticaVatIncomplete) lines.push({ text: 'TICA-btw nog onvolledig: verkopen zonder geboekte afrekening. Alleen bevestigde creditnota’s tellen in de btw-prognose.',
-    action: 'Afrekeningen controleren', link: { path: ['/tica'], query: null, po: null }, po: null, warn: true });
+    action: 'Afrekeningen controleren', link: { path: ['/tica'], query: { tab: 'afrekeningen' }, po: null }, po: null, warn: true });
   for (const account of forecast.startAccounts) {
     if (!account.stale) continue;
     lines.push({ text: `${account.label}: saldo ${account.ageDays} d niet gecontroleerd.`, action: 'Controleren', po: null, warn: true,

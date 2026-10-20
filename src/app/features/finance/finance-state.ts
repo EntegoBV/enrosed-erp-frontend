@@ -1126,11 +1126,12 @@ export class FinanceState {
     void this.router.navigate(['/sales', salesOrderId]);
   }
 
-  /** The row menu of a company cost: right-click on a desk, long press or 'Meer' on a phone. */
-  openTica(): void { void this.router.navigate(['/tica']); }
+  /** TICA's settlements (btw-aangifte, Vooruitblik 'netto te ontvangen'): the Afrekeningen tab, not today's sales. */
+  openTica(): void { void this.router.navigate(['/tica'], { queryParams: { tab: 'afrekeningen' } }); }
 
   openTicaSettlement(id: number): void { void this.router.navigate(['/tica'], { queryParams: { settlement: id } }); }
 
+  /** The row menu of a company cost: right-click on a desk, long press or 'Meer' on a phone. */
   costMenu(cost: CompanyCost, anchor: MenuPoint | null): void {
     if (cost.ticaSettlementId) {
       this.openMenu({ title: cost.description, items: [{ id: 'tica', label: 'TICA-afrekening openen', iconName: 'document' }], anchor,

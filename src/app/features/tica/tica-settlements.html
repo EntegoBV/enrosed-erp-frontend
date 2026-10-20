@@ -1,12 +1,10 @@
 <input #pdfInput class="sr-only" type="file" accept="application/pdf,.pdf" (change)="upload($event)" aria-label="TICA-creditnota uploaden" tabindex="-1" />
 @if (showList()) {
-  @if (ready() && error(); as message) {
-    @if (rows().length) {
-      <div [class]="desk() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
-        <span [class.wk-banner__text]="desk()"><b>Afrekeningen konden niet worden vernieuwd</b> · {{ message }}</span>
-        <button [class]="desk() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" [disabled]="loading()" (click)="reload()">Opnieuw proberen</button>
-      </div>
-    }
+  @if (answered() && error(); as message) {
+    <div [class]="desk() ? 'wk-banner wk-banner--danger wk-banner--inset' : 'ios-banner ios-banner--danger'" role="alert">
+      <span [class.wk-banner__text]="desk()"><b>Afrekeningen konden niet worden vernieuwd</b> · {{ message }}</span>
+      <button [class]="desk() ? 'wk-btn wk-btn--sm' : 'ios-capsule ios-capsule--sm ios-capsule--tinted'" type="button" [disabled]="loading()" (click)="reload()">Opnieuw proberen</button>
+    </div>
   }
   @if (uploading()) { <p class="tl-busy" role="status">Creditnota lezen…</p> }
   @if (uploadError(); as message) {
@@ -17,13 +15,16 @@
   }
   @if (!ready()) {
     <div [class]="desk() ? 'wk-card' : 'tl-loading'" role="status" aria-label="Afrekeningen laden"><app-skeleton [kind]="desk() ? 'table' : 'group'" [rows]="4" /></div>
-  } @else if (error() && !rows().length) {
+  } @else if (error() && !answered()) {
     <div [class.wk-card]="desk()"><app-load-error title="Afrekeningen konden niet worden geladen" [message]="error()" [busy]="loading()" (retry)="reload()" /></div>
   } @else if (!sections().length) {
     <div [class]="desk() ? 'wk-card' : ''">
       <div [class]="desk() ? 'wk-empty' : 'ios-empty'">
         @if (rows().length) {
           <h2 [class]="desk() ? 'wk-empty__title' : 'ios-empty__title'">Niets gevonden</h2>
+          @if (filter() !== 'all' || query().trim()) {
+            <button [class]="desk() ? 'wk-btn' : 'ios-capsule ios-capsule--tinted'" type="button" (click)="clear.emit()">Filters wissen</button>
+          }
         } @else {
           <h2 [class]="desk() ? 'wk-empty__title' : 'ios-empty__title'">Nog geen afrekeningen</h2>
           <p [class]="desk() ? 'wk-empty__text' : 'ios-empty__text'">Creditnota’s komen automatisch uit Odoo. Je kunt ook een PDF toevoegen.</p>
@@ -53,7 +54,8 @@
               <button class="wk-tr wk-tr--link tl-row" type="button" role="row" (click)="show(row)" (contextmenu)="$event.preventDefault(); openMenu($event, row)">
                 <span class="wk-td wk-td--wrap tl-cell" role="cell"><b class="tl-name">{{ row.reference }}</b>
                   <span class="tl-sub">{{ period(row.periodFrom, row.periodTo) }} · {{ row.location }}@if (row.sourceKey) { · Odoo }</span></span>
-                <span class="wk-td wk-td--wrap tl-cell" role="cell"><span class="wk-pill" [class]="'tone-' + state.tone"><span class="wk-pill__dot" aria-hidden="true"></span>{{ state.label }}</span>
+                <!-- The group already names Te ontvangen / Ontvangen; only a draft's pill adds a word (Te controleren, Concept). -->
+                <span class="wk-td wk-td--wrap tl-cell" role="cell">@if (row.status === 'DRAFT') { <span class="wk-pill" [class]="'tone-' + state.tone"><span class="wk-pill__dot" aria-hidden="true"></span>{{ state.label }}</span> }
                   @if (rowNote) { <span class="tl-sub" [class.tl-warn]="rowNote.tone === 'warn'" [class.tl-ok]="rowNote.tone === 'ok'">{{ rowNote.text }}</span> }</span>
                 <span class="wk-td wk-td--num tl-cell tl-num" role="cell" data-hide="sm">{{ row.status === 'DRAFT' ? '—' : euro(row.commissionExcl) }}</span>
                 <span class="wk-td wk-td--num tl-cell tl-total" role="cell">{{ euro(row.netReceivable) }}</span>
@@ -79,7 +81,7 @@
                 <span class="tl-psub">{{ period(row.periodFrom, row.periodTo) }}@if (row.sourceKey) { · Odoo }</span>
                 @if (rowNote && rowNote.tone === 'warn') { <span class="tl-psub tl-warn">{{ rowNote.text }}</span> }</span>
               <span class="ios-cell__trail tl-ptrail"><span class="tl-ptotal">{{ euro(row.netReceivable) }}</span>
-                <span class="wk-pill" [class]="'tone-' + state.tone">{{ state.label }}</span></span>
+                @if (row.status === 'DRAFT') { <span class="wk-pill" [class]="'tone-' + state.tone">{{ state.label }}</span> }</span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
           }
@@ -88,7 +90,9 @@
     }
   }
   <div class="tl-import"><app-odoo-import-monitor kind="tica" /></div>
-  <p class="tl-foot">Commissie telt één keer als kost; de uitbetaling is een ontvangst, geen tweede omzet.</p>
+  <!-- The phone has no subbar: the booked commission (the desk's 'commissie € x') is said here. -->
+  <p class="tl-foot">@if (!desk() && answered() && sums().commissionEur) {Geboekte commissie {{ euro(sums().commissionEur) }} excl. btw; ze telt één keer als kost, de uitbetaling is een ontvangst.}
+    @else {Commissie telt één keer als kost; de uitbetaling is een ontvangst, geen tweede omzet.}</p>
 }
 
 @if (rowMenu(); as menu) {

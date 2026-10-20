@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, computed, inject, input, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, computed, inject, input, output, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -15,7 +15,7 @@ import type { MenuPoint } from '../../shared/context-menu-position';
 import { LoadError } from '../../shared/load-error';
 import { ticaDate, ticaMoment, ticaRangeError, ticaToday, validTicaDay } from './tica-format';
 import { SettlementAmounts, settlementDifference, ticaBankCandidates, ticaSettlementReady } from './tica-settlement-rules';
-import { settlementNote, settlementPeriod, settlementSections, settlementStatus, type SettlementFilter } from './tica-list-model';
+import { settlementNote, settlementPeriod, settlementSections, settlementStatus, settlementSums, type SettlementFilter } from './tica-list-model';
 
 type SettlementDraft = Omit<TicaSettlementWrite, keyof SettlementAmounts> & SettlementAmounts;
 const emptyDraft = (): SettlementDraft => ({ reference: '', location: 'TICA - Brussel', documentDate: ticaToday(), dueDate: null,
@@ -35,6 +35,8 @@ export class TicaSettlements {
   readonly query = input('');
   readonly filter = input<SettlementFilter>('all');
   readonly showList = input(true);
+  /** "Filters wissen" in the empty result: the page clears its search and status chip. */
+  readonly clear = output<void>();
   private readonly pdfInput = viewChild<ElementRef<HTMLInputElement>>('pdfInput');
   private readonly api = inject(TicaApi);
   private readonly route = inject(ActivatedRoute);
@@ -65,8 +67,11 @@ export class TicaSettlements {
   readonly difference = computed(() => settlementDifference(this.draft()));
   readonly candidates = computed(() => ticaBankCandidates(this.bankLines(), this.selected()?.netReceivable ?? 0, this.bankSearch()));
   readonly selectedBank = computed(() => this.candidates().find(line => line.id === this.bankChoice()) ?? null);
-  /** The first load answered (also when it failed): counts and sums may show. */
+  /** The first load returned (also when it failed): the skeleton gives way to the list or its error card. */
   readonly ready = signal(false);
+  /** The rows came in at least once: only then counts and sums may show, never a 0 next to the error card. */
+  readonly answered = signal(false);
+  readonly sums = computed(() => settlementSums(this.rows()));
   readonly sections = computed(() => settlementSections(this.rows(), this.query(), this.filter()));
   readonly rowMenu = signal<{ row: TicaSettlement; point: MenuPoint | null } | null>(null);
   readonly status = settlementStatus;
@@ -101,7 +106,7 @@ export class TicaSettlements {
   }
   async reload(): Promise<void> {
     this.loading.set(true); this.error.set(null);
-    try { const rows = await this.api.settlements(); if (!this.destroyRef.destroyed) { this.rows.set(rows);
+    try { const rows = await this.api.settlements(); if (!this.destroyRef.destroyed) { this.rows.set(rows); this.answered.set(true);
       const id = Number(this.route.snapshot.queryParamMap.get('settlement'));
       if (id && !this.editing() && !this.selected()) { const row = rows.find(row => row.id === id); if (row) this.show(row); }
     } }
@@ -225,7 +230,12 @@ export class TicaSettlements {
     this.downloading.set(true); this.actionError.set(null);
     try { const blob = await this.api.settlementDocument(row.sourceDocumentUrl);
       saveBlob(blob, `TICA-${row.reference || 'creditnota'}.${blob.type.toLowerCase().includes('xml') ? 'xml' : 'pdf'}`); }
-    catch (failure) { if (!this.destroyRef.destroyed) this.actionError.set(messageOf(failure, 'De creditnota kon niet worden gedownload.')); }
+    catch (failure) {
+      if (this.destroyRef.destroyed) return;
+      const message = messageOf(failure, 'De creditnota kon niet worden gedownload.');
+      /* From the row menu no sheet is open to show it in. */
+      if (this.editing() || this.selected()) this.actionError.set(message); else this.ui.toast(message, 'err');
+    }
     finally { if (!this.destroyRef.destroyed) this.downloading.set(false); }
   }
   private accept(row: TicaSettlement): void {

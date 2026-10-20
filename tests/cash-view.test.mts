@@ -242,6 +242,8 @@ test('data quality, rule switches and the reconciliation note', () => {
     ['PO-2026-043: vertrek geschat (aankomst 08/01 − 38 d transit).', 'Datum', 43],
     ['1 open kost zonder vervaldag.', 'Bekijken', null],
   ]);
+  assert.deepEqual(view.dataQuality({ ...input, ticaVatIncomplete: true }, forecast)[0].link, { path: ['/tica'], query: { tab: 'afrekeningen' }, po: null },
+    'Afrekeningen controleren opens the Afrekeningen tab, not today\'s sales');
   assert.deepEqual(view.unlinkedLines(exampleB()), { count: 1, eur: -9000 });
   const switches = view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, rulesOff: ['vat'] }, 40);
   assert.deepEqual(switches.map((row) => [row.rule, row.on]), [['invoices', true], ['tica', true], ['quotes', true], ['openQuotes', false], ['partner', true], ['containers', true], ['costs', true], ['vat', false]]);

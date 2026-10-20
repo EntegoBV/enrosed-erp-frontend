@@ -42,26 +42,42 @@ export function ticaLineRange(from: string, to: string, days: readonly TicaAnaly
   return { from: start < earliest ? earliest : start, to: end };
 }
 
+/**
+ * The pieces a line sold: an article the stock link maps as a full display of N (e1c0ea6) is N pieces, anything
+ * else TICA's quantity. The same rule as ticaPieces in tica/tica-list-model.ts (kept apart: type imports only here).
+ */
+export function linePieces(line: Pick<TicaSale, 'quantity' | 'stockSourceUnit' | 'stockUnitPieces'>): number {
+  const per = line.stockSourceUnit === 'DISPLAY' && (line.stockUnitPieces ?? 0) > 1 ? line.stockUnitPieces! : 0;
+  return per ? line.quantity * per : line.quantity;
+}
+
 const keyOf = (line: TicaSale): string => (line.productId !== null && line.mappingStatus === 'MATCHED' ? `p${line.productId}`
   : `a${(line.sku || line.beeyondArticleNumber || line.description).trim().toLocaleLowerCase('nl')}`);
 const receiptOf = (line: TicaSale): string => `${line.exhibitor}|${line.location}|${line.transactionNumber}`;
 
-/** The breakdown of a period: the server's sums from the first page, products and vestigingen from the lines. */
+/**
+ * The breakdown of a period: the server's sums from the first page, products and vestigingen from the lines. The
+ * pieces are the server's TICA quantity raised by the extra pieces of the full-display lines (all of them when the
+ * lines are complete), so 'Gem. per stuk' is per piece, not per display.
+ */
 export function ticaBreakdown(page: Pick<TicaSalesPage, 'transactionCount' | 'quantity' | 'grossTotal' | 'netTotal' | 'unmatchedLineCount'>,
   lines: readonly TicaSale[], complete: boolean): TicaBreakdown {
   const products = new Map<string, { row: TicaProductRow; receipts: Set<string>; latest: string }>();
   const places = new Map<string, { row: TicaPlaceRow; receipts: Set<string> }>();
+  let extraPieces = 0;
   for (const line of lines) {
     const key = keyOf(line);
+    const pieces = linePieces(line);
+    extraPieces += pieces - line.quantity;
     const product = products.get(key) ?? { row: { key, productId: key.startsWith('p') ? line.productId : null, name: line.description || 'Artikel zonder omschrijving',
       code: line.sku || line.beeyondArticleNumber || null, pieces: 0, netEur: 0, perPieceEur: null, transactions: 0 }, receipts: new Set<string>(), latest: '' };
-    product.row.pieces += line.quantity;
+    product.row.pieces += pieces;
     product.row.netEur = (cents(product.row.netEur) + cents(line.netTotal)) / 100;
     product.receipts.add(receiptOf(line));
     if (line.soldAt > product.latest && line.description) { product.latest = line.soldAt; product.row.name = line.description; }
     products.set(key, product);
     const place = places.get(line.location) ?? { row: { location: line.location || 'Onbekende vestiging', transactions: 0, pieces: 0, netEur: 0 }, receipts: new Set<string>() };
-    place.row.pieces += line.quantity;
+    place.row.pieces += pieces;
     place.row.netEur = (cents(place.row.netEur) + cents(line.netTotal)) / 100;
     place.receipts.add(receiptOf(line));
     places.set(line.location, place);
@@ -71,10 +87,11 @@ export function ticaBreakdown(page: Pick<TicaSalesPage, 'transactionCount' | 'qu
     .sort((a, b) => b.netEur - a.netEur || b.pieces - a.pieces || a.name.localeCompare(b.name, 'nl'));
   const placeRows = [...places.values()].map(({ row, receipts }) => ({ ...row, transactions: receipts.size }))
     .sort((a, b) => b.netEur - a.netEur || a.location.localeCompare(b.location, 'nl'));
+  const pieces = page.quantity + extraPieces;
   return {
-    transactions: page.transactionCount, pieces: page.quantity, netEur: money(page.netTotal),
+    transactions: page.transactionCount, pieces, netEur: money(page.netTotal),
     discountEur: Math.max(0, cents(page.grossTotal) - cents(page.netTotal)) / 100, unmatchedLines: page.unmatchedLineCount,
-    perPieceEur: page.quantity > 0 ? money(page.netTotal / page.quantity) : null,
+    perPieceEur: pieces > 0 ? money(page.netTotal / pieces) : null,
     perSaleEur: page.transactionCount > 0 ? money(page.netTotal / page.transactionCount) : null,
     products: productRows, locations: placeRows, complete,
   };

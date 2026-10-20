@@ -1,4 +1,4 @@
-import type { TicaSale, TicaSettlement, TicaStatus } from '../../core/api/tica-api';
+import type { TicaSale, TicaSalesPage, TicaSettlement, TicaStatus } from '../../core/api/tica-api';
 
 /*
  * TICA verkopen on the list recipe (Inkoop/Verkoop, 2026-10-20): the pure
@@ -103,6 +103,27 @@ export function periodText(from: string, to: string, today: string): string {
 
 export interface SalesTotals { lines: number; transactions: number; pieces: number; netEur: number; grossEur: number; discountEur: number; unmatched: number }
 
+type PieceFields = Pick<TicaSale, 'quantity' | 'stockSourceUnit' | 'stockUnitPieces'>;
+/** The pieces of a full display a line's stock link counts it as (e1c0ea6: 'Volledig display van N'), else 0. */
+const displayPieces = (line: PieceFields): number =>
+  (line.stockSourceUnit === 'DISPLAY' && (line.stockUnitPieces ?? 0) > 1 ? line.stockUnitPieces! : 0);
+
+/**
+ * The pieces a line sold: TICA counts its own articles, and an article mapped as a full display of N is N pieces.
+ * Without that mapping (no stock link yet, or a single piece) TICA's quantity is the pieces. Same rule as
+ * tica-breakdown.ts (Analyses), so both screens say the same 'st'.
+ */
+export function ticaPieces(line: PieceFields): number {
+  const per = displayPieces(line);
+  return per ? line.quantity * per : line.quantity;
+}
+
+/** '2 × 12' for a line of full displays (TICA's quantity times its pieces), '' for anything else. */
+export function displayText(line: PieceFields): string {
+  const per = displayPieces(line);
+  return per ? `${String(line.quantity).replace('.', ',')} × ${per}` : '';
+}
+
 const transactionKey = (line: Pick<TicaSale, 'exhibitor' | 'location' | 'transactionNumber'>): string =>
   `${line.exhibitor}|${line.location}|${line.transactionNumber}`;
 
@@ -112,10 +133,21 @@ export function salesTotals(lines: readonly TicaSale[]): SalesTotals {
   const gross = lines.reduce((sum, line) => sum + cents(line.grossTotal), 0);
   return {
     lines: lines.length, transactions: new Set(lines.map(transactionKey)).size,
-    pieces: lines.reduce((sum, line) => sum + line.quantity, 0),
+    pieces: lines.reduce((sum, line) => sum + ticaPieces(line), 0),
     netEur: net / 100, grossEur: gross / 100, discountEur: Math.max(0, gross - net) / 100,
     unmatched: lines.filter((line) => line.productId === null || line.mappingStatus !== 'MATCHED').length,
   };
+}
+
+/**
+ * The whole period of a loaded page: the lines' own sums when every line came in; past the loader's cap the server's
+ * sums, its TICA quantity raised by the extra pieces of the full-display lines that did load.
+ */
+export function pageTotals(page: TicaSalesPage & { complete: boolean }): SalesTotals {
+  if (page.complete) return salesTotals(page.lines);
+  const extra = page.lines.reduce((sum, line) => sum + ticaPieces(line) - line.quantity, 0);
+  return { lines: page.totalLines, transactions: page.transactionCount, pieces: page.quantity + extra, netEur: page.netTotal,
+    grossEur: page.grossTotal, discountEur: Math.max(0, cents(page.grossTotal) - cents(page.netTotal)) / 100, unmatched: page.unmatchedLineCount };
 }
 
 export const unmatched = (line: TicaSale): boolean => line.productId === null || line.mappingStatus !== 'MATCHED';
@@ -145,7 +177,11 @@ export function discountText(line: Pick<TicaSale, 'discountPercent' | 'grossTota
 
 /* ------------------------------------------------------------ import state */
 
-export interface SyncLine { text: string; tone: 'ok' | 'busy' | 'warn' | 'muted'; title: string }
+/**
+ * short: what still shows when the desk toolbar has no room for the words ('14:05', 'Ophalen…'); '' leaves the dot,
+ * where a banner under the subbar already says it (failed, off, not set up) or the state lasts a moment.
+ */
+export interface SyncLine { text: string; short: string; tone: 'ok' | 'busy' | 'warn' | 'muted'; title: string }
 
 function brussels(instant: Date): { day: string; time: string } {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -164,17 +200,20 @@ function when(value: string | null, now: Date): string | null {
 
 /** The import state in a few words for the toolbar pill (desk) or the caption (phone); the title holds the rest. */
 export function syncLine(status: TicaStatus | null, failed: boolean, now: Date): SyncLine {
-  if (!status) return failed ? { text: 'Status niet beschikbaar', tone: 'warn', title: 'De importstatus kon niet worden geladen.' }
-    : { text: 'Status ophalen…', tone: 'muted', title: '' };
+  if (!status) return failed ? { text: 'Status niet beschikbaar', short: '', tone: 'warn', title: 'De importstatus kon niet worden geladen.' }
+    : { text: 'Status ophalen…', short: '', tone: 'muted', title: '' };
   const last = when(status.lastSuccessAt, now);
   const title = last ? `Laatste geslaagde import ${last}` : 'Nog geen geslaagde import';
   switch (status.syncState) {
-    case 'RUNNING': case 'PENDING': return { text: 'Ophalen…', tone: 'busy', title };
-    case 'ERROR': return { text: 'Ophalen mislukt', tone: 'warn', title: [status.lastError, title].filter(Boolean).join(' · ') };
-    case 'DISABLED': return { text: 'Ophalen staat uit', tone: 'warn', title };
-    case 'NOT_CONFIGURED': return { text: 'Verbinding instellen', tone: 'warn', title };
-    case 'NEVER_SYNCED': return { text: 'Nog niet opgehaald', tone: 'muted', title };
-    default: return { text: last ? `Bijgewerkt ${last.replace(/^(om|op) /, '')}` : 'Bijgewerkt', tone: 'ok', title };
+    case 'RUNNING': case 'PENDING': return { text: 'Ophalen…', short: 'Ophalen…', tone: 'busy', title };
+    case 'ERROR': return { text: 'Ophalen mislukt', short: '', tone: 'warn', title: [status.lastError, title].filter(Boolean).join(' · ') };
+    case 'DISABLED': return { text: 'Ophalen staat uit', short: '', tone: 'warn', title };
+    case 'NOT_CONFIGURED': return { text: 'Verbinding instellen', short: '', tone: 'warn', title };
+    case 'NEVER_SYNCED': return { text: 'Nog niet opgehaald', short: 'Nog niet opgehaald', tone: 'muted', title };
+    default: {
+      const at = last ? last.replace(/^(om|op) /, '') : '';
+      return { text: at ? `Bijgewerkt ${at}` : 'Bijgewerkt', short: at, tone: 'ok', title };
+    }
   }
 }
 

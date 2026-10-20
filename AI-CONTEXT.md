@@ -1968,27 +1968,47 @@ Codex's integration (205415d, fcc6084: portal import, settlements from Odoo, fin
 recipe; every function stayed, the logic of `TicaSettlements` and its sheets is unchanged.
 - Desk (`tica-page.*`, encapsulation off, every rule under `app-tica-page`): toolbar = tabs Verkopen · Afrekeningen
   (counts; warn dot while a settlement is a draft), `wk-search` (`/`, Esc), on Verkopen the import state as one pill with
-  its refresh button ("Bijgewerkt 14:05", `syncLine`; the words hide below 1100 px), on Afrekeningen the primary
+  its refresh button ("Bijgewerkt 14:05", `syncLine`; below 1100 px only its `short` shows, '14:05' or 'Ophalen…', and the
+  words stay for screen readers in the pill's live region), on Afrekeningen the primary
   "Creditnota toevoegen" ("Creditnota" below 1280), and ⋯ (Nu ophalen on Afrekeningen, Afrekening handmatig toevoegen,
-  Meldingen). Subbar Verkopen: Vandaag · 7 dagen · Deze maand · Vorige maand · Periode (popover with two dates), Niet
-  herkend n, Vestiging (only with more than one), end = ready-guarded sums of what shows. Table Artikel · Product · Stuks ·
-  Omzet excl. btw · ⋯ grouped per Brussels day (sums only with more than one day); below an 860 px card Product folds into
-  the sub. Row menu: Verkoop en voorraad, Product openen, Bon n tonen, Alle verkopen van dit artikel. The period loads whole
-  (`TicaApi.allSales`, pages of 200, at most 10 000 lines; past the cap the sums are the server's and a warn line says so).
+  Meldingen). Subbar Verkopen: Vandaag · 7 dagen · Deze maand · Vorige maand · Periode (popover with two dates; a kit
+  overlay: Esc and Annuleren close it and return the focus to the chip, an outside click or a tab switch closes it, it
+  opens on the first date), Niet herkend n, Vestiging (with more than one, or while one is chosen that the period no
+  longer has), end = ready-guarded sums of what shows. A pressed toned chip drops its tone (the kit's tone rule comes after
+  aria-pressed). Table Artikel · Product · Stuks · Omzet excl. btw · ⋯ grouped per Brussels day (sums only with more than
+  one day); below an 860 px card Product folds into the sub, its stock fact too. Row menu: Verkoop en voorraad, Product
+  openen, Bon n tonen, Alle verkopen van dit artikel. The period loads whole (`TicaApi.allSales`, pages of 200, at most
+  10 000 lines; past the cap the sums are the server's and a warn line says so, and that with a filter they count only
+  the loaded lines).
+- Stuks are pieces (`ticaPieces`, the same rule as `linePieces` in Analyses): an article the stock link maps as a full
+  display of N (`stockSourceUnit` DISPLAY, `stockUnitPieces` N) counts N per TICA article, with '2 × 12' under the figure
+  (phone: '2 × 12 st'); anything else is TICA's quantity. Past the cap: the server's quantity plus the loaded displays'
+  extra pieces (`pageTotals`).
   Banners: status failed, ERROR with its last attempt and Opnieuw ophalen, DISABLED / NOT_CONFIGURED (info), a failed
   start, a failed reload over kept lines.
-- Afrekeningen: status chips Alle · Te boeken · Te ontvangen · Ontvangen, end Te ontvangen · Ontvangen · Commissie (the
-  old three metrics); table Creditnota · Status · Commissie · Netto incl. btw · ⋯ grouped Te boeken / Te ontvangen /
-  Ontvangen. The status cell names what a draft still needs (`settlementNote`: Broncreditnota ontbreekt, Omzet wijkt € x
+- Afrekeningen: status chips Alle · Te boeken · Te ontvangen · Ontvangen (all following the search), end '€ x open · € y
+  ontvangen · commissie € z' (the old three metrics); its Filters wissen clears only its search and chip. Table
+  Creditnota · Status · Commissie · Netto incl. btw · ⋯ grouped Te boeken / Te ontvangen / Ontvangen; only a draft has a
+  pill (Te controleren / Concept), the group names the others. The status cell names what a draft still needs
+  (`settlementNote`: Broncreditnota ontbreekt, Omzet wijkt € x
   af, Bedragen sluiten niet aan, Klaar om te boeken), an open one's expected day, a paid one's day. Row click = Codex's
   detail sheet; ⋯ = Openen, Broncreditnota downloaden, Wijzigen, Afrekening boeken (disabled until ready), Bankontvangst
-  koppelen, Geboekte commissie. The Odoo import monitor stays under the table. `TicaSettlements` stays mounted on both tabs
-  (`showList`) for `?settlement=` links (they open the tab) and the unsaved-change guard; upload errors have their own
-  banner with "Handmatig toevoegen".
-- Phone: large title with the caption ('7 dagen · 25 verkopen · € 1.979' / '€ x te ontvangen'), ⋯ glass circle (Nu
-  ophalen, Creditnota toevoegen, Handmatig, Meldingen), iOS segmented, search + filter circle (Filters sheet: period
-  presets and dates, Alleen niet herkend, Vestiging), period chips and Niet herkend (Verkopen) / Te boeken (Afrekeningen),
-  inset sections per day or state with one trail figure and one status. Meldingen is an iOS sheet of cells (mode, time,
+  koppelen, Geboekte commissie (a failed download from the menu is a toast: no sheet is open). The Odoo import monitor
+  stays under the table. `TicaSettlements` stays mounted on both tabs (`showList`) for `?settlement=` links (they open the
+  tab) and the unsaved-change guard; upload errors have their own banner with "Handmatig toevoegen". Its `ready` ends
+  the skeleton, `answered` (rows came in once) lets counts and sums show, so a failed first load shows its error card and
+  no 0. Links about settlements (cash forecast, Kaslijn, btw-aangifte, Vooruitblik) open `?tab=afrekeningen`.
+- Mounted once: `TicaSettlements` (`[desk]="desktop.active()"`), the stock card and `TicaSaleHistory` sit outside the
+  desk/phone `@if`, in one `.tl-panel` (`id="tica-results" role="tabpanel"`, what both segmented tabs point at); only
+  the chrome switches at 680 px, so a rotation or a narrowed window keeps an open sheet, its draft and a PDF being read
+  (tests/tica-page-contract.test.mts). A failed 'Nu ophalen' started on Afrekeningen is a toast (its banner is on
+  Verkopen). The row ⋯ sits at z-index 1, under the sticky day bar.
+- Phone: large title with the caption ('7 dagen · 25 verkopen · 48 st · € 1.979' / '€ x te ontvangen'), ⋯ glass circle
+  (Nu ophalen, Creditnota toevoegen, Handmatig, Meldingen), iOS segmented, search + filter circle (Filters sheet: period
+  presets and dates, Alleen niet herkend, Vestiging), quick chips: period and Niet herkend (Verkopen) / Te boeken
+  (Afrekeningen; both stay while pressed, so a filter never hides its own way back), inset sections per day or state
+  with one trail figure and, for a draft, its status. The foot says the discount ('korting € 21 op € 2.000 bruto') and,
+  on Afrekeningen, the booked commission; an empty filtered result has Filters wissen. Meldingen is an iOS sheet of cells (mode, time,
   the device link with "Nog geen toestel aangemeld", the last delivery).
 - Codex's TICA stock (e1c0ea6, merged into this layout the same day; its logic and calls unchanged): the
   `TicaStockSettings` card (state, verwerkt / vragen aandacht, a link per vestiging to its stock) with its sheet sits
@@ -2000,7 +2020,8 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   voorraad' (hint = `ticaStockLabel`) sets `?sale=` for `TicaSaleHistory`, mounted once at page level. The desk foot
   no longer says 'zonder voorraadboeking'.
 - Pure `tica-list-model.ts` (tests/tica-list-model.test.mts). Analyses › Verkoop has a TICA card (`tica-breakdown.ts`,
-  tests/tica-breakdown.test.mts): Gem. per stuk, Gem. per verkoop, Korting, Niet herkend, Producten (ERP product by id,
+  tests/tica-breakdown.test.mts): Gem. per stuk (pieces by `linePieces`: a full display counts its N pieces), Gem. per
+  verkoop, Korting, Niet herkend, Producten (ERP product by id,
   else by article code) and Vestigingen; omzet and transacties stay in Omzet per kanaal, the card adds to no total. Its
   lines load for the period (an open start begins at the first TICA day, at most the last 366 days, 5 000 lines).
 

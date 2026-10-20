@@ -18,8 +18,8 @@ import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, confirmLeave } from '../../shared/ui';
 import { ticaMoment, ticaRangeError, ticaToday } from './tica-format';
 import {
-  PRESETS, dayGroups, dayHead, discountText, periodText, presetOf, presetPeriod, saleMatches, saleTime, salesTotals, settlementCounts,
-  settlementSums, syncLine, unmatched, type SettlementFilter, type TicaPreset, type TicaTab,
+  PRESETS, dayGroups, dayHead, discountText, displayText, pageTotals, periodText, presetOf, presetPeriod, saleMatches, saleTime, salesTotals,
+  settlementCounts, settlementSums, syncLine, ticaPieces, unmatched, type SettlementFilter, type TicaPreset, type TicaTab,
 } from './tica-list-model';
 import { TicaSettlements } from './tica-settlements';
 import { TicaStockSettings } from './tica-stock-settings';
@@ -44,7 +44,9 @@ const NOT_KNOWN_YET = ' ';
  * Codex's stock link (TicaStockSettings, its card and sheet with its own
  * guard) sits under the sales table and stays mounted on both tabs too; a
  * sale's stock state is the desk's Product sub or the amber line, and its
- * history (TicaSaleHistory, ?sale=) opens from the row menu.
+ * history (TicaSaleHistory, ?sale=) opens from the row menu. Both are
+ * mounted once, outside the desk/phone switch, in the one tabpanel: a
+ * resize across 680 px never drops an open sheet or its draft.
  * Area rules in tica-page.scss, all under app-tica-page (encapsulation off).
  */
 @Component({
@@ -72,6 +74,9 @@ export class TicaPage {
   readonly settlements = viewChild(TicaSettlements);
   private readonly stockSettings = viewChild(TicaStockSettings);
   private readonly subbar = viewChild<ElementRef<HTMLElement>>('subbar');
+  private readonly periodAnchor = viewChild<ElementRef<HTMLElement>>('periodAnchor');
+  private readonly periodChip = viewChild<ElementRef<HTMLButtonElement>>('periodChip');
+  private readonly periodFrom = viewChild<ElementRef<HTMLInputElement>>('periodFrom');
 
   /* ------------------------------------------------------------ state */
 
@@ -114,7 +119,9 @@ export class TicaPage {
   readonly ready = computed(() => this.sales() !== null);
   readonly lines = computed(() => this.sales()?.lines ?? []);
   readonly locations = computed(() => [...new Set(this.lines().map((line) => line.location).filter(Boolean))].sort());
-  readonly locationOptions = computed(() => ['', ...this.locations()]);
+  /** The vestigingen to choose from: the period's, plus a chosen one the new period no longer has (so it stays visible and undoable). */
+  readonly locationChoices = computed(() => [...new Set([...this.locations(), ...(this.location() ? [this.location()] : [])])].sort());
+  readonly locationOptions = computed(() => ['', ...this.locationChoices()]);
   readonly searched = computed(() => this.lines().filter((line) => saleMatches(line, this.query()) && (!this.location() || line.location === this.location())));
   readonly shown = computed(() => (this.unmatchedOnly() ? this.searched().filter(unmatched) : this.searched()));
   readonly groups = computed(() => dayGroups(this.shown()));
@@ -122,11 +129,7 @@ export class TicaPage {
   /** The whole period: the server's sums when the lines stopped at the cap, else the lines'. */
   readonly periodTotals = computed(() => {
     const page = this.sales();
-    if (page && !page.complete) {
-      return { lines: page.totalLines, transactions: page.transactionCount, pieces: page.quantity, netEur: page.netTotal,
-        grossEur: page.grossTotal, discountEur: Math.max(0, page.grossTotal - page.netTotal), unmatched: page.unmatchedLineCount };
-    }
-    return salesTotals(this.lines());
+    return page ? pageTotals(page) : salesTotals([]);
   });
   readonly narrowed = computed(() => !!this.query().trim() || this.unmatchedOnly() || !!this.location());
   readonly shownTotals = computed(() => (this.narrowed() ? salesTotals(this.shown()) : this.periodTotals()));
@@ -138,7 +141,8 @@ export class TicaPage {
   /* ------------------------------------------------------------ settlements */
 
   readonly settlementRows = computed(() => this.settlements()?.rows() ?? []);
-  readonly settlementsReady = computed(() => this.settlements()?.ready() ?? false);
+  /** The settlements answered once: counts and sums may show (a failed first load shows its error card, never a 0). */
+  readonly settlementsReady = computed(() => this.settlements()?.answered() ?? false);
   readonly settlementCounts = computed(() => settlementCounts(this.settlementRows(), this.query()));
   readonly settlementSums = computed(() => settlementSums(this.settlementRows()));
 
@@ -157,7 +161,7 @@ export class TicaPage {
     if (this.tab() === 'verkopen') {
       if (!this.ready()) return NOT_KNOWN_YET;
       const totals = this.shownTotals();
-      return `${this.periodWords()} · ${this.plural(totals.transactions, 'verkoop', 'verkopen')} · ${this.whole(totals.netEur)}`;
+      return `${this.periodWords()} · ${this.plural(totals.transactions, 'verkoop', 'verkopen')} · ${this.count(totals.pieces)} st · ${this.whole(totals.netEur)}`;
     }
     if (!this.settlementsReady()) return NOT_KNOWN_YET;
     const sums = this.settlementSums();
@@ -192,6 +196,8 @@ export class TicaPage {
   readonly dayHead = dayHead;
   readonly saleTime = saleTime;
   readonly discountText = discountText;
+  readonly displayText = displayText;
+  readonly pieces = ticaPieces;
   readonly unmatched = unmatched;
 
   constructor() {
@@ -223,6 +229,8 @@ export class TicaPage {
       observer.observe(bar);
       onCleanup(() => { observer.disconnect(); host.style.removeProperty('--tl-subbar-h'); });
     });
+    /* The Periode popover takes the focus on its first date when it opens. */
+    effect(() => this.periodFrom()?.nativeElement.focus());
   }
 
   /* ------------------------------------------------------------ words */
@@ -272,6 +280,7 @@ export class TicaPage {
     if (tab === this.tab()) return;
     this.tab.set(tab);
     this.query.set('');
+    this.periodOpen.set(false);
     void this.router.navigate([], { relativeTo: this.route, replaceUrl: true, queryParamsHandling: 'merge',
       queryParams: { tab: tab === 'afrekeningen' ? 'afrekeningen' : null, settlement: null } });
   }
@@ -282,11 +291,32 @@ export class TicaPage {
     this.setPeriod(period.from, period.to);
   }
 
+  /* The desk Periode popover closes like the kit's others (AnPeriodPicker, FinanceFilters): Esc and Annuleren return the
+     focus to the chip, a click outside just closes; data-kit-overlay keeps the page keys ('/') out while it is open. */
+  togglePeriod(): void {
+    if (this.periodOpen()) this.closePeriod(true);
+    else this.periodOpen.set(true);
+  }
+
+  closePeriod(focus: boolean): void {
+    if (!this.periodOpen()) return;
+    this.periodOpen.set(false);
+    if (focus) this.periodChip()?.nativeElement.focus();
+  }
+
+  @HostListener('document:keydown.escape')
+  escapePeriod(): void { this.closePeriod(true); }
+
+  @HostListener('document:pointerdown', ['$event'])
+  outsidePeriod(event: Event): void {
+    if (this.periodOpen() && !this.periodAnchor()?.nativeElement.contains(event.target as Node)) this.closePeriod(false);
+  }
+
   applyCustom(): void {
     const error = ticaRangeError(this.draftFrom(), this.draftTo());
     if (error) { this.formError.set(error); return; }
     this.formError.set(null);
-    this.periodOpen.set(false);
+    this.closePeriod(true);
     this.setPeriod(this.draftFrom(), this.draftTo());
   }
 
@@ -301,6 +331,12 @@ export class TicaPage {
     this.query.set('');
     this.unmatchedOnly.set(false);
     this.location.set('');
+    this.settlementFilter.set('all');
+  }
+
+  /** Afrekeningen' own Filters wissen: its search and status chip, never the sales' filters. */
+  clearSettlementFilters(): void {
+    this.query.set('');
     this.settlementFilter.set('all');
   }
 
@@ -442,7 +478,11 @@ export class TicaPage {
         this.pollTimer = setTimeout(() => void this.loadStatus(), 5000);
       }
     } catch (failure) {
-      if (!this.destroyed) this.syncError.set(messageOf(failure, 'Verkopen ophalen kon niet worden gestart.'));
+      if (this.destroyed) return;
+      const message = messageOf(failure, 'Verkopen ophalen kon niet worden gestart.');
+      this.syncError.set(message);
+      /* The banner sits on Verkopen; started from the ⋯ menu on Afrekeningen it would fail unseen. */
+      if (this.tab() !== 'verkopen') this.ui.toast(message, 'err');
     } finally { if (!this.destroyed) this.syncing.set(false); }
   }
 

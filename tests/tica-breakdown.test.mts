@@ -61,3 +61,17 @@ test('vestigingen by revenue with their own receipts and pieces', () => {
   ]);
   assert.equal(result.complete, false);
 });
+
+test('full displays count their pieces: Gem. per stuk is per piece, also for the products and vestigingen', () => {
+  const lines = [
+    sale({ productId: 7, quantity: 2, grossTotal: 80, netTotal: 80, stockSourceUnit: 'DISPLAY', stockUnitPieces: 12, transactionNumber: '1' }),
+    sale({ productId: 8, sku: 'ST-1', description: 'Steel', quantity: 10, grossTotal: 40, netTotal: 40, stockSourceUnit: 'PIECE', stockUnitPieces: 12, transactionNumber: '2' }),
+  ];
+  const result = ticaBreakdown({ transactionCount: 2, quantity: 12, grossTotal: 120, netTotal: 120, unmatchedLineCount: 0 }, lines, true);
+  assert.equal(result.pieces, 34);
+  assert.equal(result.perPieceEur, 3.53);
+  assert.deepEqual(result.products.map((row) => [row.productId, row.pieces, row.perPieceEur]), [[7, 24, 3.33], [8, 10, 4]]);
+  assert.equal(result.locations[0].pieces, 34);
+  const capped = ticaBreakdown({ transactionCount: 900, quantity: 1000, grossTotal: 5000, netTotal: 5000, unmatchedLineCount: 0 }, lines, false);
+  assert.equal(capped.pieces, 1022, 'past the cap: the server quantity plus the loaded displays\' extra pieces');
+});

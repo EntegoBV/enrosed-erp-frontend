@@ -11,10 +11,12 @@
       <button class="wk-search__clear" type="button" aria-label="Zoekopdracht wissen" (click)="query.set('')"><app-icon name="close" [size]="14" /></button>
     </div>
     @if (tab() === 'verkopen') {
-      <!-- The import state and "Nu ophalen" as one control: the import runs on its own every 15 minutes. -->
+      <!-- The import state and "Nu ophalen" as one control: the import runs on its own every 15 minutes. Below 1100 px the
+           words stay for screen readers only and the time (or 'Ophalen…') shows. -->
       <span class="wk-pill tl-sync" role="status" [attr.title]="sync().title || null"
             [class.tone-ok]="sync().tone === 'ok'" [class.tone-warn]="sync().tone === 'warn'" [class.tone-blue]="sync().tone === 'busy'">
         <span class="wk-pill__dot" aria-hidden="true"></span><span class="tl-sync__text">{{ sync().text }}</span>
+        @if (sync().short) { <span class="tl-sync__short" aria-hidden="true">{{ sync().short }}</span> }
         <button class="tl-sync__go" type="button" [disabled]="!canSync()" (click)="startSync()" aria-label="Nu ophalen" title="Nu ophalen">
           <app-icon name="refresh" [size]="14" /></button>
       </span>
@@ -30,117 +32,8 @@
   }
 </app-page-header>
 
-@if (desktop.active()) {
-  <div class="content tl">
-    @if (tab() === 'verkopen') {
-      <div #subbar class="wk-subbar tl-subbar">
-        <div class="wk-chips" role="group" aria-label="Periode">
-          @for (option of presets; track option.id) {
-            <button class="wk-chip" type="button" [attr.aria-pressed]="preset() === option.id" (click)="pickPreset(option.id)">{{ option.label }}</button>
-          }
-          <span class="wk-popover-anchor">
-            <button class="wk-chip" type="button" aria-haspopup="dialog" [attr.aria-expanded]="periodOpen()" [attr.aria-pressed]="preset() === null"
-                    (click)="periodOpen.set(!periodOpen())">{{ preset() === null ? periodWords() : 'Periode' }} <app-icon name="chevron-down" [size]="13" /></button>
-            @if (periodOpen()) {
-              <form class="wk-popover tl-period" role="dialog" aria-label="Periode kiezen" (ngSubmit)="applyCustom()" (keydown.escape)="periodOpen.set(false)">
-                <div class="tl-period__fields">
-                  <label class="field"><span>Van</span><input class="input" type="date" name="from" required [ngModel]="draftFrom()" (ngModelChange)="draftFrom.set($event)" /></label>
-                  <label class="field"><span>Tot en met</span><input class="input" type="date" name="to" required [ngModel]="draftTo()" (ngModelChange)="draftTo.set($event)" /></label>
-                </div>
-                @if (formError(); as error) { <p class="tl-warn" role="alert">{{ error }}</p> }
-                <div class="wk-popover__foot"><button class="wk-btn wk-btn--sm" type="button" (click)="periodOpen.set(false)">Annuleren</button>
-                  <button class="wk-btn wk-btn--sm wk-btn--primary" type="submit">Tonen</button></div>
-              </form>
-            }
-          </span>
-        </div>
-        @if (ready() && (unmatchedCount() || unmatchedOnly())) {
-          <button class="wk-chip" type="button" [class.tone-warn]="unmatchedCount() > 0" [attr.aria-pressed]="unmatchedOnly()" (click)="unmatchedOnly.set(!unmatchedOnly())"
-                  title="Verkoopregels zonder gekoppeld ERP-product; ze tellen wel mee">Niet herkend <span class="wk-seg__count">{{ unmatchedCount() }}</span></button>
-        }
-        @if (locations().length > 1) {
-          <span class="wk-chip tl-select" [class.is-on]="!!location()">
-            <span class="tl-select__label">{{ location() || 'Vestiging' }}</span><app-icon name="chevron-down" [size]="13" />
-            <select class="tl-select__native" aria-label="Vestiging" [value]="location()" (change)="location.set($any($event.target).value)">
-              <option value="">Alle vestigingen</option>
-              @for (place of locations(); track place) { <option [value]="place">{{ place }}</option> }
-            </select>
-          </span>
-        }
-        <span class="wk-subbar__end tl-subbar__end">@if (ready()) {@let t = shownTotals();@if (narrowed()) { {{ count(shown().length) }} van {{ count(periodTotals().lines) }} regels · }<b>{{ whole(t.netEur) }}</b> · {{ plural(t.transactions, 'verkoop', 'verkopen') }} · {{ count(t.pieces) }} st@if (t.discountEur > 0) { · korting {{ whole(t.discountEur) }} }}</span>
-        @if (narrowed()) { <button class="wk-btn wk-btn--ghost wk-btn--sm tl-clear" type="button" (click)="clearFilters()">Filters wissen</button> }
-      </div>
-      <ng-container *ngTemplateOutlet="banners" />
-      @if (!ready() && salesError(); as error) {
-        <div class="wk-card"><app-load-error title="TICA-verkopen konden niet worden geladen" [message]="error" [busy]="loading()" (retry)="loadSales()" /></div>
-      } @else if (!ready()) {
-        <div class="wk-card" role="status" aria-label="Verkopen laden"><app-skeleton kind="table" [rows]="8" /></div>
-      } @else if (!groups().length) {
-        <div class="wk-card"><ng-container *ngTemplateOutlet="salesEmpty" /></div>
-      } @else {
-        <div class="wk-card tl-card">
-          <div class="wk-table tl-table" id="tica-results" role="table" aria-label="TICA-verkopen">
-            <div class="wk-thead" role="row">
-              <span class="wk-th" role="columnheader">Artikel</span>
-              <span class="wk-th" role="columnheader" data-hide="sm">Product</span>
-              <span class="wk-th wk-th--num" role="columnheader">Stuks</span>
-              <span class="wk-th wk-th--num" role="columnheader">Omzet excl. btw</span>
-              <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
-            </div>
-            @for (day of groups(); track day.date) {
-              <div class="wk-group" role="row">
-                <span class="wk-group__label" role="rowheader"><span class="tl-group__name">{{ dayHead(day.date, today()) }}</span>
-                  @if (groups().length > 1) { <span class="wk-group__count">· {{ plural(day.totals.transactions, 'verkoop', 'verkopen') }} · {{ count(day.totals.pieces) }} st · {{ whole(day.totals.netEur) }}</span> }</span>
-              </div>
-              @for (line of day.lines; track line.id) {
-                <div class="tl-rowwrap" role="none">
-                  <div class="wk-tr tl-row" role="row" (contextmenu)="$event.preventDefault(); openLineMenu($event, line)">
-                    <span class="wk-td wk-td--wrap tl-cell" role="cell"><b class="tl-name">{{ line.description || 'Artikel zonder omschrijving' }}</b>
-                      <span class="tl-sub">{{ saleTime(line.soldAt) }} · bon {{ line.transactionNumber }}@if (line.sku || line.beeyondArticleNumber) { · {{ line.sku || line.beeyondArticleNumber }} }@if (locations().length > 1) { · {{ line.location }} }<span class="tl-fold">@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }</span></span></span>
-                    <span class="wk-td wk-td--wrap tl-cell" role="cell" data-hide="sm">
-                      @if (unmatched(line)) { <span class="tl-warn">Niet herkend</span> }
-                      @else { <a class="tl-link" [routerLink]="['/products', line.productId]">ERP-product ›</a> }
-                      @if (stockFact(line); as fact) { <span class="tl-sub">{{ fact }}</span> }
-                    </span>
-                    <span class="wk-td wk-td--num tl-cell tl-num" role="cell">{{ count(line.quantity) }}</span>
-                    <span class="wk-td wk-td--num tl-cell tl-total" role="cell">{{ euro(line.netTotal) }}
-                      @if (discountText(line); as off) { <small class="tl-sub">{{ off }} · {{ euro(line.grossTotal) }}</small> }</span>
-                    <span class="wk-td" role="cell"></span>
-                    @if (stockAttention(line); as attn) { <span class="tl-attn" [attr.title]="attn"><b>1</b><span>{{ attn }}</span></span> }
-                  </div>
-                  <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon tl-more" type="button" aria-haspopup="menu"
-                          [attr.aria-label]="'Acties voor ' + (line.description || 'deze regel')" (click)="openLineMenu($event, line)"><app-icon name="more" [size]="16" /></button>
-                </div>
-              }
-            }
-          </div>
-        </div>
-        @if (sales() && !sales()!.complete) {
-          <p class="tl-foot tl-warn">Getoond: de nieuwste {{ count(lines().length) }} van {{ count(sales()!.totalLines) }} regels. De sommen tellen alles; kies een kortere periode voor de rest.</p>
-        }
-      }
-      <p class="tl-foot">Bedragen excl. btw na korting; ze tellen als omzet in kanaal TICA, zonder factuur. Voorraad volgt de koppeling hieronder; elke correctie blijft in de geschiedenis.</p>
-    } @else {
-      <div #subbar class="wk-subbar tl-subbar">
-        <div class="wk-chips" role="group" aria-label="Filter op status">
-          <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'all'" (click)="settlementFilter.set('all')">Alle
-            @if (settlementsReady()) { <span class="wk-seg__count">{{ settlementRows().length }}</span> }</button>
-          <button class="wk-chip" type="button" [class.tone-warn]="settlementCounts().boeken > 0" [attr.aria-pressed]="settlementFilter() === 'boeken'"
-                  (click)="settlementFilter.set(settlementFilter() === 'boeken' ? 'all' : 'boeken')">Te boeken @if (settlementsReady()) { <span class="wk-seg__count">{{ settlementCounts().boeken }}</span> }</button>
-          <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'ontvangen'"
-                  (click)="settlementFilter.set(settlementFilter() === 'ontvangen' ? 'all' : 'ontvangen')">Te ontvangen @if (settlementsReady()) { <span class="wk-seg__count">{{ settlementCounts().ontvangen }}</span> }</button>
-          <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'betaald'"
-                  (click)="settlementFilter.set(settlementFilter() === 'betaald' ? 'all' : 'betaald')">Ontvangen @if (settlementsReady()) { <span class="wk-seg__count">{{ settlementCounts().betaald }}</span> }</button>
-        </div>
-        <span class="wk-subbar__end tl-subbar__end">@if (settlementsReady()) {Te ontvangen <b>{{ whole(settlementSums().openEur) }}</b> · Ontvangen {{ whole(settlementSums().paidEur) }} · Commissie {{ whole(settlementSums().commissionEur) }}}</span>
-        @if (query() || settlementFilter() !== 'all') { <button class="wk-btn wk-btn--ghost wk-btn--sm tl-clear" type="button" (click)="clearFilters()">Filters wissen</button> }
-      </div>
-    }
-    <app-tica-settlements [desk]="true" [query]="query()" [filter]="settlementFilter()" [showList]="tab() === 'afrekeningen'" />
-    <ng-container *ngTemplateOutlet="stock" />
-  </div>
-} @else {
-  <div class="content tl tl--phone">
+<div class="content tl" [class.tl--phone]="!desktop.active()">
+  @if (!desktop.active()) {
     <app-segmented variant="ios" class="tl-tabs" label="TICA" semantics="tabs" controls="tica-results" [options]="tabOptions()"
                    [value]="tab()" (changed)="switchTab($any($event))" />
     <div class="ios-search tl-isearch">
@@ -159,25 +52,139 @@
         </button>
       }
     </div>
-    @if (tab() === 'verkopen') {
-      <div class="ios-chips tl-ichips" role="group" aria-label="Periode">
-        @for (option of presets; track option.id) {
-          <button class="ios-chip" type="button" [attr.aria-pressed]="preset() === option.id" (click)="pickPreset(option.id)">{{ option.label }}</button>
+  }
+
+  <!-- One panel for both tabs and layouts, so the tabs' aria-controls always find it. Only the chrome inside switches at
+       680 px; the settlements and the stock link below are mounted once, so a resize or a rotation keeps an open sheet,
+       its draft and a PDF still being read. -->
+  <div class="tl-panel" id="tica-results" role="tabpanel" [attr.aria-label]="tab() === 'verkopen' ? 'Verkopen' : 'Afrekeningen'">
+    @if (desktop.active()) {
+      @if (tab() === 'verkopen') {
+        <div #subbar class="wk-subbar tl-subbar">
+          <div class="wk-chips" role="group" aria-label="Periode">
+            @for (option of presets; track option.id) {
+              <button class="wk-chip" type="button" [attr.aria-pressed]="preset() === option.id" (click)="pickPreset(option.id)">{{ option.label }}</button>
+            }
+            <span #periodAnchor class="wk-popover-anchor">
+              <button #periodChip class="wk-chip" type="button" aria-haspopup="dialog" [attr.aria-expanded]="periodOpen()" [attr.aria-pressed]="preset() === null"
+                      (click)="togglePeriod()">{{ preset() === null ? periodWords() : 'Periode' }} <app-icon name="chevron-down" [size]="13" /></button>
+              @if (periodOpen()) {
+                <form class="wk-popover tl-period" role="dialog" aria-label="Periode kiezen" data-kit-overlay (ngSubmit)="applyCustom()">
+                  <div class="tl-period__fields">
+                    <label class="field"><span>Van</span><input #periodFrom class="input" type="date" name="from" required [ngModel]="draftFrom()" (ngModelChange)="draftFrom.set($event)" /></label>
+                    <label class="field"><span>Tot en met</span><input class="input" type="date" name="to" required [ngModel]="draftTo()" (ngModelChange)="draftTo.set($event)" /></label>
+                  </div>
+                  @if (formError(); as error) { <p class="tl-warn" role="alert">{{ error }}</p> }
+                  <div class="wk-popover__foot"><button class="wk-btn wk-btn--sm" type="button" (click)="closePeriod(true)">Annuleren</button>
+                    <button class="wk-btn wk-btn--sm wk-btn--primary" type="submit">Tonen</button></div>
+                </form>
+              }
+            </span>
+          </div>
+          @if (ready() && (unmatchedCount() || unmatchedOnly())) {
+            <button class="wk-chip" type="button" [class.tone-warn]="unmatchedCount() > 0 && !unmatchedOnly()" [attr.aria-pressed]="unmatchedOnly()" (click)="unmatchedOnly.set(!unmatchedOnly())"
+                    title="Verkoopregels zonder gekoppeld ERP-product; ze tellen wel mee">Niet herkend <span class="wk-seg__count">{{ unmatchedCount() }}</span></button>
+          }
+          @if (locations().length > 1 || location()) {
+            <span class="wk-chip tl-select" [class.is-on]="!!location()">
+              <span class="tl-select__label">{{ location() || 'Vestiging' }}</span><app-icon name="chevron-down" [size]="13" />
+              <select class="tl-select__native" aria-label="Vestiging" [value]="location()" (change)="location.set($any($event.target).value)">
+                <option value="">Alle vestigingen</option>
+                @for (place of locationChoices(); track place) { <option [value]="place">{{ place }}</option> }
+              </select>
+            </span>
+          }
+          <span class="wk-subbar__end tl-subbar__end">@if (ready()) {@let t = shownTotals();@if (narrowed()) { {{ count(shown().length) }} van {{ count(periodTotals().lines) }} regels · }<b>{{ whole(t.netEur) }}</b> · {{ plural(t.transactions, 'verkoop', 'verkopen') }} · {{ count(t.pieces) }} st@if (t.discountEur > 0) { · korting {{ whole(t.discountEur) }} }}</span>
+          @if (narrowed()) { <button class="wk-btn wk-btn--ghost wk-btn--sm tl-clear" type="button" (click)="clearFilters()">Filters wissen</button> }
+        </div>
+        <ng-container *ngTemplateOutlet="banners" />
+        @if (!ready() && salesError(); as error) {
+          <div class="wk-card"><app-load-error title="TICA-verkopen konden niet worden geladen" [message]="error" [busy]="loading()" (retry)="loadSales()" /></div>
+        } @else if (!ready()) {
+          <div class="wk-card" role="status" aria-label="Verkopen laden"><app-skeleton kind="table" [rows]="8" /></div>
+        } @else if (!groups().length) {
+          <div class="wk-card"><ng-container *ngTemplateOutlet="salesEmpty" /></div>
+        } @else {
+          <div class="wk-card tl-card">
+            <div class="wk-table tl-table" role="table" aria-label="TICA-verkopen">
+              <div class="wk-thead" role="row">
+                <span class="wk-th" role="columnheader">Artikel</span>
+                <span class="wk-th" role="columnheader" data-hide="sm">Product</span>
+                <span class="wk-th wk-th--num" role="columnheader">Stuks</span>
+                <span class="wk-th wk-th--num" role="columnheader">Omzet excl. btw</span>
+                <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
+              </div>
+              @for (day of groups(); track day.date) {
+                <div class="wk-group" role="row">
+                  <span class="wk-group__label" role="rowheader"><span class="tl-group__name">{{ dayHead(day.date, today()) }}</span>
+                    @if (groups().length > 1) { <span class="wk-group__count">· {{ plural(day.totals.transactions, 'verkoop', 'verkopen') }} · {{ count(day.totals.pieces) }} st · {{ whole(day.totals.netEur) }}</span> }</span>
+                </div>
+                @for (line of day.lines; track line.id) {
+                  <div class="tl-rowwrap" role="none">
+                    <div class="wk-tr tl-row" role="row" (contextmenu)="$event.preventDefault(); openLineMenu($event, line)">
+                      <span class="wk-td wk-td--wrap tl-cell" role="cell"><b class="tl-name">{{ line.description || 'Artikel zonder omschrijving' }}</b>
+                        <span class="tl-sub">{{ saleTime(line.soldAt) }} · bon {{ line.transactionNumber }}@if (line.sku || line.beeyondArticleNumber) { · {{ line.sku || line.beeyondArticleNumber }} }@if (locations().length > 1) { · {{ line.location }} }<span class="tl-fold">@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }@if (stockFact(line); as fact) { · {{ fact }} }</span></span></span>
+                      <span class="wk-td wk-td--wrap tl-cell" role="cell" data-hide="sm">
+                        @if (unmatched(line)) { <span class="tl-warn">Niet herkend</span> }
+                        @else { <a class="tl-link" [routerLink]="['/products', line.productId]">ERP-product ›</a> }
+                        @if (stockFact(line); as fact) { <span class="tl-sub">{{ fact }}</span> }
+                      </span>
+                      <span class="wk-td wk-td--num tl-cell tl-num" role="cell">{{ count(pieces(line)) }}
+                        @if (displayText(line); as displays) { <small class="tl-sub" title="Volledige displays">{{ displays }}</small> }</span>
+                      <span class="wk-td wk-td--num tl-cell tl-total" role="cell">{{ euro(line.netTotal) }}
+                        @if (discountText(line); as off) { <small class="tl-sub">{{ off }} · {{ euro(line.grossTotal) }}</small> }</span>
+                      <span class="wk-td" role="cell"></span>
+                      @if (stockAttention(line); as attn) { <span class="tl-attn" [attr.title]="attn"><b>1</b><span>{{ attn }}</span></span> }
+                    </div>
+                    <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon tl-more" type="button" aria-haspopup="menu"
+                            [attr.aria-label]="'Acties voor ' + (line.description || 'deze regel')" (click)="openLineMenu($event, line)"><app-icon name="more" [size]="16" /></button>
+                  </div>
+                }
+              }
+            </div>
+          </div>
+          @if (sales() && !sales()!.complete) {
+            <p class="tl-foot tl-warn">Getoond: de nieuwste {{ count(lines().length) }} van {{ count(sales()!.totalLines) }} regels.
+              {{ narrowed() ? 'Met een filter tellen de sommen alleen deze regels' : 'De sommen tellen alles' }}; kies een kortere periode voor de rest.</p>
+          }
         }
-        @if (preset() === null) { <button class="ios-chip" type="button" aria-pressed="true" (click)="filtersOpen.set(true)">{{ periodWords() }}</button> }
-        @if (ready() && unmatchedCount()) {
-          <button class="ios-chip" type="button" [attr.aria-pressed]="unmatchedOnly()" (click)="unmatchedOnly.set(!unmatchedOnly())">Niet herkend <span class="ios-chip__badge tl-ichip__badge--warn">{{ unmatchedCount() }}</span></button>
-        }
-      </div>
-      <ng-container *ngTemplateOutlet="banners" />
-      @if (!ready() && salesError(); as error) {
-        <app-load-error title="TICA-verkopen konden niet worden geladen" [message]="error" [busy]="loading()" (retry)="loadSales()" />
-      } @else if (!ready()) {
-        <div class="tl-loading" role="status" aria-label="Verkopen laden"><app-skeleton kind="group" [rows]="5" /></div>
-      } @else if (!groups().length) {
-        <ng-container *ngTemplateOutlet="salesEmpty" />
+        <p class="tl-foot">Bedragen excl. btw na korting; ze tellen als omzet in kanaal TICA, zonder factuur. Voorraad volgt de koppeling hieronder; elke correctie blijft in de geschiedenis.</p>
       } @else {
-        <div id="tica-results" role="tabpanel" aria-label="Verkopen">
+        <div #subbar class="wk-subbar tl-subbar">
+          <div class="wk-chips" role="group" aria-label="Filter op status">
+            @let counts = settlementCounts();
+            <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'all'" (click)="settlementFilter.set('all')">Alle
+              @if (settlementsReady()) { <span class="wk-seg__count">{{ counts.boeken + counts.ontvangen + counts.betaald }}</span> }</button>
+            <button class="wk-chip" type="button" [class.tone-warn]="counts.boeken > 0 && settlementFilter() !== 'boeken'" [attr.aria-pressed]="settlementFilter() === 'boeken'"
+                    (click)="settlementFilter.set(settlementFilter() === 'boeken' ? 'all' : 'boeken')">Te boeken @if (settlementsReady()) { <span class="wk-seg__count">{{ counts.boeken }}</span> }</button>
+            <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'ontvangen'"
+                    (click)="settlementFilter.set(settlementFilter() === 'ontvangen' ? 'all' : 'ontvangen')">Te ontvangen @if (settlementsReady()) { <span class="wk-seg__count">{{ counts.ontvangen }}</span> }</button>
+            <button class="wk-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'betaald'"
+                    (click)="settlementFilter.set(settlementFilter() === 'betaald' ? 'all' : 'betaald')">Ontvangen @if (settlementsReady()) { <span class="wk-seg__count">{{ counts.betaald }}</span> }</button>
+          </div>
+          <span class="wk-subbar__end tl-subbar__end">@if (settlementsReady()) {@let sums = settlementSums();<b>{{ whole(sums.openEur) }}</b> open · {{ whole(sums.paidEur) }} ontvangen · commissie {{ whole(sums.commissionEur) }}}</span>
+          @if (query() || settlementFilter() !== 'all') { <button class="wk-btn wk-btn--ghost wk-btn--sm tl-clear" type="button" (click)="clearSettlementFilters()">Filters wissen</button> }
+        </div>
+      }
+    } @else {
+      @if (tab() === 'verkopen') {
+        <div class="ios-chips tl-ichips" role="group" aria-label="Snelfilters">
+          @for (option of presets; track option.id) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="preset() === option.id" (click)="pickPreset(option.id)">{{ option.label }}</button>
+          }
+          @if (preset() === null) { <button class="ios-chip" type="button" aria-pressed="true" (click)="filtersOpen.set(true)">{{ periodWords() }}</button> }
+          @if (ready() && (unmatchedCount() || unmatchedOnly())) {
+            <button class="ios-chip" type="button" [attr.aria-pressed]="unmatchedOnly()" (click)="unmatchedOnly.set(!unmatchedOnly())">Niet herkend <span class="ios-chip__badge tl-ichip__badge--warn">{{ unmatchedCount() }}</span></button>
+          }
+        </div>
+        <ng-container *ngTemplateOutlet="banners" />
+        @if (!ready() && salesError(); as error) {
+          <app-load-error title="TICA-verkopen konden niet worden geladen" [message]="error" [busy]="loading()" (retry)="loadSales()" />
+        } @else if (!ready()) {
+          <div class="tl-loading" role="status" aria-label="Verkopen laden"><app-skeleton kind="group" [rows]="5" /></div>
+        } @else if (!groups().length) {
+          <ng-container *ngTemplateOutlet="salesEmpty" />
+        } @else {
           @for (day of groups(); track day.date) {
             <section class="ios-section tl-section">
               <div class="ios-section__head"><span class="tl-shead" role="heading" aria-level="2">{{ dayHead(day.date, today()) }}</span>
@@ -186,7 +193,7 @@
                 @for (line of day.lines; track line.id) {
                   <button class="ios-cell tl-prow" type="button" (click)="openLineMenu(null, line)">
                     <span class="ios-cell__body"><span class="tl-ptitle">{{ line.description || 'Artikel zonder omschrijving' }}</span>
-                      <span class="tl-psub">{{ saleTime(line.soldAt) }} · {{ count(line.quantity) }} st@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }</span>
+                      <span class="tl-psub">{{ saleTime(line.soldAt) }} · {{ displayText(line) || count(line.quantity) }} st@if (unmatched(line)) { · <span class="tl-warn">niet herkend</span> }</span>
                       @if (stockAttention(line); as attn) { <span class="tl-pattn"><b>1</b><span>{{ attn }}</span></span> }</span>
                     <span class="ios-cell__trail tl-ptrail"><span class="tl-ptotal">{{ euro(line.netTotal) }}</span>
                       @if (discountText(line); as off) { <span class="tl-pline">{{ off }}</span> }</span>
@@ -196,29 +203,26 @@
             </section>
           }
           @if (sales() && !sales()!.complete) {
-            <p class="tl-foot tl-warn">De nieuwste {{ count(lines().length) }} van {{ count(sales()!.totalLines) }} regels; kies een kortere periode voor de rest.</p>
+            <p class="tl-foot tl-warn">De nieuwste {{ count(lines().length) }} van {{ count(sales()!.totalLines) }} regels@if (narrowed()) {; met een filter tellen de sommen alleen deze}; kies een kortere periode voor de rest.</p>
           }
-        </div>
-      }
-      <p class="tl-foot">{{ sync().tone === 'ok' ? sync().text + ' · ' : '' }}bedragen excl. btw na korting</p>
-    } @else {
-      @if (settlementsReady() && settlementCounts().boeken) {
-        <div class="ios-chips tl-ichips" role="group" aria-label="Snelfilters">
-          <button class="ios-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'boeken'"
-                  (click)="settlementFilter.set(settlementFilter() === 'boeken' ? 'all' : 'boeken')">Te boeken <span class="ios-chip__badge tl-ichip__badge--warn">{{ settlementCounts().boeken }}</span></button>
-        </div>
+        }
+        <p class="tl-foot">{{ sync().tone === 'ok' ? sync().text + ' · ' : '' }}bedragen excl. btw na korting@if (ready() && shownTotals().discountEur > 0) { · korting {{ whole(shownTotals().discountEur) }} op {{ whole(shownTotals().grossEur) }} bruto}</p>
+      } @else {
+        @if (settlementsReady() && (settlementCounts().boeken || settlementFilter() === 'boeken')) {
+          <div class="ios-chips tl-ichips" role="group" aria-label="Snelfilters">
+            <button class="ios-chip" type="button" [attr.aria-pressed]="settlementFilter() === 'boeken'"
+                    (click)="settlementFilter.set(settlementFilter() === 'boeken' ? 'all' : 'boeken')">Te boeken <span class="ios-chip__badge tl-ichip__badge--warn">{{ settlementCounts().boeken }}</span></button>
+          </div>
+        }
       }
     }
-    <app-tica-settlements [desk]="false" [query]="query()" [filter]="settlementFilter()" [showList]="tab() === 'afrekeningen'" />
-    <ng-container *ngTemplateOutlet="stock" />
+    <app-tica-settlements [desk]="desktop.active()" [query]="query()" [filter]="settlementFilter()" [showList]="tab() === 'afrekeningen'"
+                          (clear)="clearSettlementFilters()" />
+    <!-- Codex's TICA-voorraad card and sheet under the sales; mounted on both tabs, so its unsaved-change guard and the
+         reload after an import always find it. -->
+    <div class="tl-stock" [hidden]="tab() !== 'verkopen'"><app-tica-stock-settings (changed)="loadStatus(); loadSales()" /></div>
   </div>
-}
-
-<!-- Codex's TICA-voorraad card and sheet under the sales; mounted on both tabs, so its unsaved-change guard and the
-     reload after an import always find it. -->
-<ng-template #stock>
-  <div class="tl-stock" [hidden]="tab() !== 'verkopen'"><app-tica-stock-settings (changed)="loadStatus(); loadSales()" /></div>
-</ng-template>
+</div>
 
 <!-- The import's warnings: an error with its last attempt, fetching switched off or not set up, a failed status or start. -->
 <ng-template #banners>
@@ -309,7 +313,7 @@
         </div>
         <p class="ios-section__foot">Regels zonder gekoppeld ERP-product; ze tellen wel mee.</p>
       </section>
-      @if (locations().length > 1) {
+      @if (locations().length > 1 || location()) {
         <section class="ios-section">
           <div class="ios-section__head"><h2>Vestiging</h2></div>
           <div class="ios-group" role="radiogroup" aria-label="Vestiging">

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  dayGroups, dayHead, discountText, matchesWords, periodText, presetOf, presetPeriod, saleMatches, saleTime, salesTotals, settlementCounts,
-  settlementNote, settlementPeriod, settlementSections, settlementStatus, settlementSums, syncLine,
+  dayGroups, dayHead, discountText, displayText, matchesWords, pageTotals, periodText, presetOf, presetPeriod, saleMatches, saleTime, salesTotals,
+  settlementCounts, settlementNote, settlementPeriod, settlementSections, settlementStatus, settlementSums, syncLine, ticaPieces,
 } from '../src/app/features/tica/tica-list-model.ts';
+import { linePieces } from '../src/app/features/analyses/tica-breakdown.ts';
 import type { TicaSale, TicaSettlement, TicaStatus } from '../src/app/core/api/tica-api.ts';
 
 let nextId = 1;
@@ -43,6 +44,30 @@ test('totals count receipts once, pieces, net and gross, the discount and the li
     sale({ transactionNumber: '2', location: 'TICA - Antwerpen', quantity: 1, grossTotal: 5, netTotal: 5 }),
   ]);
   assert.deepEqual(totals, { lines: 4, transactions: 3, pieces: 7, netEur: 81.1, grossEur: 85.1, discountEur: 4, unmatched: 1 });
+});
+
+test('pieces: an article the stock link maps as a full display of N counts N pieces; anything else TICA\'s quantity', () => {
+  const display = sale({ quantity: 2, netTotal: 80, grossTotal: 80, stockSourceUnit: 'DISPLAY', stockUnitPieces: 12 });
+  const single = sale({ quantity: 10, netTotal: 40, grossTotal: 40, stockSourceUnit: 'PIECE', stockUnitPieces: 12, transactionNumber: '2' });
+  const unlinked = sale({ quantity: 3, transactionNumber: '3' });
+  assert.equal(ticaPieces(display), 24);
+  assert.equal(ticaPieces(single), 10);
+  assert.equal(ticaPieces(unlinked), 3);
+  assert.equal(ticaPieces(sale({ quantity: -1, stockSourceUnit: 'DISPLAY', stockUnitPieces: 12 })), -12, 'a returned display');
+  assert.equal(ticaPieces(sale({ quantity: 2, stockSourceUnit: 'DISPLAY', stockUnitPieces: null })), 2, 'no known size: TICA\'s quantity');
+  assert.equal(displayText(display), '2 × 12');
+  assert.equal(displayText(single), '');
+  assert.equal(salesTotals([display, single, unlinked]).pieces, 37);
+  for (const line of [display, single, unlinked]) assert.equal(linePieces(line), ticaPieces(line), 'Analyses counts the same pieces');
+});
+
+test('the period total: the lines when complete; past the cap the server sums plus the loaded displays\' extra pieces', () => {
+  const display = sale({ quantity: 2, netTotal: 80, grossTotal: 90, stockSourceUnit: 'DISPLAY', stockUnitPieces: 12 });
+  const page = { from: '2026-10-01', to: '2026-10-20', page: 0, size: 200, totalLines: 500, transactionCount: 300, quantity: 900,
+    grossTotal: 10_000, netTotal: 9_500.5, unmatchedLineCount: 4, lines: [display, sale({ quantity: 1 })] };
+  assert.deepEqual(pageTotals({ ...page, complete: false }),
+    { lines: 500, transactions: 300, pieces: 922, netEur: 9_500.5, grossEur: 10_000, discountEur: 499.5, unmatched: 4 });
+  assert.deepEqual(pageTotals({ ...page, complete: true }), salesTotals(page.lines));
 });
 
 test('lines group per day, newest day and newest line first, each with its sums', () => {
@@ -96,9 +121,13 @@ test('a discount reads as its percentage, or "korting" when only the amounts dif
 
 test('the import state in a few words: the time today, the date before, busy, warnings', () => {
   const now = new Date('2026-10-20T12:30:00Z');
-  assert.deepEqual(syncLine(status({}), false, now), { text: 'Bijgewerkt 14:05', tone: 'ok', title: 'Laatste geslaagde import om 14:05' });
+  assert.deepEqual(syncLine(status({}), false, now), { text: 'Bijgewerkt 14:05', short: '14:05', tone: 'ok', title: 'Laatste geslaagde import om 14:05' });
   assert.equal(syncLine(status({ lastSuccessAt: '2026-10-19T08:00:00Z' }), false, now).text, 'Bijgewerkt 19 okt');
+  assert.equal(syncLine(status({ lastSuccessAt: '2026-10-19T08:00:00Z' }), false, now).short, '19 okt');
   assert.equal(syncLine(status({ syncState: 'RUNNING' }), false, now).tone, 'busy');
+  assert.equal(syncLine(status({ syncState: 'PENDING' }), false, now).short, 'Ophalen…', 'a narrow desk still says it is busy, not only by colour');
+  assert.equal(syncLine(status({ syncState: 'NEVER_SYNCED', lastSuccessAt: null }), false, now).short, 'Nog niet opgehaald');
+  assert.equal(syncLine(status({ syncState: 'ERROR' }), false, now).short, '', 'the error banner says it');
   const error = syncLine(status({ syncState: 'ERROR', lastError: 'Portaal antwoordt niet' }), false, now);
   assert.equal(error.text, 'Ophalen mislukt');
   assert.match(error.title, /^Portaal antwoordt niet · Laatste geslaagde import om 14:05$/);

@@ -17,6 +17,7 @@ app-tica-page .tl-foot{margin:12px 4px 0;color:var(--muted);font-size:12px;line-
 app-tica-page .tl-busy{margin:10px 4px 0;color:var(--muted);font-size:12.5px}
 app-tica-page .tl-import{margin-top:16px}
 app-tica-page .tl-stock{margin-top:16px}
+app-tica-page .tl-panel{min-width:0}
 
 /* ---- desk toolbar: the search gives way first; the import state is one pill with its refresh button */
 app-tica-page .tl-search{flex:none;width:260px;min-width:0}
@@ -27,7 +28,12 @@ app-tica-page .tl-sync__go{display:grid;place-items:center;width:22px;height:22p
 app-tica-page .tl-sync__go:hover:not(:disabled){background:color-mix(in srgb,currentColor 12%,transparent)}
 app-tica-page .tl-sync__go:disabled{opacity:.45;cursor:default}
 app-tica-page .tl-sync__go:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
-@media (min-width:680px) and (max-width:1099.98px){app-tica-page .tl-sync__text{display:none}}
+/* No room for the words: they stay for screen readers (the pill is the live region), the time or 'Ophalen…' shows. */
+app-tica-page .tl-sync__short{display:none}
+@media (min-width:680px) and (max-width:1099.98px){
+  app-tica-page .tl-sync__text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  app-tica-page .tl-sync__short{display:inline}
+}
 
 /* ---- subbar: wraps on a narrow desk; the table head sticks under its measured height */
 app-tica-page .tl-subbar{flex-wrap:wrap;row-gap:6px;padding-block:4px}
@@ -67,8 +73,9 @@ app-tica-page .tl-num{justify-items:end;font-size:13px;font-weight:600}
 app-tica-page .tl-total{justify-items:end;font-size:14px;font-weight:720;text-align:right;white-space:nowrap}
 app-tica-page .tl-total small{font-size:11.5px}
 app-tica-page .tl-cell .wk-pill{max-width:100%;height:auto;min-height:20px;padding-block:2px;line-height:1.3;white-space:normal}
-/* ⋯ over the last column, outside the row (no button in a button); always there on touch. */
-app-tica-page .tl-more{position:absolute;top:12px;right:var(--wk-pad-x,16px);z-index:2;opacity:0;transition:opacity var(--dur-1,120ms) var(--ease-out,ease-out)}
+/* ⋯ over the last column, outside the row (no button in a button); always there on touch. z 1: over its own row,
+   under the sticky day bar (.wk-group, 2) and the head (.wk-thead, 3) it scrolls beneath. */
+app-tica-page .tl-more{position:absolute;top:12px;right:var(--wk-pad-x,16px);z-index:1;opacity:0;transition:opacity var(--dur-1,120ms) var(--ease-out,ease-out)}
 app-tica-page .tl-rowwrap:hover .tl-more,app-tica-page .tl-rowwrap:focus-within .tl-more{opacity:1}
 @media (pointer:coarse){app-tica-page .tl-more{opacity:1}}
 app-tica-page .tl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}

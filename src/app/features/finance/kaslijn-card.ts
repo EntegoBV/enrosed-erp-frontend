@@ -133,7 +133,7 @@ export class KaslijnCard {
     else this.state.openLine(match.lineId);
   }
 
-  toTica(): void { void this.router.navigate(['/tica']); }
+  toTica(): void { void this.router.navigate(['/tica'], { queryParams: { tab: 'afrekeningen' } }); }
 
   setWeeks(value: string): void {
     const weeks = Number(value);
