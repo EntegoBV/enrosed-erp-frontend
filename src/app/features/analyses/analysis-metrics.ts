@@ -262,6 +262,8 @@ export interface SlowMoverRow {
 export interface InventoryAnalysis {
   snapshotBasis: 'CURRENT_PRODUCT_DATA';
   stock: InventoryStockSummary;
+  /** Display counts only; stock values and sales pace retain their selling-unit basis. */
+  physicalStock: { knownPieces: number; valuedPieces: number; saleablePieces: number; partnerPieces: number };
   dataGaps: InventoryDataGaps;
   zeroStock: ZeroStockAnalysis;
   belowCarton: InventoryAttentionGroup;
@@ -483,6 +485,16 @@ function daysBetween(fromDay: string, toDay: string): number {
   return Math.round((to - from) / 86_400_000);
 }
 
+/** Convert an inventory equivalent to exact physical pieces for count labels only. */
+export function physicalInventoryQuantity(product: Pick<Product, 'stockQuantity' | 'packaging'>,
+                                           quantity = product.stockQuantity): number {
+  if (!Number.isFinite(quantity)) return 0;
+  const packaging = product.packaging;
+  const factor = packaging?.kind === 'DISPLAY' && packaging.salesUnit === 'DISPLAY'
+    && Number.isInteger(packaging.piecesPerUnit) && packaging.piecesPerUnit! > 0 ? packaging.piecesPerUnit! : 1;
+  return Math.round(quantity * factor);
+}
+
 /** Current inventory snapshot. It intentionally makes no historical turnover claim. */
 export function inventoryAnalysis(
   products: readonly Product[],
@@ -624,6 +636,12 @@ export function inventoryAnalysis(
 
   return {
     snapshotBasis: 'CURRENT_PRODUCT_DATA',
+    physicalStock: {
+      knownPieces: known.reduce((sum, product) => sum + physicalInventoryQuantity(product), 0),
+      valuedPieces: valued.reduce((sum, product) => sum + physicalInventoryQuantity(product), 0),
+      saleablePieces: saleable.reduce((sum, product) => sum + physicalInventoryQuantity(product), 0),
+      partnerPieces: positiveKnown.reduce((sum, product) => sum + physicalInventoryQuantity(product, partnerPiecesOf(product)), 0),
+    },
     stock: {
       knownSkuCount: known.length,
       unknownSkuCount: products.length - known.length,

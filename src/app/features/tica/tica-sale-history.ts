@@ -22,7 +22,7 @@ import { ticaStockLabel } from './tica-stock-rules';
           @if (loading()) { <p>Geschiedenis laden…</p> }
           @else if (error(); as error) { <p class="tsh-error" role="alert">{{ error }} <button class="linklike" type="button" (click)="load(saleId()!)">Opnieuw proberen</button></p> }
           @else if (history(); as history) {
-            <p class="tsh-intro">Elke import en correctie blijft bewaard. De verkoopdatum komt uit TICA; de verwerkingsdatum toont wanneer het ERP de wijziging heeft geboekt.</p>
+            <p class="tsh-intro">Elke bronwijziging en voorraadcorrectie blijft bewaard. De verkoopdatum komt uit TICA; de verwerkingsdatum toont wanneer het ERP de wijziging heeft geboekt.</p>
             <ol class="tsh-revisions">
               @for (revision of history.revisions; track revision.id) {
                 <li>

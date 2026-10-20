@@ -23,3 +23,19 @@ export function withAllLocations<T extends Pick<Product, 'id' | 'stockQuantity'>
     return sum === undefined || sum === product.stockQuantity ? product : { ...product, stockQuantity: sum };
   });
 }
+
+/** Format only exact opened displays; whole selling units keep their existing wording. */
+export function fractionalDisplayCount(quantity: number, piecesPerDisplay: number | null | undefined,
+                                       piece: { one: string; other: string }): string | null {
+  if (!Number.isFinite(quantity) || !Number.isInteger(piecesPerDisplay) || piecesPerDisplay! <= 1) return null;
+  const physical = quantity * piecesPerDisplay!;
+  const rounded = Math.round(physical);
+  if (!Number.isSafeInteger(rounded) || Math.abs(physical - rounded) > 0.0000001) return null;
+  const absolute = Math.abs(rounded);
+  const complete = Math.floor(absolute / piecesPerDisplay!);
+  const loose = absolute % piecesPerDisplay!;
+  if (loose === 0) return null;
+  const sign = rounded < 0 ? '−' : '';
+  const display = complete ? `${complete.toLocaleString('nl-BE')} ${complete === 1 ? 'display' : 'displays'} ${rounded < 0 ? '−' : '+'} ` : '';
+  return `${sign}${display}${loose.toLocaleString('nl-BE')} losse ${loose === 1 ? piece.one : piece.other}`;
+}
