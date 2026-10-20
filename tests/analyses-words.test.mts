@@ -50,16 +50,16 @@ test('Overzicht: the Inkoop digest in whole euros with the card\'s names (critiq
   assert.equal(paymentResultLine(-3620.53, 3), 'betaalresultaat − € 3.621');
   assert.equal(paymentResultLine(412.2, 3), 'netto extra opbrengst € 412');
   assert.equal(paymentResultLine(-10, 0), null, 'no eligible container: no line');
-  assert.equal(openContainersLine(10), 'Nog te betalen op 10 containers');
-  assert.equal(openContainersLine(1), 'Nog te betalen op 1 container');
+  assert.equal(openContainersLine(10, 2), 'op 10 containers · 2 voorlopig', 'the containers with something open, and the provisional ones (D-O2)');
+  assert.equal(openContainersLine(1, 0), 'op 1 container');
 });
 
 test('Overzicht: Markt, Bezoekers and the Aandacht rows (critique N7, N17)', async () => {
   const { marketLines, dollarValue, deltaMeta, varianceAttention, advanceTermsSub, overdueSub } = await import('../src/app/features/analyses/analyses-words.ts');
-  assert.deepEqual(marketLines(7.4993, -4.93, 6), ['€ 1 = ¥ 7,4993', 'euro 4,9 % zwakker tegenover de dollar (6 mnd)']);
-  assert.deepEqual(marketLines(7.4993, 2.04, 3), ['€ 1 = ¥ 7,4993', 'euro 2,0 % sterker tegenover de dollar (3 mnd)']);
-  assert.deepEqual(marketLines(7.5, null, 6), ['€ 1 = ¥ 7,5000', null]);
-  assert.deepEqual(marketLines(7.4993, -4.93, 6, true), ['€ 1 = ¥ 7,4993', 'euro 4,9 % zwakker t.o.v. de dollar (6 mnd)'], 'the phone row says t.o.v.');
+  assert.deepEqual(marketLines(7.4993, -4.93, 6), ['¥ 7,4993 voor € 1', 'euro 4,9 % zwakker t.o.v. dollar (6 mnd)'], 'beside "$ 1,1208 voor € 1": one notation (C.1)');
+  assert.deepEqual(marketLines(7.4993, 2.04, 3), ['¥ 7,4993 voor € 1', 'euro 2,0 % sterker t.o.v. dollar (3 mnd)']);
+  assert.deepEqual(marketLines(7.5, null, 6), ['¥ 7,5000 voor € 1', null]);
+  assert.deepEqual(marketLines(7.4993, 0, 6), ['¥ 7,4993 voor € 1', 'euro even sterk t.o.v. dollar (6 mnd)']);
   assert.equal(dollarValue(1.12081), '$ 1,1208');
   assert.deepEqual(deltaMeta(1877, 561), { text: '▲ 235 %', tone: 'ok' });
   assert.deepEqual(deltaMeta(80, 100), { text: '▼ 20 %', tone: 'warn' });

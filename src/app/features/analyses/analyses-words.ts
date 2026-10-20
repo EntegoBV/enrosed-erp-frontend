@@ -123,22 +123,22 @@ export function paymentResultLine(netResultEur: number, eligibleCount: number): 
   return netResultEur < 0 ? `betaalresultaat ${eurShort(netResultEur)}` : `netto extra opbrengst ${eurShort(netResultEur)}`;
 }
 
-/** "Nog te betalen op 10 containers". */
-export function openContainersLine(containerCount: number): string {
-  return `Nog te betalen op ${plural(containerCount, 'container', 'containers')}`;
+/** "op 3 containers · 2 voorlopig": the containers with something still to pay, and those not yet settled (D-O2). */
+export function openContainersLine(openCount: number, provisionalCount: number): string {
+  const open = `op ${plural(openCount, 'container', 'containers')}`;
+  return provisionalCount > 0 ? `${open} · ${wholeNumber(provisionalCount)} voorlopig` : open;
 }
 
 /**
- * The euro against the yuan and the dollar: line 1 "€ 1 = ¥ 7,4993", line 2 "euro 4,9 % zwakker tegenover de dollar (6 mnd)";
- * `short` (the phone row) says "t.o.v." so line 2 keeps to two lines at 360.
+ * The euro against the yuan and the dollar, as the Markt row reads them beside "$ 1,1208 voor € 1": line 1
+ * "¥ 7,4993 voor € 1", line 2 "euro 4,9 % zwakker t.o.v. dollar (6 mnd)" (short enough for two lines at 360).
  */
-export function marketLines(latestCny: number, usdChangePct: number | null, months: number, short = false): [string, string | null] {
-  const yuan = `€ 1 = ¥ ${latestCny.toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+export function marketLines(latestCny: number, usdChangePct: number | null, months: number): [string, string | null] {
+  const yuan = `¥ ${latestCny.toLocaleString('nl-BE', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} voor € 1`;
   if (usdChangePct === null || !Number.isFinite(usdChangePct)) return [yuan, null];
   const pct = Math.abs(usdChangePct).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  const word = usdChangePct > 0 ? 'sterker' : usdChangePct < 0 ? 'zwakker' : 'even sterk';
-  const against = short ? 't.o.v.' : 'tegenover';
-  return [yuan, usdChangePct === 0 ? `euro even sterk ${against} de dollar (${months} mnd)` : `euro ${pct} % ${word} ${against} de dollar (${months} mnd)`];
+  const word = usdChangePct > 0 ? 'sterker' : 'zwakker';
+  return [yuan, usdChangePct === 0 ? `euro even sterk t.o.v. dollar (${months} mnd)` : `euro ${pct} % ${word} t.o.v. dollar (${months} mnd)`];
 }
 
 /** "$ 1,1208". */

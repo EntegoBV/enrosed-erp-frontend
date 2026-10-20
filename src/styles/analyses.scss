@@ -131,7 +131,6 @@ button.an-row { width: 100%; border: 0; background: none; font: inherit; text-al
   .an-card__body > .an-share { grid-template-columns: subgrid; }
 }
 .an-skeleton { display: block; padding: 4px 16px 12px; }
-.an-body app-cash-overview-card .cf-overview { margin-bottom: var(--an-gap); }
 
 /* ---------- the old desk tab row: off since the redesign (DESK_TAB_ROW, analyses-desk-tabs.ts); kept so that
    reverting W2c brings it back styled. */
@@ -207,8 +206,6 @@ app-notification-bell.an-bell-host .bell { display: none; }
   .an-phone .an-share { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
   .an-phone .an-share > .an-meter { grid-column: 1; grid-row: 2; }
   .an-phone .an-share > .an-row__meta { grid-column: 2; grid-row: 2; }
-  .an-phone .an-body app-cash-overview-card { display: block; margin: 0 var(--ios-inset, 16px); }
-  .an-phone .an-body app-cash-overview-card .cf-overview { border: 0; border-radius: var(--ios-radius, 22px); box-shadow: none; }
 }
 
 /* ---------- desk 680–1023: the tabs as chips (the rail has no sub-items) */

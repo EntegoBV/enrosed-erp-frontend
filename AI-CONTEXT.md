@@ -471,17 +471,19 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   Resultaat (`ytdSales`, `ytdResult`), all years for overdue invoices
   (`allSales`) and open quotes (`openSales`), its own receipt-variance
   report (`overviewReport`: this year, no supplier or order; reused from
-  Afwijkingen while that filter is the default), Perfect/Op tijd over this
-  calendar year (`yearPerformance`). Four figures, "Per onderdeel" (one row
-  per tab: Inkoop from the Containerkost helpers, Markt from the root `Fx`
-  and Markt's stored period, Bezoekers `a[appAnVisitorsRow]` inside
-  `@defer (on viewport)`), "Aandacht" (six rows incl. partner settlement
-  and advance terms; zero rows stay, muted).
-- Verkoop: eight figures with the btw basis (new Omzet excl. = Resultaat's;
-  Gefactureerd foot voorschot/gecrediteerd; Ontvangen with its split;
-  Vervallen foot "+ n van vóór deze periode"), the funnel (open, gesloten,
-  geannuleerd, overige), monthly trend, channels, Opvolgen, Landen /
-  Klanten / Producten (counts in the product's sales unit).
+  Afwijkingen while that filter is the default). Since round 2 (below) no
+  figure tiles and no cash card: "Per onderdeel" (Kasprognose first: the
+  laagste stand from `CashState`, then one row per tab, Verkoop/Resultaat
+  linking `?periode=jaar`; Inkoop from the Containerkost helpers, Markt from
+  the root `Fx` and Markt's stored period, Bezoekers `a[appAnVisitorsRow]`
+  inside `@defer (on viewport)`), "Aandacht" (six rows; a count opens its
+  drill-down, zero rows stay, muted). Phone large title "Overzicht".
+- Verkoop: eight figures with the btw basis (Omzet excl. = Resultaat's,
+  "n facturen" = revenue invoices; Open offertes, Open facturen, Vervallen
+  and Opvolgen are today's, every year), the funnel (bars and foot items
+  open their quotes), Omzet per maand excl. btw, channels, Opvolgen, Landen
+  / Klanten by omzet excl. / Producten (catalogue names, counts in the
+  product's sales unit), the TICA card.
 - Voorraad: six figures, a Datakwaliteit line, Nulvoorraad, Minder dan één
   outer carton, the new Onderweg list (containers by name), Raakt binnenkort
   op, Grootste voorraadposities (Trage verkopers folds in when identical).
@@ -561,6 +563,50 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
 **Left out** (stop line, critique B9): nothing of the critique's package list
 is open. Kept on purpose: Inkoop's phone container filter and supplier stay
 native selects styled as capsules (critique B10).
+
+### Analyses round 2: drill-downs (2026-10-21, WP1a)
+
+Design: scratchpad design/analyses2/design.md (§A kit, §B per screen, §C
+clarity, §D bugs, §E packages). A click on a total opens one dialog with
+the rows behind it; **the rows add up to the clicked figure** (A.4).
+- Contract `drill-model.ts` + `drill-host.ts` (A.1): byte-identical in every
+  package, never reformat. `AnDrillHost.open([views], active)`; a view is
+  columns + rows (numbers stay numbers, day cells ISO) + `valueKey` + `total`.
+- `an-drill.ts` (`app-an-drill`) renders once in AnalysesPage, right after
+  the page-level `@switch (sheet())` and before `<ng-template #body>`
+  (trap rule); desk = wide Sheet with a `wk-table` (sortable headers,
+  groups, gap and total rows), phone = iOS sheet with cells. It closes on a
+  row/foot click, on a navigation to another path and on destroy; no URL
+  key. `deskKey()` returns while it is open. Pure half `drill-table.ts`
+  (sections, sums, gap ≥ € 0,50 or a row, link kinds; a count without
+  valueKey puts its figure in the label cell). Styles
+  `src/styles/analyses-drill.scss` (triggers `button.an-kpi.an-kpi--drill`,
+  `button.an-row`, `button.an-link`, funnel buttons, neutral chip; < 8 kB).
+- Row data lives in `analysis-metrics.ts` (`salesDocumentRows`,
+  `salesLineRows`, `missingCostRows`, `lastSoldOn`); views in pure
+  `drill-sales.ts`, `drill-stock.ts`, `drill-purchase.ts` (type imports
+  only, names and container names passed in). A credit note never shows a
+  margin (its effect is the gap row "Creditnota's"); a partner voorschot
+  stays out of Omzet and Marge. Tests: `tests/analyses-drill-*.test.mts`.
+- Metric changes: `revenueInvoiceCount`, `averageClaimEur` over regular
+  invoices, `SalesMonthPoint.revenueExclEur`, channels skip partner
+  voorschotten and carry `missingCostLines` (D-O4), top countries/customers
+  rank by `revenueExclEur` without voorschotten. `cash-overview-card.ts`
+  is gone (its `.cf-overview*` rules in cash-forecast.scss are WP3's to
+  remove). Every tab has `HOW_TEXTS` (market, website new; the phone ⋯
+  shows them); Markt and Bezoekers get `<app-an-how how>` projected (their
+  `[how]` slot comes with WP3/WP4).
+- **Part b (WP1b) still to do on this branch**: Resultaat (B.4, C.3: tiles,
+  `resultCostRows`, `receivedContainerRows`, month bars `picked`, Per maand
+  tfoot, Algemene kosten row, D-O4 for `ResultChannelRow`, D-O5, D-O7,
+  D-O9; `costsQuery` on the page is ready for "Alle kosten ›"), Voorraad
+  (B.5, C.4, D-V2…V6; `lastSoldOn` exists for the Nulvoorraad sort; the
+  Overzicht moved Besteld/onderweg and Voorraadwaarde figures there),
+  Inkoop Kwaliteit / Partners / Afwijkingen (B.6, C.5, D-V1, `receiptOrderRows`;
+  `drill-purchase.ts` already has `varianceGroups` and the two partner
+  views the Overzicht uses; Kwaliteit takes Perfect/Op tijd from the old
+  Overzicht tile). Extend `tests/analyses-drill-stock.test.mts`,
+  `-purchase.test.mts` and add `-result.test.mts`.
 
 ## Workspaces
 

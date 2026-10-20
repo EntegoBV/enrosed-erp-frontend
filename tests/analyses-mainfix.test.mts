@@ -21,15 +21,13 @@ test('A-M2: home Verkoop lands on Verkoop › Deze maand', async () => {
   assert.match(source, /navigate\(\['\/analyses\/sales'\], \{ queryParams: this\.monthQuery \}\)/);
 });
 
-test('A-M4/A-M15: one pipeline; the Overzicht snapshots say "vandaag", Verkoop "in de periode"', async () => {
+test('A-M4/A-M15: one pipeline, one snapshot: Overzicht and Verkoop read the same open quotes "vandaag" (D-S3)', async () => {
   const page = await read('analyses/analyses-page.ts');
   assert.match(page, /readonly openSales = computed\(\(\) => openPipelineQuotes\(this\.salesOrders\(\)\)\)/);
-  assert.match(page, /an-kpi__sub">vandaag · \{\{ incomingPieces\(\)/);
-  assert.match(page, /an-kpi__sub">vandaag · \{\{ inventoryValuedPieces\(\)/);
-  assert.match(page, /an-kpi__sub">vandaag · \{\{ plural\(openSales\(\)\.length/);
-  assert.match(page, /'open offerte', 'open offertes'\) \}\} in de periode/);
-  assert.match(page, /title: 'Open offertes', link: '\/analyses\/sales', query: OPEN_QUOTES_QUERY/);
-  assert.match(page, /OPEN_QUOTES_QUERY: Record<string, string> = \{ periode: 'alle' \}/);
+  assert.match(page, /key: 'openQuotes', label: 'Open offertes', value: salesDown \? '—' : this\.whole\(this\.pipelineValue\(\)\)/);
+  assert.match(page, /sub: `vandaag · \$\{plural\(quotes, 'offerte', 'offertes'\)\}`/, 'Verkoop\'s Open offertes is today\'s, every year');
+  assert.doesNotMatch(page, /OPEN_QUOTES_QUERY/, 'the Aandacht row no longer switches the shared period to Alle jaren');
+  assert.doesNotMatch(page, /'open offerte', 'open offertes'\) \}\} in de periode/, 'no second pipeline bound to the period');
 });
 
 test('A-M5: the product page and the website builder open the right part', async () => {
@@ -37,10 +35,11 @@ test('A-M5: the product page and the website builder open the right part', async
   assert.match(await read('website-builder/content-translations-page.ts'), /routerLink="\/analyses\/website" \[queryParams\]="\{ source: 'SEARCH_CONSOLE' \}">Zoekcijfers ›/);
 });
 
-test('A-M10: each series of Gefactureerd per maand names its VAT base', async () => {
+test('A-M10/D-S4: Omzet per maand plots one VAT base, and each series says it', async () => {
   const page = await read('analyses/analyses-page.ts');
-  assert.match(page, /label: 'Gefactureerd incl\. btw'/);
+  assert.match(page, /label: 'Omzet excl\. btw'/);
   assert.match(page, /label: 'Geaccepteerde offertes excl\. btw'/);
+  assert.doesNotMatch(page, /label: 'Gefactureerd incl\. btw'/, 'no incl. series on the excl. axis');
 });
 
 test('A-M11: Vrachttarief noteren is an iOS sheet on the phone', async () => {

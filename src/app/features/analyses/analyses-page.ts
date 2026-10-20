@@ -24,7 +24,7 @@ import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
-import { inventoryAnalysis, physicalInventoryQuantity, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { inventoryAnalysis, lastSoldOn, missingCostRows, openPipelineQuotes, partnerFinancingAnalysis, resultAnalysis, salesAnalysis, salesDocumentRows, salesLineRows } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
@@ -41,11 +41,10 @@ import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { incomingMoneyTotals } from '../finance/incoming-money';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { CashDesk } from './cash-desk';
-import { CashOverviewCard } from './cash-overview-card';
 import { CashPhone } from './cash-phone';
 import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
-import { financingsWithSchedule } from './cash-view';
+import { financingsWithSchedule, underBuffer } from './cash-view';
 import { IosNav } from '../../shared/ios-nav';
 import { NotificationBell } from '../../shared/notification-bell';
 import { Sheet } from '../../shared/ui';
@@ -78,7 +77,18 @@ import type { InkoopPart } from './analyses-period';
 import { Segmented } from '../../shared/segmented';
 import type { SegmentOption } from '../../shared/segmented';
 import { scrollBehavior } from '../../shared/motion';
-import type { PartnerFinancingRow } from './analysis-metrics';
+import type { PartnerFinancingRow, SalesProductMetric } from './analysis-metrics';
+import { AnDrill } from './an-drill';
+import { AnDrillHost } from './drill-host';
+import type { DrillView } from './drill-model';
+import {
+  acceptedView, channelView, countryView, customerView, funnelView, invoicedView, marginViews, openInvoicesView, openQuotesView, overdueView,
+  productView, revenueViews, ticaMonthRows, ticaUnmatchedView,
+} from './drill-sales';
+import type { FunnelStep, SalesDrillContext } from './drill-sales';
+import { zeroNoIncomingView } from './drill-stock';
+import { partnersAwaitingView, partnersUnbilledView, varianceGroups, varianceOrdersView } from './drill-purchase';
+import type { VarianceGroup } from './drill-purchase';
 import type { PeriodChoice } from './analyses-period';
 import { advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention, weekdayDayMonth } from './analyses-words';
 
@@ -94,20 +104,6 @@ const ANALYSIS_TABS: ReadonlyArray<{ id: AnalysisSection; label: string; icon: s
   { id: 'market', label: 'Markt & container', icon: 'truck', tone: 'blue' },
   { id: 'website', label: 'Bezoekers', icon: 'countries', tone: 'purple' },
 ];
-
-interface VarianceGroup {
-  orderId: number;
-  orderNumber: string;
-  orderAlias: string | null;
-  supplierName: string;
-  receivedOn: string | null;
-  expectedArrival: string | null;
-  missingPieces: number;
-  damagedPieces: number;
-  totalLossValueEur: number;
-  unvaluedLossPieces: number;
-  rows: ReceiptVarianceRow[];
-}
 
 const EMPTY_REPORT: ReceiptVarianceReport = {
   totals: {
@@ -146,11 +142,14 @@ const TAB_HEADS: Record<AnalysisSection, { title: string; subtitle: string }> = 
 const ANALYSES_PARENT = { label: 'Analyses', url: '/analyses/overview' };
 /** Tabs whose body is still today's markup: on the phone they get the page inset (each body package removes its tab). */
 const LEGACY_BODIES = new Set<AnalysisSection>(['market', 'website']);
-/** The phone ⋯ sheet: the links the desk shows in the tool row. */
-const MENU_LINKS: Partial<Record<AnalysisSection, { label: string; url: string; icon: string }[]>> = {
+/** One link of the phone ⋯ sheet: a route (with its query), or an outside page in a new tab. */
+interface MenuLink { label: string; url: string; icon: string; query?: Record<string, string | null> | null; external?: true }
+/** The phone ⋯ sheet: the links the desk shows in the tool row (Resultaat's carries the period, menuLinks). */
+const MENU_LINKS: Partial<Record<AnalysisSection, MenuLink[]>> = {
   sales: [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }],
   inventory: [{ label: 'Jaarinventaris', url: '/stock/inventaris', icon: 'stock' }],
   result: [{ label: 'Alle kosten', url: '/costs', icon: 'receipt' }],
+  website: [{ label: 'Dit toestel uitsluiten', url: 'https://www.enrosed.com/?intern=1', icon: 'globe', external: true }],
 };
 type PageSheet = 'period' | 'receipt' | 'partner' | 'value' | 'how' | 'menu' | null;
 const RECEIPT_PERIOD_NOTE = 'Geldt voor Kwaliteit en Afwijkingen. Een order telt op zijn ontvangstdatum.';
@@ -169,8 +168,19 @@ interface AttentionRow {
   valueTone: 'danger' | null;
   meta: string | null;
   metaTone: 'danger' | null;
-  link: string;
-  query: Record<string, string> | null;
+}
+
+/** A Verkoop tile: its four lines, and whether a click opens the list behind it (never on "—" or zero). */
+interface KpiTile {
+  key: 'revenue' | 'margin' | 'invoiced' | 'received' | 'openQuotes' | 'accepted' | 'openInvoices' | 'overdue';
+  label: string;
+  value: string;
+  tone: 'danger' | null;
+  sub: string;
+  subWarn?: boolean;
+  foot: string;
+  footWarn?: boolean;
+  drill: boolean;
 }
 
 /** Markt's stored period on this device (market-analysis.ts keeps it), 6 months by default. */
@@ -180,8 +190,8 @@ function storedMarketMonths(): Months {
     return months === 1 || months === 3 || months === 6 || months === 12 ? months : 6;
   } catch { return 6; }
 }
-/** Open offertes counts every year: Verkoop opens on Alle jaren, so its pipeline is the same count. */
-const OPEN_QUOTES_QUERY: Record<string, string> = { periode: 'alle' };
+/** Overzicht's Verkoop and Resultaat rows show this year: their link says so (D-O1, the page keeps its period across tabs). */
+const YEAR_QUERY: Record<string, string> = { periode: 'jaar' };
 const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op hun documentdatum, ontvangsten op hun betaaldatum.';
 
 /** Company-wide analysis with durable receipt losses as its operational drill-down. */
@@ -191,9 +201,9 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   providers: [CashState],
   /* The area's styles stay in this lazy chunk (styles.css is at the 1 MB initial budget); every rule is scoped under the page. */
   encapsulation: ViewEncapsulation.None,
-  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-sources.scss'],
+  styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-sources.scss', '../../../styles/analyses-drill.scss'],
   host: { '(document:visibilitychange)': 'visible()', '(document:keydown)': 'deskKey($event)' },
-  imports: [Icon, TrendChart, CashDesk, CashOverviewCard, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
+  imports: [Icon, TrendChart, AnDrill, CashDesk, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
     RouterLink,
     PageHeader,
     EurPipe,
@@ -236,7 +246,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                       [bellCount]="bellCount()" [bellLabel]="bellLabel()" (back)="goBack()" (bell)="openBell()" (refreshed)="refresh()" />
     } @else {
       <div class="ios-page an an-phone" [attr.aria-busy]="busy() || filtering()">
-        <app-ios-nav [title]="head().title" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()">
+        <app-ios-nav [title]="phoneTitle()" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()">
           <span trail class="ios-glass-group">
             <button class="ios-circle an-bell" type="button" [attr.aria-label]="bellLabel()" (click)="openBell()">
               <app-icon name="bell" [size]="20" />
@@ -327,7 +337,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         </app-sheet>
       }
       @case ('menu') {
-        <app-sheet [title]="head().title" variant="ios" (closed)="sheet.set(null)">
+        <app-sheet [title]="phoneTitle()" variant="ios" (closed)="sheet.set(null)">
           <div body class="ios-group">
             @if (howLines().length) {
               <button class="ios-cell" type="button" (click)="sheet.set('how')"><app-icon name="info" [size]="18" />
@@ -338,13 +348,20 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 <span class="ios-cell__body"><span class="ios-cell__title">Tarief toevoegen</span></span></button>
             }
             @for (link of menuLinks(); track link.url) {
-              <a class="ios-cell" [routerLink]="link.url" (click)="sheet.set(null)"><app-icon [name]="link.icon" [size]="18" />
-                <span class="ios-cell__body"><span class="ios-cell__title">{{ link.label }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              @if (link.external) {
+                <a class="ios-cell" [href]="link.url" target="_blank" rel="noopener" (click)="sheet.set(null)"><app-icon [name]="link.icon" [size]="18" />
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ link.label }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              } @else {
+                <a class="ios-cell" [routerLink]="link.url" [queryParams]="link.query ?? null" (click)="sheet.set(null)"><app-icon [name]="link.icon" [size]="18" />
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ link.label }}</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
+              }
             }
           </div>
         </app-sheet>
       }
     }
+    <!-- The one drill-down of every tab (design/analyses2 §A.2): page level, outside the faded body and the Kasprognose size container. -->
+    <app-an-drill />
 
     <ng-template #body let-tab>
       @if (desk.active()) {
@@ -415,67 +432,38 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'overview') {
-        <app-cash-overview-card />
-        @if (loading()) {
-          <div class="an-kpis" aria-label="Cijfers laden">
-            @for (n of [1, 2, 3, 4]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }
-          </div>
-        } @else {
-          @let perf = yearPerformance();
-          <div class="an-kpis">
-            <div class="an-kpi" data-kpi="perfect">
-              <span class="an-kpi__label">Perfect ontvangen</span>
-              <span class="an-kpi__value">{{ perf.perfectPct === null ? '—' : (perf.perfectPct | pct: 1) }}</span>
-              <span class="an-kpi__sub">dit jaar · {{ perf.perfectOrders }} van {{ plural(perf.comparableOrders, 'vergelijkbare order', 'vergelijkbare orders') }}@if (perf.unknownOrders) { · {{ perf.unknownOrders }} zonder bestelsnapshot }</span>
-              <span class="an-kpi__foot">Op tijd {{ perf.onTimePct === null ? '—' : (perf.onTimePct | pct: 0) }} · {{ perf.onTimeOrders }} van {{ plural(perf.datedOrders, 'ontvangst', 'ontvangsten') }}</span>
-            </div>
-            <div class="an-kpi" data-kpi="incoming">
-              <span class="an-kpi__label">Besteld en onderweg</span>
-              <span class="an-kpi__value">{{ failed('inkoop') ? '—' : whole(incomingValue()) }}</span>
-              <span class="an-kpi__sub">vandaag · {{ incomingPieces() | num }} st in {{ plural(incomingOrders().length, 'container', 'containers') }} · externe kost</span>
-              <span class="an-kpi__foot">{{ orderedCount() }} besteld · {{ sailingCount() }} vertrokken</span>
-            </div>
-            <div class="an-kpi" data-kpi="stock">
-              <span class="an-kpi__label">Voorraadwaarde</span>
-              <span class="an-kpi__value">{{ failed('voorraad') ? '—' : whole(inventoryPurchaseValue()) }}</span>
-              <span class="an-kpi__sub">vandaag · {{ inventoryValuedPieces() | num }} fysieke stuks met kost@if (inventoryUnvaluedPieces()) { · {{ inventoryUnvaluedPieces() | num }} zonder kost }@if (inventoryUnknownSkuCount()) { · {{ plural(inventoryUnknownSkuCount(), 'SKU', 'SKU’s') }} zonder betrouwbare stand }</span>
-              <span class="an-kpi__foot">Verkoopwaarde {{ whole(inventorySalesValue()) }} · {{ inventoryUplift() === null ? 'kostdekking onvolledig' : signedWhole(inventoryUplift()!) }}</span>
-            </div>
-            <div class="an-kpi" data-kpi="pipeline">
-              <span class="an-kpi__label">Verkooppijplijn</span>
-              <span class="an-kpi__value">{{ failed('verkoop') ? '—' : whole(pipelineValue()) }}</span>
-              <span class="an-kpi__sub">vandaag · {{ plural(openSales().length, 'open offerte', 'open offertes') }}@if (pipelineMissingCostLines()) { · {{ plural(pipelineMissingCostLines(), 'productregel', 'productregels') }} zonder kost }</span>
-              @if (pipelineMissingCostLines()) {
-                <span class="an-kpi__foot is-warn">Brutomarge — · nog niet alle kosten bekend</span>
-              } @else {
-                <span class="an-kpi__foot">Brutomarge {{ whole(pipelineMargin()) }} · {{ pipelineMarginPct() === null ? 'marge onbekend zonder goederenwaarde' : (pipelineMarginPct() | pct: 1) + ' op goederen' }}</span>
-              }
-            </div>
-          </div>
-        }
         <div class="an-cols">
           <div class="an-col">
             <section class="an-card" aria-labelledby="an-ov-parts">
               <header class="an-card__head"><h2 class="an-card__title" id="an-ov-parts">Per onderdeel</h2><span class="an-card__trail">dit jaar</span></header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  @let cash = cashRow();
+                  <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/cash">
+                    <span class="an-tile tone-ok"><app-icon name="bank" [size]="17" /></span>
+                    <span class="an-row__body"><span class="an-row__title">Kasprognose</span><span class="an-row__sub">{{ cash.sub }}</span></span>
+                    <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="cash.tone">{{ cash.value }}</span>
+                      @if (cash.meta) { <span class="an-row__meta">{{ cash.meta }}</span> }</span>
+                    <span class="an-row__chev" aria-hidden="true">›</span>
+                  </a>
                   @let ys = ytdSales();
-                  <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/sales">
+                  <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/sales" [queryParams]="yearQuery">
                     <span class="an-tile tone-accent"><app-icon name="sales" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Verkoop</span>
                       <!-- The phone words are shorter so each sub keeps to two lines at 360 (critique B2.1); every number stays. -->
-                      <span class="an-row__sub">{{ desk.active() ? 'Omzet excl. btw' : 'excl. btw' }} · {{ channelVolume(ys.invoices.issued, ys.ticaTransactions) }}</span>
-                      <span class="an-row__sub">{{ whole(ys.invoices.issuedValueEur) }} {{ desk.active() ? 'gefactureerd incl. btw' : 'incl. btw' }}</span></span>
+                      <span class="an-row__sub">{{ channelVolume(ys.invoices.revenueInvoiceCount, ys.ticaTransactions) }}</span>
+                      <span class="an-row__sub">{{ failed('verkoop') ? '—' : whole(ys.invoices.issuedValueEur) }} {{ desk.active() ? 'gefactureerd incl. btw' : 'gefactureerd' }}</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('verkoop') || failed('TICA verkopen') ? '—' : whole(ys.revenueExclEur) }}</span>
-                      <span class="an-row__meta" [attr.data-tone]="ys.marginEur < 0 ? 'warn' : null">marge {{ ys.missingCostLines || failed('TICA verkopen') ? '—' : whole(ys.marginEur) }}</span></span>
+                      <span class="an-row__meta">excl. btw</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
                   </a>
                   @let yr = ytdResult();
-                  <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/result">
+                  @let yrUnknown = failed('verkoop') || failed('TICA verkopen') || failed('kosten');
+                  <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/result" [queryParams]="yearQuery">
                     <span class="an-tile tone-plum"><app-icon name="receipt" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Resultaat</span>
-                      <span class="an-row__sub">Marge op goederen min eigen kosten ({{ whole(yr.costsEur) }})</span></span>
-                    <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="yr.resultEur < 0 ? 'danger' : null">{{ failed('verkoop') || failed('TICA verkopen') || yr.missingCostLines ? '—' : whole(yr.resultEur) }}</span>
+                      <span class="an-row__sub">marge {{ yrUnknown || yr.missingCostLines ? '—' : whole(yr.marginEur) }} − kosten {{ failed('kosten') ? '—' : whole(yr.costsEur) }}</span></span>
+                    <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!yrUnknown && !yr.missingCostLines && yr.resultEur < 0 ? 'danger' : null">{{ yrUnknown || yr.missingCostLines ? '—' : whole(yr.resultEur) }}</span>
                       <span class="an-row__meta">excl. btw</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
                   </a>
@@ -483,8 +471,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/inventory">
                     <span class="an-tile tone-green"><app-icon name="stock" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Voorraad</span>
-                      <span class="an-row__sub">{{ inv.physicalStock.knownPieces | num }} fysieke stuks</span>
-                      <span class="an-row__sub">{{ plural(inv.zeroStock.withoutIncomingCount, 'product', 'producten') }} op nul zonder aanvulling</span></span>
+                      <span class="an-row__sub">{{ inv.physicalStock.knownPieces | num }} fysieke stuks</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('voorraad') ? '—' : whole(inv.stock.costValueEur) }}</span>
                       <span class="an-row__meta">kostwaarde</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
@@ -493,10 +480,10 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/purchasing">
                     <span class="an-tile tone-amber"><app-icon name="purchase" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Inkoop</span>
-                      <span class="an-row__sub">{{ openContainersLine(cd.count) }}</span>
+                      <span class="an-row__sub">{{ openContainersLine(cd.openCount, cd.totals.provisionalCount) }}</span>
                       @if (paymentResultLine(cd.payment.netResultEur, cd.payment.eligibleCount); as line) { <span class="an-row__sub">{{ line }}</span> }</span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('inkoop') ? '—' : whole(cd.totals.remainingEur) }}</span>
-                      <span class="an-row__meta">{{ cd.totals.provisionalCount }} nog voorlopig</span></span>
+                      <span class="an-row__meta">nog te betalen</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
                   </a>
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/market">
@@ -529,16 +516,16 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 @if (!loading()) { <span class="an-card__trail">{{ plural(attentionCount(), 'punt', 'punten') }}</span> }</header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  <!-- A count opens the list behind it (design/analyses2 §B.2); a zero row is plain and muted. -->
                   @for (row of attention(); track row.key) {
-                    <a class="an-row an-row--chev" [class.is-muted]="row.count === 0" [routerLink]="row.link" [queryParams]="row.query">
-                      <span class="an-count" [class.is-zero]="row.count === 0" [attr.data-tone]="row.count ? row.tone : null">{{ row.count | num }}</span>
-                      <span class="an-row__body"><span class="an-row__title">{{ row.title }}</span><span class="an-row__sub">{{ row.sub }}</span></span>
-                      <span class="an-row__end">
-                        @if (row.value !== null) { <span class="an-row__value" [attr.data-tone]="row.valueTone">{{ row.value }}</span> }
-                        @if (row.meta) { <span class="an-row__meta" [attr.data-tone]="row.metaTone">{{ row.meta }}</span> }
-                      </span>
-                      <span class="an-row__chev" aria-hidden="true">›</span>
-                    </a>
+                    @if (row.count > 0) {
+                      <button class="an-row an-row--chev" type="button" aria-haspopup="dialog" (click)="openAttention(row.key)">
+                        <ng-container *ngTemplateOutlet="attentionBody; context: { $implicit: row }" />
+                        <span class="an-row__chev" aria-hidden="true">›</span>
+                      </button>
+                    } @else {
+                      <div class="an-row an-row--chev is-muted"><ng-container *ngTemplateOutlet="attentionBody; context: { $implicit: row }" /><span aria-hidden="true"></span></div>
+                    }
                   }
                 }
               </div>
@@ -549,36 +536,20 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
 
       @if (section() === 'sales') {
         @let m = salesMetrics();
-        @let inv = m.invoices;
         @if (loading()) {
           <div class="an-kpis" aria-label="Verkoop laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
         } @else {
+          <!-- A tile opens the list behind its figure (design/analyses2 §B.3); "—" or zero is a plain tile; Ontvangen links to Kosten & bank. -->
           <div class="an-kpis">
-            <div class="an-kpi" data-kpi="revenue"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ failed('TICA verkopen') ? '—' : whole(m.revenueExclEur) }}</span>
-              <span class="an-kpi__sub">excl. btw · {{ channelVolume(inv.issued, m.ticaTransactions) }}@if (inv.creditNoteCount) {, {{ plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') }} }</span>
-              <span class="an-kpi__foot">zelfde cijfer als Resultaat</span></div>
-            <div class="an-kpi" data-kpi="margin"><span class="an-kpi__label">Brutomarge</span>
-              <span class="an-kpi__value" [attr.data-tone]="!m.missingCostLines && m.marginEur < 0 ? 'danger' : null">{{ m.missingCostLines || failed('TICA verkopen') ? '—' : whole(m.marginEur) }}</span>
-              <span class="an-kpi__sub">{{ m.missingCostLines ? plural(m.missingCostLines, 'verkoopregel', 'verkoopregels') + ' zonder kost'
-                : m.marginPct === null ? 'op verkochte goederen' : (m.marginPct | pct: 1) + ' op goederen' }}</span><span class="an-kpi__foot">@if (m.ticaTransactions) {TICA: actuele productkost}</span></div>
-            <div class="an-kpi" data-kpi="invoiced"><span class="an-kpi__label">Gefactureerd</span><span class="an-kpi__value">{{ whole(inv.issuedValueEur) }}</span>
-              <span class="an-kpi__sub">incl. btw · {{ plural(inv.issued, 'factuur', 'facturen') }}@if (inv.averageClaimEur !== null) { · gem. {{ whole(inv.averageClaimEur) }} }</span>
-              <span class="an-kpi__foot" [attr.title]="inv.creditNoteCount ? plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') : null">{{ invoicedFoot() }}</span></div>
-            <a class="an-kpi an-kpi--link" data-kpi="received" routerLink="/costs" [queryParams]="incomingQuery()">
-              <span class="an-kpi__label">Ontvangen</span><span class="an-kpi__value">{{ whole(incoming().receivedEur) }}</span>
-              <span class="an-kpi__sub">incl. btw · {{ plural(incoming().count, 'betaling', 'betalingen') }} op ontvangstdatum</span>
-              <span class="an-kpi__foot">klanten {{ whole(incoming().standardEur) }} · voorschot {{ whole(incoming().partnerAdvanceEur) }} · afrekening {{ whole(incoming().partnerSettlementEur) }}</span></a>
-            <div class="an-kpi" data-kpi="pipeline"><span class="an-kpi__label">Reguliere pijplijn</span><span class="an-kpi__value">{{ whole(m.pipeline.calculatedValueEur) }}</span>
-              <span class="an-kpi__sub">excl. btw · {{ plural(m.pipeline.count, 'open offerte', 'open offertes') }} in de periode · {{ m.pipeline.pieces | num }} st</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi" data-kpi="accepted"><span class="an-kpi__label">Geaccepteerd</span><span class="an-kpi__value">{{ whole(m.accepted.calculatedValueEur) }}</span>
-              <span class="an-kpi__sub">excl. btw · {{ plural(m.accepted.count, 'offerte', 'offertes') }} in de periode</span><span class="an-kpi__foot"></span></div>
-            <div class="an-kpi" data-kpi="open"><span class="an-kpi__label">Open facturen</span><span class="an-kpi__value">{{ whole(inv.outstandingValueEur) }}</span>
-              <span class="an-kpi__sub">incl. btw · {{ plural(inv.outstanding, 'factuur', 'facturen') }}</span>
-              <span class="an-kpi__foot">@if (inv.avgDaysToPaid !== null) {betaald na gemiddeld {{ plural(inv.avgDaysToPaid, 'dag', 'dagen') }}}</span></div>
-            <div class="an-kpi" data-kpi="overdue"><span class="an-kpi__label">Vervallen</span>
-              <span class="an-kpi__value" [attr.data-tone]="inv.overdue > 0 ? 'danger' : null">{{ whole(inv.overdueValueEur) }}</span>
-              <span class="an-kpi__sub">incl. btw · {{ plural(inv.overdue, 'factuur', 'facturen') }} na vervaldatum</span>
-              <span class="an-kpi__foot" [class.is-warn]="!!overdueBefore()">@if (overdueBefore(); as before) {+ {{ before.count }} van vóór deze periode · {{ whole(before.eur) }}}</span></div>
+            @for (k of salesTiles(); track k.key) {
+              @if (k.key === 'received') {
+                <a class="an-kpi an-kpi--link" data-kpi="received" routerLink="/costs" [queryParams]="incomingQuery()"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></a>
+              } @else if (k.drill) {
+                <button class="an-kpi an-kpi--drill" type="button" aria-haspopup="dialog" [attr.data-kpi]="k.key" (click)="openTile(k.key)"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></button>
+              } @else {
+                <div class="an-kpi" [attr.data-kpi]="k.key"><ng-container *ngTemplateOutlet="kpiBody; context: { $implicit: k }" /></div>
+              }
+            }
           </div>
         }
         <div class="an-cols">
@@ -588,29 +559,34 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 @if (!loading()) { <span class="an-card__trail">{{ funnelTrail() }}</span> }</header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
+                  <!-- Every step with offertes opens them (design/analyses2 §B.3); Conversie is the Geaccepteerd step's rate. -->
                   <div class="an-funnel">
                     @for (step of funnelSteps(); track step.key) {
-                      <div class="an-funnel__row" [class.an-funnel__row--accent]="step.accent">
-                        <div><b>{{ step.label }}</b><small>{{ step.rate }}</small></div>
-                        <span class="an-meter" [class.an-meter--ok]="step.accent"><i [style.width.%]="step.width"></i></span>
-                        <span class="an-funnel__n">{{ step.count | num }}</span>
-                      </div>
+                      @if (step.count > 0) {
+                        <button class="an-funnel__row" type="button" aria-haspopup="dialog" [class.an-funnel__row--accent]="step.accent" (click)="openFunnel(step.key)">
+                          <ng-container *ngTemplateOutlet="funnelStep; context: { $implicit: step }" /></button>
+                      } @else {
+                        <div class="an-funnel__row" [class.an-funnel__row--accent]="step.accent"><ng-container *ngTemplateOutlet="funnelStep; context: { $implicit: step }" /></div>
+                      }
                     }
                   </div>
                   <p class="an-funnel__foot">
-                    <span>Afgewezen <b>{{ m.funnel.rejected }}</b></span><span>Verlopen <b>{{ m.funnel.expired }}</b></span><span>Geannuleerd <b>{{ m.funnel.cancelled }}</b></span>
-                    <span>Conversie <b>{{ m.funnel.conversionRatePct === null ? '—' : (m.funnel.conversionRatePct | pct: 0) }}</b> van de gesloten offertes</span>
+                    @for (item of funnelFoot(); track item.key) {
+                      @if (item.count > 0) {
+                        <button class="an-funnel__item" type="button" aria-haspopup="dialog" (click)="openFunnel(item.key)">{{ item.label }} <b>{{ item.count | num }}</b></button>
+                      } @else { <span>{{ item.label }} <b>{{ item.count | num }}</b></span> }
+                    }
                   </p>
                 }
               </div>
             </section>
             <section class="an-card" aria-labelledby="an-trend-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="an-trend-title">Gefactureerd per maand</h2>
-                <span class="an-card__trail">gefactureerd incl. btw · geaccepteerd excl. btw</span></header>
+              <header class="an-card__head"><h2 class="an-card__title" id="an-trend-title">Omzet per maand</h2>
+                <span class="an-card__trail">excl. btw</span></header>
               <div class="an-card__body an-card__pad">
                 @if (loading()) { <app-skeleton kind="card" /> } @else {
                   <app-trend-chart [series]="salesTrend()" prefix="€ " [decimals]="0" [height]="desk.active() ? 190 : 160"
-                                   ariaLabel="Gefactureerd per maand" emptyText="Nog geen facturen of geaccepteerde offertes in deze periode" />
+                                   ariaLabel="Omzet en geaccepteerde offertes per maand, excl. btw" emptyText="Nog geen omzet of geaccepteerde offertes in deze periode" />
                 }
               </div>
             </section>
@@ -620,33 +596,37 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               <header class="an-card__head"><h2 class="an-card__title" id="an-channel-title">Omzet per kanaal</h2><span class="an-card__trail">excl. btw</span></header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
+                  <!-- A channel opens its documents; TICA leads to the TICA list of the period (its card below has the rest). -->
                   @for (channel of m.channels; track channel.channel) {
-                    <div class="an-row an-share">
-                      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(channel.channel) }}</span>
-                        <span class="an-row__sub">{{ channelVolume(channel.invoiceCount, channel.ticaTransactions) }} · marge {{ channel.ticaMissingCostLines ? 'onbekend' : whole(channel.marginEur) }}</span></span>
-                      <span class="an-meter"><i [style.width.%]="channel.sharePct"></i></span>
-                      <span class="an-row__value">{{ whole(channel.revenueExclEur) }}</span>
-                      <span class="an-row__meta">{{ channel.sharePct | pct: 0 }}</span>
-                    </div>
+                    @if (channel.channel === 'TICA' && channel.ticaTransactions) {
+                      <a class="an-row an-share" routerLink="/tica" [queryParams]="ticaQuery()"><ng-container *ngTemplateOutlet="channelBody; context: { $implicit: channel }" /></a>
+                    } @else if (channel.revenueExclEur !== 0 && !failed('verkoop')) {
+                      <button class="an-row an-share" type="button" aria-haspopup="dialog" (click)="openChannel(channel.channel, channel.revenueExclEur)"><ng-container *ngTemplateOutlet="channelBody; context: { $implicit: channel }" /></button>
+                    } @else {
+                      <div class="an-row an-share"><ng-container *ngTemplateOutlet="channelBody; context: { $implicit: channel }" /></div>
+                    }
                   } @empty { <p class="an-empty">Geen facturen of TICA-verkopen in deze periode.</p> }
                 }
               </div>
             </section>
             <section class="an-card" aria-labelledby="an-follow-title">
-              <header class="an-card__head"><h2 class="an-card__title" id="an-follow-title">Opvolgen</h2><span class="an-card__sub">verkooporders die aandacht vragen</span>
-                @if (!loading()) { <span class="an-card__trail">{{ m.attentionOrders.length }}</span> }</header>
+              <!-- A to-do list is today's, over every year (D-S2): whatever period the tab shows. -->
+              @let follow = allSales().attentionOrders;
+              <header class="an-card__head"><h2 class="an-card__title" id="an-follow-title">Opvolgen</h2><span class="an-card__sub">vandaag</span>
+                @if (!loading()) { <span class="an-card__trail">{{ follow.length }}</span> }</header>
               <div class="an-card__body">
                 @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="4" /> } @else {
-                  @for (order of take('follow', m.attentionOrders); track order.orderId) {
+                  @for (order of take('follow', follow); track order.orderId) {
                     <a class="an-row an-row--nolead an-row--chev" [class.mo-fade]="$index >= limitOf('follow')" [routerLink]="['/sales', order.orderId]">
                       <span class="an-row__body"><span class="an-row__title">{{ order.number }}</span>
                         <span class="an-row__sub">{{ order.customerName }} · {{ dayText(order.orderDate) }}</span>
-                        <span class="an-row__chips">@for (reason of order.reasons; track reason) { <span class="an-chip" [attr.data-tone]="order.severity === 'danger' ? 'danger' : null">{{ attentionReason(reason) }}</span> }</span></span>
-                      <span class="an-row__end"><span class="an-row__value">{{ whole(order.calculatedValueEur) }}</span></span>
+                        <span class="an-row__chips">@for (reason of order.reasons; track reason) { <span class="an-chip" [attr.data-tone]="order.severity === 'danger' ? 'danger' : 'muted'">{{ reason }}</span> }</span></span>
+                      <span class="an-row__end"><span class="an-row__value">{{ whole(order.calculatedValueEur) }}</span>
+                        <span class="an-row__meta">{{ followMeta(order.docType) }}</span></span>
                       <span class="an-row__chev" aria-hidden="true">›</span>
                     </a>
                   } @empty { <p class="an-empty">Geen verkooporders vragen nu aandacht.</p> }
-                  <ng-container *ngTemplateOutlet="more; context: { key: 'follow', total: m.attentionOrders.length }" />
+                  <ng-container *ngTemplateOutlet="more; context: { key: 'follow', total: follow.length }" />
                 }
               </div>
             </section>
@@ -654,31 +634,34 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         </div>
         <div class="an-cols an-cols--3">
           <section class="an-card" aria-labelledby="an-countries-title">
-            <header class="an-card__head"><h2 class="an-card__title" id="an-countries-title">Landen</h2><span class="an-card__trail">incl. btw</span></header>
+            <header class="an-card__head"><h2 class="an-card__title" id="an-countries-title">Landen</h2><span class="an-card__trail">excl. btw</span></header>
             <div class="an-card__body">
               @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
                 @for (country of take('countries', m.topCountries); track country.countryCode ?? 'none') {
-                  <div class="an-row" [class.mo-fade]="$index >= listLimit()">
+                  <button class="an-row an-row--chev" type="button" aria-haspopup="dialog" [class.mo-fade]="$index >= listLimit()" [disabled]="!country.revenueExclEur"
+                          (click)="openCountry(country.countryCode, country.revenueExclEur)">
                     <span class="an-rank">{{ $index + 1 }}</span>
                     <span class="an-row__body"><span class="an-row__title">{{ countryLabel(country.countryCode) }}</span><span class="an-row__sub">{{ plural(country.orderCount, 'factuur', 'facturen') }}</span></span>
-                    <span class="an-row__end"><span class="an-row__value">{{ whole(country.calculatedValueEur) }}</span></span>
-                  </div>
+                    <span class="an-row__end"><span class="an-row__value">{{ whole(country.revenueExclEur) }}</span></span>
+                    <span class="an-row__chev" aria-hidden="true">{{ country.revenueExclEur ? '›' : '' }}</span>
+                  </button>
                 } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
                 <ng-container *ngTemplateOutlet="more; context: { key: 'countries', total: m.topCountries.length }" />
               }
             </div>
           </section>
           <section class="an-card" aria-labelledby="an-customers-title">
-            <header class="an-card__head"><h2 class="an-card__title" id="an-customers-title">Klanten</h2><span class="an-card__trail">incl. btw</span></header>
+            <header class="an-card__head"><h2 class="an-card__title" id="an-customers-title">Klanten</h2><span class="an-card__trail">excl. btw</span></header>
             <div class="an-card__body">
               @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
                 @for (customer of take('customers', m.topCustomers); track customer.customerId ?? customer.name) {
-                  <div class="an-row" [class.mo-fade]="$index >= listLimit()">
+                  <button class="an-row an-row--chev" type="button" aria-haspopup="dialog" [class.mo-fade]="$index >= listLimit()" (click)="openCustomer(customer.customerId, customer.name, customer.revenueExclEur)">
                     <span class="an-rank">{{ $index + 1 }}</span>
-                    <span class="an-row__body"><span class="an-row__title">{{ customer.name }}</span>
+                    <span class="an-row__body"><span class="an-row__title">{{ failed('klanten') ? '—' : customer.name }}</span>
                       <span class="an-row__sub">{{ plural(customer.orderCount, 'factuur', 'facturen') }} · {{ customer.pieces | num }} st</span></span>
-                    <span class="an-row__end"><span class="an-row__value">{{ whole(customer.calculatedValueEur) }}</span></span>
-                  </div>
+                    <span class="an-row__end"><span class="an-row__value">{{ whole(customer.revenueExclEur) }}</span></span>
+                    <span class="an-row__chev" aria-hidden="true">›</span>
+                  </button>
                 } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
                 <ng-container *ngTemplateOutlet="more; context: { key: 'customers', total: m.topCustomers.length }" />
               }
@@ -689,13 +672,13 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
             <div class="an-card__body">
               @if (loading()) { <app-skeleton class="an-skeleton" [kind]="desk.active() ? 'list' : 'group'" [rows]="3" /> } @else {
                 @for (product of take('products', m.topProducts); track product.productId) {
-                  <a class="an-row an-row--chev" [class.mo-fade]="$index >= listLimit()" [routerLink]="['/products', product.productId]">
+                  <button class="an-row an-row--chev" type="button" aria-haspopup="dialog" [class.mo-fade]="$index >= listLimit()" (click)="openProduct(product)">
                     <span class="an-rank">{{ $index + 1 }}</span>
-                    <span class="an-row__body"><span class="an-row__title">{{ product.name }}</span>
+                    <span class="an-row__body"><span class="an-row__title">{{ productName(product.productId, product.name) }}</span>
                       <span class="an-row__sub">{{ product.sku || 'Geen SKU' }} · {{ unitWords(product.productId, product.pieces) }}</span></span>
                     <span class="an-row__end"><span class="an-row__value">{{ whole(product.calculatedGoodsValueEur) }}</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
-                  </a>
+                  </button>
                 } @empty { <p class="an-empty">Geen uitgegeven factuurregels in deze periode.</p> }
                 <ng-container *ngTemplateOutlet="more; context: { key: 'products', total: m.topProducts.length }" />
               }
@@ -706,7 +689,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
         @if (!loading() && ticaLines()) {
           @let tc = ticaCard();
           <section class="an-card an-tica" aria-labelledby="an-tica-title">
-            <header class="an-card__head"><h2 class="an-card__title" id="an-tica-title">TICA</h2><span class="an-card__sub">na korting excl. btw</span>
+            <header class="an-card__head"><h2 class="an-card__title" id="an-tica-title">TICA</h2><span class="an-card__sub">na korting excl. btw@if (ticaFrom(); as from) { · vanaf {{ dayText(from) }} }</span>
               <span class="an-card__trail"><a class="an-link" routerLink="/tica" [queryParams]="ticaQuery()">TICA verkopen ›</a></span></header>
             <div class="an-card__body">
               @if (tc.state === 'loading') {
@@ -719,8 +702,10 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 <dl class="an-tica__figs">
                   <div><dt>Gem. per stuk</dt><dd>{{ t.perPieceEur === null ? '—' : (t.perPieceEur | eur) }}</dd><dd class="an-tica__sub">{{ t.pieces | num }} st</dd></div>
                   <div><dt>Gem. per verkoop</dt><dd>{{ t.perSaleEur === null ? '—' : (t.perSaleEur | eur) }}</dd><dd class="an-tica__sub">{{ plural(t.transactions, 'verkoop', 'verkopen') }}</dd></div>
-                  <div><dt>Korting</dt><dd>{{ whole(t.discountEur) }}</dd><dd class="an-tica__sub">op {{ whole(t.netEur + t.discountEur) }} bruto</dd></div>
-                  <div [class.is-warn]="t.unmatchedLines > 0"><dt>Niet herkend</dt><dd>{{ plural(t.unmatchedLines, 'regel', 'regels') }}</dd><dd class="an-tica__sub">zonder ERP-product</dd></div>
+                  <div><dt>Korting</dt><dd>{{ whole(t.discountEur) }}</dd><dd class="an-tica__sub">{{ discountShare(t.discountEur, t.netEur + t.discountEur) }}</dd></div>
+                  <div [class.is-warn]="t.unmatchedLines > 0"><dt>Niet herkend</dt>
+                    <dd>@if (t.unmatchedLines > 0) { <button class="an-tica__drill" type="button" aria-haspopup="dialog" (click)="openTicaUnmatched()">{{ plural(t.unmatchedLines, 'regel', 'regels') }} <span aria-hidden="true">›</span></button> }
+                      @else { {{ plural(t.unmatchedLines, 'regel', 'regels') }} }</dd><dd class="an-tica__sub">zonder ERP-product</dd></div>
                 </dl>
                 <div class="an-tica__lists" [class.an-tica__lists--two]="t.locations.length > 1">
                   <div>
@@ -989,11 +974,11 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
 
       @if (section() === 'market') {
-        <app-market-analysis />
+        <app-market-analysis><app-an-how how [lines]="how.market" /></app-market-analysis>
       }
 
       @if (section() === 'website') {
-        <app-website-analytics />
+        <app-website-analytics><app-an-how how [lines]="how.website" /></app-website-analytics>
       }
 
       @if (section() === 'purchasing') {
@@ -1235,6 +1220,34 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
       }
     </ng-template>
 
+    <ng-template #kpiBody let-k>
+      <span class="an-kpi__label">{{ k.label }}</span><span class="an-kpi__value" [attr.data-tone]="k.tone">{{ k.value }}</span>
+      <span class="an-kpi__sub" [class.is-warn]="k.subWarn">{{ k.sub }}</span><span class="an-kpi__foot" [class.is-warn]="k.footWarn">{{ k.foot }}</span>
+    </ng-template>
+
+    <ng-template #funnelStep let-step>
+      <div><b>{{ step.label }}</b><small>{{ step.rate }}</small></div>
+      <span class="an-meter" [class.an-meter--ok]="step.accent"><i [style.width.%]="step.width"></i></span>
+      <span class="an-funnel__n">{{ step.count | num }}</span>
+    </ng-template>
+
+    <ng-template #channelBody let-channel>
+      <span class="an-row__body"><span class="an-row__title">{{ channelLabel(channel.channel) }}</span>
+        <span class="an-row__sub">{{ channelVolume(channel.invoiceCount, channel.ticaTransactions) }} · marge {{ channel.missingCostLines || channel.ticaMissingCostLines ? '—' : whole(channel.marginEur) }}</span></span>
+      <span class="an-meter"><i [style.width.%]="channel.sharePct"></i></span>
+      <span class="an-row__value">{{ whole(channel.revenueExclEur) }}</span>
+      <span class="an-row__meta">{{ channel.sharePct | pct: 0 }}</span>
+    </ng-template>
+
+    <ng-template #attentionBody let-row>
+      <span class="an-count" [class.is-zero]="row.count === 0" [attr.data-tone]="row.count ? row.tone : null">{{ row.count | num }}</span>
+      <span class="an-row__body"><span class="an-row__title">{{ row.title }}</span><span class="an-row__sub">{{ row.sub }}</span></span>
+      <span class="an-row__end">
+        @if (row.value !== null) { <span class="an-row__value" [attr.data-tone]="row.valueTone">{{ row.value }}</span> }
+        @if (row.meta) { <span class="an-row__meta" [attr.data-tone]="row.metaTone">{{ row.meta }}</span> }
+      </span>
+    </ng-template>
+
     <ng-template #receiptBar let-withChip>
       @if (desk.active()) {
         <div class="an-bar an-bar--sub">
@@ -1314,10 +1327,13 @@ export class AnalysesPage {
     analysisSection(params.get('section')))), { initialValue: 'cash' as AnalysisSection });
   private readonly queryParams = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
   readonly head = computed(() => TAB_HEADS[this.section()]);
+  /** The phone's large title: the chip's own word on Overzicht (the desk header keeps "Analyses", the area's top). */
+  readonly phoneTitle = computed(() => this.section() === 'overview' ? 'Overzicht' : this.head().title);
   /** The crumb "Analyses ›" on the seven tabs; Overzicht is the area's own top (critique N1). */
   readonly parent = computed(() => this.section() === 'overview' ? null : ANALYSES_PARENT);
   readonly how = HOW_TEXTS;
   readonly salesNote = SALES_PERIOD_NOTE;
+  readonly yearQuery = YEAR_QUERY;
   readonly sheet = signal<PageSheet>(null);
   private focusScrolled = false;
   private varianceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1327,11 +1343,12 @@ export class AnalysesPage {
   readonly phoneCaption = computed(() => this.section() === 'overview' ? `Dit jaar · t/m ${weekdayDayMonth(this.today())}` : this.head().subtitle);
   readonly howLines = computed<readonly string[]>(() => {
     const section = this.section();
-    if (section === 'purchasing') return HOW_TEXTS[`purchasing-${this.part()}`];
-    return section === 'market' || section === 'website' ? [] : HOW_TEXTS[section];
+    return section === 'purchasing' ? HOW_TEXTS[`purchasing-${this.part()}`] : HOW_TEXTS[section];
   });
-  readonly menuLinks = computed(() => {
-    if (this.section() !== 'purchasing') return MENU_LINKS[this.section()] ?? [];
+  readonly menuLinks = computed<MenuLink[]>(() => {
+    const section = this.section();
+    if (section === 'result') return (MENU_LINKS.result ?? []).map((link) => ({ ...link, query: this.costsQuery() }));
+    if (section !== 'purchasing') return MENU_LINKS[section] ?? [];
     if (this.part() === 'kosten') return [{ label: 'Kosten & bank', url: '/costs', icon: 'bank' }];
     return this.part() === 'partners' ? [{ label: 'Alle verkooporders', url: '/sales', icon: 'sales' }] : [];
   });
@@ -1474,29 +1491,6 @@ export class AnalysesPage {
   readonly sailingCount = computed(() => this.incomingOrders()
     .filter((row) => row.order.status === 'ONDERWEG').length);
 
-  readonly valuedInventory = computed(() => this.stockProducts().filter((product) =>
-    product.inventoryKnown === true && product.stockQuantity > 0 && product.landedCostEur != null));
-  readonly unvaluedInventory = computed(() => this.stockProducts().filter((product) =>
-    product.inventoryKnown === true && product.stockQuantity > 0 && product.landedCostEur == null));
-  readonly inventoryUnknownSkuCount = computed(() => this.stockProducts()
-    .filter((product) => product.inventoryKnown !== true).length);
-  readonly inventoryValuedPieces = computed(() => this.valuedInventory()
-    .reduce((sum, product) => sum + physicalInventoryQuantity(product), 0));
-  readonly inventoryUnvaluedPieces = computed(() => this.unvaluedInventory()
-    .reduce((sum, product) => sum + physicalInventoryQuantity(product), 0));
-  readonly inventoryPurchaseValue = computed(() => this.valuedInventory()
-    .reduce((sum, product) => sum + product.stockQuantity * product.landedCostEur!, 0));
-  readonly saleableInventory = computed(() => this.stockProducts().filter((product) =>
-    product.active && !product.demo && product.inventoryKnown === true && product.stockQuantity > 0));
-  readonly inventorySalesValue = computed(() => this.saleableInventory()
-    .reduce((sum, product) => sum + product.stockQuantity * product.computedSalesPriceEur, 0));
-  readonly inventoryUplift = computed<number | null>(() => {
-    const products = this.saleableInventory();
-    if (products.some((product) => product.landedCostEur == null)) return null;
-    const cost = products.reduce((sum, product) => sum + product.stockQuantity * product.landedCostEur!, 0);
-    return this.inventorySalesValue() - cost;
-  });
-
   /** What is open today, every year: the pipeline of Verkoop (partner funding left out), not bound to its period. */
   readonly openSales = computed(() => openPipelineQuotes(this.salesOrders()));
   readonly pipelineValue = computed(() => this.openSales()
@@ -1509,6 +1503,20 @@ export class AnalysesPage {
     .reduce((sum, row) => sum + row.priced.validation.productsWithoutCost.length, 0));
   readonly pipelineMarginPct = computed<number | null>(() => this.pipelineGoods() > 0
     ? (this.pipelineMargin() / this.pipelineGoods()) * 100 : null);
+
+  /* ---------- the drill-downs (design/analyses2 §A, §B): every row list comes from the data the tiles read */
+  readonly drillHost = inject(AnDrillHost);
+  /** Verkoop's documents of the period, every year's (the snapshots), and the period's TICA months. */
+  readonly salesDocs = computed(() => salesDocumentRows(this.salesOrders(), this.customers(),
+    { from: this.salesFromDate() || null, to: this.salesToDate() || null, today: this.today() }));
+  readonly allDocs = computed(() => salesDocumentRows(this.salesOrders(), this.customers(), { today: this.today() }));
+  readonly ticaMonths = computed(() => ticaMonthRows(this.ticaDays(), this.salesFromDate() || null, this.salesToDate() || null));
+  /** "Dit jaar · 1 jan – 20 okt 2026": the scope line of Verkoop's dialogs. */
+  readonly salesScope = computed(() => {
+    const label = this.salesPeriodLabel(), range = this.salesRangeText();
+    return !this.salesFromDate() && !this.salesToDate() ? label : `${label} · ${range}`;
+  });
+  private readonly drillContext = computed<SalesDrillContext>(() => ({ period: this.salesScope(), channelName: channelLabel }));
 
   readonly salesMetrics = computed(() => withTicaSales(salesAnalysis(this.salesOrders(), this.customers(), {
     from: this.salesFromDate() || undefined,
@@ -1528,7 +1536,7 @@ export class AnalysesPage {
   readonly channelLabel = channelLabel;
   channelVolume(invoiceCount: number, ticaTransactions = 0): string {
     return [invoiceCount || !ticaTransactions ? plural(invoiceCount, 'factuur', 'facturen') : '',
-      ticaTransactions ? plural(ticaTransactions, 'TICA-transactie', 'TICA-transacties') : ''].filter(Boolean).join(' · ');
+      ticaTransactions ? plural(ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : ''].filter(Boolean).join(' · ');
   }
   /** "waarvan voorschot € 77.376 · gecrediteerd − € 80" (parts left out when zero). */
   readonly invoicedFoot = computed(() => {
@@ -1539,23 +1547,55 @@ export class AnalysesPage {
   /** Ontvangen opens Kosten & bank on the incoming payments of the same period. */
   readonly incomingQuery = computed(() => ({ view: 'incoming', tab: 'received', from: this.salesFromDate() || null, to: this.salesToDate() || null,
     period: this.salesFromDate() || this.salesToDate() ? null : 'all' }));
-  /** Overdue invoices dated before the chosen period: Verkoop's "Vervallen" says so (critique B5.5). */
-  readonly overdueBefore = computed(() => {
-    const from = this.salesFromDate();
-    if (!from) return null;
-    const rows = overdueInvoiceRows(this.salesOrders(), this.today()).filter((row) => row.view.order.orderDate < from);
-    return rows.length ? { count: rows.length, eur: rows.reduce((sum, row) => sum + row.outstandingEur, 0) } : null;
-  });
   /**
-   * "10 aangemaakt · 8 open · 0 gesloten · 2 geannuleerd" (critique B1, N12), on both devices: the phone's funnel
-   * foot has no "gesloten" count, so the short "8 open" dropped a figure. The trail wraps under the head there.
+   * "8 open · 3 gesloten" (D-S7): Aangemaakt is the first bar and Geannuleerd sits in the foot, so the trail keeps
+   * what neither says; "n overige" only when some quote is in none of them.
    */
   readonly funnelTrail = computed(() => {
     const funnel = this.salesMetrics().funnel;
     const other = funnel.created - funnel.open - funnel.closed - funnel.cancelled;
     /* A no-break space keeps each number with its word when the trail wraps on the phone. */
-    return [`${funnel.created}\u00a0aangemaakt`, `${funnel.open}\u00a0open`, `${funnel.closed}\u00a0gesloten`, `${funnel.cancelled}\u00a0geannuleerd`,
-      other > 0 ? `${other}\u00a0overige` : ''].filter(Boolean).join(' · ');
+    return [`${funnel.open}\u00a0open`, `${funnel.closed}\u00a0gesloten`, other > 0 ? `${other}\u00a0overige` : ''].filter(Boolean).join(' · ');
+  });
+  /** Afgewezen · Verlopen · Geannuleerd under the bars; each with offertes opens them. */
+  readonly funnelFoot = computed(() => {
+    const funnel = this.salesMetrics().funnel;
+    return [{ key: 'rejected' as const, label: 'Afgewezen', count: funnel.rejected }, { key: 'expired' as const, label: 'Verlopen', count: funnel.expired },
+      { key: 'cancelled' as const, label: 'Geannuleerd', count: funnel.cancelled }];
+  });
+
+  /** The eight Verkoop tiles (C.2): "—" for a source that failed (D-O3), the snapshots say "vandaag" and cover every year. */
+  readonly salesTiles = computed<KpiTile[]>(() => {
+    const m = this.salesMetrics(), inv = m.invoices, all = this.allSales().invoices, received = this.incoming();
+    const salesDown = this.failed('verkoop'), down = salesDown || this.failed('TICA verkopen');
+    const missing = m.missingCostLines;
+    const credits = inv.creditNoteCount ? plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') : '';
+    const tica = m.ticaTransactions ? plural(m.ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : '';
+    const pct = m.marginPct === null ? 'op verkochte goederen' : `${m.marginPct.toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % op goederen`;
+    const quotes = this.openSales().length;
+    return [
+      { key: 'revenue', label: 'Omzet', value: down ? '—' : this.whole(m.revenueExclEur), tone: null,
+        sub: `excl. btw · ${plural(inv.revenueInvoiceCount, 'factuur', 'facturen')}`, foot: [tica, credits].filter(Boolean).join(' · '),
+        drill: !down && m.revenueExclEur !== 0 },
+      { key: 'margin', label: 'Brutomarge', value: down || missing ? '—' : this.whole(m.marginEur), tone: !down && !missing && m.marginEur < 0 ? 'danger' : null,
+        sub: missing ? `${plural(missing, 'regel', 'regels')} zonder kost` : pct, subWarn: missing > 0, foot: '',
+        drill: !down && (missing > 0 || m.marginEur !== 0) },
+      { key: 'invoiced', label: 'Gefactureerd', value: salesDown ? '—' : this.whole(inv.issuedValueEur), tone: null,
+        sub: `incl. btw · ${plural(inv.issued, 'factuur', 'facturen')}`, foot: this.invoicedFoot(), drill: !salesDown && inv.issuedValueEur !== 0 },
+      { key: 'received', label: 'Ontvangen', value: this.failed('inkomende betalingen') ? '—' : this.whole(received.receivedEur), tone: null,
+        sub: `incl. btw · ${plural(received.count, 'betaling', 'betalingen')}`,
+        foot: `klanten ${this.whole(received.standardEur)} · voorschot ${this.whole(received.partnerAdvanceEur)} · afrekening ${this.whole(received.partnerSettlementEur)}`, drill: false },
+      { key: 'openQuotes', label: 'Open offertes', value: salesDown ? '—' : this.whole(this.pipelineValue()), tone: null,
+        sub: `vandaag · ${plural(quotes, 'offerte', 'offertes')}`, foot: this.pipelineMissingCostLines() ? 'marge onbekend' : `marge ${this.whole(this.pipelineMargin())}`,
+        footWarn: this.pipelineMissingCostLines() > 0, drill: !salesDown && quotes > 0 },
+      { key: 'accepted', label: 'Geaccepteerd', value: salesDown ? '—' : this.whole(m.accepted.calculatedValueEur), tone: null,
+        sub: `excl. btw · ${plural(m.accepted.count, 'offerte', 'offertes')}`, foot: '', drill: !salesDown && m.accepted.count > 0 },
+      { key: 'openInvoices', label: 'Open facturen', value: salesDown ? '—' : this.whole(all.outstandingValueEur), tone: null,
+        sub: `vandaag · ${plural(all.outstanding, 'factuur', 'facturen')}`, foot: inv.avgDaysToPaid === null ? '' : `betaaltermijn gem. ${plural(inv.avgDaysToPaid, 'dag', 'dagen')}`,
+        drill: !salesDown && all.outstanding > 0 },
+      { key: 'overdue', label: 'Vervallen', value: salesDown ? '—' : this.whole(all.overdueValueEur), tone: !salesDown && all.overdue > 0 ? 'danger' : null,
+        sub: `vandaag · ${plural(all.overdue, 'factuur', 'facturen')}`, foot: '', drill: !salesDown && all.overdue > 0 },
+    ];
   });
 
   /* Lists: 8 rows on the desk, 5 on the phone, the rest behind "Alle n tonen" (design §2.1, §2.3). */
@@ -1597,19 +1637,18 @@ export class AnalysesPage {
     return slow.length > 0 && slow === capital && metrics.slowMovers.count === metrics.topCapital.length;
   });
 
-  /** The month by month view as two lines: what was invoiced, what was accepted. */
+  /** Omzet per maand (D-S4): the omzet of the invoices and TICA, beside the accepted quotes; one VAT basis, excl. btw. */
   readonly salesTrend = computed<TrendSeries[]>(() => {
     const metrics = this.salesMetrics(), monthly = metrics.monthly;
-    if (!monthly.some((point) => point.invoicedEur !== 0 || point.acceptedEur !== 0) && !metrics.ticaMonthly.some(point => point.revenueExclEur !== 0)) return [];
+    if (!monthly.some((point) => point.revenueExclEur !== 0 || point.acceptedEur !== 0) && !metrics.ticaMonthly.some(point => point.revenueExclEur !== 0)) return [];
     const months = [...new Set([...monthly.map(point => point.month), ...metrics.ticaMonthly.map(point => point.month)])].sort();
     const dates = months.map(month => `${month}-01`);
-    const series: TrendSeries[] = [
-      /* Two VAT bases on one chart: each series says its own (claims incl., quotes excl.). */
-      { label: 'Gefactureerd incl. btw', dates, values: months.map(month => monthly.find(point => point.month === month)?.invoicedEur ?? 0), tone: 'accent' },
+    const revenue = (month: string) => (monthly.find(point => point.month === month)?.revenueExclEur ?? 0)
+      + (metrics.ticaMonthly.find(point => point.month === month)?.revenueExclEur ?? 0);
+    return [
+      { label: 'Omzet excl. btw', dates, values: months.map(month => Math.round(revenue(month) * 100) / 100), tone: 'accent' },
       { label: 'Geaccepteerde offertes excl. btw', dates, values: months.map(month => monthly.find(point => point.month === month)?.acceptedEur ?? 0), tone: 'muted' },
     ];
-    if (metrics.ticaMonthly.length) series.push({ label: 'TICA-omzet excl. btw', dates, values: months.map(month => metrics.ticaMonthly.find(point => point.month === month)?.revenueExclEur ?? 0), tone: 'blue' });
-    return series;
   });
 
   /** Each stage of the quote funnel as a bar against the number created, with the rate that got it there. */
@@ -1618,10 +1657,10 @@ export class AnalysesPage {
     const width = (count: number) => funnel.created > 0 ? Math.max(count > 0 ? 2 : 0, (count / funnel.created) * 100) : 0;
     const rate = (value: number | null, of: string) => value === null ? `nog geen ${of}` : `${Math.round(value)} % van ${of}`;
     return [
-      { key: 'created', label: 'Aangemaakt', count: funnel.created, width: width(funnel.created), rate: 'alle offertes in de periode', accent: false },
-      { key: 'sent', label: 'Verzonden', count: funnel.sent, width: width(funnel.sent), rate: rate(funnel.sendRatePct, 'aangemaakt'), accent: false },
-      { key: 'viewed', label: 'Bekeken door de klant', count: funnel.viewed, width: width(funnel.viewed), rate: rate(funnel.viewRatePct, 'verzonden'), accent: false },
-      { key: 'accepted', label: 'Geaccepteerd', count: funnel.accepted, width: width(funnel.accepted), rate: rate(funnel.conversionRatePct, 'gesloten'), accent: true },
+      { key: 'created' as const, label: 'Aangemaakt', count: funnel.created, width: width(funnel.created), rate: 'alle offertes in de periode', accent: false },
+      { key: 'sent' as const, label: 'Verzonden', count: funnel.sent, width: width(funnel.sent), rate: rate(funnel.sendRatePct, 'aangemaakt'), accent: false },
+      { key: 'viewed' as const, label: 'Bekeken door de klant', count: funnel.viewed, width: width(funnel.viewed), rate: rate(funnel.viewRatePct, 'verzonden'), accent: false },
+      { key: 'accepted' as const, label: 'Geaccepteerd', count: funnel.accepted, width: width(funnel.accepted), rate: rate(funnel.conversionRatePct, 'gesloten'), accent: true },
     ];
   });
 
@@ -1638,32 +1677,8 @@ export class AnalysesPage {
   readonly leadDays = computed(() => averageLeadDays(this.receivedForPerformance().map((row) => row.order)));
   private readonly regionNames = new Intl.DisplayNames(['nl'], { type: 'region' });
 
-  readonly varianceGroups = computed<VarianceGroup[]>(() => {
-    const groups = new Map<number, VarianceGroup>();
-    for (const row of this.report().rows) {
-      const current = groups.get(row.orderId) ?? {
-        orderId: row.orderId,
-        orderNumber: row.orderNumber,
-        orderAlias: row.orderAlias,
-        supplierName: row.supplierName,
-        receivedOn: row.receivedOn,
-        expectedArrival: row.expectedArrival,
-        missingPieces: 0,
-        damagedPieces: 0,
-        totalLossValueEur: 0,
-        unvaluedLossPieces: 0,
-        rows: [],
-      };
-      current.missingPieces += row.missingPieces;
-      current.damagedPieces += row.damagedPieces;
-      current.totalLossValueEur += row.totalLossValueEur ?? 0;
-      if (!row.valuationComplete) current.unvaluedLossPieces += row.missingPieces + row.damagedPieces;
-      current.rows.push(row);
-      groups.set(row.orderId, current);
-    }
-    return [...groups.values()].sort((left, right) =>
-      (right.receivedOn ?? '').localeCompare(left.receivedOn ?? '') || right.orderId - left.orderId);
-  });
+  /** Afwijkingen' order cards: the report's lines per order (the rule of the Overzicht dialog too, drill-purchase.ts). */
+  readonly varianceGroups = computed<VarianceGroup[]>(() => varianceGroups(this.report().rows));
 
   /* ---------- Overzicht: its own periods, never another tab's filter (critique B5) */
   readonly fx = inject(Fx);
@@ -1684,21 +1699,17 @@ export class AnalysesPage {
   }), this.ticaDays()));
   /** All years: what waits, whatever period Verkoop shows (overdue invoices). */
   readonly allSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), { today: this.today(), topLimit: 1 }));
-  /** Perfect / Op tijd over this calendar year's receipts, without Inkoop's supplier or order focus (design §5.8). */
-  readonly yearPerformance = computed(() => supplierReceiptPerformance(this.purchases()
-    .filter((row) => row.order.status === 'ONTVANGEN' && inDateRange(row.order.receivedOn, this.yearStartDay(), this.today()))
-    .map((row) => ({ receivedOn: row.order.receivedOn, expectedArrival: row.order.expectedArrival, lines: row.order.lines }))));
-  /** The Inkoop digest row: the active containers of Containerkost (same helpers, same filter). */
+  /** The Inkoop digest row: the active containers of Containerkost (same helpers, same filter); "op n" counts those with something open (D-O2). */
   readonly containerDigest = computed(() => {
     const rows = containerCostRows(this.purchases(), 'active', '').map((row) => ({ ...row, paymentResult: purchasePaymentResult(row.view) }));
-    return { count: rows.length, totals: containerCostTotals(rows), payment: containerPaymentResultTotals(rows) };
+    return { openCount: rows.filter((row) => row.reconciliation.totals.remainingEur > 0).length, totals: containerCostTotals(rows), payment: containerPaymentResultTotals(rows) };
   });
   readonly marketDigest = computed(() => {
     const series = this.fx.series();
     if (!series) return null;
     const months = this.marketMonths();
     const change = changeOverMonths({ dates: series.dates, values: series.usd }, months);
-    return { lines: marketLines(series.latestCny, change?.pct ?? null, months, !this.desk.active()), dollar: dollarValue(series.latestUsd) };
+    return { lines: marketLines(series.latestCny, change?.pct ?? null, months), dollar: dollarValue(series.latestUsd) };
   });
   readonly attention = computed<AttentionRow[]>(() => {
     const missing = this.pipelineMissingCostLines();
@@ -1716,23 +1727,40 @@ export class AnalysesPage {
     }
     const variance = varianceAttention([...orders.values()]);
     const terms = financing.rows.map((row) => ({ name: containerName({ id: row.purchaseOrderId, number: row.number, alias: row.alias }), terms: row.unbilledAdvanceCount, nextDue: row.nextAdvanceDueDate }));
-    const plain = { value: null, valueTone: null, meta: null, metaTone: null, query: null } as const;
+    const unvalued = report.totals.unvaluedLossPieces;
+    const plain = { value: null, valueTone: null, meta: null, metaTone: null } as const;
     return [
-      { ...plain, key: 'quotes', count: this.openSales().length, tone: null, title: 'Open offertes', link: '/analyses/sales', query: OPEN_QUOTES_QUERY,
-        sub: `${this.whole(this.pipelineValue())} in de pijplijn${missing ? ` · ${plural(missing, 'regel', 'regels')} zonder kost` : ''}` },
-      { ...plain, key: 'overdue', count: invoices.overdue, tone: 'danger', title: 'Vervallen facturen', link: '/analyses/sales', sub: overdueSub(invoices.overdue),
-        value: this.whole(invoices.overdueValueEur), valueTone: invoices.overdue ? 'danger' : null },
-      { ...plain, key: 'stock', count: inventory.zeroStock.withoutIncomingCount, tone: 'warn', title: 'Producten zonder voorraad én inkoop', link: '/analyses/inventory',
-        sub: `${plural(inventory.dataGaps.unknownStockSkuCount, 'SKU', 'SKU’s')} zonder betrouwbare voorraadstand` },
-      { ...plain, key: 'variance', count: report.totals.affectedOrders, tone: 'warn', title: variance.title, sub: variance.sub, link: '/analyses/purchasing',
-        query: { deel: 'afwijkingen' }, value: this.whole(report.totals.totalLossValueEur), meta: 'bekende impact' },
-      { ...plain, key: 'settle', count: financing.awaitingSettlement, tone: 'warn', title: 'Partnercontainers af te rekenen', link: '/analyses/purchasing',
-        query: { deel: 'partners' }, sub: financing.awaitingSettlement ? 'Ontvangen; het veilingoverzicht wacht' : 'Geen ontvangen partnercontainer wacht' },
+      { ...plain, key: 'quotes', count: this.openSales().length, tone: null, title: 'Open offertes',
+        sub: missing ? `${plural(missing, 'regel', 'regels')} zonder kost` : 'vandaag, alle jaren',
+        value: this.openSales().length ? this.whole(this.pipelineValue()) : null, meta: this.openSales().length ? 'excl. btw' : null },
+      { ...plain, key: 'overdue', count: invoices.overdue, tone: 'danger', title: 'Vervallen facturen', sub: overdueSub(invoices.overdue),
+        value: this.whole(invoices.overdueValueEur), valueTone: invoices.overdue ? 'danger' : null, meta: 'incl. btw' },
+      { ...plain, key: 'stock', count: inventory.zeroStock.withoutIncomingCount, tone: 'warn', title: 'Producten zonder voorraad én inkoop',
+        sub: 'actief, niets besteld' },
+      { ...plain, key: 'variance', count: report.totals.affectedOrders, tone: 'warn', title: variance.title, sub: variance.sub,
+        value: this.whole(report.totals.totalLossValueEur), meta: unvalued ? `+ ${unvalued.toLocaleString('nl-BE')} zonder waarde` : 'bekende impact' },
+      { ...plain, key: 'settle', count: financing.awaitingSettlement, tone: 'warn', title: 'Partnercontainers af te rekenen',
+        sub: financing.awaitingSettlement ? 'Ontvangen; het veilingoverzicht wacht' : 'Geen ontvangen partnercontainer wacht' },
       { ...plain, key: 'advance', count: financing.unbilledAdvanceCount, tone: overdueAdvance > 0 ? 'danger' : null, title: 'Voorschottermijnen te factureren',
-        link: '/analyses/purchasing', query: { deel: 'partners' }, sub: advanceTermsSub(terms, this.today()),
+        sub: advanceTermsSub(terms, this.today()),
         value: this.whole(financing.unbilledAdvanceEur), valueTone: overdueAdvance > 0 ? 'danger' : null,
         meta: overdueAdvance > 0 ? `waarvan ${this.whole(overdueAdvance)} vervallen` : 'excl. btw', metaTone: overdueAdvance > 0 ? 'danger' : null },
     ];
+  });
+  /**
+   * Overzicht's Kasprognose row (C.1, the card that stood on top): the lowest point over the Kasprognose horizon, warn
+   * under the buffer and danger below zero, with the bank today ("saldo ontbreekt" in relative mode).
+   */
+  readonly cashRow = computed<{ value: string; tone: 'warn' | 'danger' | null; meta: string | null; sub: string }>(() => {
+    const forecast = this.cashState.forecast();
+    if (this.cashSources.state() === 'ready' && this.cashSources.bankMissing()) return { value: '—', tone: null, meta: null, sub: 'Banksaldo kon niet laden' };
+    if (!forecast) return { value: '—', tone: null, meta: null, sub: 'Banksaldo laden…' };
+    const low = forecast.lowestWith;
+    return {
+      value: this.whole(low.eur), tone: low.eur < 0 ? 'danger' : underBuffer(forecast, low.eur) ? 'warn' : null,
+      meta: `laagste · ${weekdayDayMonth(low.day)}`,
+      sub: forecast.mode === 'relative' ? 'saldo ontbreekt' : `op de bank ${this.whole(forecast.startEur)}`,
+    };
   });
   readonly attentionCount = computed(() => this.attention().filter((row) => row.count > 0).length);
 
@@ -1858,6 +1886,121 @@ export class AnalysesPage {
     });
   }
 
+  /* ---------- the drill-downs: each opener builds its views from the computed value its trigger shows (rule A.4) */
+
+  /** Overzicht › Aandacht: each row with a count opens the list behind it. */
+  openAttention(key: string): void {
+    const views = this.attentionViews(key);
+    if (views) this.drillHost.open(views);
+  }
+
+  private attentionViews(key: string): DrillView[] | null {
+    switch (key) {
+      case 'quotes': return [this.openQuotesDrill()];
+      case 'overdue': return [overdueView(this.allDocs(), this.allSales().invoices.overdueValueEur)];
+      case 'stock': {
+        const zero = this.inventoryMetrics().zeroStock;
+        return [zeroNoIncomingView(zero.rows, lastSoldOn(this.salesOrders()), zero.withoutIncomingCount)];
+      }
+      case 'variance': {
+        const report = this.overviewReport();
+        return [varianceOrdersView(varianceGroups(report.rows), report.totals.totalLossValueEur, report.totals.unvaluedLossPieces,
+          `Dit jaar · ${this.yearRangeText()} · op ontvangstdatum`, (group) => this.containerOf(group.orderId, group.orderNumber, group.orderAlias))];
+      }
+      case 'settle': {
+        const received = new Map(this.purchases().map((row) => [row.order.id, row.order.receivedOn ?? null]));
+        return [partnersAwaitingView(this.financing().rows, received, this.financing().awaitingSettlement, (row) => this.partnerName(row))];
+      }
+      case 'advance': return [partnersUnbilledView(this.financing().unbilledAdvances, this.financing().unbilledAdvanceEur, (row) => this.partnerName(row))];
+      default: return null;
+    }
+  }
+
+  /** Open offertes (Overzicht and Verkoop): every year's open regular quotes, the pipeline's margin in the summary. */
+  private openQuotesDrill(): DrillView {
+    const missing = this.pipelineMissingCostLines(), pct = this.pipelineMarginPct();
+    const summary = missing ? `marge onbekend: ${plural(missing, 'regel', 'regels')} zonder kost`
+      : `marge ${this.whole(this.pipelineMargin())}${pct === null ? '' : ` · ${pct.toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % op goederen`}`;
+    const ids = new Set(this.openSales().map((row) => row.order.id));
+    return openQuotesView(this.allDocs().filter((doc) => ids.has(doc.id)), this.pipelineValue(), summary);
+  }
+
+  /** Verkoop's tiles. */
+  openTile(key: KpiTile['key']): void {
+    const m = this.salesMetrics(), ctx = this.drillContext(), docs = this.salesDocs(), to = this.salesToDate() || null;
+    switch (key) {
+      case 'revenue': this.drillHost.open(revenueViews(docs, this.ticaMonths(), m.revenueExclEur, ctx, to)); break;
+      case 'margin': this.drillHost.open(marginViews(docs, this.ticaMonths(), missingCostRows(this.salesOrders(), { from: this.salesFromDate() || null, to }),
+        { marginEur: m.marginEur, marginPct: m.marginPct, missingCostLines: m.missingCostLines }, ctx, to, this.ticaLines())); break;
+      case 'invoiced': this.drillHost.open([invoicedView(docs, m.invoices.issuedValueEur, m.invoices.averageClaimEur, ctx, this.whole)]); break;
+      case 'openQuotes': this.drillHost.open([this.openQuotesDrill()]); break;
+      case 'accepted': this.drillHost.open([acceptedView(docs, m.accepted.calculatedValueEur, ctx)]); break;
+      case 'openInvoices': this.drillHost.open([openInvoicesView(this.allDocs(), this.allSales().invoices.outstandingValueEur)]); break;
+      case 'overdue': this.drillHost.open([overdueView(this.allDocs(), this.allSales().invoices.overdueValueEur)]); break;
+      case 'received': break;
+    }
+  }
+
+  /** A funnel bar or foot item; Geaccepteerd is the accepted quotes with their invoice. */
+  openFunnel(step: FunnelStep | 'accepted'): void {
+    const m = this.salesMetrics();
+    if (step === 'accepted') { this.drillHost.open([acceptedView(this.salesDocs(), m.accepted.calculatedValueEur, this.drillContext())]); return; }
+    this.drillHost.open([funnelView(step, this.salesDocs(), m.funnel[step], this.drillContext())]);
+  }
+
+  openChannel(code: string, figure: number): void {
+    this.drillHost.open([channelView(code, this.salesDocs(), figure, this.drillContext())]);
+  }
+
+  openCountry(code: string | null, figure: number): void {
+    this.drillHost.open([countryView(code, this.countryLabel(code), this.salesDocs(), figure, this.drillContext())]);
+  }
+
+  openCustomer(customerId: number | null, name: string, figure: number): void {
+    this.drillHost.open([customerView(customerId, this.failed('klanten') ? '—' : name, this.salesDocs(), figure, this.drillContext(), this.whole)]);
+  }
+
+  openProduct(product: SalesProductMetric): void {
+    const lines = salesLineRows(this.salesOrders(), product.productId, { from: this.salesFromDate() || null, to: this.salesToDate() || null });
+    this.drillHost.open([productView(product.productId, this.productName(product.productId, product.name), lines, this.salesDocs(),
+      product.calculatedGoodsValueEur, this.drillContext(), (id, count) => this.unitWords(id, count))]);
+  }
+
+  /** TICA › Niet herkend: the articles without an ERP product, from the card's own lines. */
+  openTicaUnmatched(): void {
+    const card = this.ticaCard().data, range = this.ticaLines();
+    if (!card || !range) return;
+    this.drillHost.open([ticaUnmatchedView(card.products, card.unmatchedLines, range, rangeLabel(range.from, range.to))]);
+  }
+
+  /** Producten names come from the catalogue (D-S10); the invoice line's text when the product is gone. */
+  productName(productId: number, fallback: string): string {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return product ? product.colour ? `${product.name} · ${product.colour}` : product.name : fallback;
+  }
+
+  /** Opvolgen's value says what it is (D-S8): what is open on an invoice, a quote's total, a credit note's tegoed. */
+  followMeta(docType: 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA'): string {
+    return docType === 'FACTUUR' ? 'open incl. btw' : docType === 'OFFERTE' ? 'offerte excl. btw' : 'tegoed incl. btw';
+  }
+
+  /** "2,0 % van € 3.400 bruto". */
+  discountShare(discountEur: number, grossEur: number): string {
+    if (grossEur <= 0) return `op ${this.whole(grossEur)} bruto`;
+    return `${(discountEur / grossEur * 100).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % van ${this.whole(grossEur)} bruto`;
+  }
+
+  /** The TICA card's own start when its lines cover less of the period than the TICA channel row (D-S11); else null. */
+  readonly ticaFrom = computed(() => {
+    const range = this.ticaLines(), from = this.salesFromDate();
+    if (!range) return null;
+    return this.ticaDays().some((day) => day.date < range.from && (!from || day.date >= from) && (day.transactionCount > 0 || day.revenueExcl !== 0)) ? range.from : null;
+  });
+
+  /** Kosten & bank › Kosten of the period (Resultaat's "Alle kosten"); "Alle jaren" opens every period there. */
+  readonly costsQuery = computed<Record<string, string | null>>(() => ({ view: 'costs', tab: 'company', from: this.salesFromDate() || null, to: this.salesToDate() || null,
+    period: this.salesFromDate() || this.salesToDate() ? null : 'all' }));
+
   /** Vernieuwen reloads what the visible tab shows (critique B6: branch on the tab before any guard). */
   async refresh(): Promise<void> {
     const section = this.section();
@@ -1881,6 +2024,7 @@ export class AnalysesPage {
    * chips, the switch replaces the address.
    */
   deskKey(event: KeyboardEvent): void {
+    if (this.drillHost.views()) return;
     if (!this.desk.active() || event.defaultPrevented) return;
     const tab = analysesTabForKey(event);
     if (!tab) return;
@@ -1916,7 +2060,6 @@ export class AnalysesPage {
     const range = this.ticaLines();
     return range ? { from: range.from, to: range.to } : {};
   }
-  signedWhole(value: number): string { return value < 0 ? this.whole(value) : `+\u00a0${this.whole(value)}`; }
   /** A purchase order by its container name (containerName()), from the loaded orders or the report row. */
   containerOf(orderId: number, number: string, alias: string | null): string {
     const view = this.purchases().find((row) => row.order.id === orderId);
@@ -2139,17 +2282,6 @@ export class AnalysesPage {
     if (weeks === null) return 'Geen verkoop';
     if (weeks < 1) return 'Minder dan een week';
     return `Nog ${weeks} weken`;
-  }
-
-  attentionReason(reason: string): string {
-    const labels: Record<string, string> = {
-      OVERDUE_INVOICE: 'Factuur vervallen',
-      OUTSTANDING_INVOICE: 'Factuur open',
-      QUOTE_AWAITING_RESPONSE: 'Offerte wacht op klant',
-      QUOTE_AWAITING_RESEND: 'Wijziging opnieuw versturen',
-      MISSING_COST: 'Kostprijs ontbreekt',
-    };
-    return labels[reason] ?? reason.toLocaleLowerCase().replaceAll('_', ' ');
   }
 
   valueKey(row: ReceiptVarianceRow): string { return `${row.orderId}:${row.lineId ?? 'legacy'}`; }
