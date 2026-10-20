@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { NAV_GROUPS, meerItems } from '../src/app/core/platform/nav-items.ts';
 import {
   TAB_MENU_CLICK_GUARD_MS, TAB_MENU_HOLD_MS, TAB_MENU_SLOP_PX, TAB_MENU_WIDTH, clickGuardAfter, hasTabMenu, isMenuKey,
@@ -13,6 +15,32 @@ const shell = read('src/app/app.ts');
 const template = /template:\s*`([\s\S]*?)`,\s*\}\)/.exec(shell)?.[1] ?? '';
 const css = read('src/styles/shell-tabbar.scss');
 const pointer = { pointerId: 7, clientX: 120, clientY: 780, isPrimary: true, button: 0 };
+
+/* A shell member run on its own (the class without Angular), as deleted-items.test.mts does. */
+function isolate(source: string, name: string, members: string[], globals: Record<string, unknown>) {
+  const parsed = ts.createSourceFile('fixture.ts', source, ts.ScriptTarget.Latest, true);
+  const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === name);
+  assert.ok(original);
+  const selected = original.members.filter((member) => member.name && ts.isIdentifier(member.name) && members.includes(member.name.text));
+  assert.equal(selected.length, members.length);
+  const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter((modifier) => !ts.isDecorator(modifier)), original.name, undefined, undefined, selected);
+  const js = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
+  const exports: Record<string, any> = {}; vm.runInNewContext(js, { exports, ...globals }); return exports[name];
+}
+const App = isolate(shell, 'App', ['tabMenuKey'], { menuFocusIndex });
+
+/* The open menu's three rows, the one at `focused` holding the focus (-1: none). */
+function menuKeys(focused: number) {
+  const calls: string[] = [];
+  const rows = ['sales', 'tica', 'customers'].map((id) => ({ focus: () => calls.push(`focus ${id}`), click: () => calls.push(`click ${id}`) }));
+  const app = Object.assign(new App(), { document: { activeElement: rows[focused] ?? null }, closeTabMenu: (back: boolean) => calls.push(`close ${back}`) });
+  const press = (key: string) => {
+    let prevented = false;
+    app.tabMenuKey({ key, currentTarget: { querySelectorAll: () => rows }, preventDefault: () => { prevented = true; } });
+    return prevented;
+  };
+  return { calls, press };
+}
 
 test('Verkoop, Inkoop and Producten get a menu; Home and Meer none', () => {
   assert.deepEqual(['home', 'sales', 'purchasing', 'products', 'more'].filter(hasTabMenu), ['sales', 'purchasing', 'products']);
@@ -83,6 +111,20 @@ test('the keyboard: Shift+F10 or the context-menu key opens it; arrows, Home and
   assert.equal(menuFocusIndex('ArrowDown', -1, 0), null);
 });
 
+test('the menu\'s keys: Space opens the focused row as Enter does, never scrolling the page shut', () => {
+  let menu = menuKeys(1);
+  assert.equal(menu.press(' '), true, 'no page scroll: that scroll would close the menu and drop the focus');
+  assert.deepEqual(menu.calls, ['click tica']);
+  menu = menuKeys(-1);
+  assert.equal(menu.press(' '), true);
+  assert.deepEqual(menu.calls, [], 'no row has the focus: nothing opens');
+  menu = menuKeys(1);
+  assert.equal(menu.press('ArrowDown'), true);
+  assert.equal(menu.press('Enter'), false, 'Enter is the link\'s own');
+  assert.equal(menu.press('Tab'), false);
+  assert.deepEqual(menu.calls, ['focus customers', 'close true']);
+});
+
 test('the menu stands centred on its tab and within the bar, never over the \'+\' beside it', () => {
   assert.equal(TAB_MENU_WIDTH, 248);
   /* 375 px phone, five tabs on a bar from 10 to 365 */
@@ -102,6 +144,9 @@ test('the shell: three tabs announce the menu, rows are menuitems with the table
   assert.match(template, /<nav class="tabbar" #tabbar>/);
   assert.match(template, /<div class="tabbar-menu__backdrop" \(click\)="closeTabMenu\(\)"><\/div>/);
   assert.match(template, /<div class="tabbar-menu" role="menu" \[attr\.aria-label\]="menu\.label"/);
+  /* the page's keys stand down while it is open, and a held row gets no link sheet (Android ignores the callout rule) */
+  assert.match(template, /animate\.leave="tabbar-menu--leaving" data-kit-overlay\n/);
+  assert.match(template, /\(keydown\)="tabMenuKey\(\$event\)" \(contextmenu\)="\$event\.preventDefault\(\)">/);
   assert.match(template, /<a class="tabbar-menu__row" role="menuitem" \[routerLink\]="row\.item\.link" \[queryParams\]="row\.item\.query \?\? null"/);
   assert.match(template, /\[attr\.aria-current\]="itemActive\(row\.item\) \? 'page' : null"/);
   assert.match(template, /@if \(countOf\(row\.item\.countKey\); as n\) \{ <span class="ios-count">\{\{ n \}\}<\/span> \}/);
@@ -126,15 +171,18 @@ test('the shell: a long press opens with a tick, its click never navigates, and 
   assert.match(shell, /querySelector<HTMLElement>\('\.tabbar-menu \[role="menuitem"\]'\)\?\.focus\(\{ preventScroll: true \}\)/);
 });
 
-test('the styles: no callout, selection or drag on the bar; glass above the bar; the backdrop leaves the bar\'s strip free', () => {
+test('the styles: no callout, selection or drag on the bar; glass above the bar; the backdrop covers the \'+\' too, the bar stands above it', () => {
   assert.match(css, /\.tabbar \{ -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; \}/);
   assert.match(css, /\.tabbar__item\[aria-haspopup\] \{ touch-action: none; \}/);
-  assert.match(css, /\.tabbar-menu__backdrop \{ position: fixed; inset: 0 0 calc\(var\(--tabbar-h\) \+ var\(--safe-b\) \+ 10px\); z-index: 70; \}/);
+  /* a tap on the '+' or beside the bar closes the menu, never opening the page's sheet under it */
+  assert.match(css, /\.tabbar-menu__backdrop \{ position: fixed; inset: 0; z-index: 70; \}/);
+  assert.match(css, /\.tabbar:has\(~ \.tabbar-menu__backdrop\) \{ z-index: 71; \}/);
   const menu = /\n\.tabbar-menu \{([^}]*)\}/.exec(css)?.[1] ?? '';
   assert.match(menu, /z-index: 71;/, 'above the page header (60)');
   assert.match(menu, /background: var\(--glass-bg-strong\);/);
   assert.match(menu, /backdrop-filter: var\(--glass-filter\);/);
   assert.match(menu, /transform-origin: var\(--tab-x, 50%\)/);
+  assert.match(menu, /animation: tabbar-menu-in var\(--dur-2, 200ms\) var\(--ease-out, ease-out\) backwards;/, 'the popover enter token, not the page push');
   assert.match(css, /@keyframes tabbar-menu-in \{ from \{ opacity: 0; transform: scale\(\.5\); \} to \{ opacity: 1; transform: none; \} \}/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.tabbar-menu \{ animation-name: mo-fade-in; \} \}/);
 });

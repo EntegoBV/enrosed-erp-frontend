@@ -252,13 +252,20 @@ contextmenu may open it a little sooner) opens a glass `role=menu` above
 that tab, centred on it and kept within the bar: the tab root in full
 ("Verkooporders") first, then Meer's rows for that group (short labels,
 counts, the current page in the accent pill). Tap a row or slide onto it
-and let go; a tap outside (the backdrop, z 70, leaves the bar's strip
-free), Escape (focus back to the tab), a route change or a page scroll
-closes it. The click that ends a long press is swallowed in the capture
-phase, before RouterLink; a plain tap still goes to the tab root. The bar
-has no callout, selection or link drag, and the three tabs are
-`touch-action: none`. Shift+F10 / ContextMenu opens it from a focused tab.
-Home and Meer get none; the desk is unchanged.
+and let go; a tap outside (the backdrop, z 70, covers the page and the
+'+'; the bar is raised to 71 above it while open, so another tab still
+takes a press), Escape (focus back to the tab), a route change or a page
+scroll closes it. The click that ends a long press is swallowed in the
+capture phase, before RouterLink; a plain tap still goes to the tab root.
+The bar and the menu have no callout, selection or link drag (the menu
+also cancels `contextmenu`: Android's link sheet), and the three tabs are
+`touch-action: none`. Shift+F10 / ContextMenu opens it from a focused tab;
+Space opens a row as Enter does; `data-kit-overlay` stands the page's keys
+down. It scales in on `--dur-2`, the menu token. Home and Meer get none;
+the desk is unchanged.
+Open for Emre: a page picked from the menu (Klanten, Leveranciers,
+Inventaris…) still lights Meer (`phoneTabForUrl`), while the menu marks it
+current under its tab.
 
 **Meer** (F6, `features/more/more-page.ts`): `app-page-header` (large title,
 "Aangemeld als …", the bell) over the kit's inset groups rendered from

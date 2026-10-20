@@ -219,11 +219,13 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
             </span><span class="tabbar__label">Meer</span>
           </a>
         </nav>
-        <!-- Over the page, never over the bar's strip: another tab still takes a press. -->
+        <!-- Over the page and the '+'; the bar stands above it, so another tab still takes a press.
+             The page's keys stand down (data-kit-overlay) and a held row gets no link sheet. -->
         @if (tabMenu(); as menu) {
           <div class="tabbar-menu__backdrop" (click)="closeTabMenu()"></div>
-          <div class="tabbar-menu" role="menu" [attr.aria-label]="menu.label" animate.leave="tabbar-menu--leaving"
-               [style.left.px]="menu.left" [style.width.px]="menu.width" [style.--tab-x]="menu.origin + 'px'" (keydown)="tabMenuKey($event)">
+          <div class="tabbar-menu" role="menu" [attr.aria-label]="menu.label" animate.leave="tabbar-menu--leaving" data-kit-overlay
+               [style.left.px]="menu.left" [style.width.px]="menu.width" [style.--tab-x]="menu.origin + 'px'"
+               (keydown)="tabMenuKey($event)" (contextmenu)="$event.preventDefault()">
             @for (row of menu.rows; track row.item.id) {
               <a class="tabbar-menu__row" role="menuitem" [routerLink]="row.item.link" [queryParams]="row.item.query ?? null"
                  [attr.data-tab-menu-row]="row.item.id" [class.tabbar-menu__row--hot]="tabMenuHot() === row.item.id"
@@ -503,11 +505,16 @@ export class App {
     if (returnFocus) opener?.focus();
   }
 
-  /** Arrows, Home and End walk the rows; Tab leaves the menu from its tab, onwards. */
+  /**
+   * Arrows, Home and End walk the rows; Space opens the focused one, as Enter does (a link's own
+   * Space scrolls the page, and that scroll would close the menu); Tab leaves from its tab, onwards.
+   */
   tabMenuKey(event: KeyboardEvent): void {
     if (event.key === 'Tab') { this.closeTabMenu(true); return; }
     const rows = Array.from((event.currentTarget as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]'));
-    const next = menuFocusIndex(event.key, rows.indexOf(this.document.activeElement as HTMLElement), rows.length);
+    const index = rows.indexOf(this.document.activeElement as HTMLElement);
+    if (event.key === ' ') { event.preventDefault(); rows[index]?.click(); return; }
+    const next = menuFocusIndex(event.key, index, rows.length);
     if (next === null) return;
     event.preventDefault();
     rows[next].focus();

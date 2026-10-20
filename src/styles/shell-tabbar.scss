@@ -146,9 +146,11 @@
 .fab.fab--text::before { display: none; }
 
 /* The long press's menu: the kit's glass, rising from its tab (--tab-x, set by the shell).
-   The backdrop takes a tap outside over the page and its bars (the header is 60), never the
-   bar's strip, so another tab still takes a press. */
-.tabbar-menu__backdrop { position: fixed; inset: 0 0 calc(var(--tabbar-h) + var(--safe-b) + 10px); z-index: 70; }
+   The backdrop takes a tap outside anywhere, over the page, its bars (the header is 60) and the
+   '+' beside the bar; the bar stands above it while the menu is open, so another tab still takes
+   a press. */
+.tabbar-menu__backdrop { position: fixed; inset: 0; z-index: 70; }
+.tabbar:has(~ .tabbar-menu__backdrop) { z-index: 71; }
 .tabbar-menu {
   position: fixed;
   bottom: calc(var(--tabbar-h) + var(--safe-b) + 18px);
@@ -166,7 +168,7 @@
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
   transform-origin: var(--tab-x, 50%) calc(100% + 38px);
-  animation: tabbar-menu-in var(--dur-3, 320ms) var(--ease-spring, ease-out) backwards;
+  animation: tabbar-menu-in var(--dur-2, 200ms) var(--ease-out, ease-out) backwards;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
