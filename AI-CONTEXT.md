@@ -3044,17 +3044,25 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   buffer is never in the link; "Link kopiëren" copies the address.
 - Desk: one tool row (since the 2026-10-17 redesign: horizon, Buffer ·
   "Hoe gerekend", Link kopiëren; the old eyebrow, heading and paragraph live
-  in "Hoe gerekend"); krap banner ("Toon die dagen" filters the register);
-  five light figures (five columns only when `.cf` is at least 960 px wide,
-  else 3 + 2 on a six-column grid; values in words such as "Blijft boven
-  nul" carry `data-kind="text"` and wrap at 19 px; "Scenario binnen" is a
-  light card, value `data-tone="ok"` when positive); past bank rows show
+  in "Hoe gerekend"); krap banner (period and causes only; "Toon die dagen"
+  filters the register); four light figures since 2026-10-21 (Op de bank,
+  Laagste stand, Op {d}, Zonder verkoop "onder nul op 3 jan"; four columns
+  only when `.cf` is at least 960 px wide, else two by two; values in words
+  carry `data-kind="text"` and wrap at 19 px; "Scenario binnen" is the
+  panel's "Binnen op de bank" on the desk, the phone keeps it as a figure and
+  drops it from its result card); past bank rows show
   `bankTextShort()` with the full text in the title; "Saldo per dag" with pins,
   the month strip (fixed 104 px columns in their own scroller) and "Per
   maand ›"; "Komende bewegingen" (past bank rows, the black today bar, month
   groups, filters, CSV); the scenario column (360 px, sticky; the container
-  sheet replaces it while `po` is set); "Wat telt mee" and "Aansluiting met
-  de Vooruitblik" with data-quality lines. Below 1120 px of page (a container
+  sheet replaces it while `po` is set; source amounts read "binnen tot {d}"
+  and "kost € y excl."); "Wat telt mee" (the label goes with its switch, the
+  amount is its own button) and "Aansluiting met de Vooruitblik" (a
+  `<details>` folded while it matches, open on a mismatch) with the
+  data-quality lines under it. Register month heads read "n bewegingen · in
+  · uit" (laagste and einde are the strip's and Per maand's); Per maand rows
+  "Verkoop containers (scenario)" and "Klanten en voorraad", its note only
+  the "n nog te koppelen (€ x) ›" link. Below 1120 px of page (a container
   query on `.cf`) the scenario stays beside the chart and scrolls in the
   chart's height, and the register takes the full width; a container sheet
   opened from the register is scrolled into view after the router's scroll to
@@ -3068,12 +3076,32 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   compact chart (short marker labels "Laagste € x", "Onder nul · 3 jan"),
   four figures, scenario cells with their sheets, result, order-date card,
   movements (8, then "Alle {n} bewegingen") and cells for Per maand, Wat telt
-  mee and Aansluiting.
+  mee and Aansluiting. Since 2026-10-21 the trail is [bell · ↻ · ⋯] like the
+  other tabs; ⋯ = Link kopiëren · Buffer instellen · Hoe gerekend
+  (`HOW_TEXTS.cash`, one text for desk and phone).
+- Drill-downs (2026-10-21, design/analyses2 §B.8): Laagste stand, Zonder
+  verkoop, a rule amount, Uitkomst Verkoop / Marge (phone: the result card),
+  "Huidige voorraad" (`ScenarioSource.products`), a Per maand month and the
+  Aansluiting line "Lijkt al betaald" call `AnDrillHost.open([view])`; the
+  views are pure builders in `drill-cash.ts` (type-only imports, helpers
+  through `CashDrillContext`; tests/analyses-drill-cash.test.mts holds them
+  to the figures). The page renders the dialog once, outside `.cf`;
+  `app-cash-months` has no sheet of its own any more (it sat inside the size
+  container). "Op {d}" opens Per maand (desk) or the months sheet (phone).
+  `CashForecast.ruleItems` holds the items behind `ruleTotals` (also of a
+  switched-off rule). The same kit serves Markt: "Open containers ›" under
+  Koopkracht and "Per container ›" after "Onze laatste offerte" fetch
+  `sourcing.purchaseOrders()` on the first open (`drill-market.ts`, rows in
+  `market-math.ts`); that offer line compares with Drewry of the quote's own
+  week, else FBX11 (`alignedQuoteVsMarket`, `marketOnOrBefore`), never the
+  newest point.
 - Container sheet (`cash-po-sheet.ts`): net and "Terugverdiend op …", the
   lane chart, Betaald / Nog uit / Terug, price (Opslag % chips, € / stuk,
   Lijst, Historisch), cost basis, weeks, payment days, season, "In het
   scenario", Vertrek (BESTELD) or "Bestellen op" (CONCEPT), the money flow
-  with "Lijkt al betaald" (Koppelen / Niet deze) and per product. Every
+  with "Lijkt al betaald" (Koppelen / Niet deze) and per product (a paid row
+  opens its bank line, an open one `/costs?container=`, a product
+  `/products/:id`; "Bewaard bij de container."). Every
   control writes the order's full `PurchaseOrderForecastWrite`
   (PUT `/api/purchase-order-forecasts/{id}`) 600 ms after the last change,
   last write wins, a refusal shows inline and reverts; "Terug naar
