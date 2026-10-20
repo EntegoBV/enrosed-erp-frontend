@@ -296,6 +296,26 @@ test('statementsFrom drops older movements but keeps older lines for the likely-
   assert.equal(input.bankLines.some((line) => line.id === 201), true);
 });
 
+test('annulatie preserves real dated cash movements across months without creating costs, revenue or VAT', () => {
+  const debit = statement(501, K, -279.96, '2026-09-30T08:00:00Z', 'IKEA', 'Afschrijving', { classification: 'CANCELLATION', transferLineId: 502 });
+  const refund = statement(502, K, 279.96, '2026-10-07T08:00:00Z', 'IKEA', 'Terugbetaling', { classification: 'CANCELLATION', transferLineId: 501 });
+  const base = sources({ statements: [], costs: [], purchasePayments: [], incomingPayments: [], salesOrders: [], purchaseViews: [] });
+  const empty = cashForecastInput(base);
+  const input = cashForecastInput({ ...base, statements: [debit, refund] });
+  assert.deepEqual(input.bankLines.map(line => ({ id: line.id, day: line.day, amount: line.amountEur, parts: line.parts })), [
+    { id: 501, day: '2026-09-30', amount: -279.96, parts: [{ kind: 'OTHER', amountEur: -279.96 }] },
+    { id: 502, day: '2026-10-07', amount: 279.96, parts: [{ kind: 'OTHER', amountEur: 279.96 }] },
+  ]);
+  assert.deepEqual(input.paidVatPeriods, empty.paidVatPeriods);
+  assert.deepEqual(input.openCosts, empty.openCosts);
+  assert.deepEqual(input.vatQuarters, empty.vatQuarters);
+  assert.deepEqual(input.history, empty.history);
+  assert.deepEqual(input.invoices, empty.invoices);
+  const october = cashForecastInput({ ...base, statements: [debit, refund], statementsFrom: '2026-10-01' });
+  assert.ok(october.movements.some(line => line.amountEur === 279.96));
+  assert.ok(!october.movements.some(line => line.amountEur === -279.96));
+});
+
 test('an archived order keeps its open rows; a concept takes its import VAT from the Besteld mapping', () => {
   const archived = { ...po43(), order: { ...po43().order, archivedAt: '2026-10-14T10:00:00Z' } } as PurchaseOrderView;
   const concept = purchase(45, 'PO-2026-045', 'CONCEPT', { orderDate: '2026-10-20' },

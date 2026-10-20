@@ -464,6 +464,8 @@
     &.is-on { border-color: var(--rose-line); background: var(--rose-soft); } }
   .fin-bookas__field { display: grid; gap: 6px; margin: 0; padding: 0; border: 0; font-size: 13px;
     legend { margin-bottom: 4px; color: var(--ink-2); font-weight: 650; } label { display: flex; align-items: center; gap: 8px; } input[type='radio'] { accent-color: var(--rose); } }
+  .fin-bookas__cancellation .fin-bookas__option { align-items: flex-start; min-width: 0; span { min-width: 0; overflow-wrap: anywhere; } }
+  .fin-bookas__pair { margin: 4px 0 0; padding: 10px; border-radius: 8px; background: var(--surface-2); line-height: 1.5; }
   .fin-exact__list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none;
     label { display: flex; align-items: flex-start; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
     input { margin-top: 3px; accent-color: var(--rose); } span { display: grid; gap: 2px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; } small { color: var(--muted); font-size: 12px; } }

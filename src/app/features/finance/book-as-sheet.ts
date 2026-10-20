@@ -3,12 +3,12 @@ import type { BankClassification, BankStatementLine } from '../../core/api/banki
 import { BankingApi } from '../../core/api/banking-api';
 import { messageOf } from '../../core/api/errors';
 import { Sheet, Ui } from '../../shared/ui';
-import { legDistance, transferCandidates, vatPeriods } from './bank-suggestions';
+import { allocatedLine, cancellationCandidates, legDistance, transferCandidates, vatPeriods } from './bank-suggestions';
 import { bankTextOf } from './bank-text';
 import { CLASSIFICATION_LABEL } from './cash-forecast';
 import { FinanceState, formatEuro } from './finance-state';
 
-type Choice = 'BANKKOSTEN' | 'RENTE' | BankClassification;
+type Choice = 'BANKKOSTEN' | 'RENTE' | 'RECEIVED_DOCUMENT' | BankClassification;
 const NONE = 'none';
 
 /**
@@ -35,6 +35,22 @@ const NONE = 'none';
             }
           </div>
           @switch (choice()) {
+            @case ('CANCELLATION') {
+              <fieldset class="fin-bookas__field fin-bookas__cancellation"><legend>Kies de tegenboeking</legend>
+                <p class="fin-hint">Kies de terugbetaling of oorspronkelijke afschrijving met exact het tegengestelde bedrag. Beide bankregels worden samen als annulatie geboekt, zonder factuur of kost.</p>
+                @for (other of cancellationLegs(); track other.id) {
+                  <label class="fin-bookas__option" [class.is-on]="cancellationLeg() === other.id">
+                    <input type="radio" name="cancellation-leg" [checked]="cancellationLeg() === other.id" [disabled]="busy()" (change)="cancellationLeg.set(other.id)" />
+                    <span><b>{{ title(other) }} · {{ signed(other.amountEur) }}</b><small>{{ day(other) }} · {{ state.accountLabel(other.account) }}</small>@if (other.reference) { <small>{{ other.reference }}</small> }</span>
+                  </label>
+                } @empty {
+                  <p class="fin-hint">Geen vrije tegenboeking met {{ signed(-row.amountEur) }} gevonden. Is de tegenboeking al geboekt? Open die transactie en kies eerst ‘Boeking ongedaan maken’ of ‘Koppeling losmaken’.</p>
+                }
+                @if (selectedCancellation(); as other) {
+                  <p class="fin-bookas__pair" role="status">Samen boeken: {{ signed(row.amountEur) }} op {{ day(row) }} en {{ signed(other.amountEur) }} op {{ day(other) }}. Saldo samen: {{ signed(0) }}. Ongedaan maken maakt beide bankregels vrij.</p>
+                }
+              </fieldset>
+            }
             @case ('INTERNAL_TRANSFER') {
               <fieldset class="fin-bookas__field"><legend>Andere kant</legend>
                 @for (other of legs(); track other.id) {
@@ -50,7 +66,7 @@ const NONE = 'none';
                 </select></label>
             }
           }
-          @if (choice() && choice() !== 'BANKKOSTEN' && choice() !== 'RENTE') {
+          @if (choice() && choice() !== 'BANKKOSTEN' && choice() !== 'RENTE' && choice() !== 'RECEIVED_DOCUMENT') {
             <label class="fin-field fin-bookas__field"><span>Notitie{{ choice() === 'OTHER' ? '' : ' (optioneel)' }}</span>
               <input class="input" maxlength="300" [placeholder]="choice() === 'OTHER' ? 'Bijv. borg terug van verhuurder' : ''" [value]="note()" (input)="note.set($any($event.target).value)" /></label>
           }
@@ -59,7 +75,7 @@ const NONE = 'none';
         </div>
         <div foot class="fin-sheet__foot">
           <button class="btn" type="button" (click)="close()">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="!ready()" (click)="book(row)">{{ busy() ? 'Boeken…' : 'Boeken' }}</button>
+          <button class="btn btn--primary" type="button" [disabled]="!ready()" (click)="book(row)">{{ busy() ? 'Boeken…' : choice() === 'RECEIVED_DOCUMENT' ? 'Document kiezen' : choice() === 'CANCELLATION' ? 'Beide als annulatie boeken' : 'Boeken' }}</button>
         </div>
       </app-sheet>
     }
@@ -73,6 +89,7 @@ export class BookAsSheet {
   readonly line = computed(() => { const line = this.state.bookAsLine(); return line ? this.state.bankStatements().find((row) => row.id === line.id) ?? line : null; });
   readonly choice = signal<Choice | null>(null);
   readonly leg = signal<string>(NONE);
+  readonly cancellationLeg = signal<number | null>(null);
   readonly period = signal('');
   readonly note = signal('');
   readonly busy = signal(false);
@@ -83,6 +100,8 @@ export class BookAsSheet {
     if (!row) return [];
     const outgoing = row.amountEur < 0;
     const all: { id: Choice; label: string; sub: string; round: boolean }[] = [
+      { id: 'CANCELLATION', label: 'Annulatie', sub: 'Afschrijving en terugbetaling aan elkaar koppelen, zonder factuur', round: true },
+      { id: 'RECEIVED_DOCUMENT', label: 'Aankoopfactuur of creditnota', sub: 'Een ontvangen document uit Odoo kiezen en controleren', round: false },
       ...(outgoing ? [{ id: 'BANKKOSTEN' as const, label: 'Bankkosten', sub: 'Wordt een kost (vrijgesteld van btw)', round: false },
         { id: 'RENTE' as const, label: 'Rente', sub: 'Wordt een kost (vrijgesteld van btw)', round: false }] : []),
       { id: 'INTERNAL_TRANSFER', label: 'Interne overboeking', sub: 'Naar of van een andere eigen rekening', round: true },
@@ -102,9 +121,16 @@ export class BookAsSheet {
       (key) => this.state.canonicalAccount(key), (key) => active.has(key));
   });
   readonly periods = computed(() => vatPeriods(this.state.today(), this.line() ? this.state.lineDay(this.line()!) : this.state.today()));
+  readonly cancellationLegs = computed(() => {
+    const row = this.line();
+    return row ? cancellationCandidates(row, this.state.bankStatements().filter((line) => this.state.officialBankLine(line)), (line) => this.state.lineDay(line)) : [];
+  });
+  readonly selectedCancellation = computed(() => this.cancellationLegs().find((line) => line.id === this.cancellationLeg()) ?? null);
   readonly ready = computed(() => {
     const choice = this.choice();
-    if (!choice || this.busy()) return false;
+    const row = this.line();
+    if (!choice || this.busy() || !row || allocatedLine(row)) return false;
+    if (choice === 'CANCELLATION') return !!this.selectedCancellation();
     if (choice === 'OTHER') return !!this.note().trim();
     if (choice === 'VAT') return /^\d{4}-Q[1-4]$/.test(this.period());
     return true;
@@ -115,7 +141,7 @@ export class BookAsSheet {
     effect(() => {
       const row = this.line();
       untracked(() => {
-        this.choice.set(null); this.note.set(''); this.error.set('');
+        this.choice.set(null); this.note.set(''); this.error.set(''); this.cancellationLeg.set(null);
         this.leg.set(this.legs()[0] ? String(this.legs()[0].id) : NONE);
         this.period.set(this.periods().preferred);
         void row;
@@ -128,6 +154,12 @@ export class BookAsSheet {
   async book(row: BankStatementLine): Promise<void> {
     const choice = this.choice();
     if (!choice || !this.ready()) return;
+    if (choice === 'RECEIVED_DOCUMENT') {
+      this.state.bookAsLine.set(null);
+      this.state.receivedDocumentLine.set(row.id);
+      this.state.inspectItem({ kind: 'line', id: row.id });
+      return;
+    }
     if (choice === 'BANKKOSTEN' || choice === 'RENTE') {
       const gross = Math.abs(row.amountEur);
       this.state.bookAsLine.set(null);
@@ -138,13 +170,14 @@ export class BookAsSheet {
     }
     this.busy.set(true); this.error.set('');
     try {
-      const transferLineId = choice === 'INTERNAL_TRANSFER' && this.leg() !== NONE ? Number(this.leg()) : null;
+      const transferLineId = choice === 'CANCELLATION' ? this.selectedCancellation()!.id
+        : choice === 'INTERNAL_TRANSFER' && this.leg() !== NONE ? Number(this.leg()) : null;
       const result = await this.banking.classify(row.id, { classification: choice, note: this.note().trim() || null, transferLineId, vatPeriod: choice === 'VAT' ? this.period() : null });
       this.state.bankStatements.update((rows) => rows.map((line) => result.lines.find((saved) => saved.id === line.id) ?? line));
       this.state.bookAsLine.set(null);
       this.state.flash(row.id);
       void this.state.refreshBank();
-      this.ui.toast(`Geboekt als ${CLASSIFICATION_LABEL[choice]}`, 'ok', { label: 'Ongedaan maken', run: () => void this.state.unclassifyLine(row) });
+      this.ui.toast(choice === 'CANCELLATION' ? 'Beide bankregels als annulatie geboekt' : `Geboekt als ${CLASSIFICATION_LABEL[choice]}`, 'ok', { label: 'Ongedaan maken', run: () => void this.state.unclassifyLine(result.lines.find((line) => line.id === row.id) ?? row) });
     } catch (failure: unknown) {
       this.error.set(messageOf(failure, 'Boeken mislukt'));
     } finally {
@@ -157,7 +190,7 @@ export class BookAsSheet {
     return `${this.state.accountLabel(other.account)} · ${day.slice(8, 10)}/${day.slice(5, 7)} · ${this.signed(other.amountEur)} · ${legDistance(this.state.lineDay(row), day)}`;
   }
   periodText(period: string): string { return `Q${period.slice(6)} ${period.slice(0, 4)}`; }
-  signed(value: number): string { return `${value > 0 ? '+' : '−'} ${formatEuro(Math.abs(value))}`; }
+  signed(value: number): string { return `${value > 0 ? '+ ' : value < 0 ? '− ' : ''}${formatEuro(Math.abs(value))}`; }
   /** The line's clean title (bankTextOf), as its row on Transacties reads. */
   title(row: BankStatementLine): string { return bankTextOf(row).title; }
   day(row: BankStatementLine): string { const day = this.state.lineDay(row); return `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`; }

@@ -256,6 +256,16 @@ export function selectionTotals(lines: readonly Pick<BankStatementLine, 'amountE
 
 /* ---------------------------------------------------------------- Boeken als */
 
+/** A cancellation pairs two free, nonzero exact opposites, including the same account and distant dates. */
+export function cancellationCandidates<T extends Pick<BankStatementLine, 'id' | 'amountEur' | 'allocated' | 'salesPaymentId' | 'classification'>>(
+  line: T, lines: readonly T[], dayOf: (line: T) => string,
+): T[] {
+  if (!Number.isFinite(line.amountEur) || cents(line.amountEur) === 0 || allocatedLine(line)) return [];
+  return lines.filter((other) => other.id !== line.id && !allocatedLine(other)
+    && Number.isFinite(other.amountEur) && cents(other.amountEur) === -cents(line.amountEur))
+    .sort((a, b) => Math.abs(days(dayOf(line), dayOf(a))) - Math.abs(days(dayOf(line), dayOf(b))) || a.id - b.id);
+}
+
 /** 'zelfde dag', '2 dagen later', '1 dag eerder': the other leg of a transfer seen from this line. */
 export function legDistance(day: string, otherDay: string): string {
   const gap = days(day, otherDay);

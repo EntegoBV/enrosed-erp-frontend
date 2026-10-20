@@ -28,7 +28,7 @@ import { dayMonthYear, signedEur } from './finance-format';
           <div class="bank-alloc-tabs" role="group" aria-label="Wat koppel je aan deze banktransactie?">
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'documents'" (click)="p.setAllocationStep('documents')">Factuur of uitgave</button>
             <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'payments'" (click)="p.setAllocationStep('payments')">Bestaande betaling</button>
-            <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Nog te registreren</button>
+            <button type="button" [disabled]="p.busy()" [attr.aria-pressed]="p.allocationStep() === 'new'" (click)="p.setAllocationStep('new')">Aankoopfactuur / creditnota uit Odoo</button>
           </div>
           }
           @if (p.allocationStep() !== 'new') {
@@ -51,7 +51,7 @@ import { dayMonthYear, signedEur } from './finance-format';
                   <span class="bank-alloc-document__identity"><small>{{ document.label }}{{ document.estimated ? ' · verwacht bedrag' : '' }}</small><b>{{ document.title }}</b><span>{{ document.party }}{{ document.reference && document.reference !== document.title ? ' · ' + document.reference : '' }}</span><small>{{ document.date ? day(document.date) : 'Volgens betaalafspraak' }}</small></span>
                   <span class="bank-alloc-document__amount"><b>{{ p.abs(document.openBankEur) | eur }}</b><small>{{ document.openBankEur ? 'nog open' : 'al betaald' }}</small><small>totaal {{ document.totalEur | eur }}</small></span>
                 </button>
-              } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Nog te registreren</button>.</p> } }
+              } @empty { @if (!p.localLoading()) { <p class="fin-hint">Geen factuur of uitgave gevonden. Pas je zoekterm aan, of kies <button class="fin-inline-btn" type="button" (click)="p.setAllocationStep('new')">Aankoopfactuur / creditnota uit Odoo</button>.</p> } }
             </div>
             @if (p.visibleLocalDocuments().length < p.localMatches().length) { <button class="btn btn--sm" type="button" (click)="p.localShown.set(p.localShown() + 60)">Meer tonen · nog {{ p.localMatches().length - p.visibleLocalDocuments().length }}</button> }
             }

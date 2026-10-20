@@ -24,7 +24,7 @@ import type { BankMovementPanel } from '../src/app/features/finance/bank-movemen
 import { receiptInstant, receiptLocalParts, receiptRequest } from '../src/app/shared/received-at.ts';
 import { paymentLocalDay, paymentMomentLabel } from '../src/app/features/finance/incoming-money.ts';
 import { bankTextOf } from '../src/app/features/finance/bank-text.ts';
-import { signedEur as signedMoney } from '../src/app/features/finance/finance-format.ts';
+import { dayMonthYear, signedEur as signedMoney } from '../src/app/features/finance/finance-format.ts';
 import { containerName, containerNumberHint } from '../src/app/features/purchasing/container-name.ts';
 import { paymentPayeeLabel } from '../src/app/features/finance/cost-ledger.ts';
 import { incomingPurposeLabel } from '../src/app/features/finance/incoming-money.ts';
@@ -163,7 +163,7 @@ function harness() {
       throw new Error(`Unexpected service injection: ${String(token)}`);
     },
     bankAccountKey: bankExports.bankAccountKey, receiptLocalParts, receiptRequest,
-    paymentLocalDay, paymentMomentLabel, bankTextOf, signedMoney, containerName, containerNumberHint, paymentPayeeLabel, incomingPurposeLabel, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
+    paymentLocalDay, paymentMomentLabel, bankTextOf, signedMoney, dayMonthYear, containerName, containerNumberHint, paymentPayeeLabel, incomingPurposeLabel, crypto: globalThis.crypto, escapeHtml, document: { querySelector: () => null },
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
   });
   assert.ok(exports.BankMovementPanel, 'Production component class was compiled');
@@ -1368,6 +1368,20 @@ test('Transacties over every account: the search reads amounts four ways, In · 
   assert.deepEqual(Array.from(panel.filteredLines(), (line) => line.id).sort(), [2, 3]);
   assert.equal(panel.statusLabel(other), 'Interne overboeking');
   assert.equal(panel.statusLabel(fee), 'Te koppelen');
+});
+
+test('Annulatie identifies its counterpart by merchant, actual opposite amount, date and account', () => {
+  const { panel, state } = harness();
+  const debit = { ...movement(73, -279.96), counterparty: 'IKEA', classification: 'CANCELLATION' as const, transferLineId: 74, allocated: true };
+  const refund = { ...movement(74, 279.96), counterparty: 'IKEA', classification: 'CANCELLATION' as const, transferLineId: 73, allocated: true };
+  state.bankStatements.set([debit, refund]);
+  assert.equal(panel.statusLabel(debit), 'Annulatie');
+  const label = panel.koppeling(debit)!;
+  assert.equal(label.text, 'Annulatie');
+  assert.ok(label.sub?.includes('IKEA'));
+  assert.ok(label.sub?.includes('279,96'));
+  assert.ok(label.sub?.includes('8 sep 2026'));
+  assert.ok(label.sub?.includes('KBC'));
 });
 
 test('Transacties rows: "Zoek een match" when nothing is found, a why line under a container link, one account drops the account column', () => {

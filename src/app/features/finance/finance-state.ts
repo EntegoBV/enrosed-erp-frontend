@@ -2305,6 +2305,8 @@ export class FinanceState {
   private searchedQuery: string | null = null;
   /** "Boeken als…" on this line. */
   readonly bookAsLine = signal<BankStatementLine | null>(null);
+  /** Open the existing Odoo document picker on this transaction after leaving Boeken als. */
+  readonly receivedDocumentLine = signal<number | null>(null);
   /** "{k} exacte suggesties koppelen". */
   readonly exactLinksOpen = signal(false);
   /** ⋯ › "Gearchiveerde rekeningen". */
@@ -2459,7 +2461,7 @@ export class FinanceState {
     });
   }
 
-  /** "Ongedaan maken" of "Boeken als…" (both legs of an internal transfer). */
+  /** "Ongedaan maken" of "Boeken als…" (both legs of a transfer or cancellation). */
   async unclassifyLine(line: BankStatementLine): Promise<void> {
     if (line.ticaSettlementId) { this.openTicaSettlement(line.ticaSettlementId); return; }
     if (this.linking() !== null) return;
@@ -2468,7 +2470,7 @@ export class FinanceState {
       await this.banking.unclassify(line.id);
       await this.refreshBank();
       this.flash(line.id);
-      this.ui.toast('Boeken als ongedaan gemaakt');
+      this.ui.toast(line.classification === 'CANCELLATION' ? 'Annulatie ongedaan gemaakt: beide bankregels zijn vrij' : 'Boeken als ongedaan gemaakt');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Ongedaan maken mislukt'), 'err');
     } finally {
