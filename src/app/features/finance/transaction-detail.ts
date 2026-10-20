@@ -124,6 +124,9 @@ interface InvoiceBlock {
               <h3 class="wk-section__title">Geboekt als {{ classLabel(row) }}</h3>
               @if (row.classification === 'INTERNAL_TRANSFER') { <p class="fin-txd__line">{{ transferText(row) }}</p> }
               @if (row.classification === 'VAT' && row.vatPeriod) { <p class="fin-txd__line">{{ vatLabel(row.vatPeriod) }}</p> }
+              @if (row.ticaSettlementId && row.ticaSettlementAmountEur != null) {
+                <p class="fin-txd__line">Afrekening {{ row.ticaSettlementAmountEur | eur }} · bankverschil {{ row.amountEur - row.ticaSettlementAmountEur | eur }}</p>
+              }
               @if (row.classificationNote) { <p class="fin-txd__line">{{ row.classificationNote }}</p> }
               @if (row.classifiedBy || row.classifiedAt) { <p class="fin-hint">Geboekt door {{ row.classifiedBy || 'onbekend' }}{{ row.classifiedAt ? ' op ' + stampShort(row.classifiedAt) : '' }}</p> }
             </section>
@@ -292,7 +295,8 @@ interface InvoiceBlock {
       @if (line(); as row) {
         @switch (status()) {
           @case ('BOOKED') {
-            <button class="wk-btn btn" type="button" [disabled]="state.linking() !== null" (click)="state.unclassifyLine(row)">Ongedaan maken</button>
+            @if (row.ticaSettlementId) { <button class="wk-btn btn" type="button" (click)="state.openTicaSettlement(row.ticaSettlementId)">TICA-afrekening ›</button> }
+            @else { <button class="wk-btn btn" type="button" [disabled]="state.linking() !== null" (click)="state.unclassifyLine(row)">Ongedaan maken</button> }
             <button class="wk-btn btn" type="button" (click)="next()">Volgende</button>
           }
           @case ('LINKED') {

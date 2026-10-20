@@ -122,7 +122,7 @@ export class FinanceToolbar {
   readonly syncShown = computed(() => this.state.location().view === 'bank' && this.state.hasOdooAccounts() && this.primary().kind !== 'sync');
   /** "KBC-zichtrekening opgehaald 08:12 · Wise EUR handmatig". */
   readonly syncSub = computed(() => {
-    const at = this.sync.status()?.lastSyncAt ?? null;
+    const at = this.sync.lastSuccessAt();
     return this.state.accountsView().map((account) => account.source === 'ODOO'
       ? `${account.label} ${at ? 'opgehaald ' + this.when(at) : 'nog niet opgehaald'}` : `${account.label} handmatig`).join(' · ');
   });

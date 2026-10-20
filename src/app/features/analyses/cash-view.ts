@@ -310,6 +310,7 @@ export function itemLink(item: ForecastItem): CashLink | null {
     case 'cost': return { path: ['/costs'], query: { cost: source.costId }, po: null };
     case 'recurring': return { path: ['/costs'], query: { view: 'costs', tab: 'recurring' }, po: null };
     case 'container': return item.kind === 'SALES' ? { path: [], query: null, po: source.orderId } : { path: ['/costs'], query: { container: source.orderId }, po: null };
+    case 'tica': return { path: ['/tica'], query: { settlement: source.settlementId }, po: null };
     case 'invoice': return { path: ['/sales', source.salesOrderId], query: null, po: null };
     case 'quote': return { path: ['/sales', source.salesOrderId], query: null, po: null };
     case 'vat': return { path: ['/costs'], query: { view: 'analysis', tab: 'vat', year: source.year, quarter: source.quarter }, po: null };
@@ -339,6 +340,8 @@ export function unlinkedLines(input: CashForecastInput): { count: number; eur: n
 /** The lines under "Aansluiting met de Vooruitblik" that say what makes the forecast less sure. */
 export function dataQuality(input: CashForecastInput, forecast: CashForecast): QualityLine[] {
   const lines: QualityLine[] = [];
+  if (input.ticaVatIncomplete) lines.push({ text: 'TICA-btw nog onvolledig: verkopen zonder geboekte afrekening. Alleen bevestigde creditnota’s tellen in de btw-prognose.',
+    action: 'Afrekeningen controleren', link: { path: ['/tica'], query: null, po: null }, po: null, warn: true });
   for (const account of forecast.startAccounts) {
     if (!account.stale) continue;
     lines.push({ text: `${account.label}: saldo ${account.ageDays} d niet gecontroleerd.`, action: 'Controleren', po: null, warn: true,
@@ -372,6 +375,7 @@ export function ruleSwitches(forecast: CashForecast, location: CashLocation, con
   const on = (rule: Exclude<ForecastRule, 'openQuotes'>) => !location.rulesOff.includes(rule);
   return [
     { rule: 'invoices', label: 'Open facturen', sub: 'op vervaldag, plus wat de klant gewoonlijk later betaalt', totalEur: forecast.ruleTotals.invoices, on: on('invoices') },
+    { rule: 'tica', label: 'TICA-afrekeningen', sub: 'netto-uitbetaling na commissie, op vervaldag', totalEur: forecast.ruleTotals.tica ?? 0, on: on('tica') },
     { rule: 'quotes', label: 'Geaccepteerde offertes', sub: 'leverweek + betaalvoorwaarde van de klant', totalEur: forecast.ruleTotals.quotes, on: on('quotes') },
     { rule: 'openQuotes', label: 'Open offertes', sub: `waarde × ${Math.round(conversionPct)} % conversie (12 mnd)`, totalEur: forecast.ruleTotals.openQuotes, on: location.openQuotesOn },
     { rule: 'partner', label: 'Partnervoorschotten', sub: 'vervaldagen uit het voorschotschema', totalEur: forecast.ruleTotals.partner, on: on('partner') },

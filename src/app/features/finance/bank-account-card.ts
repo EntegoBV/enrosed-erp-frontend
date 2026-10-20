@@ -63,7 +63,7 @@ export class BankAccountCard {
   readonly source = computed(() => {
     const a = this.account();
     if (a.source === 'ODOO') {
-      const at = this.sync.status()?.lastSyncAt;
+      const at = this.sync.lastSuccessAt();
       if (!at) return 'Via Odoo · nog niet opgehaald';
       const date = new Date(at);
       const day = date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Brussels' });

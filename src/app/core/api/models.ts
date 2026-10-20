@@ -2828,6 +2828,8 @@ export type Clearance = 'BE_CUSTOMS' | 'NL_FISCAL_REP_TO_BE' | 'NL_FISCAL_REP_SO
 
 /** One payment on a cost; a cost is paid once its payments reach the cash total. */
 export interface CostPayment {
+  /** Paid by deduction from a settlement; no money leaves a bank account. */
+  settlementOffset?: boolean;
   id: number | null;
   companyCostId?: number;
   paidOn: string;
@@ -2842,6 +2844,8 @@ export interface CostPayment {
 
 /** A cost the company made outside purchasing, booked by date and category, excluding VAT. */
 export interface CompanyCost {
+  /** Source-owned commission, managed from its TICA settlement. */
+  ticaSettlementId?: number | null;
   id: number | null;
   date: string;
   category: string;

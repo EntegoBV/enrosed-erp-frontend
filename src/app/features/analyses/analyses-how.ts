@@ -18,6 +18,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'De periode volgt de aanmaakdatum van de verkoopdocumenten. Facturen volgen hun documentdatum; ontvangsten hun echte betaaldatum.',
     'Voorschotten blijven financiering tot de slotafrekening. Oude documenten kunnen nog actuele productprijzen gebruiken.',
     'Omzet, marge, pijplijn en geaccepteerd zijn excl. btw; gefactureerd, ontvangen, open en vervallen incl. btw.',
+    'TICA telt apart mee als verkoopkanaal, op de verkoopdatum en na korting excl. btw. De afrekening en bankontvangst tellen niet opnieuw als omzet. TICA-marges gebruiken de huidige productkost; bij ontbrekende productkosten is de marge onvolledig.',
   ],
   inventory: [
     'Een actuele momentopname uit de productkaart en open inkooporders; het tempo komt van de facturen van de laatste 90 dagen.',
@@ -31,6 +32,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   result: [
     'De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten.',
     'Verkoop telt op de factuurdatum, kosten op hun datum; een investering met haar afschrijving van de periode. Alles excl. btw.',
+    'TICA-verkopen tellen op de verkoopdatum, na korting excl. btw. De huidige productkost bepaalt de TICA-marge. Bevestigde TICA-commissie staat één keer bij de bedrijfskosten; de afrekening en uitbetaling voegen geen tweede omzet toe.',
   ],
 };
 

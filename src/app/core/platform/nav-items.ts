@@ -84,6 +84,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     hint: 'Wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
     items: [
       { id: 'sales', label: 'Verkooporders', short: 'Verkoop', icon: 'sales', link: '/sales', countKey: 'actionCount', railMain: true, tabRoot: true },
+      { id: 'tica', label: 'TICA verkopen', short: 'TICA', icon: 'receipt', link: '/tica',
+        hint: 'Verkopen per vestiging, automatische import en meldingen' },
       { id: 'revisions', label: 'Wijzigingen', icon: 'pencil', link: '/revisions', countKey: 'revisionCount', groupCount: false,
         hint: 'Wijzigingsvoorstellen van klanten beoordelen' },
       { id: 'customers', label: 'Klanten', icon: 'customers', link: '/customers', hint: 'Contacten, voorwaarden en nieuwe orders' },

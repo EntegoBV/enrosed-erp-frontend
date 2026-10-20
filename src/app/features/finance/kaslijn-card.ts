@@ -24,6 +24,7 @@ import { FinanceState } from './finance-state';
   imports: [CashChart, Icon, Segmented],
   template: `
     @let k = state.kaslijn();
+    @if (state.cashInput().ticaVatIncomplete) { <p class="fin-hint" role="status">TICA-btw nog onvolledig: alleen geboekte afrekeningen tellen in de btw-prognose. <button class="wk-link" type="button" (click)="toTica()">Afrekeningen controleren ›</button></p> }
     @if (state.desk()) {
       <section class="wk-card fin-kaslijn" aria-labelledby="fin-kaslijn-title">
         <header class="fin-kaslijn__head">
@@ -38,7 +39,7 @@ import { FinanceState } from './finance-state';
             <span class="fin-kaslijn__banner-text" [attr.title]="bannerText(match)"><b>{{ eurOf(match.amountEur) }} telt mogelijk dubbel:</b> {{ bannerRest(match) }}</span>
             @if (k.likelyPaid.length > 1) { <button class="wk-link" type="button" (click)="others()">+ {{ k.likelyPaid.length - 1 }} andere</button> }
             <button class="wk-btn wk-btn--sm" type="button" (click)="state.dismiss(match.lineId + ':' + match.itemKey)">Niet deze</button>
-            <button class="wk-btn wk-btn--sm wk-btn--primary" type="button" (click)="state.openLine(match.lineId)">Koppelen</button>
+            <button class="wk-btn wk-btn--sm wk-btn--primary" type="button" (click)="linkMatch(match)">Koppelen</button>
           </div>
         }
         <div class="fin-kaslijn__grid">
@@ -64,7 +65,7 @@ import { FinanceState } from './finance-state';
         <app-cash-chart variant="compact" [height]="150" [series]="series()" [today]="state.today()" [bufferEur]="k.bufferEur" [tight]="tight()"
                         [pins]="[]" [markers]="markers()" ariaLabel="Kaslijn: saldo per dag" />
         @if (banner(); as match) {
-          <button class="fin-kaslijn-phone__banner" type="button" (click)="state.openLine(match.lineId)"><app-icon name="alert" [size]="15" />
+          <button class="fin-kaslijn-phone__banner" type="button" (click)="linkMatch(match)"><app-icon name="alert" [size]="15" />
             <span><b>{{ eurOf(match.amountEur) }} telt mogelijk dubbel</b> tot je {{ match.counterparty || 'deze transactie' }} van {{ dayShort(match.day) }} koppelt.</span></button>
         }
         <dl class="fin-kaslijn-phone__rows">
@@ -126,6 +127,13 @@ export class KaslijnCard {
   /** A day's items under the chart's tooltip. */
   readonly detail = (day: string): string[] => this.state.kaslijn().items.filter((item) => item.date === day)
     .map((item) => `${item.title} ${eur(item.amountEur)}`).slice(0, 4);
+
+  linkMatch(match: LikelyPaidMatch): void {
+    if (match.itemKey.startsWith('tica:')) this.state.openTicaSettlement(Number(match.itemKey.slice(5)));
+    else this.state.openLine(match.lineId);
+  }
+
+  toTica(): void { void this.router.navigate(['/tica']); }
 
   setWeeks(value: string): void {
     const weeks = Number(value);

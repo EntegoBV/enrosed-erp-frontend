@@ -23,7 +23,7 @@ export interface CashLocation {
   openQuotesOn: boolean;          // open=1; default false
 }
 
-export const RULE_PARAM: Record<Exclude<ForecastRule, 'openQuotes'>, string> = { invoices: 'facturen', quotes: 'offertes', partner: 'partner', containers: 'containers', costs: 'kosten', vat: 'btw' };
+export const RULE_PARAM: Record<Exclude<ForecastRule, 'openQuotes'>, string> = { tica: 'tica', invoices: 'facturen', quotes: 'offertes', partner: 'partner', containers: 'containers', costs: 'kosten', vat: 'btw' };
 
 const PRICE_PARAM: Record<PriceMode, string> = { MARKUP_PCT: 'opslag', EUR_PER_UNIT: 'stuk', LIST: 'lijst', HISTORIC: 'historisch' };
 const BASIS_PARAM: Record<CostBasis, string> = { EXTERNAL: 'ext', PRICING: 'enr' };

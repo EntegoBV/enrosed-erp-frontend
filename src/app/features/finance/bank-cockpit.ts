@@ -470,7 +470,7 @@ export class BankCockpit {
   /** "{n} rekeningen · {m} te koppelen · {k} met exacte suggestie · {a} punten vragen aandacht · Odoo opgehaald 08:12". */
   readonly status = computed(() => {
     const n = this.state.accountsView().length, attention = this.state.attention().length;
-    const at = this.sync.status()?.lastSyncAt;
+    const at = this.sync.lastSuccessAt();
     return [`${n} ${n === 1 ? 'rekening' : 'rekeningen'}`, `${this.unlinkedCount()} te koppelen`, `${this.exactCount()} met exacte suggestie`,
       `${attention} ${attention === 1 ? 'punt vraagt' : 'punten vragen'} aandacht`,
       ...(this.state.hasOdooAccounts() && at ? [`Odoo opgehaald ${syncMoment(at, this.state.today())}`] : []),
@@ -547,7 +547,7 @@ export class BankCockpit {
   /** "Via Odoo · opgehaald 15 okt" or "Handmatig · saldo 2 d geleden gecontroleerd" (the account card's words). */
   source(a: AccountView): string {
     if (a.source === 'ODOO') {
-      const at = this.sync.status()?.lastSyncAt;
+      const at = this.sync.lastSuccessAt();
       if (!at) return 'Via Odoo · nog niet opgehaald';
       const moment = syncMoment(at, this.state.today());
       return `Via Odoo · opgehaald ${/^\d{2}:\d{2}$/.test(moment) ? 'vandaag ' + moment : moment}`;

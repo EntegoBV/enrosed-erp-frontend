@@ -18,12 +18,14 @@ import {
   Supplier, CompanyCost, IncomingPaymentRow, PartnerFinancing, StockLevel,
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
+import { TicaApi, TicaAnalyticsDay } from '../../core/api/tica-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { inventoryAnalysis, openPipelineQuotes, overdueInvoiceRows, partnerFinancingAnalysis, resultAnalysis, salesAnalysis } from './analysis-metrics';
+import { withTicaResult, withTicaSales } from './tica-analysis';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
 import { channelLabel } from '../sales/sales-channels';
@@ -461,10 +463,10 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                     <span class="an-tile tone-accent"><app-icon name="sales" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Verkoop</span>
                       <!-- The phone words are shorter so each sub keeps to two lines at 360 (critique B2.1); every number stays. -->
-                      <span class="an-row__sub">{{ desk.active() ? 'Omzet excl. btw' : 'excl. btw' }} · {{ plural(ys.invoices.issued, 'factuur', 'facturen') }}</span>
+                      <span class="an-row__sub">{{ desk.active() ? 'Omzet excl. btw' : 'excl. btw' }} · {{ channelVolume(ys.invoices.issued, ys.ticaTransactions) }}</span>
                       <span class="an-row__sub">{{ whole(ys.invoices.issuedValueEur) }} {{ desk.active() ? 'gefactureerd incl. btw' : 'incl. btw' }}</span></span>
-                    <span class="an-row__end"><span class="an-row__value">{{ failed('verkoop') ? '—' : whole(ys.invoices.revenueExclEur) }}</span>
-                      <span class="an-row__meta" [attr.data-tone]="ys.invoices.marginEur < 0 ? 'warn' : null">marge {{ ys.invoices.missingCostLines ? '—' : whole(ys.invoices.marginEur) }}</span></span>
+                    <span class="an-row__end"><span class="an-row__value">{{ failed('verkoop') || failed('TICA verkopen') ? '—' : whole(ys.revenueExclEur) }}</span>
+                      <span class="an-row__meta" [attr.data-tone]="ys.marginEur < 0 ? 'warn' : null">marge {{ ys.missingCostLines || failed('TICA verkopen') ? '—' : whole(ys.marginEur) }}</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
                   </a>
                   @let yr = ytdResult();
@@ -472,7 +474,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                     <span class="an-tile tone-plum"><app-icon name="receipt" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Resultaat</span>
                       <span class="an-row__sub">Marge op goederen min eigen kosten ({{ whole(yr.costsEur) }})</span></span>
-                    <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="yr.resultEur < 0 ? 'danger' : null">{{ failed('verkoop') ? '—' : whole(yr.resultEur) }}</span>
+                    <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="yr.resultEur < 0 ? 'danger' : null">{{ failed('verkoop') || failed('TICA verkopen') || yr.missingCostLines ? '—' : whole(yr.resultEur) }}</span>
                       <span class="an-row__meta">excl. btw</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
                   </a>
@@ -551,13 +553,13 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-kpis" aria-label="Verkoop laden">@for (n of [1, 2, 3, 4, 5, 6, 7, 8]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
         } @else {
           <div class="an-kpis">
-            <div class="an-kpi" data-kpi="revenue"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ whole(inv.revenueExclEur) }}</span>
-              <span class="an-kpi__sub">excl. btw · {{ plural(inv.issued, 'factuur', 'facturen') }}@if (inv.creditNoteCount) {, {{ plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') }} }</span>
+            <div class="an-kpi" data-kpi="revenue"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ failed('TICA verkopen') ? '—' : whole(m.revenueExclEur) }}</span>
+              <span class="an-kpi__sub">excl. btw · {{ channelVolume(inv.issued, m.ticaTransactions) }}@if (inv.creditNoteCount) {, {{ plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') }} }</span>
               <span class="an-kpi__foot">zelfde cijfer als Resultaat</span></div>
             <div class="an-kpi" data-kpi="margin"><span class="an-kpi__label">Brutomarge</span>
-              <span class="an-kpi__value" [attr.data-tone]="!inv.missingCostLines && inv.marginEur < 0 ? 'danger' : null">{{ inv.missingCostLines ? '—' : whole(inv.marginEur) }}</span>
-              <span class="an-kpi__sub">{{ inv.missingCostLines ? plural(inv.missingCostLines, 'factuurregel', 'factuurregels') + ' zonder kost'
-                : inv.marginPct === null ? 'op uitgegeven facturen' : (inv.marginPct | pct: 1) + ' op goederen · op uitgegeven facturen' }}</span><span class="an-kpi__foot"></span></div>
+              <span class="an-kpi__value" [attr.data-tone]="!m.missingCostLines && m.marginEur < 0 ? 'danger' : null">{{ m.missingCostLines || failed('TICA verkopen') ? '—' : whole(m.marginEur) }}</span>
+              <span class="an-kpi__sub">{{ m.missingCostLines ? plural(m.missingCostLines, 'verkoopregel', 'verkoopregels') + ' zonder kost'
+                : m.marginPct === null ? 'op verkochte goederen' : (m.marginPct | pct: 1) + ' op goederen' }}</span><span class="an-kpi__foot">@if (m.ticaTransactions) {TICA: actuele productkost}</span></div>
             <div class="an-kpi" data-kpi="invoiced"><span class="an-kpi__label">Gefactureerd</span><span class="an-kpi__value">{{ whole(inv.issuedValueEur) }}</span>
               <span class="an-kpi__sub">incl. btw · {{ plural(inv.issued, 'factuur', 'facturen') }}@if (inv.averageClaimEur !== null) { · gem. {{ whole(inv.averageClaimEur) }} }</span>
               <span class="an-kpi__foot" [attr.title]="inv.creditNoteCount ? plural(inv.creditNoteCount, 'creditnota', 'creditnota’s') : null">{{ invoicedFoot() }}</span></div>
@@ -620,12 +622,12 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   @for (channel of m.channels; track channel.channel) {
                     <div class="an-row an-share">
                       <span class="an-row__body"><span class="an-row__title">{{ channelLabel(channel.channel) }}</span>
-                        <span class="an-row__sub">{{ plural(channel.invoiceCount, 'factuur', 'facturen') }} · marge {{ whole(channel.marginEur) }}</span></span>
+                        <span class="an-row__sub">{{ channelVolume(channel.invoiceCount, channel.ticaTransactions) }} · marge {{ channel.ticaMissingCostLines ? 'onbekend' : whole(channel.marginEur) }}</span></span>
                       <span class="an-meter"><i [style.width.%]="channel.sharePct"></i></span>
                       <span class="an-row__value">{{ whole(channel.revenueExclEur) }}</span>
                       <span class="an-row__meta">{{ channel.sharePct | pct: 0 }}</span>
                     </div>
-                  } @empty { <p class="an-empty">Geen uitgegeven facturen in deze periode.</p> }
+                  } @empty { <p class="an-empty">Geen facturen of TICA-verkopen in deze periode.</p> }
                 }
               </div>
             </section>
@@ -845,17 +847,17 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-kpis an-kpis--5" aria-label="Resultaat laden">@for (n of [1, 2, 3, 4, 5]; track n) { <div class="an-kpi an-kpi--loading"><span></span><span></span><span></span></div> }</div>
         } @else {
           <div class="an-kpis an-kpis--5">
-            <div class="an-kpi"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ whole(r.revenueEur) }}</span>
-              <span class="an-kpi__sub">{{ plural(r.invoiceCount, 'factuur', 'facturen') }}@if (r.creditNoteCount) { · {{ plural(r.creditNoteCount, 'creditnota', 'creditnota’s') }} } · excl. btw</span><span class="an-kpi__foot"></span></div>
+            <div class="an-kpi"><span class="an-kpi__label">Omzet</span><span class="an-kpi__value">{{ failed('TICA verkopen') ? '—' : whole(r.revenueEur) }}</span>
+              <span class="an-kpi__sub">{{ channelVolume(r.invoiceCount, r.ticaTransactions) }}@if (r.creditNoteCount) { · {{ plural(r.creditNoteCount, 'creditnota', 'creditnota’s') }} } · excl. btw</span><span class="an-kpi__foot"></span></div>
             <div class="an-kpi"><span class="an-kpi__label">Marge op goederen</span>
-              <span class="an-kpi__value" [attr.data-tone]="r.marginEur < 0 ? 'danger' : null">{{ whole(r.marginEur) }}</span>
-              <span class="an-kpi__sub">@if (r.marginPct !== null) { {{ r.marginPct | pct: 1 }} · }goederen kostten {{ whole(r.goodsCostEur) }}@if (r.missingCostLines) { · {{ plural(r.missingCostLines, 'regel', 'regels') }} zonder kost }</span><span class="an-kpi__foot"></span></div>
+              <span class="an-kpi__value" [attr.data-tone]="r.marginEur < 0 ? 'danger' : null">{{ r.missingCostLines || failed('TICA verkopen') ? '—' : whole(r.marginEur) }}</span>
+              <span class="an-kpi__sub">@if (r.marginPct !== null && !r.missingCostLines) { {{ r.marginPct | pct: 1 }} · }bekende productkost {{ whole(r.goodsCostEur) }}@if (r.missingCostLines) { · {{ plural(r.missingCostLines, 'regel', 'regels') }} zonder kost }</span><span class="an-kpi__foot">@if (r.ticaTransactions) {TICA: actuele productkost}</span></div>
             <div class="an-kpi"><span class="an-kpi__label">Eigen kosten</span><span class="an-kpi__value">{{ whole(r.costsEur) }}</span>
               <span class="an-kpi__sub">{{ r.unpaidCostsEur ? whole(r.unpaidCostsEur) + ' nog te betalen incl. btw' : 'alles betaald' }}</span>
               <span class="an-kpi__foot">@if (r.depreciationEur > 0) {waarvan {{ whole(r.depreciationEur) }} afschrijvingen}</span></div>
             <div class="an-kpi"><span class="an-kpi__label">Resultaat</span>
-              <span class="an-kpi__value" [attr.data-tone]="r.resultEur < 0 ? 'danger' : null">{{ whole(r.resultEur) }}</span>
-              <span class="an-kpi__sub">marge min eigen kosten</span><span class="an-kpi__foot"></span></div>
+              <span class="an-kpi__value" [attr.data-tone]="r.resultEur < 0 ? 'danger' : null">{{ r.missingCostLines || failed('TICA verkopen') ? '—' : whole(r.resultEur) }}</span>
+              <span class="an-kpi__sub">{{ r.missingCostLines ? 'onvolledig: productkosten ontbreken' : 'marge min eigen kosten' }}</span><span class="an-kpi__foot"></span></div>
             <div class="an-kpi"><span class="an-kpi__label">Ingekocht</span><span class="an-kpi__value">{{ whole(r.purchasedEur) }}</span>
               <span class="an-kpi__sub">{{ plural(r.receivedContainers, 'container', 'containers') }} ontvangen · externe kost volgens actuele afrekening</span><span class="an-kpi__foot"></span></div>
           </div>
@@ -866,6 +868,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           <div class="an-card__body">
             @if (loading()) { <app-skeleton kind="card" /> }
             @else if (!r.monthly.length) { <p class="an-empty">Nog niets in deze periode.</p> }
+            @else if (r.missingCostLines) { <p class="an-empty">Marge en resultaat zijn onvolledig: productkosten ontbreken.</p> }
             @else { <app-an-month-bars [months]="r.monthly" [height]="desk.active() ? 180 : 132" [compact]="!desk.active()" /> }
           </div>
         </section>
@@ -877,8 +880,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               @for (row of r.byChannel; track row.channel) {
                 <div class="an-row an-row--nolead">
                   <span class="an-row__body"><span class="an-row__title">{{ channelLabel(row.channel) }}</span>
-                    <span class="an-row__sub">{{ plural(row.invoiceCount, 'factuur', 'facturen') }} · omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
-                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
+                    <span class="an-row__sub">{{ channelVolume(row.invoiceCount, row.ticaTransactions) }} · omzet {{ whole(row.revenueEur) }} · marge {{ row.ticaMissingCostLines ? 'onbekend' : whole(row.marginEur) }} · kosten {{ row.costsEur ? whole(row.costsEur) : '—' }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ row.ticaMissingCostLines ? '—' : whole(row.resultEur) }}</span></span>
                 </div>
               } @empty { <p class="an-empty">Nog geen facturen of kanaalkosten in deze periode.</p> }
             }
@@ -910,8 +913,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                 <thead><tr><th>Maand</th><th>Omzet</th><th>Marge</th><th>Eigen kosten</th><th>Resultaat</th></tr></thead>
                 <tbody>
                   @for (row of r.monthly; track row.month) {
-                    <tr><td>{{ monthLabel(row.month) }}</td><td>{{ whole(row.revenueEur) }}</td><td>{{ whole(row.marginEur) }}</td><td>{{ whole(row.costsEur) }}</td>
-                      <td [class.is-danger]="row.resultEur < 0">{{ whole(row.resultEur) }}</td></tr>
+                    <tr><td>{{ monthLabel(row.month) }}</td><td>{{ whole(row.revenueEur) }}</td><td>{{ r.missingCostLines ? '—' : whole(row.marginEur) }}</td><td>{{ whole(row.costsEur) }}</td>
+                      <td [class.is-danger]="!r.missingCostLines && row.resultEur < 0">{{ r.missingCostLines ? '—' : whole(row.resultEur) }}</td></tr>
                   }
                 </tbody>
               </table>
@@ -921,8 +924,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               @for (row of take('months', monthsNewestFirst()); track row.month) {
                 <div class="an-row an-row--nolead" [class.mo-fade]="$index >= listLimit()">
                   <span class="an-row__body"><span class="an-row__title">{{ monthLabel(row.month) }}</span>
-                    <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ whole(row.marginEur) }} · kosten {{ whole(row.costsEur) }}</span></span>
-                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="row.resultEur < 0 ? 'danger' : null">{{ whole(row.resultEur) }}</span></span>
+                    <span class="an-row__sub">omzet {{ whole(row.revenueEur) }} · marge {{ r.missingCostLines ? 'onbekend' : whole(row.marginEur) }} · kosten {{ whole(row.costsEur) }}</span></span>
+                  <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!r.missingCostLines && row.resultEur < 0 ? 'danger' : null">{{ r.missingCostLines ? '—' : whole(row.resultEur) }}</span></span>
                 </div>
               }
               <ng-container *ngTemplateOutlet="more; context: { key: 'months', total: r.monthly.length }" />
@@ -1231,6 +1234,7 @@ export class AnalysesPage {
   private readonly sourcing = inject(SourcingApi);
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
+  private readonly tica = inject(TicaApi);
   private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -1336,6 +1340,7 @@ export class AnalysesPage {
   /** Voorraad and Overzicht count every location; Kasprognose keeps its own inputs. */
   readonly stockProducts = computed(() => { const levels = this.stockLevels(); return levels ? withAllLocations(this.products(), levels) : this.products(); });
   readonly salesOrders = signal<SalesOrderView[]>([]);
+  readonly ticaDays = signal<TicaAnalyticsDay[]>([]);
   readonly incomingPayments = signal<IncomingPaymentRow[]>([]);
   readonly partnerSummaries = signal<PartnerFinancing[]>([]);
   readonly customers = signal<Customer[]>([]);
@@ -1444,22 +1449,26 @@ export class AnalysesPage {
   readonly pipelineMarginPct = computed<number | null>(() => this.pipelineGoods() > 0
     ? (this.pipelineMargin() / this.pipelineGoods()) * 100 : null);
 
-  readonly salesMetrics = computed(() => salesAnalysis(this.salesOrders(), this.customers(), {
+  readonly salesMetrics = computed(() => withTicaSales(salesAnalysis(this.salesOrders(), this.customers(), {
     from: this.salesFromDate() || undefined,
     to: this.salesToDate() || undefined,
     today: this.today(),
     topLimit: 8,
-  }));
+  }), this.ticaDays()));
   readonly financing = computed(() => partnerFinancingAnalysis(this.purchases(), this.salesOrders(), this.customers(), this.partnerSummaries()));
   readonly incoming = computed(() => incomingMoneyTotals(this.incomingPayments(), this.salesFromDate(), this.salesToDate()));
   /* Investments charge the period with their depreciation (finance-metrics); what is still open reads the payments. */
-  readonly result = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
+  readonly result = computed(() => withTicaResult(resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
     from: this.salesFromDate() || undefined, to: this.salesToDate() || undefined, costCharge: (cost, from, to) => costChargeIn(cost, from, to, this.today()), openEur: openOf,
     today: this.today(),
-  }));
+  }), this.ticaDays()));
   readonly monthsNewestFirst = computed(() => [...this.result().monthly].reverse());
   readonly monthLabel = monthLabel;
   readonly channelLabel = channelLabel;
+  channelVolume(invoiceCount: number, ticaTransactions = 0): string {
+    return [invoiceCount || !ticaTransactions ? plural(invoiceCount, 'factuur', 'facturen') : '',
+      ticaTransactions ? plural(ticaTransactions, 'TICA-transactie', 'TICA-transacties') : ''].filter(Boolean).join(' · ');
+  }
   /** "waarvan voorschot € 77.376 · gecrediteerd − € 80" (parts left out when zero). */
   readonly invoicedFoot = computed(() => {
     const invoices = this.salesMetrics().invoices;
@@ -1527,14 +1536,17 @@ export class AnalysesPage {
 
   /** The month by month view as two lines: what was invoiced, what was accepted. */
   readonly salesTrend = computed<TrendSeries[]>(() => {
-    const monthly = this.salesMetrics().monthly;
-    if (!monthly.some((point) => point.invoicedEur > 0 || point.acceptedEur > 0)) return [];
-    const dates = monthly.map((point) => `${point.month}-01`);
-    return [
+    const metrics = this.salesMetrics(), monthly = metrics.monthly;
+    if (!monthly.some((point) => point.invoicedEur !== 0 || point.acceptedEur !== 0) && !metrics.ticaMonthly.some(point => point.revenueExclEur !== 0)) return [];
+    const months = [...new Set([...monthly.map(point => point.month), ...metrics.ticaMonthly.map(point => point.month)])].sort();
+    const dates = months.map(month => `${month}-01`);
+    const series: TrendSeries[] = [
       /* Two VAT bases on one chart: each series says its own (claims incl., quotes excl.). */
-      { label: 'Gefactureerd incl. btw', dates, values: monthly.map((point) => point.invoicedEur), tone: 'accent' },
-      { label: 'Geaccepteerde offertes excl. btw', dates, values: monthly.map((point) => point.acceptedEur), tone: 'muted' },
+      { label: 'Gefactureerd incl. btw', dates, values: months.map(month => monthly.find(point => point.month === month)?.invoicedEur ?? 0), tone: 'accent' },
+      { label: 'Geaccepteerde offertes excl. btw', dates, values: months.map(month => monthly.find(point => point.month === month)?.acceptedEur ?? 0), tone: 'muted' },
     ];
+    if (metrics.ticaMonthly.length) series.push({ label: 'TICA-omzet excl. btw', dates, values: months.map(month => metrics.ticaMonthly.find(point => point.month === month)?.revenueExclEur ?? 0), tone: 'blue' });
+    return series;
   });
 
   /** Each stage of the quote funnel as a bar against the number created, with the rate that got it there. */
@@ -1601,12 +1613,12 @@ export class AnalysesPage {
   private readonly marketMonths = computed(() => { this.section(); return storedMarketMonths(); });
   readonly yearStartDay = computed(() => yearStart(this.today()));
   /** Year to date for the Verkoop and Resultaat rows. */
-  readonly ytdSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), {
+  readonly ytdSales = computed(() => withTicaSales(salesAnalysis(this.salesOrders(), this.customers(), {
     from: this.yearStartDay(), to: this.today(), today: this.today(), topLimit: 8,
-  }));
-  readonly ytdResult = computed(() => resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
+  }), this.ticaDays()));
+  readonly ytdResult = computed(() => withTicaResult(resultAnalysis(this.salesOrders(), this.purchases(), this.costs(), {
     from: this.yearStartDay(), to: this.today(), costCharge: (cost, from, to) => costChargeIn(cost, from, to, this.today()), openEur: openOf,
-  }));
+  }), this.ticaDays()));
   /** All years: what waits, whatever period Verkoop shows (overdue invoices). */
   readonly allSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), { today: this.today(), topLimit: 1 }));
   /** Perfect / Op tijd over this calendar year's receipts, without Inkoop's supplier or order focus (design §5.8). */
@@ -1864,7 +1876,7 @@ export class AnalysesPage {
       this.loadedFilterKey = JSON.stringify(filters);
       const overviewFilters = this.overviewFilters();
       const sameFilters = this.sameFilters(filters, overviewFilters);
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels, tica] = await Promise.allSettled([
         this.sourcing.receiptVariances(filters),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -1877,6 +1889,7 @@ export class AnalysesPage {
         sameFilters ? Promise.resolve(null) : this.sourcing.receiptVariances(overviewFilters),
         filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null }),
         this.catalog.stockLevels(),
+        this.tica.analytics(),
       ] as const);
       const warnings: string[] = [];
       if (round === this.varianceRound) {
@@ -1893,6 +1906,7 @@ export class AnalysesPage {
       if (suppliers.status === 'fulfilled') this.suppliers.set(suppliers.value); else warnings.push('leveranciers');
       if (products.status === 'fulfilled') this.products.set(products.value); else warnings.push('voorraad');
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
+      if (tica.status === 'fulfilled') this.ticaDays.set(tica.value); else warnings.push('TICA verkopen');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');

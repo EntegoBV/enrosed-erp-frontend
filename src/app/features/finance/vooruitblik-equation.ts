@@ -24,7 +24,8 @@ import { FinanceState } from './finance-state';
       @if (hasReading()) {
         <div class="is-total"><dt><span class="wk-equation__op">=</span>Na wat nu betaald moet worden</dt><dd [class.wk-amount--warn]="o.afterPayablesEur < 0">{{ money(o.afterPayablesEur) }}</dd></div>
       }
-      <div class="is-sub"><dt><span class="wk-equation__op">+</span>Nog te ontvangen (klant &amp; partner)</dt><dd>{{ money(o.openInvoicesEur) }}</dd></div>
+      <div class="is-sub"><dt><span class="wk-equation__op">+</span>Nog te ontvangen (klant &amp; partner)</dt><dd>{{ money(o.openInvoicesEur - ticaOpen()) }}</dd></div>
+      @if (ticaOpen()) { <div class="is-sub"><dt><span class="wk-equation__op">+</span><button class="wk-link" type="button" (click)="state.openTica()">TICA · netto te ontvangen</button></dt><dd>{{ money(ticaOpen()) }}</dd></div> }
       @if (state.purchaseFiguresVisible()) { <div class="is-sub"><dt><span class="wk-equation__op">−</span>Containers · binnenkort en later (verwacht)</dt><dd>{{ money(o.containerLaterEur) }}</dd></div> }
       @if (hasReading()) {
         <div class="is-total is-grand"><dt><span class="wk-equation__op">=</span>Als alles betaald en ontvangen is</dt><dd [class.wk-amount--warn]="o.expectedEur < 0">{{ money(o.expectedEur) }}</dd></div>
@@ -45,6 +46,7 @@ export class VooruitblikEquation {
   readonly compact = input(false);
 
   readonly money = eur;
+  readonly ticaOpen = computed(() => this.state.ticaSettlements().filter(row => row.status === 'OPEN').reduce((sum, row) => sum + Math.round(row.netReceivable * 100), 0) / 100);
   readonly hasReading = computed(() => this.state.bankLedger().accounts.some((account) => account.currentEur !== null));
   /** Why the totals may not be the whole story; containers still loading count, their terms are not in yet. */
   readonly incomplete = computed(() => {

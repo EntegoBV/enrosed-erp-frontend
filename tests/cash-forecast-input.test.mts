@@ -421,3 +421,48 @@ test('the realised markup is the scenario default only on a fair sample; the raw
   assert.equal(single.realisedSample!.invoices, 1, 'one issued € 20.000 invoice is still one invoice');
   assert.equal(single.realisedMarkupPct, null, 'the guard does not pass on a single real invoice');
 });
+
+test('TICA offset commission, verified sales VAT and separate net receivable count exactly once', () => {
+  const settlement = { id: 9, reference: '267653273', location: 'TICA - Brussel', status: 'OPEN', documentDate: '2026-10-19', dueDate: '2026-10-26',
+    periodFrom: '2026-10-12', periodTo: '2026-10-18', salesExcl: 344.35, salesVat: 72.31, commissionExcl: 34.44, commissionVat: 7.23, netReceivable: 374.99 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const commission = cost(99, '2026-10-19', 'TICA commissie', 'TICA', 34.44, { ticaSettlementId: 9, vatPct: 21, vatRegime: 'BE', amountInclEur: 41.67,
+    cashTotalEur: 41.67, paidEur: 41.67, openEur: 0, paidOn: '2026-10-19', payments: [{ id: 17, paidOn: '2026-10-19', amountEur: 41.67, account: null, bankStatementLineId: null, note: null, settlementOffset: true }] });
+  const raw = sources({ today: '2026-10-20', costs: [commission], salesOrders: [], purchaseViews: [], purchasePayments: [], incomingPayments: [], recurring: [],
+    ticaSettlements: [settlement], ticaSales: [{ date: '2026-10-17', transactionCount: 5, quantity: 7, revenueExcl: 344.35, goodsCostEur: 100, missingCostLines: 0 }] });
+  const input = cashForecastInput(raw);
+  assert.equal(input.openCosts.length, 0, 'commission already paid by offset');
+  assert.equal(input.movements.some(row => row.amountEur === -41.67), false, 'offset never becomes a cash movement');
+  assert.equal(input.invoices.length, 0, 'no synthetic invoice');
+  assert.equal(input.ticaReceivables?.[0].netReceivable, 374.99);
+  assert.equal(input.vatQuarters.find(row => row.year === 2026 && row.quarter === 4)?.knownNetEur, -65.08, '72.31 output less 7.23 commission input VAT');
+  assert.equal(input.ticaVatIncomplete, false);
+  const model = buildCashForecast(input, { horizonEnd: '2026-11-30', scenario: false, includeStock: false, rulesOff: [], openQuotesOn: false, defaults: NO_DEFAULTS, dismissed: [], pastDays: 28 });
+  assert.equal(model.ruleTotals.tica, 374.99);
+  const without = cashForecastInput({ ...raw, ticaSettlements: [] });
+  assert.equal(Math.round((input.outlook.expectedEur! - without.outlook.expectedEur!) * 100), 37499);
+});
+test('paid TICA settlement has no future receivable, only the actual bank receipt; draft VAT is excluded', () => {
+  const settlement = { id: 9, reference: '267653273', location: 'TICA - Brussel', status: 'PAID', documentDate: '2026-10-19', dueDate: null,
+    salesExcl: 344.35, salesVat: 72.31, netReceivable: 374.99 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const receipt = statement(999, K, 374.99, '2026-10-20T10:00:00Z', 'TICA', '267653273', { ticaSettlementId: 9, classification: 'TICA_SETTLEMENT', allocated: true });
+  const raw = sources({ today: '2026-10-20', costs: [], recurring: [], salesOrders: [], purchaseViews: [], purchasePayments: [], incomingPayments: [], statements: [receipt], ticaSettlements: [settlement] });
+  const paid = cashForecastInput(raw);
+  assert.equal(paid.ticaReceivables?.length, 0);
+  assert.equal(paid.movements.filter(row => row.amountEur === 374.99).length, 1);
+  assert.deepEqual(paid.bankLines[0].parts, [{ kind: 'CUSTOMERS', amountEur: 374.99 }]);
+  const draft = cashForecastInput({ ...raw, ticaSettlements: [{ ...settlement, status: 'DRAFT' }], ticaSales: [{ date: '2026-10-17', transactionCount: 1, quantity: 1, revenueExcl: 344.35, goodsCostEur: 100, missingCostLines: 0 }] });
+  assert.equal(draft.vatQuarters.find(row => row.quarter === 4)?.knownNetEur, 0);
+  assert.equal(draft.ticaVatIncomplete, true);
+  assert.equal(draft.ticaReceivables?.length, 0);
+});
+
+test('unlinked bank receipt matching a TICA reference does not double the forecast receipt', () => {
+  const settlement = { id: 9, reference: '267653273', location: 'TICA - Brussel', status: 'OPEN', documentDate: '2026-10-19', dueDate: '2026-10-26',
+    salesExcl: 344.35, salesVat: 72.31, netReceivable: 374.99 } as import('../src/app/core/api/tica-api.ts').TicaSettlement;
+  const receipt = statement(999, K, 374.99, '2026-10-20T10:00:00Z', 'TICA', '267653273', { allocated: false });
+  const input = cashForecastInput(sources({ today: '2026-10-20', costs: [], recurring: [], salesOrders: [], purchaseViews: [], purchasePayments: [], incomingPayments: [], statements: [receipt], ticaSettlements: [settlement] }));
+  const model = buildCashForecast(input, { horizonEnd: '2026-11-30', scenario: false, includeStock: false, rulesOff: [], openQuotesOn: false, defaults: NO_DEFAULTS, dismissed: [], pastDays: 28 });
+  assert.equal(model.likelyPaid[0]?.itemKey, 'tica:9');
+  assert.equal(model.items.some(row => row.kind === 'TICA'), false, 'probable bank payment excluded from future receipts pending explicit matching');
+  assert.equal(input.movements.filter(row => row.amountEur === 374.99).length, 1);
+});

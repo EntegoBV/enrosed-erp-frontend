@@ -1,0 +1,89 @@
+:host { display: block; margin-top: 24px; min-width: 0; }
+.settlements { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); overflow: hidden; }
+.settlement-import { padding: 0 20px 20px; }
+.settlements-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 20px; }
+.settlements-head h2 { font-size: 16px; letter-spacing: -.02em; }
+.settlements-head p, .settlement-intro { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.settlements-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.settlement-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 20px 20px; gap: 16px; }
+.settlement-metrics dt { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+.settlement-metrics dd { font-size: 23px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.settlement-metrics > div:first-child dd { color: var(--rose-dark); }
+.settlement-list { list-style: none; margin: 0; padding: 0; }
+.settlement-row { width: 100%; display: flex; align-items: center; gap: 13px; text-align: left; padding: 17px 20px; border: 0; border-top: 1px solid var(--line); background: transparent; cursor: pointer; }
+.settlement-row:hover { background: var(--surface-2); }
+.settlement-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; color: var(--rose-dark); background: var(--rose-soft); flex: none; }
+.settlement-main { flex: 1; min-width: 0; }
+.settlement-main strong { display: block; font-size: 13px; }
+.settlement-main > span, .settlement-main small { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); }
+.settlement-value { display: grid; justify-items: end; gap: 5px; flex: none; }
+.settlement-value strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+.settlement-status { color: var(--warn); background: var(--warn-soft); border-radius: 20px; padding: 3px 8px; font-size: 10px; }
+.settlement-status.is-paid { color: var(--rose-dark); background: var(--rose-soft); }
+.settlement-empty { text-align: center; padding: 18px 20px 34px; color: var(--muted); }
+.settlement-empty h3 { color: var(--ink); font-size: 14px; margin: 10px 0 5px; }
+.settlement-empty p { max-width: 420px; margin: auto; font-size: 12px; line-height: 1.6; }
+.settlement-footnote { padding: 13px 20px; border-top: 1px solid var(--line); background: var(--surface-2); font-size: 11px; line-height: 1.6; color: var(--muted); }
+.settlement-alert { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; margin: 0 20px 16px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); font-size: 12px; overflow-wrap: anywhere; }
+.settlement-detail .settlement-alert, .settlement-editor .settlement-alert { margin: 0 0 16px; }
+.settlement-loading { padding: 0 20px 20px; }
+.settlement-fields { padding: 0; margin: 18px 0 0; border: 0; min-width: 0; }
+.field > span { color: var(--ink-2); font-size: 12px; font-weight: 600; }
+.field > span small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.settlement-field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.settlement-amount-fields { border-top: 1px solid var(--line); padding-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.settlement-amount-fields .field:last-child { grid-column: 1 / -1; }
+.settlement-equation { background: var(--rose-soft); color: var(--rose-dark); border-radius: 12px; padding: 12px; font-size: 12px; line-height: 1.6; margin: 2px 0 18px; }
+.settlement-equation strong { display: block; margin-top: 3px; }
+.has-difference, .settlement-warning { color: var(--warn); background: var(--warn-soft); }
+.settlement-warning { border-radius: 12px; padding: 12px; margin: 12px 0; font-size: 12px; line-height: 1.6; }
+.settlement-sheet-actions { width: 100%; display: flex; justify-content: flex-end; gap: 10px; }
+.settlement-breakdown { margin: 20px 0; }
+.settlement-breakdown > div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 9px 0; }
+.settlement-breakdown dt { min-width: 0; flex: 1; font-size: 13px; color: var(--muted); }
+.settlement-breakdown dd { margin: 0; flex: none; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.settlement-breakdown .settlement-total { border-top: 1px solid var(--line); margin-top: 7px; padding-top: 15px; font-weight: 700; }
+.settlement-total dt { color: var(--ink); }
+.settlement-total dd { color: var(--rose-dark); font-size: 22px; }
+.settlement-check { display: flex; align-items: center; gap: 10px; background: var(--rose-soft); color: var(--rose-dark); padding: 13px; border-radius: 12px; margin-bottom: 16px; }
+.settlement-check.has-difference { background: var(--warn-soft); color: var(--warn); }
+.settlement-check app-icon { flex: none; }
+.settlement-check strong, .settlement-check span { display: block; font-size: 12px; }
+.settlement-check span { margin-top: 4px; font-size: 11px; }
+.settlement-link { display: flex; align-items: center; gap: 9px; width: 100%; background: transparent; border: 0; border-top: 1px solid var(--line); color: var(--rose-dark); padding: 14px 0; text-decoration: none; font-size: 13px; text-align: left; cursor: pointer; }
+.settlement-link > app-icon:last-child { margin-left: auto; }
+.settlement-small { margin: 8px 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.settlement-note { background: var(--surface-2); border-radius: 12px; padding: 12px; margin-top: 12px; font-size: 12px; white-space: pre-wrap; }
+.settlement-bank { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.settlement-bank h3 { font-size: 14px; }
+.settlement-bank > p { font-size: 12px; color: var(--muted); margin: 6px 0 16px; }
+.settlement-bank-options { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settlement-bank-options > label { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 13px; margin-bottom: 8px; cursor: pointer; }
+.settlement-bank-options > label:has(input:checked) { border-color: var(--rose); background: var(--rose-soft); }
+.settlement-bank-options input { width: 18px; height: 18px; flex: none; accent-color: var(--rose); }
+.settlement-bank-options strong, .settlement-bank-options span span, .settlement-bank-options small { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.settlement-bank-options span span, .settlement-bank-options small { color: var(--muted); font-size: 11px; margin-top: 3px; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
+@media (max-width: 679px) {
+  .settlement-detail, .settlement-editor { padding: 8px 16px 20px; min-width: 0; }
+  .settlement-import { padding: 0 16px 16px; }
+  .settlements-head { padding: 16px; }
+  .settlements-head h2 { font-size: 15px; }
+  .settlements-actions { width: 100%; }
+  .settlements-actions .btn { flex: 1 1 100%; min-height: 44px; }
+  .settlement-metrics { padding: 0 16px 16px; gap: 14px 8px; grid-template-columns: 1fr 1fr; }
+  .settlement-metrics > div:last-child { grid-column: 1 / -1; }
+  .settlement-metrics dd { font-size: 21px; }
+  .settlement-row { padding: 15px 16px; gap: 9px; flex-wrap: wrap; }
+  .settlement-icon { display: none; }
+  .settlement-main { flex-basis: calc(100% - 20px); order: 0; }
+  .settlement-row > app-icon { order: 1; }
+  .settlement-value { width: 100%; order: 2; display: flex; justify-content: space-between; align-items: center; }
+  .settlement-footnote { padding: 12px 16px; font-size: 10px; }
+  .settlement-sheet-actions .btn { flex: 1; min-height: 44px; }
+  .settlement-field-pair { gap: 10px; }
+  .settlement-field-pair .input { min-width: 0; padding-inline: 8px; }
+  .settlement-amount-fields { grid-template-columns: 1fr; }
+  .settlement-breakdown dt { font-size: 12px; }
+  .settlement-alert { margin-inline: 16px; flex-wrap: wrap; }
+}

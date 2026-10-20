@@ -35,6 +35,7 @@ export function returnLabel(url: string): string {
   if (under(path, '/purchasing')) return 'Inkoop';
   if (/^\/sales\/\d+(?:[/]|$)/.test(path)) return 'verkooporder';
   if (under(path, '/sales') || under(path, '/revisions')) return 'Verkoop';
+  if (under(path, '/tica')) return 'TICA verkopen';
   if (under(path, '/analyses')) return 'Analyses';
   if (/^\/products\/\d+(?:[/]|$)/.test(path)) return 'product';
   if (under(path, '/products')) return 'Producten';
@@ -95,6 +96,7 @@ export function screenLabel(url: string): string {
   if (path === '/dashboard/open') return 'Open punten';
   if (/^\/sales\/[^/]+(?:[/]|$)/.test(path)) return 'Order';
   if (under(path, '/sales')) return 'Verkoop';
+  if (under(path, '/tica')) return 'TICA';
   if (under(path, '/revisions')) return 'Wijzigingen';
   if (/^\/purchasing\/[^/]+(?:[/]|$)/.test(path)) return 'Inkooporder';
   if (under(path, '/purchasing')) return 'Inkoop';

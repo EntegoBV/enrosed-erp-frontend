@@ -244,12 +244,12 @@ test('data quality, rule switches and the reconciliation note', () => {
   ]);
   assert.deepEqual(view.unlinkedLines(exampleB()), { count: 1, eur: -9000 });
   const switches = view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, rulesOff: ['vat'] }, 40);
-  assert.deepEqual(switches.map((row) => [row.rule, row.on]), [['invoices', true], ['quotes', true], ['openQuotes', false], ['partner', true], ['containers', true], ['costs', true], ['vat', false]]);
-  assert.equal(switches[2].sub, 'waarde × 40 % conversie (12 mnd)');
+  assert.deepEqual(switches.map((row) => [row.rule, row.on]), [['invoices', true], ['tica', true], ['quotes', true], ['openQuotes', false], ['partner', true], ['containers', true], ['costs', true], ['vat', false]]);
+  assert.equal(switches[3].sub, 'waarde × 40 % conversie (12 mnd)');
   assert.equal(switches[0].totalEur, base.ruleTotals.invoices);
-  assert.equal(view.ruleSummary(switches), '5 van 7 regels aan · open offertes uit');
-  assert.equal(view.ruleSummary(view.ruleSwitches(base, DEFAULT_CASH_LOCATION, 40)), '6 van 7 regels aan · open offertes uit');
-  assert.equal(view.ruleSummary(view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, openQuotesOn: true }, 40)), '7 van 7 regels aan · open offertes aan');
+  assert.equal(view.ruleSummary(switches), '6 van 8 regels aan · open offertes uit');
+  assert.equal(view.ruleSummary(view.ruleSwitches(base, DEFAULT_CASH_LOCATION, 40)), '7 van 8 regels aan · open offertes uit');
+  assert.equal(view.ruleSummary(view.ruleSwitches(base, { ...DEFAULT_CASH_LOCATION, openQuotesOn: true }, 40)), '8 van 8 regels aan · open offertes aan');
   assert.equal(plain(view.monthTableNote(exampleB(), base)), 'Gebeurd = banktransacties per koppeling; 1 nog te koppelen (− € 9.000) staan bij Kosten of Klanten. '
     + 'Klanten · overig = facturen, offertes, partnervoorschotten en de huidige voorraad. Btw-aangifte Q3 − € 7.412 (25 okt) · Btw-aangifte Q4 − € 4.851 (25 jan)');
 });
