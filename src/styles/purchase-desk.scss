@@ -14,7 +14,8 @@
    ========================================================================== */
 
 app-purchase-desk{display:block;min-width:0}
-app-purchase-desk .pdk{width:100%;max-width:1560px;box-sizing:border-box;padding:18px 24px 60px}
+/* Wide screens use their width (Emre, 2026-10-20: less white beside the page, a wider panel); the cap only stops absurd line lengths. */
+app-purchase-desk .pdk{width:100%;max-width:1920px;box-sizing:border-box;padding:18px 24px 60px}
 app-purchase-desk .pdk--loading{display:grid;gap:16px}
 @media (max-width:980px){app-purchase-desk .pdk{padding-inline:14px}}
 app-purchase-desk .pdk-nw{white-space:nowrap}
@@ -78,7 +79,8 @@ app-purchase-desk .pdk-attn .wk-link{flex:none;color:#7c450b;font-weight:650}
 
 /* ---- body: the view bar, the main pane and the panel (docked from a 1140px host, else a drawer) */
 app-purchase-desk .pdk-body{display:grid;grid-template-columns:minmax(0,1fr);gap:0 16px;align-items:start;margin-top:16px}
-app-purchase-desk .pdk-body--docked{grid-template-columns:minmax(0,1fr) var(--pdk-rail-w,340px)}
+/* The docked panel grows with the page: 340 px on a 1280 screen as before, up to 460 px on a wide one. */
+app-purchase-desk .pdk-body--docked{grid-template-columns:minmax(0,1fr) var(--pdk-rail-w,clamp(340px,26%,460px))}
 app-purchase-desk .pdk-main{min-width:0}
 /* The bar may wrap to two rows on a narrow card; it never scrolls sideways (N6). */
 app-purchase-desk .pdk-bar{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-height:36px;margin-bottom:10px}
