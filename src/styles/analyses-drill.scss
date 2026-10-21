@@ -49,6 +49,8 @@ app-analyses-page button.an-link:focus-visible { outline: 2px solid var(--rose);
 /* ---------- the dialog: desk = the wide Sheet with a kit table, phone = the iOS sheet with inset cells */
 app-an-drill .sheet__foot:empty { display: none; }
 app-an-drill .and { display: grid; gap: 10px; }
+/* A row is one link: no underline on every cell (the sheet underlines links in text), the kit's row hover says it. */
+app-an-drill a.wk-tr--link, app-an-drill a.wk-tr--link * { color: inherit; text-decoration: none; }
 app-an-drill .and__scope { margin: 0; color: var(--muted); font-size: 13px; }
 app-an-drill .and__summary { margin: 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 app-an-drill .and__empty, app-an-drill .and__note { margin: 0; color: var(--muted); font-size: 13px; }

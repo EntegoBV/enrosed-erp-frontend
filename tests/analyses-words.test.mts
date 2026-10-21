@@ -50,6 +50,7 @@ test('Overzicht: the Inkoop digest in whole euros with the card\'s names (critiq
   assert.equal(paymentResultLine(-3620.53, 3), 'betaalresultaat − € 3.621');
   assert.equal(paymentResultLine(412.2, 3), 'netto extra opbrengst € 412');
   assert.equal(paymentResultLine(-10, 0), null, 'no eligible container: no line');
+  assert.equal(paymentResultLine(0.2, 6), null, '€ 0 says nothing: no line');
   assert.equal(openContainersLine(10, 2), 'op 10 containers · 2 voorlopig', 'the containers with something open, and the provisional ones (D-O2)');
   assert.equal(openContainersLine(1, 0), 'op 1 container');
 });

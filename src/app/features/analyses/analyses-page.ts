@@ -480,7 +480,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                   <a class="an-row an-row--chev an-row--icons" routerLink="/analyses/result" [queryParams]="yearQuery">
                     <span class="an-tile tone-plum"><app-icon name="receipt" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Resultaat</span>
-                      <span class="an-row__sub">marge {{ yrUnknown || yr.missingCostLines ? '—' : whole(yr.marginEur) }} − kosten {{ failed('kosten') ? '—' : whole(yr.costsEur) }}</span></span>
+                      <span class="an-row__sub">@if (yrUnknown || yr.missingCostLines) { marge onbekend · kosten {{ failed('kosten') ? '—' : whole(yr.costsEur) }} } @else { marge {{ whole(yr.marginEur) }} − kosten {{ whole(yr.costsEur) }} }</span></span>
                     <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="!yrUnknown && !yr.missingCostLines && yr.resultEur < 0 ? 'danger' : null">{{ yrUnknown || yr.missingCostLines ? '—' : whole(yr.resultEur) }}</span>
                       <span class="an-row__meta">excl. btw</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
@@ -1604,6 +1604,12 @@ export class AnalysesPage {
     return [invoiceCount || !ticaTransactions ? plural(invoiceCount, 'factuur', 'facturen') : '',
       ticaTransactions ? plural(ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : ''].filter(Boolean).join(' · ');
   }
+  /** "klanten € 80.120 · voorschot € 7.250": only the parts that hold money; none when the customers are the whole figure. */
+  private receivedFoot(received: { standardEur: number; partnerAdvanceEur: number; partnerSettlementEur: number }): string {
+    const parts: [string, number][] = [['klanten', received.standardEur], ['voorschot', received.partnerAdvanceEur], ['afrekening', received.partnerSettlementEur]];
+    const held = parts.filter(([, eur]) => Math.abs(eur) >= 0.5);
+    return held.length > 1 ? held.map(([word, eur]) => `${word} ${this.whole(eur)}`).join(' · ') : '';
+  }
   /** "waarvan voorschot € 77.376 · gecrediteerd − € 80" (parts left out when zero). */
   readonly invoicedFoot = computed(() => {
     const invoices = this.salesMetrics().invoices;
@@ -1650,7 +1656,7 @@ export class AnalysesPage {
         sub: `incl. btw · ${plural(inv.issued, 'factuur', 'facturen')}`, foot: this.invoicedFoot(), drill: !salesDown && inv.issuedValueEur !== 0 },
       { key: 'received', label: 'Ontvangen', value: this.failed('inkomende betalingen') ? '—' : this.whole(received.receivedEur), tone: null,
         sub: `incl. btw · ${plural(received.count, 'betaling', 'betalingen')}`,
-        foot: `klanten ${this.whole(received.standardEur)} · voorschot ${this.whole(received.partnerAdvanceEur)} · afrekening ${this.whole(received.partnerSettlementEur)}`, drill: false },
+        foot: this.receivedFoot(received), drill: false },
       { key: 'openQuotes', label: 'Open offertes', value: salesDown ? '—' : this.whole(this.pipelineValue()), tone: null,
         sub: `vandaag · ${plural(quotes, 'offerte', 'offertes')}`, foot: this.pipelineMissingCostLines() ? 'marge onbekend' : `marge ${this.whole(this.pipelineMargin())}`,
         footWarn: this.pipelineMissingCostLines() > 0, drill: !salesDown && quotes > 0 },

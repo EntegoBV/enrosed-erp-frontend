@@ -117,9 +117,9 @@ export function daysLabel(days: number): string {
 
 /* ---------- Overzicht (design §3.2, critique B2, B5, N6, N7, N17): the digest and Aandacht rows */
 
-/** "betaalresultaat − € 3.621" / "netto extra opbrengst € 412" (the Containerkost card's names), none without eligible containers. */
+/** "betaalresultaat − € 3.621" / "netto extra opbrengst € 412" (the Containerkost card's names), none without eligible containers or at € 0. */
 export function paymentResultLine(netResultEur: number, eligibleCount: number): string | null {
-  if (eligibleCount <= 0) return null;
+  if (eligibleCount <= 0 || Math.abs(netResultEur) < 0.5) return null;
   return netResultEur < 0 ? `betaalresultaat ${eurShort(netResultEur)}` : `netto extra opbrengst ${eurShort(netResultEur)}`;
 }
 
