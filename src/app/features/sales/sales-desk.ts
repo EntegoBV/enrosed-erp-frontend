@@ -44,6 +44,7 @@ import { billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice } from './s
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
+import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 
 type RailTab = 'order' | 'delivery' | 'check' | 'status' | 'payments';
@@ -72,7 +73,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -1107,7 +1108,7 @@ interface JourneyStep {
 
       <!-- ============================ sheets: the same ones the phone editor opens -->
       @if (costSheet(); as sheet) {
-        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="costSheet.set(null)">
+        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="closeCostSheet()">
           <div body>
             @if (sheet.rows.length) {
               <dl class="desk-cost">
@@ -1118,16 +1119,22 @@ interface JourneyStep {
                   </div>
                 }
               </dl>
-              @if (sheet.source) { <p class="hint">Kostprijs uit calculatie <b>{{ sheet.source }}</b>.</p> }
+              @if (sheet.source) { <p class="hint">{{ sheet.source }}</p> }
+              @if (sheet.missing) {
+                <p class="hint">{{ sheet.missing }}@if (sheet.product) { · <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
+              }
             } @else {
               <p class="hint">Opbouw laden…</p>
             }
           </div>
           <div foot style="display:contents">
             <span class="spacer"></span>
-            <button class="btn" type="button" (click)="costSheet.set(null)">Sluiten</button>
+            <button class="btn" type="button" (click)="closeCostSheet()">Sluiten</button>
           </div>
         </app-sheet>
+        @if (costHistoryOpen() && sheet.product; as product) {
+          <app-product-cost-history-sheet [product]="product" (closed)="costHistoryOpen.set(false)" />
+        }
       }
 
       @if (splitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || invoiceBusy()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }

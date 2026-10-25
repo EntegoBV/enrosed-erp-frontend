@@ -1,6 +1,7 @@
 import { costQuantity, costWords, otherSideCost, productCostBasis, type OtherSideCost } from '../products/product-cost-basis';
 import { containerName } from './container-name';
 import { stripColour, variantOf } from './purchase-desk-format';
+import { isNewerSource } from './purchase-phone-model';
 import type { LandedCostLine, Product, PurchaseOrder } from '../../core/api/models';
 
 /*
@@ -48,6 +49,13 @@ export interface ApplyCostRow {
   /** Null without a cost before, or with a cost of 0 before. */
   deltaPct: number | null;
   state: ApplyCostState;
+  /**
+   * The catalogue price when it follows the cost (no fixed sales price) and changes: the price now
+   * (null without a cost before) and after applying, by the server's rule (cost + markup).
+   */
+  catalogue: { fromEur: number | null; toEur: number } | null;
+  /** The product carries a newer container's cost: applying this one puts the older cost back (the server does not check). */
+  newer: boolean;
   /** The product as the screen knows it, for its history. */
   product: Product | null;
 }
@@ -66,10 +74,34 @@ export interface ApplyCostsPlan {
   unknown: number;
   /** Lines that received nothing. */
   skipped: number;
+  /** Rows that carry a newer container's cost now (ApplyCostRow.newer). */
+  newer: number;
 }
 
 const cents4 = (value: number): number => Math.round(value * 10000);
 const round4 = (value: number): number => cents4(value) / 10000;
+
+/**
+ * The catalogue price of a cost as Product.calculateSalesPriceEur makes it: cost + markup %,
+ * half-up to the cent; a missing markup adds nothing. toFixed keeps 1038,4999… from rounding down.
+ */
+export function catalogueAt(costEur: number, markupPct: number | null | undefined): number {
+  return Math.round(Number((costEur * (100 + (markupPct ?? 0))).toFixed(6))) / 100;
+}
+
+/** A positive fixed sales price wins over cost + markup: the catalogue price then ignores the cost. */
+function followsCost(product: Product): boolean {
+  return !(product.fixedSalesPriceEur != null && product.fixedSalesPriceEur > 0);
+}
+
+function catalogueChange(product: Product | null, state: ApplyCostState, currentEur: number | null, newEur: number): ApplyCostRow['catalogue'] {
+  if (!product || !followsCost(product) || (state !== 'new' && state !== 'up' && state !== 'down')) return null;
+  const toEur = catalogueAt(newEur, product.markupPct);
+  /* The price the product page shows now; an older payload without it is worked out the same way. */
+  const fromEur = currentEur == null ? null
+    : product.computedSalesPriceEur > 0 ? product.computedSalesPriceEur : catalogueAt(currentEur, product.markupPct);
+  return fromEur !== null && Math.round(fromEur * 100) === Math.round(toEur * 100) ? null : { fromEur, toEur };
+}
 
 type OrderNaming = Pick<PurchaseOrder, 'id' | 'number' | 'alias'>;
 
@@ -117,8 +149,69 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
     per: basis ? costWords(basis).per : null,
     currentEur, currentSource, newEur,
     other: basis ? otherSideCost(basis, newEur) : null,
-    deltaEur, deltaPct, state, product,
+    deltaEur, deltaPct, state,
+    catalogue: catalogueChange(product, state, currentEur, newEur),
+    newer: state !== 'skipped' && !fromHere && isNewerSource(product?.landedCostSource, order.number),
+    product,
   };
+}
+
+/** The products of this container that carry an older cost of it (cost-fix Q1). */
+export interface CostsStale {
+  count: number;
+  productIds: number[];
+  /** The largest change, signed: above 0 when the container now calculates more than the product carries. */
+  largestEur: number;
+}
+
+/**
+ * Products whose cost came from this very container (their source is its number) but no longer
+ * equals its calculation at 4 decimals: the container changed after it was applied. A product
+ * sourced from another container is not stale here, and neither is a line that received nothing,
+ * which the server never applies.
+ */
+export function costsStale(orderNumber: string, lines: readonly LandedCostLine[], products: readonly Product[]): CostsStale {
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const productIds: number[] = [];
+  let largestEur = 0;
+  for (const line of lines) {
+    const product = byId.get(line.productId);
+    const current = product?.landedCostEur;
+    if (!product || current == null || line.quantity <= 0 || product.landedCostSource !== orderNumber) continue;
+    if (cents4(line.landedUnitEur) === cents4(current)) continue;
+    productIds.push(line.productId);
+    const change = round4(line.landedUnitEur - current);
+    if (Math.abs(change) > Math.abs(largestEur)) largestEur = change;
+  }
+  return { count: productIds.length, productIds, largestEur };
+}
+
+/** "▲ € 2,07"; a change under a cent keeps its 4 decimals, so it never reads as € 0,00. */
+function signedChange(eur: number): string {
+  const digits = Math.abs(eur) < 0.01 ? 4 : 2;
+  const amount = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: digits, maximumFractionDigits: digits })
+    .format(Math.abs(eur));
+  return `${eur > 0 ? '▲' : '▼'} ${amount}`;
+}
+
+/**
+ * "3 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)"; null when none does.
+ * `newer` counts the products a newer container sits on: applying again would push those aside too,
+ * so the line names them ("· 2 met een nieuwere container") and the screens offer no one-click apply.
+ */
+export function staleNotice(stale: Pick<CostsStale, 'count' | 'largestEur'>, newer = 0): string | null {
+  if (stale.count <= 0) return null;
+  const text = stale.count === 1
+    ? `1 product draagt een oudere kostprijs van deze container (${signedChange(stale.largestEur)})`
+    : `${stale.count.toLocaleString('nl-BE')} producten dragen een oudere kostprijs van deze container (tot ${signedChange(stale.largestEur)})`;
+  return newer > 0 ? `${text} · ${newer.toLocaleString('nl-BE')} met een nieuwere container` : text;
+}
+
+/** The apply sheet's warn line when rows carry a newer container's cost; null without one. */
+export function newerNotice(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count === 1 ? '1 product draagt' : `${count.toLocaleString('nl-BE')} producten dragen`} de kostprijs van een nieuwere container: `
+    + 'toepassen zet die terug naar deze container.';
 }
 
 /**
@@ -138,7 +231,8 @@ export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLin
   const count = (...states: ApplyCostState[]): number => rows.filter((row) => states.includes(row.state)).length;
   const skipped = count('skipped');
   return { again: costsAppliedBefore(order, lines, products), rows, written: rows.length - skipped,
-    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped };
+    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped,
+    newer: rows.filter((row) => row.newer).length };
 }
 
 /** "1 product", "12 producten". */

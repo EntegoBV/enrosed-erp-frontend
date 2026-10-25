@@ -20,7 +20,9 @@ import type { PhoneTab } from './purchase-phone-model';
  * phone's Kosten tab; both roots carry id purchase-payment-result), and
  * ?section=pay&payee=…&due=… opens the payment sheet once the payments have
  * loaded, and ?section=credit the Tegoed noteren sheet. On the phone ?tab=
- * opens one of the view's and the editor's five tabs.
+ * opens one of the view's and the editor's five tabs. ?apply=1 (the product
+ * page's 'Opnieuw toepassen ›') opens the Kostprijzen toepassen sheet once the
+ * order is in; the phone's read view leaves that to the editor.
  *
  * A next step confirmed on the phone's read view runs in the editor: the
  * view hands it over in memory (PurchaseStepHandoff), the editor opens and
@@ -54,6 +56,8 @@ export class PurchaseScreen {
   readonly due = input<string>();
   /** The phone's open tab: overzicht (absent), producten, kosten, betalingen or dossier. */
   readonly tab = input<string>();
+  /** '1': open the Kostprijzen toepassen sheet once, then drop the param. */
+  readonly apply = input<string>();
 
   private readonly desk = viewChild(PurchaseDesk);
   private readonly editor = viewChild(PurchaseEditor);
@@ -65,6 +69,7 @@ export class PurchaseScreen {
   private readonly paymentPayees = ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER'] as const;
   private readonly paymentDues = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'] as const;
   private openedPaymentKey = '';
+  private openedApplyKey = '';
   /** The editor opened for a quick payment goes back to the read view once its sheet closes. */
   private returnAfterPayment: { editor: PurchaseEditor; id: string } | null = null;
   private readonly stepHandoff = inject(PurchaseStepHandoff);
@@ -81,6 +86,7 @@ export class PurchaseScreen {
   constructor() {
     effect(() => this.openRequestedSection());
     effect(() => this.openRequestedPayment());
+    effect(() => this.openRequestedApply());
     effect(() => this.returnFromPayment());
     effect(() => this.runHandedStep());
     effect(() => this.returnFromStep());
@@ -215,6 +221,37 @@ export class PurchaseScreen {
       else editor?.jumpToSection('purchase-payments-section', undefined, false);
       screen.requestCredit({ kind: 'add' });
       void this.router.navigate(this.mode() === 'edit' ? ['/purchasing', id, 'edit'] : ['/purchasing', id], { replaceUrl: true });
+    });
+  }
+
+  /**
+   * ?apply=1: the Kostprijzen toepassen sheet, once the order is in, and the
+   * param goes (replaceUrl) so a reload or Back never opens it again. The read
+   * view has no sheet: it hands the link to the editor, which works in every
+   * status (the handed KOSTPRIJZEN step only runs on a received container).
+   */
+  private openRequestedApply(): void {
+    const id = this.id();
+    if (this.apply() !== '1') {
+      this.openedApplyKey = '';
+      return;
+    }
+    const desk = this.desk();
+    const editor = this.editor();
+    const screen = desk ?? editor;
+    if (!screen) {
+      if (!this.viewer() || this.openedApplyKey === 'edit|' + id) return;
+      this.openedApplyKey = 'edit|' + id;
+      untracked(() => void this.router.navigate(['/purchasing', id, 'edit'], { queryParams: { apply: '1', tab: this.tab() || null }, replaceUrl: true }));
+      return;
+    }
+    const key = 'open|' + id;
+    if (screen.view()?.order.id !== Number(id) || this.openedApplyKey === key) return;
+    this.openedApplyKey = key;
+    untracked(() => {
+      void screen.apply();
+      void this.router.navigate(this.mode() === 'edit' ? ['/purchasing', id, 'edit'] : ['/purchasing', id],
+        { queryParams: { apply: null }, queryParamsHandling: 'merge', replaceUrl: true });
     });
   }
 

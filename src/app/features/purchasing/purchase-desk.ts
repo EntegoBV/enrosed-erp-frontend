@@ -50,7 +50,7 @@ import { Icon } from '../../shared/icon';
 import { elementWidth } from '../../shared/workspace-layout';
 import { containerNumberHint } from './container-name';
 import { PAYEE_LABEL } from './purchase-payment-ledger';
-import { calculationMadeOn, costsSupersededFor, paymentTile, progressSteps, readNextStep, type PhoneStep } from './purchase-phone-model';
+import { calculationMadeOn, differenceCount, paymentTile, progressSteps, readNextStep, stepLabel, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
@@ -201,10 +201,10 @@ export class PurchaseDeskStyles {}
             @if (readStep(); as step) {
               <button class="pdk-tile pdk-tile--go" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">
                 <span class="pdk-tile__label">Volgende stap</span>
-                <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : STEP_BUTTON[step] }}</span>
+                <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : stepLabel(step, costsApplied()) }}</span>
                 <span class="pdk-tile__sub">@switch (step) {
                   @case ('BIJBOEKEN') { @if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad } }
-                  @case ('KOSTPRIJZEN') { zet de gelande kost op de productkaarten }
+                  @case ('KOSTPRIJZEN') { @if (costsStaleNow().count; as stale) { {{ differenceCount(stale) }} met de productkaarten } @else { zet de gelande kost op de productkaarten } }
                   @default { {{ dirty() ? 'slaat eerst op' : 'klaar wanneer jij het bent' }} }
                 }</span>
                 <app-icon class="pdk-tile__chev" name="chevron-right" [size]="14" />
@@ -293,6 +293,16 @@ export class PurchaseDeskStyles {}
                 </button>
               }
             </div>
+            @if (costsStaleText(); as stale) {
+              <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
+              <div class="wk-banner wk-banner--warn wk-banner--inset desk-stale" role="status">
+                <span class="wk-banner__text">{{ keepAmounts(stale) }}</span>
+                <!-- Not while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
+                @if (!costsSupersededNow()) {
+                  <span class="wk-banner__actions"><button class="wk-link" type="button" [disabled]="saving()" (click)="apply()">Opnieuw toepassen ›</button></span>
+                }
+              </div>
+            }
 
             @if (data.costing.lines.length) {
               <div class="desk-table-wrap">
@@ -437,7 +447,7 @@ export class PurchaseDeskStyles {}
                         <tr class="desk-detail">
                           <td [attr.colspan]="editing() ? 7 : 6">
                             <div class="desk-detail__grid">
-                              <div class="desk-detail__head"><span>Kostopbouw</span><span>{{ perPiece() ? 'per stuk' : 'hele regel · ' + (line.quantity | num) + ' st' }}</span></div>
+                              <div class="desk-detail__head"><span>Kostopbouw</span><span>{{ perPiece() ? (setPiecesOf(line.productId) ? 'per display' : 'per stuk') : 'hele regel · ' + (line.quantity | num) + ' st' }}</span></div>
                               <div class="desk-detail__line"><span>Goederen <small>{{ line.goodsUsd | cur: 'USD' }}</small></span><span>{{ amt(line.goodsEur, line) | eurUp: decimals() }}</span></div>
                               @if (line.originEur) {
                                 <div class="desk-detail__line"><span>{{ costLabels().originCostsLabel }} <small>{{ costLabels().originRoute }}</small></span><span>{{ amt(line.originEur, line) | eurUp: decimals() }}</span></div>
@@ -452,6 +462,10 @@ export class PurchaseDeskStyles {}
                               }
                               @if (line.extraRevenueEur) {
                                 <div class="desk-detail__line"><span>Enrosed kost</span><span>{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></div>
+                              }
+                              <!-- Spread into the piece price by a key: inside Geland, so the build-up shows it. -->
+                              @if (line.separateEur && line.separateEur > 0) {
+                                <div class="desk-detail__line"><span>Inspectie en andere kosten</span><span>{{ amt(line.separateEur, line) | eurUp: decimals() }}</span></div>
                               }
                               <div class="desk-detail__line desk-detail__line--total"><span>Geland</span><span>{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span></div>
                             </div>
@@ -944,11 +958,11 @@ export class PurchaseDeskStyles {}
                     }
                     <!-- The same step as the Volgende stap tile (readNextStep), so the two never disagree (I-B7). -->
                     @if (readStep(); as step) {
-                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : STEP_BUTTON[step] + ' ›' }}</button>
+                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">{{ doneLabel(step) }}</button>
                     }
                     <div class="desk-actions">
                       @if (readStep() !== 'KOSTPRIJZEN') {
-                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}@if (costsStaleCount(); as stale) { · {{ differenceCount(stale) }}}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
                       }
                       <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)"><span><b>{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</b><small>{{ data.order.partnerCustomerId ? 'Eén conceptfactuur per voorschottermijn, nog niet verstuurd.' : 'Dezelfde producten en aantallen op een nieuwe offerte voor een klant.' }}</small></span><i aria-hidden="true">›</i></button>
@@ -1321,6 +1335,7 @@ export class PurchaseDeskStyles {}
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
     .desk-table-bar>div{flex:1;min-width:0}.desk-table-bar h2{font-size:15px}.desk-table-bar p{color:var(--muted);font-size:11.5px}
     .desk-table-wrap{overflow-x:auto}
+    .desk-stale{margin:12px 16px}.desk-stale .wk-link{color:inherit;white-space:nowrap}
     .desk-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
     .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
     .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}
@@ -1435,7 +1450,7 @@ export class PurchaseDeskStyles {}
     .desk-milestones i{display:grid;width:22px;height:22px;place-items:center;border:2px solid var(--line-strong);border-radius:50%;color:#fff;font-size:11px;font-style:normal;font-weight:800;background:var(--surface)}
     .desk-milestones li.is-done i{border-color:var(--ok);background:var(--ok)}.desk-milestones li.is-now i{border-color:var(--rose)}
     .desk-milestones span{display:grid}.desk-milestones b{font-size:13px}.desk-milestones li:not(.is-done):not(.is-now) b{color:var(--muted);font-weight:600}.desk-milestones small{color:var(--muted);font-size:11px}
-    .desk-done__cta{min-height:46px;font-size:14px}
+    .desk-done__cta{min-height:46px;font-size:14px;white-space:normal;text-wrap:balance}
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
@@ -1464,8 +1479,16 @@ export class PurchaseDesk extends PurchaseEditor {
     const data = this.view();
     if (!data) return null;
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number) });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
   });
+  readonly differenceCount = differenceCount;
+  readonly stepLabel = stepLabel;
+  /** Afronden's button: the tile's words, and the count when the costs step is back because products differ. */
+  doneLabel(step: PhoneStep): string {
+    if (step === 'BIJBOEKEN' && this.booking()) return 'Bezig…';
+    const stale = step === 'KOSTPRIJZEN' ? this.costsStaleCount() : 0;
+    return `${stepLabel(step, this.costsApplied())}${stale ? ` · ${differenceCount(stale)}` : ''} ›`;
+  }
 
   /** The next-step tile: one method, so the template keeps a single apply() button (Afronden). */
   runNextStep(): void {

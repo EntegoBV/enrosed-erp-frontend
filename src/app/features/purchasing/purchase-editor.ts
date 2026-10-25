@@ -97,7 +97,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
-import { applyCostsPlan, applyCostsToast, missingProductIds } from './purchase-apply-costs';
+import { applyCostsPlan, applyCostsToast, costsStale, missingProductIds, staleNotice } from './purchase-apply-costs';
 import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -109,7 +109,7 @@ import { landedRangeText, purchaseLineSections } from './purchase-product-line-g
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
-  STEP_BUTTON, actionsMenu, countWords, editNextStep, lineCount, linePriceText, orderNumberLocked, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
+  STEP_BUTTON, actionsMenu, costsSupersededCount, countWords, editNextStep, lineCount, linePriceText, orderNumberLocked, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -925,8 +925,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span></span></div>
                 @if (line.extraRevenueEur) {
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? 'per stuk' : 'hele regel' }}</span></span>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? (display ? 'per display' : 'per stuk') : 'hele regel' }}</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></span></div>
+                }
+                <!-- Spread into the piece price by a key: inside Geland, so the build-up shows it. -->
+                @if (line.separateEur && line.separateEur > 0) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Inspectie en andere kosten</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.separateEur, line) | eurUp: decimals() }}</span></span></div>
                 }
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span>
@@ -1545,7 +1550,7 @@ export class PurchaseEditor {
     if (!data) return [];
     return actionsMenu({
       status: data.order.status, step: this.nextStep()?.to ?? null, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
+      costsApplied: this.costsApplied(), staleCount: this.costsStaleCount(), partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
       dirty: this.dirty(), saving: this.saving(), booking: this.booking(), deleting: this.deletingOrder(), stepBackBusy: this.stepBackBusy(),
     });
   });
@@ -4368,6 +4373,7 @@ export class PurchaseEditor {
        app bar first paints a placeholder supplier and visibly jumps when the
        supplier request finishes. */
     this.view.set(view);
+    void this.refreshOtherProducts(orderId);
     void paymentsLoad.then((failure) => {
       if (failure && Number(this.id()) === orderId && paymentVersion === this.paymentRefreshVersion) this.ui.toast(failure, 'err');
     });
@@ -4911,13 +4917,37 @@ export class PurchaseEditor {
     }
   }
 
+  /**
+   * Products of lines the supplier's list lacks: a placed order keeps a line
+   * of another supplier. Fetched by id once the order is in, when the sheet
+   * opens and after applying, so the costs rules below and the sheet's rows
+   * count them as the phone's read view (every product) does.
+   */
+  readonly otherProducts = signal<Product[]>([]);
+  /** Every product this order's lines point at, as far as the screen could fetch them. */
+  readonly lineProducts = computed(() => [...this.products(), ...this.otherProducts()]);
+
   /** Did an earlier apply of this order land on its products? */
   readonly costsApplied = computed(() => {
     const data = this.view();
     if (!data) return false;
-    const byId = new Map(this.products().map((product) => [product.id, product]));
+    const byId = new Map(this.lineProducts().map((product) => [product.id, product]));
     return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number);
   });
+  /** Products that carry an older cost of this container than it calculates now: the container changed after applying. */
+  readonly costsStaleNow = computed(() => {
+    const data = this.view();
+    return data ? costsStale(data.order.number, data.costing.lines, this.lineProducts()) : { count: 0, productIds: [], largestEur: 0 };
+  });
+  /** Products that carry a newer container's cost: applying this one would put the older cost back on them (G12). */
+  readonly costsSupersededNow = computed(() => {
+    const data = this.view();
+    return data ? costsSupersededCount(data.costing.lines, this.lineProducts(), data.order.number) : 0;
+  });
+  /** The one warn line above the products ('Opnieuw toepassen ›' beside it unless a newer container sits on some); null while nothing differs. */
+  readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow(), this.costsSupersededNow()));
+  /** The count beside Kostprijzen opnieuw toepassen: none while a newer container sits on some products (no one-click fix then). */
+  readonly costsStaleCount = computed(() => this.costsSupersededNow() > 0 ? 0 : this.costsStaleNow().count);
 
   /* ---- Kostprijzen toepassen: the sheet shows every product's cost now and next first */
   /**
@@ -4927,18 +4957,29 @@ export class PurchaseEditor {
    */
   readonly applyFor = signal<number | null>(null);
   readonly applyBusy = signal(false);
-  /**
-   * Products of lines the supplier's list lacks: a placed order keeps a line
-   * of another supplier. Fetched by id when the sheet opens, so that row too
-   * shows its cost now, its unit and its history.
-   */
-  readonly applyOtherProducts = signal<Product[]>([]);
   /** The rows of the saved calculation against the products as they stand; live while the sheet is open. */
   readonly applyPlan = computed(() => {
     const data = this.view();
     return data && data.order.id === this.applyFor()
-      ? applyCostsPlan(data.order, data.costing.lines, [...this.products(), ...this.applyOtherProducts()]) : null;
+      ? applyCostsPlan(data.order, data.costing.lines, this.lineProducts()) : null;
   });
+
+  /**
+   * Fetches the products of lines the supplier's list lacks, by id; one that
+   * cannot be fetched stays out (the sheet calls it unknown). Never a copy
+   * of another order's: the answer lands only while this order is shown.
+   */
+  async refreshOtherProducts(orderId: number): Promise<void> {
+    const data = this.view();
+    if (data?.order.id !== orderId) return;
+    const missing = missingProductIds(data.costing.lines, this.products());
+    if (!missing.length) {
+      this.otherProducts.set([]);
+      return;
+    }
+    const found = await Promise.all(missing.map((id) => this.catalog.product(id).catch(() => null)));
+    if (this.view()?.order.id === orderId) this.otherProducts.set(found.filter((product): product is Product => product !== null));
+  }
 
   /**
    * Opens the sheet. The server applies the saved order, so unsaved edits
@@ -4953,20 +4994,13 @@ export class PurchaseEditor {
       if (!saved || this.view()?.order.id !== data.order.id) return;
     }
     void this.catalog.unitNames().catch(() => undefined);
-    this.applyOtherProducts.set([]);
     this.applyFor.set(data.order.id);
-    let products = this.products();
     try {
-      products = await this.catalog.products(data.order.supplierId);
+      const products = await this.catalog.products(data.order.supplierId);
       if (this.view()?.order.id === data.order.id) this.products.set(products);
     } catch { /* the list from opening the order still names every product */ }
-    const current = this.view();
-    if (current?.order.id !== data.order.id) return;
-    const missing = missingProductIds(current.costing.lines, products);
-    if (!missing.length) return;
-    /* A product that cannot be fetched stays unknown: its row says so and names no unit. */
-    const found = await Promise.all(missing.map((id) => this.catalog.product(id).catch(() => null)));
-    if (this.applyFor() === data.order.id) this.applyOtherProducts.set(found.filter((product): product is Product => product !== null));
+    /* Fetched again, never a stale copy: "Nu" shows what they carry right now. */
+    if (this.applyFor() === data.order.id) await this.refreshOtherProducts(data.order.id);
   }
 
   closeApply(): void {
@@ -4992,6 +5026,8 @@ export class PurchaseEditor {
       const products = await this.catalog.products(data.order.supplierId);
       if (this.view()?.order.id === data.order.id) this.products.set(products);
     } catch { /* the costs are applied; the list catches up on the next load */ }
+    /* The other suppliers' products got the cost too: else they would read as stale. */
+    await this.refreshOtherProducts(data.order.id);
     await this.reloadOrderQuietly();
   }
 

@@ -288,26 +288,46 @@ export function stepToward(to: string | null | undefined): AskedStep | null {
   return to === 'BESTELD' ? 'BESTELLEN' : to === 'ONDERWEG' ? 'VERTROKKEN' : to === 'ONTVANGEN' ? 'ONTVANGEN' : null;
 }
 
-/** The read view's dock step: the status road, then the shelf, then the catalogue costs; nothing on an empty container. */
+/**
+ * The read view's dock step: the status road, then the shelf, then the catalogue costs; nothing on an
+ * empty container. The costs come back when products carry an older cost of this container (cost-fix Q2).
+ */
 export function readNextStep(s: {
   status: PurchaseOrder['status']; lineCount: number; stockBooked: boolean | null | undefined; costsApplied: boolean;
   /** A newer container's costs sit on some of these products: this one must not push them aside (amendment G12). */
   superseded?: boolean;
+  /** Products carry an older cost of this container than it calculates now (costsStale). */
+  stale?: boolean;
 }): PhoneStep | null {
   if (s.lineCount <= 0) return null;
   if (s.status === 'CONCEPT') return 'BESTELLEN';
   if (s.status === 'BESTELD') return 'VERTROKKEN';
   if (s.status === 'ONDERWEG') return 'ONTVANGEN';
   if (s.stockBooked === false) return 'BIJBOEKEN';
-  return !s.costsApplied && !s.superseded ? 'KOSTPRIJZEN' : null;
+  return (!s.costsApplied || s.stale) && !s.superseded ? 'KOSTPRIJZEN' : null;
+}
+
+/** '1 verschil', '3 verschillen': products whose cost differs from the container's calculation. */
+export function differenceCount(count: number): string {
+  return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'verschil' : 'verschillen'}`;
+}
+
+/**
+ * The step's button; Kostprijzen once applied says opnieuw, as Acties does. The phone dock is too
+ * narrow for the whole phrase at 375 px: it keeps 'Opnieuw toepassen', the words of the sheet's button.
+ */
+export function stepLabel(step: PhoneStep, costsApplied: boolean, dock = false): string {
+  if (step !== 'KOSTPRIJZEN' || !costsApplied) return STEP_BUTTON[step];
+  return dock ? 'Opnieuw toepassen' : 'Kostprijzen opnieuw toepassen';
 }
 
 /**
  * The Overzicht card under 'Volgende stap', in words: it follows the dock's
  * readNextStep, so the card never says 'afgerond' while the dock still
- * offers a step (I-B6). Null means the road is done.
+ * offers a step (I-B6). Null means the road is done; `stale` counts the
+ * products that carry an older cost of this container.
  */
-export function nextStepCard(step: PhoneStep | null, lineCount: number): { title: string; text: string } {
+export function nextStepCard(step: PhoneStep | null, lineCount: number, stale = 0): { title: string; text: string } {
   if (lineCount <= 0) {
     return { title: 'Voeg eerst producten toe', text: 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.' };
   }
@@ -321,7 +341,10 @@ export function nextStepCard(step: PhoneStep | null, lineCount: number): { title
     case 'BIJBOEKEN':
       return { title: 'Klaar voor de volgende stap?', text: 'Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.' };
     case 'KOSTPRIJZEN':
-      return { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
+      return stale > 0
+        ? { title: 'Kostprijzen opnieuw toepassen?',
+          text: `${stale === 1 ? '1 product draagt' : `${stale.toLocaleString('nl-BE')} producten dragen`} een oudere kostprijs dan deze container nu rekent.` }
+        : { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
     default:
       return { title: 'Container afgerond', text: 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.' };
   }
@@ -389,14 +412,27 @@ function compareNumbers(a: string, b: string): number | null {
   return a.trim().localeCompare(b.trim(), 'nl', { numeric: true });
 }
 
-/** Some product carries the costs of a newer container than this one. */
-export function costsSupersededFor(lines: readonly { productId: number }[], products: readonly Pick<Product, 'id' | 'landedCostSource'>[],
-  orderNumber: string): boolean {
+/** A product's cost source is a newer container than this one ('PO-2026-048' after 'PO-2026-047'). */
+export function isNewerSource(source: string | null | undefined, orderNumber: string): boolean {
+  return !!source && (compareNumbers(source, orderNumber) ?? 0) > 0;
+}
+
+/**
+ * The products of these lines that carry a newer container's costs: applying this one would push
+ * them aside. A line that received nothing is never applied (the server skips it), so it does not count.
+ */
+export function costsSupersededCount(lines: readonly { productId: number; quantity?: number }[],
+  products: readonly Pick<Product, 'id' | 'landedCostSource'>[], orderNumber: string): number {
   const byId = new Map(products.map((product) => [product.id, product]));
-  return lines.some((line) => {
-    const source = byId.get(line.productId)?.landedCostSource;
-    return !!source && (compareNumbers(source, orderNumber) ?? 0) > 0;
-  });
+  const ids = new Set(lines.filter((line) => (line.quantity ?? 1) > 0 && isNewerSource(byId.get(line.productId)?.landedCostSource, orderNumber))
+    .map((line) => line.productId));
+  return ids.size;
+}
+
+/** Some product carries the costs of a newer container than this one. */
+export function costsSupersededFor(lines: readonly { productId: number; quantity?: number }[], products: readonly Pick<Product, 'id' | 'landedCostSource'>[],
+  orderNumber: string): boolean {
+  return costsSupersededCount(lines, products, orderNumber) > 0;
 }
 
 /* ---- the editor's Acties menu ------------------------------------------- */
@@ -408,6 +444,11 @@ export interface ActionsMenuState {
   lineCount: number;
   stockBooked: boolean | null | undefined;
   costsApplied: boolean;
+  /**
+   * Products carrying an older cost of this container (costsStale().count); 0 or absent when none, and
+   * 0 while a newer container sits on some of its products: applying would push those aside too.
+   */
+  staleCount?: number;
   partner: boolean;
   canQuote: boolean;
   dirty: boolean;
@@ -434,7 +475,8 @@ export function actionsMenu(s: ActionsMenuState): ContextMenuItem[] {
       iconName: 'stock', disabled: s.booking });
   }
   items.push(
-    { id: 'apply', label: s.costsApplied ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
+    { id: 'apply', label: (s.staleCount ?? 0) > 0 ? `Kostprijzen opnieuw toepassen · ${differenceCount(s.staleCount!)}`
+      : s.costsApplied ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen',
       hint: 'Gelande kostprijs per display of per stuk naar de producten', iconName: 'tag' },
     { id: 'quote', label: s.partner ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken', iconName: 'sales', disabled: !s.canQuote },
     { id: 'copy', label: 'Deze container kopiëren', iconName: 'copy' },

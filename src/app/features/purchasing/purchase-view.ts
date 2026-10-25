@@ -59,8 +59,9 @@ import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
+import { costsStale, staleNotice } from './purchase-apply-costs';
 import {
-  STEP_BUTTON, costsAppliedFor, costsSupersededFor, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
+  costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -206,7 +207,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               <div class="ios-section__head"><h2>Volgende stap</h2></div>
               <div class="ios-card mpo-next">
                 <!-- The dock's step in words (readNextStep): the card and the dock never name two different steps (I-B6). -->
-                @let card = nextStepCard(readStep(), data.costing.lines.length);
+                @let card = nextStepCard(readStep(), data.costing.lines.length, costsStaleNow().count);
                 <h3 id="mpo-actions-title">{{ card.title }}</h3>
                 <p>{{ card.text }}</p>
               </div>
@@ -276,6 +277,13 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 <div class="mpo-head__copy"><h2 id="mpo-products-title">Producten</h2>
                   <p>{{ lineCount(data.costing.lines.length) }} · {{ data.costing.totals.pieces | num }} {{ countWords(data.reconciliation?.totals?.setBasis).short }} · {{ data.costing.totals.cartons | num }} dozen</p></div>
               </div>
+              @if (costsStaleText(); as stale) {
+                <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
+                <div class="wk-banner wk-banner--warn wk-banner--inset mpo-stale" role="status">
+                  <!-- No link while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
+                  <span class="wk-banner__text">{{ stale }}@if (!costsSupersededNow()) { · <a class="mpo-stale__link" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ apply: 1, tab: 'producten' }">Opnieuw toepassen ›</a>}</span>
+                </div>
+              }
 
               @if (isDdp()) {
                 <!-- DDP: the supplier's container - its fill is their concern. -->
@@ -562,7 +570,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
           @if (readStep(); as step) {
             <a class="btn mpo-dock__edit" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ tab: tabParam(activeTab()) }">
               <app-icon name="pencil" [size]="17" />Bewerken</a>
-            <button class="btn btn--primary erp-workspace__primary" type="button" (click)="openStep(step)">{{ STEP_BUTTON[step] }}</button>
+            <button class="btn btn--primary erp-workspace__primary" type="button" (click)="openStep(step)">{{ stepLabel(step, costsApplied(), true) }}</button>
           } @else {
             <a class="btn btn--primary erp-workspace__primary" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="editQuery()">Bewerken</a>
           }
@@ -635,6 +643,11 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 @if (entry.line.extraRevenueEur) {
                   <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(entry.line.extraRevenueEur, entry.line) | eurUp: decimals() }}</span></span></div>
+                }
+                <!-- Spread into the piece price by a key: inside Geland, so the build-up shows it. -->
+                @if (entry.line.separateEur && entry.line.separateEur > 0) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Inspectie en andere kosten</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(entry.line.separateEur, entry.line) | eurUp: decimals() }}</span></span></div>
                 }
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (entry.line.landedUnitEur | eurUp: 3) : (entry.line.totalEur | eur) }}</span>
@@ -726,6 +739,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   `,
   styles: `
     :host{display:block;min-width:0}
+    .mpo-stale{margin:0 16px 14px}.mpo-stale__link{color:inherit;font-weight:700;white-space:nowrap}
   `,
 })
 export class PurchaseView {
@@ -1406,9 +1420,9 @@ export class PurchaseView {
 
   /* ---- the next step: asked here, run by the editor --------------------- */
 
-  readonly STEP_BUTTON = STEP_BUTTON;
   readonly nextStepCard = nextStepCard;
-  private readonly costsApplied = computed(() => {
+  readonly stepLabel = stepLabel;
+  readonly costsApplied = computed(() => {
     const data = this.view();
     return !!data && costsAppliedFor(data.costing.lines, this.products(), data.order.number);
   });
@@ -1416,8 +1430,19 @@ export class PurchaseView {
     const data = this.view();
     if (!data) return null;
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number) });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
   });
+  /** Products that carry an older cost of this container than it calculates now (the editor's rule). */
+  readonly costsStaleNow = computed(() => {
+    const data = this.view();
+    return data ? costsStale(data.order.number, data.costing.lines, this.products()) : { count: 0, productIds: [], largestEur: 0 };
+  });
+  /** Products that carry a newer container's cost: no one-click apply then (the editor's rule). */
+  readonly costsSupersededNow = computed(() => {
+    const data = this.view();
+    return data ? costsSupersededCount(data.costing.lines, this.products(), data.order.number) : 0;
+  });
+  readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow(), this.costsSupersededNow()));
   readonly stepOpen = signal<AskedStep | null>(null);
 
   /** Kostprijzen toepassen skips this view's question: the editor opens its sheet with every product's cost now and next. */
