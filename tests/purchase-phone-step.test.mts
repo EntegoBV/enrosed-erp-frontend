@@ -353,7 +353,8 @@ test('an editor line row without its own price states the card price in the card
   };
   Object.assign(editor, {
     // A CNY card at ¥70; the costing's goodsUsd per piece would be 9.8 (70 × 0.14).
-    products: () => [{ id: 1, exwPrice: 70, exwCurrency: 'CNY' }, { id: 2, exwPrice: 70, exwCurrency: 'CNY' }, { id: 3, exwPrice: null, exwCurrency: 'EUR' }],
+    // The lines read lineProducts: the supplier's list plus products of another supplier on this order.
+    lineProducts: () => [{ id: 1, exwPrice: 70, exwCurrency: 'CNY' }, { id: 2, exwPrice: 70, exwCurrency: 'CNY' }, { id: 3, exwPrice: null, exwCurrency: 'EUR' }],
     view: () => ({ order: { lines: Object.values(lines) } }),
   });
   assert.equal(editor.rowPriceText(1), '¥ 70,000 kaartprijs');
