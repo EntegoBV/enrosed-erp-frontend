@@ -1,4 +1,5 @@
 import type { LandedCostLine, Product, ProductCostHistoryEntry, PurchaseCostLabels } from '../../core/api/models';
+import type { CostKind } from './product-cost-history-model';
 
 /*
  * The cost build-up of the product page, apart from the screen. A build-up
@@ -44,7 +45,11 @@ export interface PriceRow {
 
 /** The newest history row, and the parts that explain the stored cost (null when they do not). */
 export interface AppliedCost {
+  /** False when the history could not be loaded: then nothing is known about the parts. */
+  loaded: boolean;
   row: ProductCostHistoryEntry | null;
+  /** The newest row's kind; a copy took its cost and parts over from another product. */
+  kind: CostKind | null;
   /** The newest row holds the stored cost (to 4 decimals). */
   matches: boolean;
   parts: UnitCostParts | null;
@@ -58,9 +63,9 @@ export interface LiveCost {
 }
 
 export interface CostDrift {
-  /** Today's calculation minus the stored cost, to 4 decimals. */
+  /** Today's calculation minus the stored cost, both as the screen shows them (2 decimals). */
   differenceEur: number;
-  /** At least half a cent apart, so it shows at 2 decimals. */
+  /** The two figures on screen differ. */
   drift: boolean;
 }
 
@@ -69,11 +74,14 @@ export interface CostDriftNotice {
   orderId: number;
   orderNumber: string;
   unitEur: number;
-  differenceEur: number;
-  absEur: number;
+  /** Null when the stored cost holds on another basis (per display against per piece is no difference). */
+  differenceEur: number | null;
+  absEur: number | null;
   up: boolean;
-  /** "per stolp", "per display van 12". */
+  /** "per stolp", "per display". */
   per: string;
+  /** "toegepast per display van 12": instead of the difference when the stored cost holds on another basis. */
+  basisNote: string | null;
 }
 
 /** The words of the parts: the container's own labels when its view is loaded. */
@@ -95,6 +103,8 @@ export interface CostBuildInput {
   /** The basis words of the stored cost and of today's calculation. */
   appliedPer: string;
   livePer: string;
+  /** The stored cost holds on today's basis; false gives the drift no difference. Default true. */
+  sameBasis?: boolean;
   appliedWords?: PartWords;
   liveWords?: PartWords;
   decimals?: number;
@@ -109,6 +119,13 @@ export interface CostBuild {
 }
 
 const round4 = (value: number): number => Math.round(value * 10000) / 10000;
+
+/** costKind of product-cost-history-model, kept here so node runs this file as it is. */
+function rowKind(row: ProductCostHistoryEntry): CostKind {
+  const kind = row.kind;
+  if (kind === 'APPLY' || kind === 'REAPPLY' || kind === 'SEED' || kind === 'COPY') return kind;
+  return row.appliedBy === 'system' ? 'SEED' : 'APPLY';
+}
 
 /** Half away from zero, without the binary slip of 1,005 → 1,00. */
 export function roundHalfUp(value: number, decimals = 2): number {
@@ -129,16 +146,20 @@ function hasParts(row: ProductCostHistoryEntry): boolean {
  * The newest cost-history row explains the stored cost when it holds that
  * very cost (4 decimals) and kept its parts. A seed, an apply from before the
  * parts were kept, a copy of a changed cost, or a row that is not the stored
- * cost leave the cost unexplained.
+ * cost leave the cost unexplained. A copy keeps parts only when its cost is
+ * the source row's, so those parts do explain it. `rows` null: the history
+ * did not load.
  */
 export function appliedParts(product: Pick<Product, 'landedCostEur'> | { landedCostEur?: number | null },
-  rows: readonly ProductCostHistoryEntry[]): AppliedCost {
-  const row = rows[0] ?? null;
+  rows: readonly ProductCostHistoryEntry[] | null): AppliedCost {
+  const loaded = rows !== null;
+  const row = rows?.[0] ?? null;
+  const kind = row ? rowKind(row) : null;
   const stored = product.landedCostEur;
   const matches = row !== null && stored != null && round4(row.landedUnitEur) === round4(stored);
-  if (!row || !matches || !hasParts(row)) return { row, matches, parts: null };
+  if (!row || !matches || !hasParts(row)) return { loaded, row, kind, matches, parts: null };
   return {
-    row, matches,
+    loaded, row, kind, matches,
     parts: {
       goodsEur: row.goodsEur ?? 0, originEur: row.originEur ?? 0, freightEur: row.freightEur ?? 0, dutyEur: row.dutyEur ?? 0,
       destinationEur: row.destinationEur ?? 0, enrosedEur: row.enrosedEur ?? 0, separateEur: row.separateEur ?? 0,
@@ -162,15 +183,16 @@ export function liveParts(line: LandedCostLine | null | undefined): LiveCost | n
 
 /**
  * Each part rounded half-up, an Afronding row for what the rounded parts
- * miss of the rounded total, then the total: the rows always add up. Parts
- * that round to nothing are left out.
+ * miss of the rounded total, then the total: the rows always add up. Only
+ * parts that are nothing (at 4 decimals) are left out; a part below half a
+ * cent stays as 0,00, so Afronding is only the rounding.
  */
 export function costRows(parts: UnitCostParts, total: number, decimals = 2): CostRow[] {
   const rows: CostRow[] = [];
   let sum = 0;
   for (const key of PART_KEYS) {
+    if (round4(parts[key]) === 0) continue;
     const eur = roundHalfUp(parts[key], decimals);
-    if (eur === 0) continue;
     rows.push({ key, eur });
     sum += eur;
   }
@@ -181,9 +203,10 @@ export function costRows(parts: UnitCostParts, total: number, decimals = 2): Cos
   return rows;
 }
 
-export function costDrift(storedEur: number, liveUnitEur: number): CostDrift {
-  const differenceEur = round4(liveUnitEur - storedEur);
-  return { differenceEur, drift: Math.abs(differenceEur) >= 0.005 };
+/** Decided on the figures the screen shows, so the line never names a difference the tiles do not show. */
+export function costDrift(storedEur: number, liveUnitEur: number, decimals = 2): CostDrift {
+  const differenceEur = roundHalfUp(roundHalfUp(liveUnitEur, decimals) - roundHalfUp(storedEur, decimals), decimals);
+  return { differenceEur, drift: differenceEur !== 0 };
 }
 
 /** The duty rate the stored parts were made with: duty over the customs value (goods, origin and freight), to 0,1 %. */
@@ -229,27 +252,33 @@ export function labelRows(rows: readonly CostRow[], words: PartWords, totalLabel
 
 /**
  * The cost part of the product's price build-up. The stored cost reads from
- * its own parts ("toegepast 23/08/2026"), or alone with "Opbouw niet bewaard"
- * when no row explains it. The container's calculation of today follows as a
+ * its own parts ("toegepast 23/08/2026", a copy "overgenomen bij kopiëren"),
+ * or alone with "Opbouw niet bewaard" when no row explains it. The container's calculation of today follows as a
  * block of its own when the container still exists and it either differs
  * from the stored cost or is the only build-up there is.
  */
 export function costBuild(input: CostBuildInput): CostBuild {
   const decimals = input.decimals ?? 2;
   const stored = input.storedEur ?? null;
-  const { row, matches, parts } = input.applied;
+  const { row, kind, matches, parts } = input.applied;
   const date = matches ? costDate(row?.appliedAt) : null;
+  /* A copy's date is the day it was copied, not the day the cost was applied. */
+  const copied = matches && kind === 'COPY';
+  const hint = !input.applied.loaded ? 'Opbouw niet geladen.'
+    : `Opbouw niet bewaard bij het ${copied ? 'kopiëren' : 'toepassen'}${date ? ` (${date})` : ''}.`;
   const applied: PriceRow[] = stored === null ? []
     : parts ? labelRows(costRows(parts, stored, decimals), input.appliedWords ?? {}, `Kostprijs ${input.appliedPer}`,
-      date ? `toegepast ${date}` : undefined)
-    : [{ label: `Kostprijs ${input.appliedPer}`, hint: `Opbouw niet bewaard bij het toepassen${date ? ` (${date})` : ''}.`,
-      eur: roundHalfUp(stored, decimals), sum: true }];
+      date ? `${copied ? 'overgenomen bij kopiëren' : 'toegepast'} ${date}` : undefined)
+    : [{ label: `Kostprijs ${input.appliedPer}`, hint, eur: roundHalfUp(stored, decimals), sum: true }];
 
   const live = input.order ? input.live : null;
-  const drift = live && stored !== null ? costDrift(stored, live.unitEur) : null;
+  const drift = live && stored !== null ? costDrift(stored, live.unitEur, decimals) : null;
+  /* Per display against per piece is no difference: then the line names the basis instead. */
+  const sameBasis = input.sameBasis ?? true;
   const notice: CostDriftNotice | null = drift?.drift && input.order ? {
-    orderId: input.order.id, orderNumber: input.order.number, unitEur: live!.unitEur, differenceEur: drift.differenceEur,
-    absEur: Math.abs(drift.differenceEur), up: drift.differenceEur > 0, per: input.livePer,
+    orderId: input.order.id, orderNumber: input.order.number, unitEur: live!.unitEur,
+    differenceEur: sameBasis ? drift.differenceEur : null, absEur: sameBasis ? Math.abs(drift.differenceEur) : null,
+    up: drift.differenceEur > 0, per: input.livePer, basisNote: sameBasis ? null : `toegepast ${input.appliedPer}`,
   } : null;
   const liveBlock = live && input.order && (notice !== null || parts === null) ? {
     title: `${input.order.number} rekent nu`,

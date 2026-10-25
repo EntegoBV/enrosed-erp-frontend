@@ -19,7 +19,7 @@ import { salesPhoto } from '../../shared/sales-photo';
 import { photoKeyForProductPhoto, placeCards, resolvedPlaces, tileUses, variantShortLabel } from './product-photos-state';
 import { ProductPlaceLine, ProductPlacesLine } from './product-places-line';
 import { appliedParts, costBuild, impliedDutyPct, liveParts, type CostBuild, type CostDriftNotice, type PriceRow } from './product-price-build';
-import { costQuantity, costWords, entryCostBasis, productCostBasis } from './product-cost-basis';
+import { costQuantity, costWords, entryCostBasis, productCostBasis, sameCostBasis } from './product-cost-basis';
 
 /** The stored cost explained and the road on to the catalogue price; today's container calculation apart, with the drift. */
 interface PriceBuild { rows: PriceRow[]; source: string | null; live: CostBuild['live']; drift: CostDriftNotice | null; }
@@ -431,7 +431,7 @@ export type { ReceivedContainer } from './received-containers';
           <div class="price-build" role="region" aria-label="Prijsopbouw">
             @if (priceBuild(); as build) {
               @if (build.drift; as drift) {
-                <p class="price-build__drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> ({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }}) · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+                <p class="price-build__drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> @if (drift.basisNote; as note) {({{ note }})} @else {({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
               }
               <dl class="price-build__list">
                 @for (row of build.rows; track row.label) {
@@ -847,7 +847,8 @@ export class ProductView {
     const history = await this.catalog.productCostHistory(id).catch(() => null);
     if (version !== this.loadVersion) return;
     if (history) this.costHistory.set({ productId: id, rows: history });
-    const applied = appliedParts(product, history ?? []);
+    /* A failed request says "niet geladen", never "niet bewaard". */
+    const applied = appliedParts(product, history);
     const newest = applied.row;
     const source = product.landedCostSource;
     /* The full list is loaded for the containers anyway; only a cost known by its number alone looks in it. */
@@ -866,14 +867,18 @@ export class ProductView {
     const current = productCostBasis(product);
     /* The stored cost reads in the basis it was applied on; today's calculation in today's. */
     const appliedBasis = newest && applied.matches ? entryCostBasis(newest, current) : current;
+    const sameBasis = sameCostBasis(appliedBasis, current);
+    /* The words of the rest of the chain ("per display"); the stored basis only when it is not today's. */
+    const per = `per ${productSalesUnit(product).singular}`;
     const orderText = view?.order.number ?? newest?.source ?? source;
     const cost = costBuild({
       storedEur: product.landedCostEur,
       applied,
       live: liveParts(line),
       order: view ? { id: view.order.id, number: view.order.number } : null,
-      appliedPer: costWords(appliedBasis).per,
-      livePer: costWords(current).per,
+      appliedPer: sameBasis ? per : costWords(appliedBasis).per,
+      livePer: per,
+      sameBasis,
       /* The same words as on the calculation, so both screens read alike. */
       appliedWords: {
         labels: view?.costLabels, hsCode: product.hsCode,

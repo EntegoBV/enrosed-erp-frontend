@@ -49,9 +49,9 @@ test('the screenshot case: a stored 8,318 without parts and a container that now
   assert.equal(rows.at(-1)?.sum, true);
   assert.equal(sum(rows.slice(0, -1).map((item) => item.eur)), 10.39);
 
-  /* The drift: + € 2,07 at 2 decimals. */
-  assert.deepEqual(build.drift, { orderId: 39, orderNumber: 'PO-2026-005', unitEur: 10.3858, differenceEur: 2.0678, absEur: 2.0678, up: true, per: 'per stolp' });
-  assert.equal(roundHalfUp(build.drift.absEur, 2), 2.07);
+  /* The drift: + € 2,07, the difference of the two figures on screen (10,39 − 8,32). */
+  assert.deepEqual(build.drift, { orderId: 39, orderNumber: 'PO-2026-005', unitEur: 10.3858, differenceEur: 2.07, absEur: 2.07, up: true,
+    per: 'per stolp', basisNote: null });
 });
 
 test('stored parts explain the stored cost, with an Afronding row when the rounded parts miss the total', () => {
@@ -128,11 +128,11 @@ test('display basis wording on both blocks and on the drift', () => {
   assert.equal(build.drift?.differenceEur, 2.5);
 });
 
-test('zero parts are left out, the drift needs half a cent, and the container words lead', () => {
-  assert.deepEqual(costRows({ goodsEur: 2, originEur: 0, freightEur: 0.004, dutyEur: 0, destinationEur: 0, enrosedEur: 0, separateEur: 0 }, 2.004),
-    [{ key: 'goodsEur', eur: 2 }, { key: 'total', eur: 2 }]);
-  assert.deepEqual(costDrift(8.318, 8.3229), { differenceEur: 0.0049, drift: false });
-  assert.deepEqual(costDrift(8.318, 8.313), { differenceEur: -0.005, drift: true });
+test('zero parts are left out, the drift needs a different figure on screen, and the container words lead', () => {
+  assert.deepEqual(costRows({ goodsEur: 2, originEur: 0, freightEur: 0.004, dutyEur: 0, destinationEur: 0, enrosedEur: 0, separateEur: 0.00004 }, 2.004),
+    [{ key: 'goodsEur', eur: 2 }, { key: 'freightEur', eur: 0 }, { key: 'total', eur: 2 }], 'a part below half a cent stays as 0,00');
+  assert.deepEqual(costDrift(8.318, 8.3229), { differenceEur: 0, drift: false });
+  assert.deepEqual(costDrift(8.318, 8.313), { differenceEur: -0.01, drift: true });
   const labels = { originCountry: 'China', loadingPort: 'Ningbo', destinationPort: 'Rotterdam', originCostsLabel: 'Lokale kosten China',
     originRoute: 'fabriek → Ningbo', seaFreightLabel: 'Zeevracht', seaFreightRoute: 'Ningbo → Rotterdam', destinationCostsLabel: 'Rotterdam → magazijn' };
   const live = liveParts(line())!;
@@ -146,4 +146,68 @@ test('zero parts are left out, the drift needs half a cent, and the container wo
   assert.equal(impliedDutyPct({ goodsEur: 5, originEur: 0, freightEur: 0, dutyEur: 0, destinationEur: 0, enrosedEur: 0, separateEur: 0 }), null);
   assert.equal(costDate('2026-08-23'), '23/08/2026');
   assert.equal(costDate(null), null);
+});
+
+test('the drift is the difference of the figures on screen', () => {
+  /* 8,315 and 8,32 both show as 8,32: no line that names a difference nobody sees. */
+  assert.deepEqual(costDrift(8.315, 8.32), { differenceEur: 0, drift: false });
+  assert.deepEqual(costDrift(8.3151, 8.3201), { differenceEur: 0, drift: false });
+  /* 8,3149 shows as 8,31 and 8,3151 as 8,32. */
+  assert.deepEqual(costDrift(8.3149, 8.3151), { differenceEur: 0.01, drift: true });
+  assert.deepEqual(costDrift(8.3149, 8.3251), { differenceEur: 0.02, drift: true });
+  const applied = appliedParts({ landedCostEur: 8.314 }, [row({ landedUnitEur: 8.314 })]);
+  const build = costBuild({ storedEur: 8.314, applied, live: liveParts(line()), order: ORDER, appliedPer: 'per stolp', livePer: 'per stolp' });
+  assert.equal(build.applied.at(-1)?.eur, 8.31);
+  assert.equal(build.live?.rows.at(-1)?.eur, 10.39);
+  assert.deepEqual([build.drift?.differenceEur, build.drift?.absEur, build.drift?.up], [2.08, 2.08, true], '10,39 − 8,31');
+  const same = costBuild({ storedEur: 8.315, applied: appliedParts({ landedCostEur: 8.315 }, [row({ landedUnitEur: 8.315 })]),
+    live: liveParts(line({ landedUnitEur: 8.32 })), order: ORDER, appliedPer: 'per stolp', livePer: 'per stolp' });
+  assert.equal(same.drift, null);
+});
+
+test('a cheap piece keeps its small parts as 0,00 rows; Afronding is only the rounding', () => {
+  const rows = costRows({ goodsEur: 0.3, originEur: 0.004, freightEur: 0.004, dutyEur: 0.004, destinationEur: 0.004, enrosedEur: 0.004, separateEur: 0 }, 0.32);
+  assert.deepEqual(rows, [{ key: 'goodsEur', eur: 0.3 }, { key: 'originEur', eur: 0 }, { key: 'freightEur', eur: 0 }, { key: 'dutyEur', eur: 0 },
+    { key: 'destinationEur', eur: 0 }, { key: 'enrosedEur', eur: 0 }, { key: 'rounding', eur: 0.02 }, { key: 'total', eur: 0.32 }]);
+  const small = costRows({ goodsEur: 0.0212, originEur: 0.0012, freightEur: 0.0038, dutyEur: 0.0026, destinationEur: 0.0018, enrosedEur: 0.0024, separateEur: 0 }, 0.033);
+  assert.deepEqual(small.map((item) => item.key), ['goodsEur', 'originEur', 'freightEur', 'dutyEur', 'destinationEur', 'enrosedEur', 'rounding', 'total']);
+  assert.deepEqual(small.slice(-2), [{ key: 'rounding', eur: 0.01 }, { key: 'total', eur: 0.03 }]);
+});
+
+test('a copy shows the parts it took over with the day it was copied; a re-apply reads as applied', () => {
+  const parts = { goodsEur: 7.3104, originEur: 0.2311, freightEur: 0.1802, dutyEur: 0.0722, destinationEur: 0.0175, enrosedEur: 0.5066, separateEur: 0 };
+  const copy = row({ kind: 'COPY', appliedAt: '2026-10-25', landedUnitEur: 8.318, appliedBy: 'emre', ...parts });
+  const applied = appliedParts({ landedCostEur: 8.318 }, [copy]);
+  assert.equal(applied.kind, 'COPY');
+  assert.ok(applied.parts, 'a copy keeps parts only when its cost is the source row\'s, so they explain it');
+  const build = costBuild({ storedEur: 8.318, applied, live: null, order: null, appliedPer: 'per stolp', livePer: 'per stolp' });
+  assert.equal(build.applied.at(-1)?.hint, 'overgenomen bij kopiëren 25/10/2026');
+  assert.equal(sum(build.applied.slice(0, -1).map((item) => item.eur)), build.applied.at(-1)?.eur);
+
+  const bare = appliedParts({ landedCostEur: 8.318 }, [row({ kind: 'COPY', appliedAt: '2026-10-25', appliedBy: 'emre' })]);
+  assert.deepEqual(costBuild({ storedEur: 8.318, applied: bare, live: null, order: null, appliedPer: 'per stolp', livePer: 'per stolp' }).applied[0].hint,
+    'Opbouw niet bewaard bij het kopiëren (25/10/2026).');
+
+  const again = appliedParts({ landedCostEur: 8.318 }, [row({ kind: 'REAPPLY', appliedAt: '2026-10-24', appliedBy: 'emre', ...parts })]);
+  assert.equal(costBuild({ storedEur: 8.318, applied: again, live: null, order: null, appliedPer: 'per stolp', livePer: 'per stolp' }).applied.at(-1)?.hint,
+    'toegepast 24/10/2026');
+});
+
+test('a stored cost on another basis gets no difference, only the basis it was applied on', () => {
+  const applied = appliedParts({ landedCostEur: 30 }, [row({ landedUnitEur: 30, salesUnit: 'DISPLAY', piecesPerUnit: 12 })]);
+  const build = costBuild({ storedEur: 30, applied, live: liveParts(line({ landedUnitEur: 2.7 })), order: ORDER,
+    appliedPer: 'per display van 12', livePer: 'per stolp', sameBasis: false });
+  assert.deepEqual(build.drift, { orderId: 39, orderNumber: 'PO-2026-005', unitEur: 2.7, differenceEur: null, absEur: null, up: false,
+    per: 'per stolp', basisNote: 'toegepast per display van 12' });
+  assert.equal(build.applied[0].label, 'Kostprijs per display van 12');
+  assert.equal(build.live?.rows.at(-1)?.label, 'Geland per stolp');
+});
+
+test('a history that did not load says so, never "niet bewaard"', () => {
+  const applied = appliedParts({ landedCostEur: 8.318 }, null);
+  assert.deepEqual([applied.loaded, applied.row, applied.parts], [false, null, null]);
+  const build = costBuild({ storedEur: 8.318, applied, live: liveParts(line()), order: ORDER, appliedPer: 'per stolp', livePer: 'per stolp' });
+  assert.deepEqual(build.applied, [{ label: 'Kostprijs per stolp', hint: 'Opbouw niet geladen.', eur: 8.32, sum: true }]);
+  assert.ok(build.live, 'the container block still shows');
+  assert.equal(appliedParts({ landedCostEur: 8.318 }, []).loaded, true);
 });

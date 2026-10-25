@@ -32,6 +32,8 @@ app-product-desk .pd-live__title { margin-top: 14px; }
 app-product-desk .pd-drift { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: #7c450b; font-size: 12.5px; line-height: 1.45; }
 app-product-desk .pd-drift a { color: inherit; font-weight: 650; }
 app-product-desk .pdk-kpi .pdk-drift, app-product-desk .pdk-flow__step .pdk-drift { color: var(--warn); font-weight: 650; }
+/* The order number inside it would take the muted colour of '.pdk-kpi span'. */
+app-product-desk .pdk-drift .pdk-nw { color: inherit; }
 app-product-desk .pd-chain__row--margin { background: color-mix(in srgb, var(--ok) 9%, var(--surface)); }
 app-product-desk .pd-chain__row--margin i { background: var(--ok); color: #fff; }
 app-product-desk .pd-chain__row--margin b { color: var(--ok); font-weight: 750; }

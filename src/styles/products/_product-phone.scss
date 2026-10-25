@@ -86,6 +86,8 @@ app-product-view .pph-live.on { color: var(--ok); font-weight: 600; }
 app-product-view .pph-warn { color: var(--warn); font-weight: 600; }
 /* The source container now calculates another cost: a short warn line under the cost figures. */
 app-product-view .pph-figs .pph-drift, app-product-view .pph-drift { color: var(--warn); font-weight: 600; }
+/* The order number inside it would take the muted colour of '.pph-figs span'. */
+app-product-view .pph-drift .pph-nw { color: inherit; }
 app-product-view .pph-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 app-product-view .ios-cell__trail .pph-wrap { text-align: right; }
 app-product-view .pph-points { padding: 0 16px 12px; }

@@ -247,7 +247,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </button>
           </div>
           @if (driftNotice(); as drift) {
-            <p class="pd-drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> ({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }}) · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+            <p class="pd-drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> @if (drift.basisNote; as note) {({{ note }})} @else {({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
           }
           <div class="pdk-flow">
             <div class="pdk-flow__step">
@@ -296,7 +296,8 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </div>
             @if (priceTab() === 'history') {
               <div class="pd-price__history">
-                <app-product-cost-history [productId]="product.id!" [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" [drift]="driftNotice()" />
+                <!-- No drift input: the card's own warn line already stands above. -->
+                <app-product-cost-history [productId]="product.id!" [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" />
               </div>
             } @else {
             <div class="pd-price__detail">
