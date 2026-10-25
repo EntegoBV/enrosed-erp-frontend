@@ -7,7 +7,7 @@ import type { LedgerSummary, PayeeLedger } from '../src/app/features/purchasing/
 import type { NacalcHeadline } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
 import type { PurchaseOrder, PurchaseOrderView } from '../src/app/core/api/models.ts';
 import {
-  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, calculationMadeOn, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance,
+  HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, calculationMadeOn, costsAppliedFor, costsSupersededCount, costsSupersededFor, editNextStep, isNewerSource, landedTile, linePriceText, nacalcGlance,
   nextStepCard, orderNumberLocked, parseTab,
   countWords, lineCount, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
   stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary, differenceCount, stepLabel,
@@ -338,6 +338,13 @@ test('costs count as applied when a product carries this container\'s number; a 
   assert.equal(costsSupersededFor(lines, products(['PO-2026-1000', null]), 'PO-2026-047'), true, 'numbers compare as numbers');
   assert.equal(costsSupersededFor(lines, products(['PO-2026-046', 'PO-2026-047']), 'PO-2026-047'), false);
   assert.equal(costsSupersededFor(lines, products(['handmatig', 'INK/9']), 'PO-2026-047'), false, 'sources that do not compare keep the rule');
+  /* Counted per product; a line that received nothing is never applied, so it pushes nothing aside. */
+  const counted = [{ productId: 1, quantity: 10 }, { productId: 1, quantity: 5 }, { productId: 2, quantity: 0 }, { productId: 3 }];
+  const sources = products(['PO-2026-048', 'PO-2026-049', 'PO-2026-050']);
+  assert.equal(costsSupersededCount(counted, sources, 'PO-2026-047'), 2);
+  assert.equal(costsSupersededFor([{ productId: 2, quantity: 0 }], sources, 'PO-2026-047'), false);
+  assert.deepEqual([isNewerSource('PO-2026-048', 'PO-2026-047'), isNewerSource('PO-2026-047', 'PO-2026-047'), isNewerSource(null, 'PO-2026-047')],
+    [true, false, false]);
 });
 
 /* ---- Acties ------------------------------------------------------------- */
@@ -360,7 +367,7 @@ test('Acties holds the old Afronden card and Meer acties, in order, per status',
   assert.equal(labels({ status: 'ONDERWEG', step: 'ONTVANGEN' })[0], 'Container ontvangen');
   assert.ok(labels({ partner: true }).includes('Conceptvoorschotfacturen maken'));
   assert.ok(labels({}).includes('Verkoopofferte maken'));
-  assert.ok(labels({ costsApplied: true }).includes('Opnieuw kostprijzen toepassen'));
+  assert.ok(labels({ costsApplied: true }).includes('Kostprijzen opnieuw toepassen'), 'the words of the desk and the step');
   const menu = actionsMenu(menuState());
   const item = (id: string, items = menu) => items.find((entry) => entry.id === id)!;
   assert.equal(item('step-back').label, 'Status terugzetten…');
@@ -396,11 +403,14 @@ test('products carrying an older cost of this container bring Kostprijzen back, 
   const apply = (extra: Partial<ActionsMenuState>) => actionsMenu(menuState({ status: 'ONTVANGEN', step: null, ...extra })).find((item) => item.id === 'apply')!.label;
   assert.equal(apply({ costsApplied: true, staleCount: 3 }), 'Kostprijzen opnieuw toepassen · 3 verschillen');
   assert.equal(apply({ costsApplied: true, staleCount: 1 }), 'Kostprijzen opnieuw toepassen · 1 verschil');
-  assert.equal(apply({ costsApplied: true, staleCount: 0 }), 'Opnieuw kostprijzen toepassen');
+  assert.equal(apply({ costsApplied: true, staleCount: 0 }), 'Kostprijzen opnieuw toepassen', 'one word order, with or without a count');
   assert.equal(apply({ costsApplied: false }), 'Kostprijzen toepassen');
   assert.deepEqual([differenceCount(1), differenceCount(1200)], ['1 verschil', '1.200 verschillen']);
   assert.deepEqual([stepLabel('KOSTPRIJZEN', true), stepLabel('KOSTPRIJZEN', false), stepLabel('BESTELLEN', true)],
     ['Kostprijzen opnieuw toepassen', 'Kostprijzen toepassen', 'Bestellen']);
+  /* The phone dock has no room for the whole phrase at 375 px: the sheet button's words. */
+  assert.deepEqual([stepLabel('KOSTPRIJZEN', true, true), stepLabel('KOSTPRIJZEN', false, true), stepLabel('VERTROKKEN', true, true)],
+    ['Opnieuw toepassen', 'Kostprijzen toepassen', 'Container vertrokken']);
 });
 
 /* ---- the save bar --------------------------------------------------------- */

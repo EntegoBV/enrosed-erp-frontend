@@ -1434,7 +1434,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
               </dl>
               @if (sheet.source) { <p class="hint">{{ sheet.source }}</p> }
               @if (sheet.missing) {
-                <p class="hint">{{ sheet.missing }}@if (sheet.product) { <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
+                <p class="hint">{{ sheet.missing }}@if (sheet.product) { · <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
               }
             } @else {
               <p class="hint">Opbouw laden…</p>
@@ -2437,29 +2437,32 @@ export class SalesEditor {
    * The cost frozen on the line, with its parts only when a history row of the product kept them
    * for exactly that cost (salesCostBuild): never today's container calculation under it.
    */
-  readonly costSheet = signal<{ productId: number; title: string; rows: SalesCostRow[]; source: string | null; missing: string | null;
+  readonly costSheet = signal<{ request: number; title: string; rows: SalesCostRow[]; source: string | null; missing: string | null;
     product: Product | null } | null>(null);
   /** The product's Kostprijshistoriek, stacked on the cost sheet. */
   readonly costHistoryOpen = signal(false);
+  /** Each opening of the cost sheet: a late answer fills only the sheet it was asked for, never another line's (same product or not). */
+  private costSheetRequests = 0;
 
   async openCostSheet(line: PricedLine): Promise<void> {
+    const request = ++this.costSheetRequests;
     this.costHistoryOpen.set(false);
-    this.costSheet.set({ productId: line.productId, title: line.description, rows: [], source: null, missing: null, product: null });
+    this.costSheet.set({ request, title: line.description, rows: [], source: null, missing: null, product: null });
     const [product, history] = await Promise.all([
       this.catalog.product(line.productId).catch(() => null),
-      this.catalog.productCostHistory(line.productId).catch(() => []),
+      /* Null, not []: a failed request says nothing about what the history kept. */
+      this.catalog.productCostHistory(line.productId).catch(() => null),
     ]);
     const order = this.view()?.order;
     const unit = this.lineUnit(line.productId);
     const build = salesCostBuild({ costEur: line.landedUnitCost, unit, docType: order?.docType, history,
-      containerSale: order?.sourcePurchaseOrderId != null && !order.partnerPurchaseOrderId });
+      currentCostEur: product?.landedCostEur, containerSale: order?.sourcePurchaseOrderId != null && !order.partnerPurchaseOrderId });
     const rows = [...build.rows];
     const advance = order && isAdvanceDocument(order);
     rows.push({ label: advance ? `Voorschot per ${unit.singular}` : 'Netto verkoop', eur: line.netUnitPrice });
     if (!advance && this.showsMargin()) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${unit.singular}`,
       eur: this.marginPerUnit(line), sum: true });
-    /* Another line's sheet may have opened meanwhile: this answer is only for its own. */
-    this.costSheet.update((sheet) => sheet?.productId === line.productId
+    this.costSheet.update((sheet) => sheet?.request === request
       ? { ...sheet, rows, source: build.source, missing: build.missing, product } : sheet);
   }
 

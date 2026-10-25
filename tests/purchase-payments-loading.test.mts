@@ -50,6 +50,8 @@ function setup() {
     loadError: signal<string | null>(null), families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
     stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''), applyFor: signal(null),
     loadDocuments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
+    /* The other suppliers' products of the lines (stale costs), fetched once the order shows: quiet here. */
+    refreshOtherProducts: async () => {},
     ui: { toast: (text: string, tone?: string) => { toasts.push([text, tone]); } },
     sourcing: {
       payments: (id: number) => pending(payments, id).promise,

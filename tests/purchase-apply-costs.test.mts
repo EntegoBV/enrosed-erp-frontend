@@ -9,6 +9,7 @@ import type { LandedCostLine, Product, PurchaseOrder, PurchaseOrderView, UnitNam
 import * as units from '../src/app/features/products/product-sales-unit.ts';
 import * as containers from '../src/app/features/purchasing/container-name.ts';
 import * as geo from '../src/app/core/api/geo.ts';
+import * as phoneModel from '../src/app/features/purchasing/purchase-phone-model.ts';
 
 // purchase-apply-costs and product-cost-basis import their siblings without an
 // extension, which node cannot resolve; run them through the TypeScript
@@ -25,6 +26,7 @@ const basisModule = await load('../src/app/features/products/product-cost-basis.
 const deskFormat = await load('../src/app/features/purchasing/purchase-desk-format.ts', { '../../core/api/geo': geo });
 const applyModule = await load('../src/app/features/purchasing/purchase-apply-costs.ts', {
   '../products/product-cost-basis': basisModule, './container-name': containers, './purchase-desk-format': deskFormat,
+  './purchase-phone-model': phoneModel,
 });
 const apply: typeof import('../src/app/features/purchasing/purchase-apply-costs.ts') = applyModule as any;
 /** The modules run in their own realm; compare their objects as plain data. */
@@ -194,8 +196,9 @@ function isolatedClass(text: string, file: string, className: string, names: Rea
 
 const editorSource = await readFile(new URL('../src/app/features/purchasing/purchase-editor.ts', import.meta.url), 'utf8');
 const editorJavascript = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['applyFor', 'applyBusy',
-  'applyOtherProducts', 'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save', 'savedOrder', 'saving', 'deletingOrder',
-  'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products', 'load']));
+  'otherProducts', 'lineProducts', 'refreshOtherProducts', 'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save',
+  'savedOrder', 'saving', 'deletingOrder', 'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products', 'load',
+  'costsApplied', 'costsStaleNow', 'costsSupersededNow', 'costsStaleText', 'costsStaleCount']));
 
 function view(order: Partial<PurchaseOrder> = {}): PurchaseOrderView {
   return { order: { id: 14, number: 'PO-2026-014', alias: 'container/2026/014', supplierId: 7, status: 'ONTVANGEN', notes: '', ...order },
@@ -214,7 +217,8 @@ function setup(start = view()) {
   let routeId = start.order.id;
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(editorJavascript, { exports, signal, computed, clearTimeout, applyCostsPlan: apply.applyCostsPlan,
-    applyCostsToast: apply.applyCostsToast, missingProductIds: apply.missingProductIds,
+    applyCostsToast: apply.applyCostsToast, missingProductIds: apply.missingProductIds, costsStale: apply.costsStale, staleNotice: apply.staleNotice,
+    costsSupersededCount: phoneModel.costsSupersededCount,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
   Object.assign(editor, {
@@ -303,10 +307,11 @@ test('a line kept from another supplier gets its product by id: its cost now, it
   release();
   await confirming;
   assert.deepEqual(toasts, [['Kostprijs van 4 producten gewijzigd, 2 ongewijzigd · 1 overgeslagen (niets ontvangen)', undefined]]);
-  /* Opening again fetches it again, never keeps a stale copy. */
+  /* Applying fetches it again (it got the cost too), and so does opening again: never a stale copy. */
+  assert.equal(calls.filter((call) => call === 'product 309').length, 2);
   editor.view.set(withLine());
   await editor.apply();
-  assert.equal(calls.filter((call) => call === 'product 309').length, 2);
+  assert.equal(calls.filter((call) => call === 'product 309').length, 3);
 });
 
 test('a product that cannot be fetched stays unknown, without basis words', async () => {
@@ -321,7 +326,7 @@ test('a product that cannot be fetched stays unknown, without basis words', asyn
   other.elsewhere.set(309, product(309, 'Long stem rose box display', 31.2, null));
   await other.editor.apply();
   assert.deepEqual(other.calls, ['unit-names', 'products']);
-  assert.deepEqual(plain(other.editor.applyOtherProducts()), []);
+  assert.deepEqual(plain(other.editor.otherProducts()), []);
 });
 
 test('unsaved edits are saved before the sheet opens; a failed save opens nothing', async () => {
@@ -389,6 +394,14 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   /* Afronden's action, and the warn line above the products when they carry an older cost of this container (cost-fix Q2). */
   assert.equal(desk.match(/\(click\)="apply\(\)"/g)?.length, 2, 'desk');
   assert.match(desk, /@if \(costsStaleText\(\); as stale\) \{[\s\S]*?\(click\)="apply\(\)">Opnieuw toepassen ›<\/button>/);
+  /* Beside a newer container no one-click apply: the server writes every line and would push its cost aside (G12). */
+  assert.match(desk, /@if \(!costsSupersededNow\(\)\) \{\s*<span class="wk-banner__actions"><button class="wk-link" type="button" \[disabled\]="saving\(\)" \(click\)="apply\(\)">Opnieuw toepassen ›<\/button><\/span>\s*\}/);
+  assert.match(desk, /@if \(costsStaleCount\(\); as stale\) \{ · \{\{ differenceCount\(stale\) \}\}\}<\/b>/);
+  assert.match(editorSource, /staleCount: this\.costsStaleCount\(\),/);
+  /* The Volgende stap tile and Afronden name the step alike (I-B7); Afronden adds the count when the costs step is back. */
+  assert.match(desk, /<span class="pdk-tile__value">\{\{ step === 'BIJBOEKEN' && booking\(\) \? 'Bezig…' : stepLabel\(step, costsApplied\(\)\) \}\}<\/span>/);
+  assert.match(desk, /\(click\)="runNextStep\(\)">\{\{ doneLabel\(step\) \}\}<\/button>/);
+  assert.match(desk, /const stale = step === 'KOSTPRIJZEN' \? this\.costsStaleCount\(\) : 0;\n    return `\$\{stepLabel\(step, this\.costsApplied\(\)\)\}\$\{stale \? ` · \$\{differenceCount\(stale\)\}` : ''\} ›`;/);
   /* The phone editor: Acties, the Nacalculatie and the read view's handed KOSTPRIJZEN step all open the sheet. */
   assert.match(editorSource, /case 'apply': this\.apply\(\); break;/);
   assert.match(editorSource, /\(applyCosts\)="apply\(\)"/);
@@ -396,6 +409,7 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   assert.doesNotMatch(editorSource, /applyCostsNow|applyingCosts/, 'no apply without the sheet');
   const phoneView = await readFile(new URL('../src/app/features/purchasing/purchase-view.ts', import.meta.url), 'utf8');
   assert.match(phoneView, /if \(step === 'KOSTPRIJZEN'\) this\.handOff\(step, null\);/, 'the read view skips its own question');
+  assert.match(phoneView, /\{\{ stale \}\}@if \(!costsSupersededNow\(\)\) \{ · <a class="mpo-stale__link" \[routerLink\]="\['\/purchasing', data\.order\.id, 'edit'\]" \[queryParams\]="\{ apply: 1, tab: 'producten' \}">Opnieuw toepassen ›<\/a>\}/);
   assert.doesNotMatch(editorSource, /ui\.confirm\(\s*\{\s*title: again/, 'the generic confirm is gone');
   assert.match(desk, /Zet de gelande kost per display of per stuk op de productkaarten\./);
 });
@@ -419,6 +433,10 @@ test('the sheet parses, says what applying does and keeps the wording rules', as
   assert.match(template, /\[attr\.aria-label\]="'Kostprijshistoriek van ' \+ row\.label"/);
   assert.match(template, /\{\{ row\.name \}\}@if \(row\.variant\) \{<span class="ac-row__variant"> · \{\{ row\.variant \}\}<\/span>\}/);
   assert.match(template, /geen wijziging/);
+  /* Rows that carry a newer container's cost: one warn line on top, the row tinted, 'nieuwer' beside its source. */
+  assert.match(template, /@if \(newerText\(\); as warn\) \{\s*<div class="wk-banner wk-banner--warn wk-banner--inset ac-sheet__warn" role="status"><span class="wk-banner__text">\{\{ warn \}\}<\/span><\/div>/);
+  assert.match(template, /\[attr\.data-newer\]="row\.newer \? '' : null"/);
+  assert.match(template, /@if \(row\.newer\) \{<span class="ac-fig__newer"> · nieuwer<\/span>\}/);
   assert.match(template, /niets ontvangen · blijft/);
   assert.match(template, /<app-product-cost-history-sheet \[product\]="product" \[currentOrderId\]="orderId\(\)"/);
   /* The words on screen: tags, bindings and control flow stripped. */
@@ -477,4 +495,60 @@ test('the catalogue price follows the cost by the server\'s rule, unless the pro
   assert.equal(apply.catalogueAt(8.318, 50), 12.48);
   /* A cost change too small to move the cent shows no catalogue line. */
   assert.equal(apply.applyCostRow(ORDER, line(401, 18, 8.3181), dome).catalogue, null);
+});
+
+/* ---- review fixes: a newer container on some products, another supplier's products ---- */
+
+test('stale beside a newer container: the line names those products and the sheet marks their rows', () => {
+  /* PO-2026-014 applied to 401 and 404, later PO-2026-015 to 403; then PO-2026-014's costs changed. */
+  const products = [
+    product(401, 'Rose in dome 15x30 single - Blue', 8.318, 'PO-2026-014'),
+    product(403, 'Rose in dome 20x40', 12.5, 'PO-2026-015'),
+    product(404, 'Rose in dome 10x20', 6.2, 'PO-2026-014'),
+    product(405, 'Hart in doos', 4.1, 'PO-2026-016'),
+    product(406, 'Bowl rood', 3, 'PO-2026-013'),
+  ];
+  const lines = [line(401, 18, 10.3858), line(403, 24, 11.2), line(404, 30, 6.1), line(405, 0, 0), line(406, 10, 3)];
+  const stale = apply.costsStale('PO-2026-014', lines, products);
+  const newer = phoneModel.costsSupersededCount(lines, products, 'PO-2026-014');
+  /* 405 received nothing, so applying never touches it; 406's container is older. */
+  assert.equal(newer, 1);
+  assert.equal(spaces(apply.staleNotice(stale, newer)),
+    '2 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07) · 1 met een nieuwere container');
+  assert.equal(phoneModel.readNextStep({ status: 'ONTVANGEN', lineCount: 5, stockBooked: true, costsApplied: true, stale: true, superseded: newer > 0 }),
+    null, 'the step stays back too');
+  const plan = apply.applyCostsPlan(ORDER, lines, products);
+  assert.deepEqual(plain(plan.rows.map((row: { productId: number; newer: boolean }) => [row.productId, row.newer])),
+    [[401, false], [403, true], [404, false], [405, false], [406, false]]);
+  assert.equal(plan.newer, 1);
+  assert.equal(apply.newerNotice(plan.newer), '1 product draagt de kostprijs van een nieuwere container: toepassen zet die terug naar deze container.');
+  assert.equal(apply.newerNotice(3), '3 producten dragen de kostprijs van een nieuwere container: toepassen zet die terug naar deze container.');
+  assert.equal(apply.newerNotice(0), null);
+});
+
+test('the editor counts over every line\'s product, another supplier\'s too, and holds the count back beside a newer container', async () => {
+  const display = product(309, 'Long stem rose box display', 31.2, 'PO-2026-014', { kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'roos' });
+  const { editor, elsewhere, calls } = setup({ ...view(), costing: { lines: [...LINES, line(309, 100, 31)] } } as unknown as PurchaseOrderView);
+  elsewhere.set(309, display);
+  editor.products.set(PRODUCTS);
+  /* The supplier's list alone misses product 309 of supplier 8, which carries this order's older cost. */
+  assert.equal(editor.costsStaleNow().count, 0);
+  await editor.refreshOtherProducts(14);
+  assert.deepEqual(calls, ['product 309']);
+  assert.deepEqual(plain(editor.costsStaleNow()), { count: 1, productIds: [309], largestEur: -0.2 });
+  assert.equal(spaces(editor.costsStaleText()), '1 product draagt een oudere kostprijs van deze container (▼ € 0,20)');
+  assert.equal(editor.costsStaleCount(), 1);
+  /* A newer container on product 302: the line says so and no count invites the one-click apply. */
+  editor.products.set(PRODUCTS.map((p) => p.id === 302 ? { ...p, landedCostSource: 'PO-2026-020' } : p));
+  assert.equal(editor.costsSupersededNow(), 1);
+  assert.equal(spaces(editor.costsStaleText()), '1 product draagt een oudere kostprijs van deze container (▼ € 0,20) · 1 met een nieuwere container');
+  assert.equal(editor.costsStaleCount(), 0);
+  /* An answer for another order never lands. */
+  editor.otherProducts.set([]);
+  const late = editor.refreshOtherProducts(14);
+  editor.view.set(view({ id: 16, number: 'PO-2026-016', alias: null }));
+  await late;
+  assert.deepEqual(plain(editor.otherProducts()), []);
+  /* Fetched once the order is in, not only when the sheet opens. */
+  assert.match(editorSource, /this\.view\.set\(view\);\n    void this\.refreshOtherProducts\(orderId\);/);
 });

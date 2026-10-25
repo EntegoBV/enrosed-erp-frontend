@@ -69,14 +69,17 @@ test('the document says where the cost was frozen', () => {
 });
 
 test('a container sale froze its cost without the Enrosed kost: the sheet says so and never lists it', () => {
-  /* The server's snapshot (10,3858 · 18 − 0,51 · 18) / 18 rounded from the line total: 9,8757 against 10,3858 − 0,5100 = 9,8758. */
+  /* The server's snapshot round4((money(T) − money(X)) / q) with T = 186,9444 unrounded (the row's 10,3858 per stolp), X = 9,18
+     (0,51 per stolp), q = 18: (186,94 − 9,18) / 18 = 9,8756, two units under 10,3858 − 0,5100 = 9,8758. */
   const row = entry(1, 10.3858, { ...LIVE, goodsEur: 7.3, enrosedEur: 0.51 });
-  const sheet = build({ costEur: 9.8757, containerSale: true, history: [row] });
+  const sheet = build({ costEur: 9.8756, containerSale: true, history: [row] });
   assert.ok(!sheet.rows.some((part) => part.label === '+ Enrosed kost'));
   assert.equal(sheet.rows.at(-1)!.hint, 'vastgelegd op deze offerte · excl. Enrosed kost');
   addsUp(sheet.rows);
+  assert.equal(sheet.rows.at(-2)!.label, '± Afronding');
+  assert.equal(sheet.rows.at(-2)!.eur, -0.0002);
   /* The same figure on a regular sale is not explained by that row. */
-  assert.equal(build({ costEur: 9.8757, history: [row] }).missing, 'Opbouw van deze kost niet bewaard.');
+  assert.equal(build({ costEur: 9.8756, history: [row] }).missing, 'Opbouw van deze kost niet bewaard.');
   /* A line added to the container sale later took the product's cost with the Enrosed kost in it. */
   const added = build({ costEur: 10.3858, containerSale: true, history: [row] });
   assert.ok(added.rows.some((part) => part.label === '+ Enrosed kost'));
@@ -85,6 +88,38 @@ test('a container sale froze its cost without the Enrosed kost: the sheet says s
   const unknown = build({ costEur: 7.1, containerSale: true, history: [row] });
   assert.equal(unknown.rows.at(-1)!.hint, 'vastgelegd op deze offerte · excl. Enrosed kost');
   assert.equal(unknown.missing, 'Opbouw van deze kost niet bewaard.');
+});
+
+test('a container snapshot matches within the rounding its quantity allows, no further', () => {
+  const at = (quantity: number | null, costEur: number) => build({ costEur, containerSale: true,
+    history: [entry(1, 10.3858, { ...LIVE, goodsEur: 7.3, enrosedEur: 0.51 }, { quantity })] }).missing;
+  /* q = 18: 0,00015 + 0,005 / 18, about 4 units of the fourth decimal either side of 9,8758. */
+  assert.deepEqual([at(18, 9.8754), at(18, 9.8756), at(18, 9.8762)], [null, null, null]);
+  assert.equal(at(18, 9.8753), 'Opbouw van deze kost niet bewaard.');
+  assert.equal(at(18, 9.8763), 'Opbouw van deze kost niet bewaard.');
+  /* Without a quantity, one unit. */
+  assert.equal(at(null, 9.8757), null);
+  assert.equal(at(null, 9.8756), 'Opbouw van deze kost niet bewaard.');
+});
+
+test('a line added to a container sale later took the product\'s cost: no "excl. Enrosed kost" when a row or the product carries it', () => {
+  /* Product 94: one start row at 8,3180 without parts, added by hand to a sale made from PO-2026-005. */
+  const seed = entry(1, 8.318, {}, { kind: 'SEED', appliedBy: 'system' });
+  const added = build({ containerSale: true, history: [seed] });
+  assert.equal(added.rows.at(-1)!.hint, 'vastgelegd op deze offerte');
+  assert.equal(added.missing, 'Opbouw van deze kost niet bewaard.');
+  /* The product's cost now counts too, with or without a history row for it. */
+  assert.equal(build({ containerSale: true, history: [], currentCostEur: 8.318 }).rows.at(-1)!.hint, 'vastgelegd op deze offerte');
+  /* A cost nothing carries is the container's own line: without the Enrosed kost. */
+  assert.equal(build({ costEur: 9.8756, containerSale: true, history: [seed], currentCostEur: 8.318 }).rows.at(-1)!.hint,
+    'vastgelegd op deze offerte · excl. Enrosed kost');
+});
+
+test('a history that did not load is not a history without parts', () => {
+  const sheet = build({ history: null });
+  assert.deepEqual(sheet.rows, [{ label: 'Gelande kost per stolp', hint: 'vastgelegd op deze offerte', eur: 8.318, sum: true }]);
+  assert.equal(sheet.source, null);
+  assert.equal(sheet.missing, 'Opbouw niet geladen.');
 });
 
 test('a copy or a vanished container still names where the parts came from', () => {
@@ -99,11 +134,14 @@ test('the phone editor and the desk show these rows and open the history on top;
   const desk = await read('sales-desk.ts');
   const open = /async openCostSheet\(line: PricedLine\): Promise<void> \{[\s\S]*?\n  \}\n/.exec(editor)?.[0] ?? '';
   assert.match(open, /salesCostBuild\(\{/);
-  assert.match(open, /this\.catalog\.productCostHistory\(line\.productId\)/);
+  assert.match(open, /this\.catalog\.productCostHistory\(line\.productId\)\.catch\(\(\) => null\)/, 'a failure is not an empty history');
+  /* A late answer lands only on the sheet it was asked for, not on another line of the same product. */
+  assert.match(open, /const request = \+\+this\.costSheetRequests;/);
+  assert.match(open, /this\.costSheet\.update\(\(sheet\) => sheet\?\.request === request/);
   assert.doesNotMatch(open, /purchaseOrders\(|costing\.lines/, 'never today\'s container calculation');
   for (const [name, text] of [['editor', editor], ['desk', desk]] as const) {
     assert.doesNotMatch(text, /Kostprijs uit calculatie/, name);
-    assert.match(text, /@if \(sheet\.missing\) \{\s*<p class="hint">\{\{ sheet\.missing \}\}@if \(sheet\.product\) \{ <button class="linklike" type="button" \(click\)="costHistoryOpen\.set\(true\)">Historiek ›<\/button>\}<\/p>/, name);
+    assert.match(text, /@if \(sheet\.missing\) \{\s*<p class="hint">\{\{ sheet\.missing \}\}@if \(sheet\.product\) \{ · <button class="linklike" type="button" \(click\)="costHistoryOpen\.set\(true\)">Historiek ›<\/button>\}<\/p>/, name);
     assert.match(text, /<app-product-cost-history-sheet \[product\]="product" \(closed\)="costHistoryOpen\.set\(false\)" \/>/, name);
   }
 });

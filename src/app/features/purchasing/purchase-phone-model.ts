@@ -312,9 +312,13 @@ export function differenceCount(count: number): string {
   return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'verschil' : 'verschillen'}`;
 }
 
-/** The step's button; Kostprijzen once applied says opnieuw, as Acties does. */
-export function stepLabel(step: PhoneStep, costsApplied: boolean): string {
-  return step === 'KOSTPRIJZEN' && costsApplied ? 'Kostprijzen opnieuw toepassen' : STEP_BUTTON[step];
+/**
+ * The step's button; Kostprijzen once applied says opnieuw, as Acties does. The phone dock is too
+ * narrow for the whole phrase at 375 px: it keeps 'Opnieuw toepassen', the words of the sheet's button.
+ */
+export function stepLabel(step: PhoneStep, costsApplied: boolean, dock = false): string {
+  if (step !== 'KOSTPRIJZEN' || !costsApplied) return STEP_BUTTON[step];
+  return dock ? 'Opnieuw toepassen' : 'Kostprijzen opnieuw toepassen';
 }
 
 /**
@@ -408,14 +412,27 @@ function compareNumbers(a: string, b: string): number | null {
   return a.trim().localeCompare(b.trim(), 'nl', { numeric: true });
 }
 
-/** Some product carries the costs of a newer container than this one. */
-export function costsSupersededFor(lines: readonly { productId: number }[], products: readonly Pick<Product, 'id' | 'landedCostSource'>[],
-  orderNumber: string): boolean {
+/** A product's cost source is a newer container than this one ('PO-2026-048' after 'PO-2026-047'). */
+export function isNewerSource(source: string | null | undefined, orderNumber: string): boolean {
+  return !!source && (compareNumbers(source, orderNumber) ?? 0) > 0;
+}
+
+/**
+ * The products of these lines that carry a newer container's costs: applying this one would push
+ * them aside. A line that received nothing is never applied (the server skips it), so it does not count.
+ */
+export function costsSupersededCount(lines: readonly { productId: number; quantity?: number }[],
+  products: readonly Pick<Product, 'id' | 'landedCostSource'>[], orderNumber: string): number {
   const byId = new Map(products.map((product) => [product.id, product]));
-  return lines.some((line) => {
-    const source = byId.get(line.productId)?.landedCostSource;
-    return !!source && (compareNumbers(source, orderNumber) ?? 0) > 0;
-  });
+  const ids = new Set(lines.filter((line) => (line.quantity ?? 1) > 0 && isNewerSource(byId.get(line.productId)?.landedCostSource, orderNumber))
+    .map((line) => line.productId));
+  return ids.size;
+}
+
+/** Some product carries the costs of a newer container than this one. */
+export function costsSupersededFor(lines: readonly { productId: number; quantity?: number }[], products: readonly Pick<Product, 'id' | 'landedCostSource'>[],
+  orderNumber: string): boolean {
+  return costsSupersededCount(lines, products, orderNumber) > 0;
 }
 
 /* ---- the editor's Acties menu ------------------------------------------- */
@@ -427,7 +444,10 @@ export interface ActionsMenuState {
   lineCount: number;
   stockBooked: boolean | null | undefined;
   costsApplied: boolean;
-  /** Products carrying an older cost of this container (costsStale().count); 0 or absent when none. */
+  /**
+   * Products carrying an older cost of this container (costsStale().count); 0 or absent when none, and
+   * 0 while a newer container sits on some of its products: applying would push those aside too.
+   */
   staleCount?: number;
   partner: boolean;
   canQuote: boolean;
@@ -456,7 +476,7 @@ export function actionsMenu(s: ActionsMenuState): ContextMenuItem[] {
   }
   items.push(
     { id: 'apply', label: (s.staleCount ?? 0) > 0 ? `Kostprijzen opnieuw toepassen · ${differenceCount(s.staleCount!)}`
-      : s.costsApplied ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
+      : s.costsApplied ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen',
       hint: 'Gelande kostprijs per display of per stuk naar de producten', iconName: 'tag' },
     { id: 'quote', label: s.partner ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken', iconName: 'sales', disabled: !s.canQuote },
     { id: 'copy', label: 'Deze container kopiëren', iconName: 'copy' },

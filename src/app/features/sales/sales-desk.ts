@@ -1121,7 +1121,7 @@ interface JourneyStep {
               </dl>
               @if (sheet.source) { <p class="hint">{{ sheet.source }}</p> }
               @if (sheet.missing) {
-                <p class="hint">{{ sheet.missing }}@if (sheet.product) { <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
+                <p class="hint">{{ sheet.missing }}@if (sheet.product) { · <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
               }
             } @else {
               <p class="hint">Opbouw laden…</p>

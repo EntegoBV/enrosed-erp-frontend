@@ -1,6 +1,7 @@
 import { costQuantity, costWords, otherSideCost, productCostBasis, type OtherSideCost } from '../products/product-cost-basis';
 import { containerName } from './container-name';
 import { stripColour, variantOf } from './purchase-desk-format';
+import { isNewerSource } from './purchase-phone-model';
 import type { LandedCostLine, Product, PurchaseOrder } from '../../core/api/models';
 
 /*
@@ -53,6 +54,8 @@ export interface ApplyCostRow {
    * (null without a cost before) and after applying, by the server's rule (cost + markup).
    */
   catalogue: { fromEur: number | null; toEur: number } | null;
+  /** The product carries a newer container's cost: applying this one puts the older cost back (the server does not check). */
+  newer: boolean;
   /** The product as the screen knows it, for its history. */
   product: Product | null;
 }
@@ -71,6 +74,8 @@ export interface ApplyCostsPlan {
   unknown: number;
   /** Lines that received nothing. */
   skipped: number;
+  /** Rows that carry a newer container's cost now (ApplyCostRow.newer). */
+  newer: number;
 }
 
 const cents4 = (value: number): number => Math.round(value * 10000);
@@ -146,6 +151,7 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
     other: basis ? otherSideCost(basis, newEur) : null,
     deltaEur, deltaPct, state,
     catalogue: catalogueChange(product, state, currentEur, newEur),
+    newer: state !== 'skipped' && !fromHere && isNewerSource(product?.landedCostSource, order.number),
     product,
   };
 }
@@ -188,12 +194,24 @@ function signedChange(eur: number): string {
   return `${eur > 0 ? '▲' : '▼'} ${amount}`;
 }
 
-/** "3 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)"; null when none does. */
-export function staleNotice(stale: Pick<CostsStale, 'count' | 'largestEur'>): string | null {
+/**
+ * "3 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)"; null when none does.
+ * `newer` counts the products a newer container sits on: applying again would push those aside too,
+ * so the line names them ("· 2 met een nieuwere container") and the screens offer no one-click apply.
+ */
+export function staleNotice(stale: Pick<CostsStale, 'count' | 'largestEur'>, newer = 0): string | null {
   if (stale.count <= 0) return null;
-  return stale.count === 1
+  const text = stale.count === 1
     ? `1 product draagt een oudere kostprijs van deze container (${signedChange(stale.largestEur)})`
     : `${stale.count.toLocaleString('nl-BE')} producten dragen een oudere kostprijs van deze container (tot ${signedChange(stale.largestEur)})`;
+  return newer > 0 ? `${text} · ${newer.toLocaleString('nl-BE')} met een nieuwere container` : text;
+}
+
+/** The apply sheet's warn line when rows carry a newer container's cost; null without one. */
+export function newerNotice(count: number): string | null {
+  if (count <= 0) return null;
+  return `${count === 1 ? '1 product draagt' : `${count.toLocaleString('nl-BE')} producten dragen`} de kostprijs van een nieuwere container: `
+    + 'toepassen zet die terug naar deze container.';
 }
 
 /**
@@ -213,7 +231,8 @@ export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLin
   const count = (...states: ApplyCostState[]): number => rows.filter((row) => states.includes(row.state)).length;
   const skipped = count('skipped');
   return { again: costsAppliedBefore(order, lines, products), rows, written: rows.length - skipped,
-    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped };
+    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped,
+    newer: rows.filter((row) => row.newer).length };
 }
 
 /** "1 product", "12 producten". */

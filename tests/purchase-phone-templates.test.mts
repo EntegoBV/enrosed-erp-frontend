@@ -245,7 +245,8 @@ test('the Nacalculatie\'s Kostprijzen toepassen says what it does on the phone: 
   // The read view: the button and the dock both open the step, and the step skips the view's question for the editor's sheet.
   const view = await read('app/features/purchasing/purchase-view.ts');
   assert.match(view, /\(applyCosts\)="openStep\('KOSTPRIJZEN'\)"/);
-  assert.match(view, /\(click\)="openStep\(step\)">\{\{ STEP_BUTTON\[step\] \}\}<\/button>/);
+  // Applied once, the dock says opnieuw like the card above it, in the words of the sheet's button (it fits at 375 px).
+  assert.match(view, /\(click\)="openStep\(step\)">\{\{ stepLabel\(step, costsApplied\(\), true\) \}\}<\/button>/);
   assert.match(view, /if \(step === 'KOSTPRIJZEN'\) this\.handOff\(step, null\);/);
   // The editor: its Nacalculatie opens the same sheet.
   assert.match(await read('app/features/purchasing/purchase-editor.ts'), /\(applyCosts\)="apply\(\)"/);

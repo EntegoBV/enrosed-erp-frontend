@@ -50,7 +50,7 @@ import { Icon } from '../../shared/icon';
 import { elementWidth } from '../../shared/workspace-layout';
 import { containerNumberHint } from './container-name';
 import { PAYEE_LABEL } from './purchase-payment-ledger';
-import { calculationMadeOn, costsSupersededFor, differenceCount, paymentTile, progressSteps, readNextStep, stepLabel, type PhoneStep } from './purchase-phone-model';
+import { calculationMadeOn, differenceCount, paymentTile, progressSteps, readNextStep, stepLabel, type PhoneStep } from './purchase-phone-model';
 
 type RailTab = 'order' | 'costs' | 'partner' | 'files' | 'done';
 
@@ -201,7 +201,7 @@ export class PurchaseDeskStyles {}
             @if (readStep(); as step) {
               <button class="pdk-tile pdk-tile--go" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">
                 <span class="pdk-tile__label">Volgende stap</span>
-                <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : STEP_BUTTON[step] }}</span>
+                <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : stepLabel(step, costsApplied()) }}</span>
                 <span class="pdk-tile__sub">@switch (step) {
                   @case ('BIJBOEKEN') { @if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad } }
                   @case ('KOSTPRIJZEN') { @if (costsStaleNow().count; as stale) { {{ differenceCount(stale) }} met de productkaarten } @else { zet de gelande kost op de productkaarten } }
@@ -297,7 +297,10 @@ export class PurchaseDeskStyles {}
               <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
               <div class="wk-banner wk-banner--warn wk-banner--inset desk-stale" role="status">
                 <span class="wk-banner__text">{{ keepAmounts(stale) }}</span>
-                <span class="wk-banner__actions"><button class="wk-link" type="button" [disabled]="saving()" (click)="apply()">Opnieuw toepassen ›</button></span>
+                <!-- Not while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
+                @if (!costsSupersededNow()) {
+                  <span class="wk-banner__actions"><button class="wk-link" type="button" [disabled]="saving()" (click)="apply()">Opnieuw toepassen ›</button></span>
+                }
               </div>
             }
 
@@ -955,11 +958,11 @@ export class PurchaseDeskStyles {}
                     }
                     <!-- The same step as the Volgende stap tile (readNextStep), so the two never disagree (I-B7). -->
                     @if (readStep(); as step) {
-                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : stepLabel(step, costsApplied()) + ' ›' }}</button>
+                      <button class="btn btn--primary btn--block desk-done__cta" type="button" [disabled]="step === 'BIJBOEKEN' && booking()" (click)="runNextStep()">{{ doneLabel(step) }}</button>
                     }
                     <div class="desk-actions">
                       @if (readStep() !== 'KOSTPRIJZEN') {
-                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}@if (costsStaleNow().count; as stale) { · {{ differenceCount(stale) }}}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}@if (costsStaleCount(); as stale) { · {{ differenceCount(stale) }}}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
                       }
                       <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)"><span><b>{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</b><small>{{ data.order.partnerCustomerId ? 'Eén conceptfactuur per voorschottermijn, nog niet verstuurd.' : 'Dezelfde producten en aantallen op een nieuwe offerte voor een klant.' }}</small></span><i aria-hidden="true">›</i></button>
@@ -1447,7 +1450,7 @@ export class PurchaseDeskStyles {}
     .desk-milestones i{display:grid;width:22px;height:22px;place-items:center;border:2px solid var(--line-strong);border-radius:50%;color:#fff;font-size:11px;font-style:normal;font-weight:800;background:var(--surface)}
     .desk-milestones li.is-done i{border-color:var(--ok);background:var(--ok)}.desk-milestones li.is-now i{border-color:var(--rose)}
     .desk-milestones span{display:grid}.desk-milestones b{font-size:13px}.desk-milestones li:not(.is-done):not(.is-now) b{color:var(--muted);font-weight:600}.desk-milestones small{color:var(--muted);font-size:11px}
-    .desk-done__cta{min-height:46px;font-size:14px}
+    .desk-done__cta{min-height:46px;font-size:14px;white-space:normal;text-wrap:balance}
   `],
 })
 export class PurchaseDesk extends PurchaseEditor {
@@ -1476,11 +1479,16 @@ export class PurchaseDesk extends PurchaseEditor {
     const data = this.view();
     if (!data) return null;
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number),
-      stale: this.costsStaleNow().count > 0 });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
   });
   readonly differenceCount = differenceCount;
   readonly stepLabel = stepLabel;
+  /** Afronden's button: the tile's words, and the count when the costs step is back because products differ. */
+  doneLabel(step: PhoneStep): string {
+    if (step === 'BIJBOEKEN' && this.booking()) return 'Bezig…';
+    const stale = step === 'KOSTPRIJZEN' ? this.costsStaleCount() : 0;
+    return `${stepLabel(step, this.costsApplied())}${stale ? ` · ${differenceCount(stale)}` : ''} ›`;
+  }
 
   /** The next-step tile: one method, so the template keeps a single apply() button (Afronden). */
   runNextStep(): void {

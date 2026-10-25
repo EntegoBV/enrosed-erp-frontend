@@ -61,6 +61,8 @@ function setup() {
     families: signal([]), products: signal([]), categories: signal([]), freightRates: signal([]),
     stockLocations: signal([]), supplier: signal(null), savedOrder: signal(''), applyFor: signal(null),
     loadPayments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
+    /* The other suppliers' products of the lines (stale costs), fetched once the order shows: quiet here. */
+    refreshOtherProducts: async () => {},
     sourcing: {
       documents: (id: number) => { calls.push(`GET documents ${id}`); return api.documents(id); },
       purchaseOrder: (id: number) => { calls.push(`GET order ${id}`); return api.purchaseOrder(id); },

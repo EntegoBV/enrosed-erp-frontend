@@ -3,7 +3,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
-import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purchase-apply-costs';
+import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan } from './purchase-apply-costs';
 
 /**
  * Kostprijzen toepassen: before a container's costs go onto the catalogue,
@@ -22,12 +22,16 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
       <div body class="ac-sheet" [attr.inert]="busy() ? '' : null">
         <!-- Existing sales lines keep the cost frozen on them (SalesOrderService.withCostSnapshots); only new lines take this one. -->
         <p class="ac-sheet__intro">De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost.</p>
+        <!-- The server writes every received line, also over a newer container's cost: say so before the button. -->
+        @if (newerText(); as warn) {
+          <div class="wk-banner wk-banner--warn wk-banner--inset ac-sheet__warn" role="status"><span class="wk-banner__text">{{ warn }}</span></div>
+        }
         @if (!p.rows.length) {
           <p class="ac-sheet__empty">Deze container heeft nog geen producten.</p>
         }
         <ul class="ac-rows">
           @for (row of p.rows; track row.productId) {
-            <li class="ac-row" [attr.data-state]="row.state">
+            <li class="ac-row" [attr.data-state]="row.state" [attr.data-newer]="row.newer ? '' : null">
               <b class="ac-row__name">{{ row.name }}@if (row.variant) {<span class="ac-row__variant"> · {{ row.variant }}</span>}</b>
               @if (row.product) {
                 <button class="linklike ac-row__history" type="button" [attr.aria-label]="'Kostprijshistoriek van ' + row.label"
@@ -46,7 +50,7 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
                   <div class="ac-fig">
                     <small>Nu</small>
                     <b>{{ row.currentEur !== null ? (row.currentEur | eur: 4) : '—' }}</b>
-                    <span>{{ row.state === 'unknown' ? 'niet geladen' : (row.currentSource ?? 'nog geen kostprijs') }}</span>
+                    <span>{{ row.state === 'unknown' ? 'niet geladen' : (row.currentSource ?? 'nog geen kostprijs') }}@if (row.newer) {<span class="ac-fig__newer"> · nieuwer</span>}</span>
                   </div>
                   <div class="ac-fig ac-fig--new">
                     <small>Nieuw</small>
@@ -96,6 +100,9 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     .ac-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name link' 'basis basis' 'figs figs';
       align-items: baseline; gap: 4px 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .ac-row[data-state='unchanged'], .ac-row[data-state='skipped'] { background: var(--surface-2); }
+    .ac-sheet__warn { margin: 0; }
+    .ac-row[data-newer] { border-color: #f0dcbc; background: var(--warn-soft); }
+    .ac-fig .ac-fig__newer { color: var(--warn); font-weight: 700; }
     .ac-row[data-state='skipped'] .ac-row__name { color: var(--muted); }
     .ac-row__name { grid-area: name; min-width: 0; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
     .ac-row__variant { color: var(--rose-dark); font-weight: 650; }
@@ -140,6 +147,7 @@ export class PurchaseApplyCostsSheet {
   readonly cancel = output<void>();
 
   readonly button = computed(() => applyCostsButton(this.plan()));
+  readonly newerText = computed(() => newerNotice(this.plan().newer));
   /** The row whose product history is open on top of this sheet. */
   readonly historyFor = signal<ApplyCostRow | null>(null);
 

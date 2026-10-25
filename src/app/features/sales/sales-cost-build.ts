@@ -20,7 +20,7 @@ export interface SalesCostBuild {
   rows: SalesCostRow[];
   /** Where the parts come from: "Opbouw uit PO-2026-005 · toegepast 23/08/2026"; null without parts. */
   source: string | null;
-  /** No parts for this cost: the muted line beside 'Historiek ›'; null when the parts show. */
+  /** No parts for this cost (or the history did not load): the muted line beside 'Historiek ›'; null when the parts show. */
   missing: string | null;
 }
 
@@ -34,8 +34,10 @@ export interface SalesCostInput {
    * kost (SalesOrderService, container quote), a line added later took the product's cost with it.
    */
   containerSale: boolean;
-  /** The product's cost history, newest first. */
-  history: readonly ProductCostHistoryEntry[];
+  /** The product's cost history, newest first; null when it could not be loaded (not the same as none kept). */
+  history: readonly ProductCostHistoryEntry[] | null;
+  /** The cost the product carries now, which a line added later copies; null or absent when not known. */
+  currentCostEur?: number | null;
 }
 
 const cents4 = (value: number): number => Math.round(value * 10000);
@@ -54,6 +56,16 @@ function day(iso: string | null | undefined): string {
 }
 
 /**
+ * How far a container sale's snapshot may lie from a row's cost minus its Enrosed kost, in units of the
+ * fourth decimal. The snapshot is round4((money(total) − money(Enrosed)) / q), the row's cost
+ * round4(unrounded total / q) and its Enrosed part round4(money(Enrosed) / q): three roundings of half a
+ * unit each, and the total's half cent spread over the q units. Without a quantity, one unit.
+ */
+function snapshotSlack(quantity: number | null | undefined): number {
+  return quantity && quantity > 0 ? 1.5 + 50 / quantity : 1;
+}
+
+/**
  * The row that explains the cost: the newest with parts whose cost equals it, or (a container sale)
  * whose cost without the Enrosed kost equals it. The server rounds that snapshot from the line total,
  * the history its parts one by one, so the two may differ in the fourth decimal; Afronding closes it.
@@ -65,17 +77,22 @@ function explaining(costEur: number, containerSale: boolean, history: readonly P
   if (full) return { row: full, withoutEnrosed: false };
   if (!containerSale) return null;
   const without = kept.find((row) => (row.enrosedEur ?? 0) > 0
-    && Math.abs(cents4(row.landedUnitEur) - cents4(row.enrosedEur!) - cents4(costEur)) <= 1);
+    && Math.abs(cents4(row.landedUnitEur) - cents4(row.enrosedEur!) - cents4(costEur)) <= snapshotSlack(row.quantity));
   return without ? { row: without, withoutEnrosed: true } : null;
 }
 
 export function salesCostBuild(input: SalesCostInput): SalesCostBuild {
-  const { costEur, unit, containerSale } = input;
-  const found = explaining(costEur, containerSale, input.history);
-  /* A container sale's own lines leave the Enrosed kost out; a line matched with it in says nothing of the kind. */
-  const excluded = found ? found.withoutEnrosed : containerSale;
+  const { costEur, unit, containerSale, history } = input;
+  const found = history ? explaining(costEur, containerSale, history) : null;
+  /* A container sale's own lines leave the Enrosed kost out. A line added later copied the product's cost
+     with it in: a cost the product carries, or carried (any history row, parts or not), says nothing of the kind. */
+  const carried = (value: number | null | undefined): boolean => value != null && cents4(value) === cents4(costEur);
+  const excluded = found ? found.withoutEnrosed
+    : containerSale && !carried(input.currentCostEur) && !(history ?? []).some((row) => carried(row.landedUnitEur));
   const frozen = `vastgelegd op deze ${DOC_WORD[input.docType ?? 'OFFERTE']}${excluded ? ' · excl. Enrosed kost' : ''}`;
   const total: SalesCostRow = { label: `Gelande kost per ${unit.singular}`, hint: frozen, eur: costEur, sum: true };
+  /* A failed request is no proof that nothing was kept. */
+  if (!history) return { rows: [total], source: null, missing: 'Opbouw niet geladen.' };
   if (!found) return { rows: [total], source: null, missing: 'Opbouw van deze kost niet bewaard.' };
 
   const { row, withoutEnrosed } = found;

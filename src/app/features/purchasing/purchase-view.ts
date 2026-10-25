@@ -61,7 +61,7 @@ import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
 import { costsStale, staleNotice } from './purchase-apply-costs';
 import {
-  STEP_BUTTON, costsAppliedFor, costsSupersededFor, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep,
+  costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -280,7 +280,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               @if (costsStaleText(); as stale) {
                 <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
                 <div class="wk-banner wk-banner--warn wk-banner--inset mpo-stale" role="status">
-                  <span class="wk-banner__text">{{ stale }} · <a class="mpo-stale__link" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ apply: 1, tab: 'producten' }">Opnieuw toepassen ›</a></span>
+                  <!-- No link while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
+                  <span class="wk-banner__text">{{ stale }}@if (!costsSupersededNow()) { · <a class="mpo-stale__link" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ apply: 1, tab: 'producten' }">Opnieuw toepassen ›</a>}</span>
                 </div>
               }
 
@@ -569,7 +570,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
           @if (readStep(); as step) {
             <a class="btn mpo-dock__edit" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ tab: tabParam(activeTab()) }">
               <app-icon name="pencil" [size]="17" />Bewerken</a>
-            <button class="btn btn--primary erp-workspace__primary" type="button" (click)="openStep(step)">{{ STEP_BUTTON[step] }}</button>
+            <button class="btn btn--primary erp-workspace__primary" type="button" (click)="openStep(step)">{{ stepLabel(step, costsApplied(), true) }}</button>
           } @else {
             <a class="btn btn--primary erp-workspace__primary" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="editQuery()">Bewerken</a>
           }
@@ -1419,9 +1420,9 @@ export class PurchaseView {
 
   /* ---- the next step: asked here, run by the editor --------------------- */
 
-  readonly STEP_BUTTON = STEP_BUTTON;
   readonly nextStepCard = nextStepCard;
-  private readonly costsApplied = computed(() => {
+  readonly stepLabel = stepLabel;
+  readonly costsApplied = computed(() => {
     const data = this.view();
     return !!data && costsAppliedFor(data.costing.lines, this.products(), data.order.number);
   });
@@ -1429,15 +1430,19 @@ export class PurchaseView {
     const data = this.view();
     if (!data) return null;
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: costsSupersededFor(data.costing.lines, this.products(), data.order.number),
-      stale: this.costsStaleNow().count > 0 });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
   });
   /** Products that carry an older cost of this container than it calculates now (the editor's rule). */
   readonly costsStaleNow = computed(() => {
     const data = this.view();
     return data ? costsStale(data.order.number, data.costing.lines, this.products()) : { count: 0, productIds: [], largestEur: 0 };
   });
-  readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow()));
+  /** Products that carry a newer container's cost: no one-click apply then (the editor's rule). */
+  readonly costsSupersededNow = computed(() => {
+    const data = this.view();
+    return data ? costsSupersededCount(data.costing.lines, this.products(), data.order.number) : 0;
+  });
+  readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow(), this.costsSupersededNow()));
   readonly stepOpen = signal<AskedStep | null>(null);
 
   /** Kostprijzen toepassen skips this view's question: the editor opens its sheet with every product's cost now and next. */
