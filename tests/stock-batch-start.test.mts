@@ -1,0 +1,156 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { readFile } from 'node:fs/promises';
+import { batchFormat } from '../src/app/core/api/stock-batch-units.ts';
+import type {
+  StockBatchBackfillReport, StockBatchBackfillRow, StockBatchCheckRow, StockBatchStatus,
+} from '../src/app/core/api/stock-batch-models.ts';
+import {
+  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, checkLinkShown, checkRowText, flaggedRows, notBookedText, productsText,
+  repairedCount, signedCount, statusBanner,
+} from '../src/app/features/products/stock-batch-start.ts';
+
+/* Intl writes a no-break space between € and the figure; compare with a plain space. */
+const plain = (text: string) => text.replace(/[\u00a0\u202f]/g, ' ');
+const fmt = batchFormat({ singular: 'stuk', plural: 'stuks' });
+
+function row(overrides: Partial<StockBatchBackfillRow> = {}): StockBatchBackfillRow {
+  return { productId: 94, sku: 'DOM-15X30-BL', name: 'Dome 15x30 blauw', unitPieces: 12, stockPieces: 1260, openingPieces: 0,
+    unassignedPieces: 0, valueEur: 873.39, flags: [], notes: [],
+    batches: [{ purchaseOrderId: 39, orderNumber: 'PO-2026-005', kind: 'RECEIPT', owner: 'OWN', piecesIn: 6000, piecesLeft: 1260,
+      unitCostEur: 8.318, costState: 'APPLIED' }], ...overrides };
+}
+
+function report(overrides: Partial<StockBatchBackfillReport> = {}): StockBatchBackfillReport {
+  return { dryRun: true, startedAt: null, products: 212, batches: 431, openingPieces: 1840, unassignedPieces: 6, valueEur: 184220.1,
+    rows: [], notBooked: [], ...overrides };
+}
+
+function status(overrides: Partial<StockBatchStatus> = {}): StockBatchStatus {
+  return { started: true, paused: false, startedAt: '2026-10-26T09:12:00Z', startedBy: 'emre', pausedAt: null, pausedBy: null,
+    differences: 0, ...overrides };
+}
+
+function check(overrides: Partial<StockBatchCheckRow> = {}): StockBatchCheckRow {
+  return { productId: 94, sku: 'DOM-15X30-BL', name: 'Dome 15x30 blauw', unitPieces: 1, stockPieces: 1260, batchPieces: 1250,
+    unassignedPieces: 0, differencePieces: -10, ...overrides };
+}
+
+test('backfillFigures: Producten, Batches, Beginvoorraad and Zonder batch in pieces, Waarde in whole euros', () => {
+  const figures = backfillFigures(report(), fmt);
+  assert.deepEqual(figures.map((figure) => figure.label), ['Producten', 'Batches', 'Beginvoorraad', 'Zonder batch', 'Waarde']);
+  assert.deepEqual(figures.map((figure) => plain(figure.value)), ['212', '431', '1.840 st', '6 st', '€ 184.220']);
+  /* The cents stay one hover away; the value is own batches only. */
+  assert.equal(plain(figures[4].title ?? ''), '€ 184.220,10 · eigen batches, partner niet');
+  assert.deepEqual(backfillFigures(report({ products: 0, batches: 0, openingPieces: 0, unassignedPieces: 0, valueEur: 0 }), fmt)
+    .map((figure) => plain(figure.value)), ['0', '0', '0 st', '0 st', '€ 0']);
+});
+
+test('flaggedRows keeps the server order and drops rows without a flag', () => {
+  const rows = [row({ productId: 1, flags: ['OPENING'] }), row({ productId: 2 }), row({ productId: 3, flags: ['PARTNER'] })];
+  assert.deepEqual(flaggedRows(report({ rows })).map((item) => item.productId), [1, 3]);
+  assert.equal(FLAGGED_LIMIT, 30);
+});
+
+test('backfillRowText: Beginvoorraad at the card cost, negative notes, kost onbekend, partner pieces', () => {
+  const opening = row({ flags: ['OPENING'], openingPieces: 100, batches: [
+    { purchaseOrderId: null, orderNumber: null, kind: 'OPENING', owner: 'OWN', piecesIn: 100, piecesLeft: 100, unitCostEur: 2.5, costState: 'CARD' },
+  ] });
+  assert.deepEqual(backfillRowText(opening, fmt), { title: 'DOM-15X30-BL · Dome 15x30 blauw', sub: 'Beginvoorraad 100 st · kost van productkaart' });
+
+  const negative = row({ flags: ['NEGATIVE'], unassignedPieces: 3, notes: ['Negatief op Tica Brussel: −3'] });
+  assert.equal(backfillRowText(negative, fmt).sub, 'Negatief op Tica Brussel: −3');
+  assert.equal(backfillRowText(row({ flags: ['NEGATIVE'], unassignedPieces: 3 }), fmt).sub, 'Negatief: −3 st', 'no note from the server');
+
+  const everything = row({ sku: 'VAS-S', name: 'Ceramic vase S', unitPieces: 1, flags: ['OPENING', 'NEGATIVE', 'NO_COST', 'PARTNER'],
+    openingPieces: 1500, unassignedPieces: 6, notes: ['Negatief op Showroom: −6', 'Negatief op Tica Brussel: −2'], batches: [
+      { purchaseOrderId: null, orderNumber: null, kind: 'OPENING', owner: 'OWN', piecesIn: 1500, piecesLeft: 1500, unitCostEur: null, costState: 'NONE' },
+      { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 100, piecesLeft: 60, unitCostEur: 3.1, costState: 'APPLIED' },
+      { purchaseOrderId: 46, orderNumber: 'PO-2026-013', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 50, piecesLeft: 50, unitCostEur: 3.1, costState: 'CALCULATED' },
+    ] });
+  /* An opening batch without a card cost does not claim "kost van productkaart"; NO_COST says it. */
+  assert.equal(backfillRowText(everything, fmt).sub,
+    'Beginvoorraad 1.500 st · Negatief op Showroom: −6 · Negatief op Tica Brussel: −2 · kost onbekend · partner 110 st');
+
+  assert.equal(backfillRowText(row({ sku: '', flags: ['NO_COST'] }), fmt).title, 'Dome 15x30 blauw', 'no SKU, no leading dot');
+});
+
+test('backfillRowValue: whole euros of own batches, "—" when nothing in the row has a cost', () => {
+  assert.equal(plain(backfillRowValue(row(), fmt)), '€ 873');
+  assert.equal(backfillRowValue(row({ flags: ['OPENING', 'NO_COST'], valueEur: 0 }), fmt), '—');
+  assert.equal(plain(backfillRowValue(row({ flags: ['NO_COST'], valueEur: 120.4 }), fmt)), '€ 120', 'a partly known value still shows');
+  assert.equal(plain(backfillRowValue(row({ flags: ['PARTNER'], valueEur: 0 }), fmt)), '€ 0', 'only partner pieces: own value is 0');
+});
+
+test('notBookedText names every received container that was never booked', () => {
+  assert.equal(notBookedText(report()), null);
+  assert.equal(notBookedText(report({ notBooked: [{ purchaseOrderId: 51, orderNumber: 'PO-2026-019' }, { purchaseOrderId: 52, orderNumber: 'PO-2026-020' }] })),
+    'Niet bijgeboekt: PO-2026-019, PO-2026-020');
+});
+
+test('checkRowText: voorraad, batches, zonder batch and the signed difference', () => {
+  assert.deepEqual(checkRowText(check(), fmt), { title: 'DOM-15X30-BL · Dome 15x30 blauw',
+    sub: 'voorraad 1.260 · batches 1.250 · zonder batch 0', value: '−10' });
+  assert.equal(checkRowText(check({ batchPieces: 1268, unassignedPieces: 6, differencePieces: 2 }), fmt).value, '+2');
+  /* A display product reads in displays plus loose pieces, the difference too. */
+  const display = checkRowText(check({ unitPieces: 12, stockPieces: 1264, batchPieces: 1254, unassignedPieces: 0, differencePieces: -10 }), fmt);
+  assert.equal(display.sub, 'voorraad 105 + 4 los · batches 104 + 6 los · zonder batch 0');
+  assert.equal(display.value, '−10 los');
+  assert.equal(signedCount(14, 12, fmt), '+1 + 2 los');
+  assert.equal(signedCount(0, 12, fmt), '0');
+  assert.equal(signedCount(-24, 12, fmt), '−2');
+});
+
+test('statusBanner: not started, paused, differences, and nothing when the batches run clean', () => {
+  assert.equal(statusBanner(null), null, 'no status (failed or older backend): nothing about batches');
+  assert.deepEqual(statusBanner(status({ started: false, startedAt: null, startedBy: null })),
+    { text: 'Batches zijn nog niet gestart.', link: 'Batches opbouwen ›', mode: 'start', warn: false });
+  assert.deepEqual(statusBanner(status({ paused: true, pausedAt: '2026-10-27T08:00:00Z', pausedBy: 'emre', differences: 2 })),
+    { text: 'Batches staan op pauze.', link: 'Bekijken ›', mode: 'check', warn: true });
+  assert.deepEqual(statusBanner(status({ differences: 2 })),
+    { text: '2 producten wijken af van hun batches', link: 'Bekijken ›', mode: 'check', warn: true });
+  assert.equal(statusBanner(status({ differences: 1 }))?.text, '1 product wijkt af van zijn batches');
+  assert.equal(statusBanner(status({ differences: 1200 }))?.text, '1.200 producten wijken af van hun batches');
+  assert.equal(statusBanner(status()), null);
+});
+
+test('checkLinkShown only while the batches run clean, so pause stays one click away', () => {
+  assert.equal(checkLinkShown(status()), true);
+  assert.equal(checkLinkShown(status({ differences: 2 })), false, 'the banner offers Bekijken');
+  assert.equal(checkLinkShown(status({ paused: true })), false, 'the banner offers Bekijken');
+  assert.equal(checkLinkShown(status({ started: false })), false);
+  assert.equal(checkLinkShown(null), false);
+});
+
+test('toast counts: products text and how many products Herstellen cleared', () => {
+  assert.equal(productsText(1, fmt), '1 product');
+  assert.equal(productsText(212, fmt), '212 producten');
+  assert.equal(productsText(1500, fmt), '1.500 producten');
+  const before = [check({ productId: 97 }), check({ productId: 113 })];
+  assert.equal(repairedCount(before, []), 2);
+  assert.equal(repairedCount(before, [check({ productId: 113 })]), 1);
+  assert.equal(repairedCount([], []), 0);
+});
+
+test('the module stays node-loadable: only type imports from src', async () => {
+  const source = await readFile(new URL('../src/app/features/products/stock-batch-start.ts', import.meta.url), 'utf8');
+  for (const line of source.split('\n').filter((item) => /^import /.test(item))) assert.match(line, /^import type /, line);
+});
+
+test('the stock page: status on load, banner on desk and phone, quiet check link, one sheet host', async () => {
+  const page = await readFile(new URL('../src/app/features/products/stock-page.ts', import.meta.url), 'utf8');
+  assert.match(page, /this\.stockBatches\.status\(\)/);
+  assert.match(page, /<div class="wk-banner wk-banner--inset sk-batches" \[class\.wk-banner--warn\]="banner\.warn"/);
+  assert.match(page, /<div class="ios-banner skp-batches" \[class\.ios-banner--info\]="!banner\.warn"/);
+  assert.equal(page.match(/>Batches controleren</g)?.length, 2, 'desk subbar and phone foot');
+  assert.equal(page.match(/<app-stock-batch-start-sheet /g)?.length, 1);
+  assert.match(page, /\(changed\)="loadBatchStatus\(\)"/);
+  const sheet = await readFile(new URL('../src/app/features/products/stock-batch-start-sheet.ts', import.meta.url), 'utf8');
+  assert.match(sheet, /api\.backfill\(true\)/);
+  assert.match(sheet, /api\.backfill\(false\)/);
+  assert.match(sheet, /api\.repair\(\[\]\)/);
+  assert.match(sheet, /Proef: er wordt nog niets bewaard\./);
+  assert.match(sheet, /Geen verschillen\./);
+  assert.match(sheet, /'Batches gepauzeerd' : 'Batches hervat'/);
+  assert.doesNotMatch(sheet, /reset\(/, 'no screen calls the reset');
+});

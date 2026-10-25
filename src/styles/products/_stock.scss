@@ -30,6 +30,14 @@ app-stock-page .sk-sum__warn strong { color: var(--warn); }
   app-stock-page .sk-sum > div:nth-child(n + 4) { border-top: 1px solid var(--line); }
 }
 
+/* ---- batches (2026-10-25): the banner under the header and the quiet check link ---- */
+app-stock-page .sk-batches { margin-bottom: 14px; }
+app-stock-page .sk-batches .wk-link { flex: none; white-space: nowrap; }
+app-stock-page .sk-batches-link { white-space: nowrap; }
+app-stock-page .skp-batches .ios-capsule { flex: none; }
+app-stock-page .skp-batches-link { margin: 4px var(--ios-inset, 16px) 18px; text-align: center; }
+app-stock-page .skp-batches-link .linklike { font-size: 13px; }
+
 app-stock-page .sk-subbar { gap: 8px; }
 app-stock-page .sk-subbar .wk-chip { flex: none; }
 app-stock-page .sk-subbar__end { display: flex; align-items: center; gap: 12px; }
