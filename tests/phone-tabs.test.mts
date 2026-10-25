@@ -63,18 +63,18 @@ test('the page lists in phone-tabs.ts are the menu rows, nothing more and nothin
     assert.deepEqual(PHONE_TAB_PAGES[tab].filter((page) => page !== '/catalog'), own, tab);
     assert.equal(PHONE_TAB_PAGES[tab][0], PHONE_TAB_ROOTS[tab], 'the tab root first');
   }
-  /* the only rows that do not light their tab: the views of Instellingen, which light Meer with it */
-  const settingsViews = MENU_TABS.flatMap((tab) => menuItems(tab).filter((item) => item.query));
-  assert.deepEqual(settingsViews.map((item) => item.id), ['discounts', 'catalog-data']);
-  for (const item of settingsViews) {
-    assert.equal(item.link, '/settings', item.id);
+  /* the only rows that do not light their tab: the views of Instellingen and Kosten & bank's Facturen, which light Meer with their screen */
+  const views = MENU_TABS.flatMap((tab) => menuItems(tab).filter((item) => item.query));
+  assert.deepEqual(views.map((item) => item.id), ['discounts', 'invoices', 'catalog-data']);
+  for (const item of views) {
+    assert.equal(item.link, item.id === 'invoices' ? '/costs' : '/settings', item.id);
     assert.equal(phoneTabForUrl(navItemUrl(item)), 'more', item.id);
   }
 });
 
 test('screens reached only from Meer light Meer, so the tab agrees with "‹ Meer"', () => {
   for (const url of [
-    '/more', '/costs', '/costs/bank?rekening=2', '/files', '/files/map/4', '/settings', '/settings?sectie=company',
+    '/more', '/costs', '/costs/bank?rekening=2', '/costs?view=invoices&po=62', '/files', '/files/map/4', '/settings', '/settings?sectie=company',
     '/settings?sectie=discounts', '/settings?sectie=catalog-data', '/settings?sectie=notifications', '/settings/overzicht',
     '/settings/deleted-items', '/activity', '/analyses/cash', '/analyses/sales', '/website', '/website/layout',
     '/voorwaarden', '/nope', '/',

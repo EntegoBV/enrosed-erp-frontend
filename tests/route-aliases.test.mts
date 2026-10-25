@@ -34,6 +34,13 @@ test('Dutch addresses lead to their screens, detail forms included (N26)', () =>
     assert.match(block!, new RegExp(`redirectTo: '${target.replace('/', '\\/')}'`), alias);
     assert.match(block!, /pathMatch: 'full'/, alias);
   }
+  /* Kosten & bank's Facturen by its Dutch name: an absolute redirect, so the view query comes along */
+  const facturen = redirect('facturen');
+  assert.ok(facturen, 'alias facturen');
+  assert.match(facturen!, /redirectTo: '\/costs\?view=invoices'/);
+  assert.match(facturen!, /pathMatch: 'full'/);
+  assert.ok(routes.indexOf("path: 'facturen'") > routes.indexOf("path: 'kosten'"), 'next to the kosten alias');
+  assert.ok(routes.indexOf("path: 'facturen'") < routes.indexOf("path: '**'"));
   /* the old builder bookmarks stay */
   assert.ok(redirect('website-builder/layout'));
 });

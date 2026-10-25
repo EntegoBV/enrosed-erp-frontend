@@ -398,6 +398,7 @@ export const routes: Routes = [
   { path: 'leveranciers', pathMatch: 'full', redirectTo: 'suppliers' },
   { path: 'instellingen', pathMatch: 'full', redirectTo: 'settings' },
   { path: 'kosten', pathMatch: 'full', redirectTo: 'costs' },
+  { path: 'facturen', pathMatch: 'full', redirectTo: '/costs?view=invoices' },
   { path: 'bank', pathMatch: 'full', redirectTo: 'costs' },
   { path: 'documenten', pathMatch: 'full', redirectTo: 'files' },
   { path: 'media', pathMatch: 'full', redirectTo: 'files' },

@@ -98,6 +98,29 @@ test('no wording the owner ruled out', () => {
   assert.doesNotMatch(text, /\bset\b/i);
 });
 
+test('Inkoop leads to Kosten & bank\'s Facturen: after Leveranciers, its own icon, a nieuw pill until 2027', () => {
+  const inkoop = NAV_GROUPS.find((g) => g.id === 'inkoop')!;
+  assert.deepEqual(inkoop.items.map((i) => i.id), ['purchasing', 'suppliers', 'invoices', 'duties']);
+  assert.equal(inkoop.hint, 'Leveranciers, facturen en douane');
+  const invoices = inkoop.items.find((i) => i.id === 'invoices')!;
+  assert.equal(invoices.label, 'Facturen');
+  assert.equal(invoices.icon, 'document');
+  assert.equal(inkoop.items.filter((i) => i.icon === 'document').length, 1, 'icon unique in its group');
+  assert.equal(navItemUrl(invoices), '/costs?view=invoices');
+  assert.equal(invoices.hint, 'Opgeladen, Odoo en verkoop op één plek');
+  assert.equal(invoices.newUntil, '2027-01-01');
+  assert.equal(navItemIsNew(invoices, new Date(2026, 9, 26)), true);
+  assert.equal(navItemIsNew(invoices, new Date(2027, 0, 1)), false);
+  assert.ok(!invoices.tabRoot && !invoices.railMain && !invoices.countKey);
+  assert.ok(allNavUrls().includes('/costs?view=invoices'));
+  /* lit only on the finder: the other views of Kosten & bank are not Facturen */
+  assert.equal(navItemActive(invoices, '/costs?view=invoices&tab=out&q=PO-2026-005'), true);
+  assert.equal(navItemActive(invoices, '/costs?view=invoices&po=62'), true);
+  assert.equal(navItemActive(invoices, '/costs'), false);
+  assert.equal(navItemActive(invoices, '/costs?view=costs'), false);
+  assert.equal(navItemActive(invoices, '/purchasing/62'), false);
+});
+
 test('Login-aanvragen is in the 900-1023 rail but not the 680-899 one: Meer carries its count only below 900', () => {
   const item = NAV_GROUPS.flatMap((g) => g.items).find((i) => i.id === 'login-requests')!;
   assert.equal(item.countKey, 'loginRequestCount');

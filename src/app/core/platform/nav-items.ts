@@ -103,10 +103,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   },
   {
     id: 'inkoop', label: 'Inkoop', icon: 'purchase', tone: 'amber',
-    hint: 'Leveranciers en douane',
+    hint: 'Leveranciers, facturen en douane',
     items: [
       { id: 'purchasing', label: 'Inkooporders', short: 'Inkoop', icon: 'purchase', link: '/purchasing', railMain: true, tabRoot: true },
       { id: 'suppliers', label: 'Leveranciers', icon: 'suppliers', link: '/suppliers', hint: 'Contacten, valuta en levertijden' },
+      /* Kosten & bank's Facturen, reached from Inkoop too: a view of /costs, so on the phone it lights Meer (as Kortingen does). */
+      { id: 'invoices', label: 'Facturen', icon: 'document', link: '/costs', query: { view: 'invoices' },
+        hint: 'Opgeladen, Odoo en verkoop op één plek', newUntil: '2027-01-01' },
       { id: 'duties', label: 'Douane', icon: 'customs', link: '/douane', wide: true, hint: 'HS-codes en invoerrechten' },
     ],
   },
