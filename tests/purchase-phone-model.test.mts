@@ -509,3 +509,45 @@ test('one counting word per container: no container total says stuks, st or rege
     assert.doesNotMatch(source, /lines\.length \}\} regels/, `${name}: lineCount, so one line reads '1 regel'`);
   }
 });
+
+/* ---- stock batches (2026-10-25): the shared container-number rule and the batch part of the costs step ---- */
+
+test('isNewerSource: the case table shared with the backend\'s ContainerNumbersTest, row by row', () => {
+  const table: [string | null, string, boolean][] = [
+    ['PO-2026-048', 'PO-2026-047', true],
+    ['PO-2026-047', 'PO-2026-047', false],
+    ['PO-2026-100', 'PO-2026-099', true],
+    ['PO-2026-100', 'PO-2026-99', true],
+    ['PO-2027-001', 'PO-2026-120', true],
+    ['PO-2026-047', 'PO-2026-048', false],
+    ['po-2026-048', 'PO-2026-047', false],   // other shape
+    ['PO-2026-048B', 'PO-2026-047', false],  // other shape
+    ['Stolpen mei', 'PO-2026-047', false],
+    ['', 'PO-2026-047', false],
+    [null, 'PO-2026-047', false],
+    [' PO-2026-048 ', 'PO-2026-047', true],  // trimmed
+    ['PO-2026-048', 'PO-2026-48', false],    // equal numbers
+  ];
+  for (const [candidate, than, newer] of table) assert.equal(isNewerSource(candidate, than), newer, `${JSON.stringify(candidate)} vs ${than}`);
+});
+
+test('the costs step: the card part as today, plus live batches on the calculation or carrying an old cost', () => {
+  const read = (extra: Partial<Parameters<typeof readNextStep>[0]> = {}) =>
+    readNextStep({ status: 'ONTVANGEN', lineCount: 3, stockBooked: true, costsApplied: false, ...extra });
+  /* Not started (no batch flags): exactly today's rule, superseded included. */
+  assert.equal(read({ superseded: true }), null);
+  assert.equal(read({ superseded: true, batchPending: false, batchStale: false }), null);
+  /* Started, a newer container on the cards, but live batches still on the calculation: the step is offered. */
+  assert.equal(read({ superseded: true, batchPending: true }), 'KOSTPRIJZEN');
+  /* Started, a newer container on the cards and nothing of this container left on the shelf: no step (a sold-out container never asks). */
+  assert.equal(read({ superseded: true, batchPending: false, batchStale: false, costsApplied: true }), null);
+  /* Applied on cards and batches, nothing stale: done. */
+  assert.equal(read({ costsApplied: true, stale: false, batchPending: false, batchStale: false }), null);
+  /* Only the batches carry a cost this container no longer calculates. */
+  assert.equal(read({ costsApplied: true, batchStale: true }), 'KOSTPRIJZEN');
+  assert.equal(read({ costsApplied: true, superseded: true, batchStale: true }), 'KOSTPRIJZEN');
+  /* The road and the shelf still come first. */
+  assert.equal(read({ batchPending: true, stockBooked: false }), 'BIJBOEKEN');
+  assert.equal(read({ batchStale: true, status: 'ONDERWEG' }), 'ONTVANGEN');
+  assert.equal(read({ batchPending: true, lineCount: 0 }), null);
+});

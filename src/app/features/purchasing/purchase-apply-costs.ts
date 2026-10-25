@@ -54,8 +54,15 @@ export interface ApplyCostRow {
    * (null without a cost before) and after applying, by the server's rule (cost + markup).
    */
   catalogue: { fromEur: number | null; toEur: number } | null;
-  /** The product carries a newer container's cost: applying this one puts the older cost back (the server does not check). */
+  /**
+   * The product carries a newer container's cost. The server keeps that card unless the row is ticked
+   * "Ook op de productkaart" (batches round, 2026-10-25); the batch of this container gets the cost anyway.
+   */
   newer: boolean;
+  /** What this container still has on the shelf for the product, from its batches; null before batches start. */
+  leftPieces: { pieces: number; unitPieces: number } | null;
+  /** A newer row that is not ticked: applying leaves its product card (and so its catalogue price) as it is. */
+  keepsCard: boolean;
   /** The product as the screen knows it, for its history. */
   product: Product | null;
 }
@@ -76,6 +83,8 @@ export interface ApplyCostsPlan {
   skipped: number;
   /** Rows that carry a newer container's cost now (ApplyCostRow.newer). */
   newer: number;
+  /** Of those, the rows whose product card stays (ApplyCostRow.keepsCard). */
+  kept: number;
 }
 
 const cents4 = (value: number): number => Math.round(value * 10000);
@@ -113,7 +122,13 @@ export function costsAppliedBefore(order: Pick<PurchaseOrder, 'number'>, lines: 
   return lines.some((line) => byId.get(line.productId)?.landedCostSource === order.number);
 }
 
-export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: Product | null): ApplyCostRow {
+/** What a row knows besides the line and the product: the pieces still on the shelf and the ticked newer products. */
+export interface ApplyCostRowContext {
+  leftPieces?: { pieces: number; unitPieces: number } | null;
+  overwrite?: ReadonlySet<number>;
+}
+
+export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: Product | null, context: ApplyCostRowContext = {}): ApplyCostRow {
   /* Without the product its unit is not known: no basis words rather than "per stuk" for what may be a display. */
   const basis = product ? productCostBasis(product) : null;
   const currentEur = product?.landedCostEur ?? null;
@@ -143,6 +158,7 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
   const base = product?.name?.trim();
   const name = base ? stripColour(base, product?.colour) : line.productName;
   const variant = product ? variantOf(product) : null;
+  const newer = state !== 'skipped' && !fromHere && isNewerSource(product?.landedCostSource, order.number);
   return {
     productId: line.productId,
     name, variant,
@@ -153,7 +169,9 @@ export function applyCostRow(order: OrderNaming, line: LandedCostLine, product: 
     other: basis ? otherSideCost(basis, newEur) : null,
     deltaEur, deltaPct, state,
     catalogue: catalogueChange(product, state, currentEur, newEur),
-    newer: state !== 'skipped' && !fromHere && isNewerSource(product?.landedCostSource, order.number),
+    newer,
+    leftPieces: context.leftPieces ?? null,
+    keepsCard: newer && !(context.overwrite?.has(line.productId) ?? false),
     product,
   };
 }
@@ -199,8 +217,9 @@ function signedChange(eur: number): string {
 
 /**
  * "3 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)"; null when none does.
- * `newer` counts the products a newer container sits on: applying again would push those aside too,
- * so the line names them ("· 2 met een nieuwere container") and the screens offer no one-click apply.
+ * `newer` counts the products a newer container sits on, and the line names them ("· 2 met een nieuwere
+ * container"). The screens still offer the apply: the server keeps those newer cards unless the sheet's
+ * "Ook op de productkaart" is ticked for them (batches round, 2026-10-25).
  */
 export function staleNotice(stale: Pick<CostsStale, 'count' | 'largestEur'>, newer = 0): string | null {
   if (stale.count <= 0) return null;
@@ -210,11 +229,15 @@ export function staleNotice(stale: Pick<CostsStale, 'count' | 'largestEur'>, new
   return newer > 0 ? `${text} · ${newer.toLocaleString('nl-BE')} met een nieuwere container` : text;
 }
 
-/** The apply sheet's warn line when rows carry a newer container's cost; null without one. */
-export function newerNotice(count: number): string | null {
+/**
+ * The apply sheet's warn line for the rows whose product card stays (they carry a newer container's
+ * cost and are not ticked); null without one. With batches started their batch still gets this cost.
+ */
+export function newerNotice(count: number, started = false): string | null {
   if (count <= 0) return null;
-  return `${count === 1 ? '1 product draagt' : `${count.toLocaleString('nl-BE')} producten dragen`} de kostprijs van een nieuwere container: `
-    + 'toepassen zet die terug naar deze container.';
+  const head = count === 1 ? '1 product draagt een nieuwere container: zijn productkaart blijft'
+    : `${count.toLocaleString('nl-BE')} producten dragen een nieuwere container: hun productkaart blijft`;
+  return started ? `${head}, alleen de batch krijgt deze kost.` : `${head}.`;
 }
 
 /**
@@ -227,15 +250,32 @@ export function missingProductIds(lines: readonly Pick<LandedCostLine, 'productI
   return [...new Set(lines.map((line) => line.productId).filter((id) => !known.has(id)))];
 }
 
-/** The rows of the saved calculation against the products as they stand. */
-export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLine[], products: readonly Product[]): ApplyCostsPlan {
+/**
+ * The rows of the saved calculation against the products as they stand. `batches` is what each product
+ * still has on the shelf from this container (batchPiecesByProduct); `overwrite` the newer products ticked
+ * "Ook op de productkaart".
+ */
+export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLine[], products: readonly Product[],
+  batches?: ReadonlyMap<number, { pieces: number; unitPieces: number }> | null, overwrite: ReadonlySet<number> = new Set()): ApplyCostsPlan {
   const byId = new Map(products.map((product) => [product.id, product]));
-  const rows = lines.map((line) => applyCostRow(order, line, byId.get(line.productId) ?? null));
+  const rows = lines.map((line) => applyCostRow(order, line, byId.get(line.productId) ?? null,
+    { leftPieces: batches?.get(line.productId) ?? null, overwrite }));
   const count = (...states: ApplyCostState[]): number => rows.filter((row) => states.includes(row.state)).length;
   const skipped = count('skipped');
   return { again: costsAppliedBefore(order, lines, products), rows, written: rows.length - skipped,
     changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped,
-    newer: rows.filter((row) => row.newer).length };
+    newer: rows.filter((row) => row.newer).length, kept: rows.filter((row) => row.keepsCard).length };
+}
+
+/** The same plan with these newer products ticked "Ook op de productkaart" (the sheet's checkboxes). */
+export function withOverwrite(plan: ApplyCostsPlan, overwrite: ReadonlySet<number>): ApplyCostsPlan {
+  const rows = plan.rows.map((row) => ({ ...row, keepsCard: row.newer && !overwrite.has(row.productId) }));
+  return { ...plan, rows, kept: rows.filter((row) => row.keepsCard).length };
+}
+
+/** The request's overwriteNewerProductIds: the newer rows whose card is written after all (ticked), each once. */
+export function applyCostsRequest(plan: Pick<ApplyCostsPlan, 'rows'>): number[] {
+  return [...new Set(plan.rows.filter((row) => row.newer && !row.keepsCard).map((row) => row.productId))];
 }
 
 /** "1 product", "12 producten". */
@@ -251,9 +291,10 @@ export function applyCostsButton(plan: Pick<ApplyCostsPlan, 'again' | 'written'>
 /**
  * The toast after applying, with the counts the sheet showed. Only a row known to change counts as
  * gewijzigd: a product the sheet could not load got the cost too, but whether it changed is not known
- * ("niet vergeleken", as its row said "huidige kostprijs onbekend").
+ * ("niet vergeleken", as its row said "huidige kostprijs onbekend"). Cards kept beside a newer
+ * container are named last.
  */
-export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchanged' | 'unknown' | 'skipped'>): string {
+export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchanged' | 'unknown' | 'skipped'> & { kept?: number }): string {
   const number = (count: number): string => count.toLocaleString('nl-BE');
   const unknown = plan.unknown;
   const rest = [plan.unchanged > 0 ? `${number(plan.unchanged)} ongewijzigd` : null, unknown > 0 ? `${number(unknown)} niet vergeleken` : null]
@@ -261,5 +302,7 @@ export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchange
   const text = plan.changed > 0 ? `Kostprijs van ${productCount(plan.changed)} gewijzigd${rest ? `, ${rest}` : ''}`
     : unknown > 0 ? `Kostprijs toegepast op ${productCount(plan.unchanged + unknown)}: ${rest}`
       : 'Geen kostprijs gewijzigd';
-  return plan.skipped > 0 ? `${text} · ${number(plan.skipped)} overgeslagen (niets ontvangen)` : text;
+  const withSkipped = plan.skipped > 0 ? `${text} · ${number(plan.skipped)} overgeslagen (niets ontvangen)` : text;
+  const kept = plan.kept ?? 0;
+  return kept > 0 ? `${withSkipped} · ${number(kept)} ${kept === 1 ? 'productkaart' : 'productkaarten'} behouden` : withSkipped;
 }

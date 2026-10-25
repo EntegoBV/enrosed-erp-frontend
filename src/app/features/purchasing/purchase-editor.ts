@@ -97,7 +97,12 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
-import { applyCostsPlan, applyCostsToast, costsStale, missingProductIds, staleNotice } from './purchase-apply-costs';
+import { applyCostsPlan, applyCostsToast, costsStale, missingProductIds, staleNotice, withOverwrite } from './purchase-apply-costs';
+import { StockBatchApi } from '../../core/api/stock-batch-api';
+import type { PurchaseStockBatches } from '../../core/api/stock-batch-models';
+import { batchFormat } from '../../core/api/stock-batch-units';
+import { batchPending, batchPiecesByProduct, batchStale, mergeStale, purchaseBatchRows } from './purchase-batches-model';
+import { lineVersionText, pickable } from './purchase-supplier-version';
 import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -462,9 +467,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                       (click)="lineSheet.set(line.productId)" (keydown.enter)="lineSheet.set(line.productId)"
                                       (keydown.space)="$event.preventDefault(); lineSheet.set(line.productId)">
                                   <span class="ios-cell__title mpo-wrap">{{ line.productName }}</span>
+                                  @let version = lineVersion(line.productId);
                                   @if (productVariantLabel(line.productId); as variant) {
                                     <span class="ios-cell__sub mpo-wrap">@if (productColour(line.productId)) { <i class="line-colour-dot" [class.line-colour-dot--empty]="!productColourHex(line.productId)"
-                                      [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i> }{{ variant }}</span>
+                                      [style.background]="productColourHex(line.productId) || 'transparent'" aria-hidden="true"></i> }{{ variant }}@if (version) { · {{ version }}}</span>
+                                  } @else if (version) {
+                                    <span class="ios-cell__sub mpo-wrap">{{ version }}</span>
                                   }
                                   <span class="ios-cell__sub mpo-wrap">{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
                                   <span class="ios-cell__sub mpo-wrap">@if (rowPriceText(line.productId); as price) {<span class="mpo-nowrap">{{ price }}</span> · }<span class="mpo-nowrap">{{ line.landedUnitEur | eurUp: 3 }}{{ display ? ' /display' : '' }} geland</span></span>
@@ -1298,8 +1306,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                         (confirm)="confirmStepBack($event)" (cancel)="closeStepBack()" />
       }
       @if (applyPlan(); as plan) {
-        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()"
-                                        (confirm)="confirmApply()" (cancel)="closeApply()" />
+        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()" [started]="batchesStarted()"
+                                        (confirm)="confirmApply($event)" (cancel)="closeApply()" />
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet variant="ios" [orderId]="data.order.id" [orderNumber]="data.order.number"
@@ -3962,6 +3970,7 @@ export class PurchaseEditor {
       this.savedOrder.set(JSON.stringify(result.order));
       this.receiving.set(null);
       this.statusCelebration.set('RECEIVED');
+      void this.loadStockBatches(result.order.id, result);
       const refreshed = await this.refreshPaymentState(result.order.id);
       this.products.set(await this.catalog.products(result.order.supplierId));
       if (finalPaymentAmount && refreshed && this.view()?.order.id === result.order.id) {
@@ -3985,6 +3994,7 @@ export class PurchaseEditor {
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.ui.toast('Voorraad bijgeboekt', 'ok');
+      void this.loadStockBatches(result.order.id, result);
       this.products.set(await this.catalog.products(result.order.supplierId));
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Bijboeken mislukt'), 'err');
@@ -4326,6 +4336,7 @@ export class PurchaseEditor {
       this.view.set(null);
       /* The Kostprijzen toepassen sheet was for the order being left. */
       this.applyFor.set(null);
+      this.stockBatches.set(null);
     }
     this.paymentStateError.set(null);
     this.paymentStateLoading.set(false);
@@ -4375,6 +4386,7 @@ export class PurchaseEditor {
        supplier request finishes. */
     this.view.set(view);
     void this.refreshOtherProducts(orderId);
+    void this.loadStockBatches(orderId, view);
     void paymentsLoad.then((failure) => {
       if (failure && Number(this.id()) === orderId && paymentVersion === this.paymentRefreshVersion) this.ui.toast(failure, 'err');
     });
@@ -4393,9 +4405,10 @@ export class PurchaseEditor {
     return actor;
   }
 
+  /** Not on the order yet and offered by this supplier: an inactive version stays in the list (lines keep their names) but is never offered. */
   readonly available = computed(() => {
     const used = new Set((this.view()?.order.lines ?? []).map((line) => line.productId));
-    return this.products().filter((product) => !used.has(product.id!));
+    return this.products().filter((product) => !used.has(product.id!) && pickable(product));
   });
 
   /** Receipt booked stock already; changing the booked lines would corrupt history. */
@@ -4668,6 +4681,11 @@ export class PurchaseEditor {
     return this.view()?.order.lines.find((line) => line.productId === productId);
   }
 
+  /** "Versie B · ref PB-1530" of a line: its snapshot, else this supplier's offer on the product; null without either. */
+  lineVersion(productId: number): string | null {
+    return lineVersionText(this.orderLine(productId), this.productById().get(productId));
+  }
+
   /**
    * Price agreed at the fair or the factory table? Enter it here, in the
    * currency it was named in. Clearing hands the line back to the price on
@@ -4928,27 +4946,73 @@ export class PurchaseEditor {
   /** Every product this order's lines point at, as far as the screen could fetch them. */
   readonly lineProducts = computed(() => [...this.products(), ...this.otherProducts()]);
 
-  /** Did an earlier apply of this order land on its products? */
+  /* ---- stock batches (2026-10-25): what this container booked, once batches started */
+  private readonly stockBatchApi = inject(StockBatchApi);
+  /** The batches this container booked; null before it is received and booked, on a failed call, or before the answer. */
+  readonly stockBatches = signal<PurchaseStockBatches | null>(null);
+  private stockBatchVersion = 0;
+  /** Batches have started (active or paused): the screens show them and the costs also go onto the batches. */
+  readonly batchesStarted = computed(() => this.stockBatches()?.started === true);
+
+  /**
+   * Loads the container's batches when its stock is booked (an old order without the flag counts as
+   * booked); a failure hides the card. An answer for another order, or an older answer, never lands.
+   */
+  protected async loadStockBatches(orderId: number, view: PurchaseOrderView | null = this.view()): Promise<void> {
+    if (this.view()?.order.id !== orderId) return;
+    const version = ++this.stockBatchVersion;
+    if (!view || view.order.id !== orderId || view.order.status !== 'ONTVANGEN' || view.order.stockBooked === false) {
+      this.stockBatches.set(null);
+      return;
+    }
+    let found: PurchaseStockBatches | null;
+    try { found = await this.stockBatchApi.forPurchaseOrder(orderId); } catch { found = null; }
+    if (version === this.stockBatchVersion && this.view()?.order.id === orderId) this.stockBatches.set(found);
+  }
+
+  /** The batches card's rows, in the units each product sells in. */
+  readonly stockBatchRows = computed(() => {
+    const data = this.stockBatches();
+    if (!data?.started) return [];
+    const byId = this.productById();
+    return purchaseBatchRows(data, (productId) => {
+      const product = byId.get(productId);
+      return batchFormat(product ? productSalesUnit(product) : { singular: 'stuk', plural: 'stuks' });
+    });
+  });
+  /** Live batches still on this container's calculation: the costs step is offered until they are applied. */
+  readonly batchPendingNow = computed(() => batchPending(this.stockBatches()));
+  /** Products whose live batches carry a cost this container no longer calculates. */
+  readonly batchStaleCount = computed(() => batchStale(this.stockBatches()).count);
+
+  /** Did an earlier apply of this order land on its products (or, with batches started, on its batches)? */
   readonly costsApplied = computed(() => {
     const data = this.view();
     if (!data) return false;
     const byId = new Map(this.lineProducts().map((product) => [product.id, product]));
-    return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number);
+    const batches = this.stockBatches();
+    return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number)
+      || (!!batches?.started && batches.costs.applied > 0);
   });
-  /** Products that carry an older cost of this container than it calculates now: the container changed after applying. */
-  readonly costsStaleNow = computed(() => {
+  /** Products that carry an older card cost of this container than it calculates now: the container changed after applying. */
+  readonly costsStaleCard = computed(() => {
     const data = this.view();
     return data ? costsStale(data.order.number, data.costing.lines, this.lineProducts()) : { count: 0, productIds: [], largestEur: 0 };
   });
+  /** The card part and the batch part together, each product once: the banner and the counts. */
+  readonly costsStaleNow = computed(() => mergeStale(this.costsStaleCard(), batchStale(this.stockBatches())));
   /** Products that carry a newer container's cost: applying this one would put the older cost back on them (G12). */
   readonly costsSupersededNow = computed(() => {
     const data = this.view();
     return data ? costsSupersededCount(data.costing.lines, this.lineProducts(), data.order.number) : 0;
   });
-  /** The one warn line above the products ('Opnieuw toepassen ›' beside it unless a newer container sits on some); null while nothing differs. */
+  /**
+   * The one warn line above the products, with 'Opnieuw toepassen ›' beside it; null while nothing differs. A newer
+   * container on some products is named in it, and the apply keeps those cards unless they are ticked (2026-10-25).
+   */
   readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow(), this.costsSupersededNow()));
-  /** The count beside Kostprijzen opnieuw toepassen: none while a newer container sits on some products (no one-click fix then). */
-  readonly costsStaleCount = computed(() => this.costsSupersededNow() > 0 ? 0 : this.costsStaleNow().count);
+  /** The count beside Kostprijzen opnieuw toepassen: the server keeps newer cards, so a newer container no longer hides it. */
+  readonly costsStaleCount = computed(() => this.costsStaleNow().count);
 
   /* ---- Kostprijzen toepassen: the sheet shows every product's cost now and next first */
   /**
@@ -4962,7 +5026,7 @@ export class PurchaseEditor {
   readonly applyPlan = computed(() => {
     const data = this.view();
     return data && data.order.id === this.applyFor()
-      ? applyCostsPlan(data.order, data.costing.lines, this.lineProducts()) : null;
+      ? applyCostsPlan(data.order, data.costing.lines, this.lineProducts(), batchPiecesByProduct(this.stockBatches())) : null;
   });
 
   /**
@@ -5008,13 +5072,15 @@ export class PurchaseEditor {
     if (!this.applyBusy()) this.applyFor.set(null);
   }
 
-  async confirmApply(): Promise<void> {
+  /** Applies; `overwriteIds` are the newer products ticked "Ook op de productkaart" (their card is written after all). */
+  async confirmApply(overwriteIds: number[] = []): Promise<void> {
     const data = this.view();
-    const plan = this.applyPlan();
-    if (!data || !plan || this.applyBusy()) return;
+    const shown = this.applyPlan();
+    if (!data || !shown || this.applyBusy()) return;
+    const plan = withOverwrite(shown, new Set(overwriteIds));
     this.applyBusy.set(true);
     try {
-      await this.sourcing.applyLandedCosts(data.order.id);
+      await this.sourcing.applyLandedCosts(data.order.id, overwriteIds);
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Kostprijzen toepassen mislukt'), 'err');
       return;
@@ -5030,6 +5096,8 @@ export class PurchaseEditor {
     /* The other suppliers' products got the cost too: else they would read as stale. */
     await this.refreshOtherProducts(data.order.id);
     await this.reloadOrderQuietly();
+    /* The batches of this container are APPLIED now. */
+    await this.loadStockBatches(data.order.id);
   }
 
   remove(): void {

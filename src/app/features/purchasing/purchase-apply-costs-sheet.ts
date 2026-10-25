@@ -3,26 +3,36 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
-import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan } from './purchase-apply-costs';
+import { productSalesUnit } from '../products/product-sales-unit';
+import { unitsText } from '../../core/api/stock-batch-units';
+import { applyCostsButton, applyCostsRequest, newerNotice, withOverwrite, type ApplyCostRow, type ApplyCostsPlan } from './purchase-apply-costs';
 
 /**
  * Kostprijzen toepassen: before a container's costs go onto the catalogue,
  * every product shows the cost it carries now and where that came from, the
  * cost it gets and the difference. Each row opens the product's history on
  * top. The editor does the applying; the sheet only shows and asks.
+ * A product that carries a newer container's cost keeps its card unless its
+ * row is ticked "Ook op de productkaart"; the confirm sends those ids
+ * (batches round, 2026-10-25). With batches started, this container's
+ * batches get the cost either way.
  */
 @Component({
   selector: 'app-purchase-apply-costs-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Sheet, EurPipe, ProductCostHistorySheet],
   template: `
-    @let p = plan();
+    @let p = shown();
     <app-sheet [title]="p.again ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen'" variant="ios"
                [wide]="desktop.active()" (closed)="cancel.emit()">
       <div body class="ac-sheet" [attr.inert]="busy() ? '' : null">
-        <!-- Existing sales lines keep the cost frozen on them (SalesOrderService.withCostSnapshots); only new lines take this one. -->
-        <p class="ac-sheet__intro">De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost.</p>
-        <!-- The server writes every received line, also over a newer container's cost: say so before the button. -->
+        <!-- Existing sales lines keep the cost frozen on them (SalesOrderService.withCostSnapshots, the batch stamp at shipment); only new lines take this one. -->
+        @if (started()) {
+          <p class="ac-sheet__intro">De kostprijs komt op de batches van deze container en op de productkaart; bestaande verkoopregels houden hun kost.</p>
+        } @else {
+          <p class="ac-sheet__intro">De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost.</p>
+        }
+        <!-- The server keeps a newer container's card unless its row is ticked: say so before the button. A kept card's catalogue price does not move, so its row names no catalogue change. -->
         @if (newerText(); as warn) {
           <div class="wk-banner wk-banner--warn wk-banner--inset ac-sheet__warn" role="status"><span class="wk-banner__text">{{ warn }}</span></div>
         }
@@ -39,8 +49,9 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
               } @else {
                 <span class="linklike ac-row__history ac-row__history--none" aria-hidden="true">Historiek ›</span>
               }
-              <small class="ac-row__basis">{{ row.quantity }}@if (row.per) { · kostprijs {{ row.per }}}@if (row.catalogue; as price) {
-                · <span class="ac-row__price">catalogus @if (price.fromEur !== null) {{{ price.fromEur | eur }} → }{{ price.toEur | eur }}</span>}</small>
+              <small class="ac-row__basis">{{ row.quantity }}@if (row.per) { · kostprijs {{ row.per }}}@if (row.keepsCard ? null : row.catalogue; as price) {
+                · <span class="ac-row__price">catalogus @if (price.fromEur !== null) {{{ price.fromEur | eur }} → }{{ price.toEur | eur }}</span>}@if (leftText(row); as left) {
+                · <span class="ac-row__left">nog {{ left }} op voorraad</span>}</small>
               @if (row.state === 'skipped') {
                 <p class="ac-row__skip">
                   niets ontvangen · blijft {{ row.currentEur !== null ? (row.currentEur | eur: 4) : 'zonder kostprijs' }}
@@ -57,8 +68,11 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
                     <b>{{ row.newEur | eur: 4 }}</b>
                     @if (row.other; as other) { <span>{{ other.sign }} {{ other.price | eur: 4 }} {{ other.per }}</span> }
                   </div>
-                  <div class="ac-fig ac-fig--delta" [attr.data-state]="row.state">
+                  <div class="ac-fig ac-fig--delta" [attr.data-state]="row.keepsCard ? 'kept' : row.state">
                     <small>Verschil</small>
+                    @if (row.keepsCard) {
+                      <b>{{ started() ? 'batch' : '—' }}</b><span>productkaart blijft</span>
+                    } @else {
                     @switch (row.state) {
                       @case ('new') { <b>nieuw</b><span>eerste kostprijs</span> }
                       @case ('unknown') { <b>—</b><span>huidige kostprijs onbekend</span> }
@@ -69,8 +83,13 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
                         @if (row.deltaPct !== null) { <span>{{ signedPct(row.deltaPct) }}</span> }
                       }
                     }
+                    }
                   </div>
                 </div>
+                @if (row.newer) {
+                  <label class="ac-row__keep"><input type="checkbox" [checked]="overwrite().has(row.productId)" [disabled]="busy()"
+                         (change)="toggleOverwrite(row.productId, $any($event.target).checked)" /> Ook op de productkaart</label>
+                }
               }
             </li>
           }
@@ -81,7 +100,7 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
       </div>
       <div foot class="ac-foot">
         <button class="btn" type="button" [disabled]="busy()" (click)="cancel.emit()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || !p.written" (click)="confirm.emit()">
+        <button class="btn btn--primary" type="button" [disabled]="busy() || !p.written" (click)="confirm.emit(request())">
           {{ busy() ? 'Bezig…' : button() }}
         </button>
       </div>
@@ -97,7 +116,7 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
     .ac-sheet__intro { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
     .ac-sheet__empty, .ac-sheet__note { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
     .ac-rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-    .ac-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name link' 'basis basis' 'figs figs';
+    .ac-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name link' 'basis basis' 'figs figs' 'keep keep';
       align-items: baseline; gap: 4px 12px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .ac-row[data-state='unchanged'], .ac-row[data-state='skipped'] { background: var(--surface-2); }
     .ac-sheet__warn { margin: 0; }
@@ -120,11 +139,15 @@ import { applyCostsButton, newerNotice, type ApplyCostRow, type ApplyCostsPlan }
     .ac-fig--new b { color: var(--rose-dark); }
     .ac-fig--delta[data-state='up'] b { color: var(--danger); }
     .ac-fig--delta[data-state='down'] b { color: var(--ok); }
-    .ac-fig--delta[data-state='unchanged'] b, .ac-fig--delta[data-state='same'] b { color: var(--muted); }
+    .ac-fig--delta[data-state='unchanged'] b, .ac-fig--delta[data-state='same'] b, .ac-fig--delta[data-state='kept'] b { color: var(--muted); }
+    .ac-row__left { white-space: nowrap; }
+    .ac-row__keep { grid-area: keep; display: inline-flex; align-items: center; gap: 8px; justify-self: start; margin-top: 4px; color: var(--ink-2);
+      font-size: 12.5px; font-weight: 600; cursor: pointer; }
+    .ac-row__keep input { width: 16px; height: 16px; margin: 0; accent-color: var(--rose); }
     .ac-foot { display: contents; }
     /* Desk: one line per product, the figures beside the name. */
     @media (min-width: 680px) {
-      .ac-row { grid-template-columns: minmax(0, 1.15fr) minmax(0, 2.4fr) auto; grid-template-areas: 'name figs link' 'basis figs link'; align-items: start; gap: 2px 18px; }
+      .ac-row { grid-template-columns: minmax(0, 1.15fr) minmax(0, 2.4fr) auto; grid-template-areas: 'name figs link' 'basis figs link' 'keep figs link'; align-items: start; gap: 2px 18px; }
       .ac-row__figures, .ac-row__skip { margin-top: 0; }
       .ac-row__skip { align-self: center; }
     }
@@ -143,13 +166,36 @@ export class PurchaseApplyCostsSheet {
   /** The container being applied; its own rows in a product's history need no link back. */
   readonly orderId = input<number | null>(null);
   readonly busy = input(false);
-  readonly confirm = output<void>();
+  /** Batches have started: the cost lands on this container's batches too. */
+  readonly started = input(false);
+  /** The newer products whose card is written after all (ApplyRequest.overwriteNewerProductIds). */
+  readonly confirm = output<number[]>();
   readonly cancel = output<void>();
 
-  readonly button = computed(() => applyCostsButton(this.plan()));
-  readonly newerText = computed(() => newerNotice(this.plan().newer));
+  /** Newer products ticked "Ook op de productkaart"; unticked by default, so a newer card stays. */
+  readonly overwrite = signal<ReadonlySet<number>>(new Set());
+  /** The plan with the ticks applied: which rows keep their card. */
+  readonly shown = computed(() => withOverwrite(this.plan(), this.overwrite()));
+  readonly request = computed(() => applyCostsRequest(this.shown()));
+  readonly button = computed(() => applyCostsButton(this.shown()));
+  readonly newerText = computed(() => newerNotice(this.shown().kept, this.started()));
   /** The row whose product history is open on top of this sheet. */
   readonly historyFor = signal<ApplyCostRow | null>(null);
+
+  toggleOverwrite(productId: number, on: boolean): void {
+    this.overwrite.update((ids) => {
+      const next = new Set(ids);
+      if (on) next.add(productId);
+      else next.delete(productId);
+      return next;
+    });
+  }
+
+  /** "500 displays", "4 los": what this container still has on the shelf for the row's product; null before batches or without the product. */
+  leftText(row: ApplyCostRow): string | null {
+    if (!row.leftPieces || !row.product) return null;
+    return unitsText(row.leftPieces.pieces, row.leftPieces.unitPieces, productSalesUnit(row.product));
+  }
 
   absEur(value: number | null): number {
     return Math.abs(value ?? 0);
