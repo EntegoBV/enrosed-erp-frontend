@@ -79,6 +79,8 @@ export interface ApplyCostsPlan {
 }
 
 const cents4 = (value: number): number => Math.round(value * 10000);
+/** Whole cents, half away from zero, after a 4-decimal step so 1,005 does not slip to 1,00. */
+const cents = (value: number): number => Math.sign(value) * Math.round(Math.abs(Math.round(value * 10000) / 100));
 const round4 = (value: number): number => cents4(value) / 10000;
 
 /**
@@ -178,7 +180,8 @@ export function costsStale(orderNumber: string, lines: readonly LandedCostLine[]
     const product = byId.get(line.productId);
     const current = product?.landedCostEur;
     if (!product || current == null || line.quantity <= 0 || product.landedCostSource !== orderNumber) continue;
-    if (cents4(line.landedUnitEur) === cents4(current)) continue;
+    /* The product page's rule: stale when the two figures differ in cents, so both screens agree. */
+    if (cents(line.landedUnitEur) === cents(current)) continue;
     productIds.push(line.productId);
     const change = round4(line.landedUnitEur - current);
     if (Math.abs(change) > Math.abs(largestEur)) largestEur = change;

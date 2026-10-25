@@ -461,7 +461,7 @@ test('costsStale: products carrying this container\'s cost that it no longer cal
   const lines = [line(401, 18, 10.3858), line(402, 18, 10.38584), line(403, 24, 11.2), line(404, 30, 6.1), line(405, 0, 0), line(406, 12, 3),
     line(407, 5, 9)];
   const stale = apply.costsStale('PO-2026-014', lines, products);
-  /* Equal at 4 decimals is fresh; another container's cost (newer or older) is not this one's to fix; a line that received
+  /* Equal in cents is fresh (the product page's rule), so 10,3858 against 10,38584 is fresh; another container's cost (newer or older) is not this one's to fix; a line that received
      nothing is never applied, so it would never clear; a product the screen does not know is left out. */
   assert.deepEqual(plain(stale), { count: 2, productIds: [401, 404], largestEur: 2.0678 });
   assert.equal(spaces(apply.staleNotice(stale)), '2 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)');
@@ -471,6 +471,9 @@ test('costsStale: products carrying this container\'s cost that it no longer cal
   assert.equal(spaces(apply.staleNotice({ count: 1, largestEur: 0.0004 })), '1 product draagt een oudere kostprijs van deze container (▲ € 0,0004)');
   assert.equal(apply.staleNotice(apply.costsStale('PO-2026-014', [line(402, 18, 10.3858)], products)), null);
   assert.deepEqual(plain(apply.costsStale('PO-2026-014', [], products)), { count: 0, productIds: [], largestEur: 0 });
+  /* A difference under half a cent shows the same figure on both screens: not stale. */
+  assert.equal(apply.costsStale('PO-2026-014', [line(401, 18, 8.3204)], products).count, 0);
+  assert.equal(apply.costsStale('PO-2026-014', [line(401, 18, 8.3252)], products).count, 1);
   /* Applying again clears it: every stale product then carries the line's cost. */
   const applied = products.map((p) => ({ ...p, landedCostEur: lines.find((l) => l.productId === p.id && l.quantity > 0 && p.landedCostSource === 'PO-2026-014')?.landedUnitEur ?? p.landedCostEur }));
   assert.equal(apply.costsStale('PO-2026-014', lines, applied).count, 0);
