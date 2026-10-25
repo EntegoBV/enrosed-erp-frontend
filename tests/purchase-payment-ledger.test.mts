@@ -7,6 +7,7 @@ import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
 import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
 import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
 import {
+  differenceLines,
   PAYEE_LABEL, PAYEE_ORDER, PAYEE_SHORT, differenceWord, ledgerDifferenceNote, ledgerFxRate, paymentOptionParts, payeeComposition, payeeDifferenceState,
   payeeDifferenceText, payeeRowAction, purchaseLandedBridge, purchasePaymentLedger, settleCarriers, sortLedgerRows, type PaymentLedger,
 } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
@@ -870,4 +871,18 @@ test('the agreement currency comes from the order lines and the order rates', ()
   assert.equal(ledgerFxRate(view([{ exwCurrency: null }]), 'USD'), null, 'no line names it');
   assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }]), 'EUR'), null);
   assert.equal(ledgerFxRate(view([{ exwCurrency: 'USD' }], { cnyToUsd: 0.14, usdToEurGoods: 0 }), 'USD'), null, 'no order rate');
+});
+
+test('differenceLines nets settled term gaps into the one figure the desk shows (PO-2026-005, 2026-10-25)', () => {
+  /* Terms 1 and 3 paid less, term 2 paid more, each settled; transport paid less: one net line, not − 6.220,56 + 2.949,22. */
+  const summary = { lowerEur: 6220.56, higherEur: 2949.22, reviewEur: 0, fxEur: 0 };
+  assert.deepEqual(differenceLines(summary), [{ op: '−', label: 'Minder betaald · afgerekend', eur: 3271.34 }]);
+  /* Afspraak − Betaald − 3.271,34 = Open, to the cent. */
+  assert.ok(Math.abs(65254.57 - 61983.23 - 3271.34) < 0.005);
+  assert.deepEqual(differenceLines({ lowerEur: 100, higherEur: 250, reviewEur: 0, fxEur: 0 }), [{ op: '+', label: 'Meer betaald', eur: 150 }]);
+  assert.deepEqual(differenceLines({ lowerEur: 0, higherEur: 44.8, reviewEur: 0, fxEur: 44.8 }), [{ op: '+', label: 'Meer betaald · koersverschil (bank)', eur: 44.8 }]);
+  assert.deepEqual(differenceLines({ lowerEur: 120, higherEur: 120, reviewEur: 0, fxEur: 0 }), []);
+  /* An overpayment still to review stays its own line: it is a to-do. */
+  assert.deepEqual(differenceLines({ lowerEur: 100, higherEur: 30, reviewEur: 30, fxEur: 0 }),
+    [{ op: '−', label: 'Minder betaald · afgerekend', eur: 100 }, { op: '+', label: 'Meer betaald · nakijken', eur: 30 }]);
 });

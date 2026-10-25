@@ -13,7 +13,7 @@ import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, differenceWord, ledgerDifferenceNote, payeeDifferenceText, payeeRowAction,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_SHORT, PAYEE_TONE, SUPPLIER_GOODS, differenceLines, differenceWord, ledgerDifferenceNote, payeeDifferenceText, payeeRowAction,
   sortLedgerRows, type Due,
   type LedgerCredit, type LedgerRow, type LedgerTodo, type PayeeLedger, type LedgerTerm, type PaymentLedger, type PurchasePaymentAction,
   type PurchaseSettleRequest, type SupplierCreditAction,
@@ -145,7 +145,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
             <div class="pw-content" [class.is-loading]="state() === 'refreshing'" [attr.inert]="state() === 'refreshing' ? '' : null" [attr.aria-busy]="state() === 'refreshing'">
               <div class="pw-main">
                 <div class="pw-summary">
-                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@if (sum.lowerEur > 0) { − {{ sum.lowerEur | eur }} minder betaald}@if (sum.higherEur > 0) { + {{ sum.higherEur | eur }} meer betaald} = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
+                  <p class="pw-formula">Afspraak {{ sum.agreedEur | eur }} − betaald {{ sum.paidOnAgreementEur | eur }}@for (line of differenceLines(sum); track line.label) { {{ line.op }} {{ line.eur | eur }} {{ line.op === '−' ? 'minder' : 'meer' }} betaald} = open {{ sum.openEur | eur }}@if (sum.additionalEur > 0) { · bijkomende kosten {{ sum.additionalEur | eur }} }</p>
                   @if (sum.agreedEur > 0) {
                     <div class="pw-meter">
                       <div class="wk-meter" role="img" [attr.aria-label]="'Betaald ' + pct(sum.meter.paidPct) + '%, nu te betalen ' + pct(sum.meter.duePct) + '%, later ' + pct(sum.meter.laterPct) + '%'">
@@ -584,6 +584,7 @@ export class PurchasePaymentWorkbench {
   private seeded = false;
 
   readonly abs = Math.abs;
+  readonly differenceLines = differenceLines;
   readonly actionable = computed(() => !this.busy() && this.state() === 'ready' && !!this.ledger());
   readonly agreements = computed(() => (this.ledger()?.visible ?? []).filter(item => item.payee !== 'OTHER'));
   readonly additional = computed(() => this.ledger()?.visible.find(item => item.payee === 'OTHER') ?? null);

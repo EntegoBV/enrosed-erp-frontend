@@ -8,7 +8,7 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import {
-  DUE_MOMENT, SUPPLIER_GOODS_CIF, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  DUE_MOMENT, SUPPLIER_GOODS_CIF, differenceLines, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
   type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
@@ -39,8 +39,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             <dl class="wk-equation">
               <div><dt>Afspraak</dt><dd>{{ item.agreedEur | eur }}</dd></div>
               <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div>
-              @if (item.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ item.lowerEur | eur }}</dd></div> }
-              @if (item.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ item.reviewEur > 0 ? ' · nakijken' : item.fxEur > 0 ? ' · koersverschil (bank)' : '' }}</dt><dd>{{ item.higherEur | eur }}</dd></div> }
+              @for (line of differenceLines(item); track line.label) { <div><dt><span class="wk-equation__op" aria-hidden="true">{{ line.op }}</span>{{ line.label }}</dt><dd>{{ line.eur | eur }}</dd></div> }
               <div class="is-total"><dt>Open</dt><dd>{{ item.openEur | eur }}</dd></div>
             </dl>
             @if (item.openEur > 0) {
@@ -255,6 +254,7 @@ export class PurchasePayeeSheet {
   readonly day = dayOf;
   readonly month = monthOf;
   readonly abs = Math.abs;
+  readonly differenceLines = differenceLines;
   readonly proofText = bankProofSub;
   /** Leverancier, Transport and Inspectie always; Bijkomende kosten only once it has invoices or invoice files. */
   readonly showInvoices = computed(() => {

@@ -9,7 +9,7 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, differenceLines, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
@@ -96,8 +96,7 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                 <dl class="wk-equation">
                   <div><dt>Afspraak</dt><dd>{{ sum.agreedEur | eur }}</dd></div>
                   <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
-                  @if (sum.lowerEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Minder betaald · afgerekend</dt><dd>{{ sum.lowerEur | eur }}</dd></div> }
-                  @if (sum.higherEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>Meer betaald{{ sum.reviewEur > 0 ? ' · nakijken' : sum.fxEur > 0 ? ' · koersverschil (bank)' : '' }}</dt><dd>{{ sum.higherEur | eur }}</dd></div> }
+                  @for (line of differenceLines(sum); track line.label) { <div><dt><span class="wk-equation__op" aria-hidden="true">{{ line.op }}</span>{{ line.label }}</dt><dd>{{ line.eur | eur }}</dd></div> }
                   <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
                   @if (sum.dueNowEur > 0 && sum.laterEur > 0) { <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div> }
                   @if (sum.laterEur > 0) { <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div> }
@@ -393,6 +392,7 @@ export class PurchasePaymentOverview {
   readonly month = monthOf;
   readonly round = Math.round;
   readonly abs = Math.abs;
+  readonly differenceLines = differenceLines;
   readonly proofText = bankProofSub;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');

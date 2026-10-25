@@ -766,6 +766,28 @@ export function payeeRowAction(item: Pick<PayeeLedger, 'dueNowEur' | 'canSettle'
  * once settled, so a term settled lower stays afgerekend while the next term
  * is still open.
  */
+/** One line of an equation's difference: the sign, the words and the amount. */
+export interface DifferenceLine { op: '−' | '+'; label: string; eur: number }
+
+/**
+ * The difference lines of an equation (summary or payee), netted like the desk's Verschil: a term paid more
+ * and another paid less read as one figure, never as a gross minus and plus that only cancel out.
+ * An overpayment still to review keeps its own line, because that is a to-do, not a settled difference.
+ * Afspraak − Betaald (∓ these lines) = Open still holds to the cent.
+ */
+export function differenceLines(item: Pick<PayeeLedger, 'lowerEur' | 'higherEur' | 'reviewEur' | 'fxEur'>): DifferenceLine[] {
+  const lower = cents(item.lowerEur);
+  const higher = cents(item.higherEur);
+  const higherLabel = `Meer betaald${item.reviewEur > 0 ? ' · nakijken' : item.fxEur > 0 ? ' · koersverschil (bank)' : ''}`;
+  if (cents(item.reviewEur) > 0) {
+    const lines: DifferenceLine[] = lower > 0 ? [{ op: '−', label: 'Minder betaald · afgerekend', eur: euro(lower) }] : [];
+    return [...lines, { op: '+', label: higherLabel, eur: euro(higher) }];
+  }
+  const net = higher - lower;
+  if (net === 0) return [];
+  return [net < 0 ? { op: '−', label: 'Minder betaald · afgerekend', eur: euro(-net) } : { op: '+', label: higherLabel, eur: euro(net) }];
+}
+
 export function payeeDifferenceState(item: Pick<PayeeLedger, 'reviewEur'>): 'afgerekend' | 'nakijken' {
   return cents(item.reviewEur) > 0 ? 'nakijken' : 'afgerekend';
 }
