@@ -1652,6 +1652,10 @@ export interface LandedCostLine {
   totalEur: number;
   landedUnitEur: number;
   cbmShare: number;
+  valueShare?: number;
+  pieceShare?: number;
+  /** This line's share of the inspection and the other named costs; inside totalEur and landedUnitEur when a key spreads them, else 0. */
+  separateEur?: number | null;
 }
 
 export interface LandedCost {
