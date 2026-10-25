@@ -1,9 +1,12 @@
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { Skeleton } from '../../shared/skeleton';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
+import type { SupplierProductRow } from '../../core/api/product-supplier-models';
+import { AuthImage } from '../../core/api/auth-image';
 import { PageHeader } from '../../shared/page-header';
 import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -13,12 +16,13 @@ import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { keyContext } from '../../shared/key-context';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
+import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerPayables } from '../finance/payables';
 import { statusLabel, statusTone } from '../purchasing/purchase-phone-model';
 import { containerCellSub, containerCounts, supplierOverview, type SupplierContainer } from './supplier-overview';
+import { sortSupplierProducts, supplierProductCount, supplierProductSub, supplierProductTitle } from './supplier-products';
 
 /**
  * Leveranciers' area stylesheet (Inkoop redesign, 2026-10-17): styles/suppliers.scss
@@ -52,12 +56,15 @@ function blank(): Supplier {
  * supplier with its containers and what they ask now and later, the chosen
  * supplier in full below it (critique B7). Phone: a list, and a sheet per
  * supplier with its containers and open amounts. The containers come from the
- * same list request the Inkoop screen makes (supplierOverview).
+ * same list request the Inkoop screen makes (supplierOverview). Producten
+ * (2026-10-25): the products the supplier makes, one request per supplier
+ * shown (sourcing.supplierProducts), on the desk under Containers and in the
+ * phone sheet after them.
  */
 @Component({
   selector: 'app-supplier-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, DateNlPipe],
+  imports: [Skeleton, FormsModule, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, CurPipe, DateNlPipe],
   template: `
     <app-supplier-list-styles />
     <app-page-header [showBack]="true" title="Leveranciers" [subtitle]="subtitle()">
@@ -185,6 +192,41 @@ function blank(): Supplier {
                   </div>
                 }
               </section>
+              <!-- Producten (several suppliers, 2026-10-25): what this supplier makes, with its version, EXW and last order; inactive rows folded. -->
+              <section class="sup-sec" aria-labelledby="sup-products-title">
+                @let listState = productsStateOf(supplier.id);
+                <h3 class="sup-sec__title" id="sup-products-title">Producten@if (listState === 'ready') { <span class="sup-sec__count">{{ productCounts().active }}</span> }</h3>
+                @if (listState === 'loading') {
+                  <app-skeleton kind="table" [rows]="3" />
+                } @else if (listState === 'error') {
+                  <p class="sup-muted" role="alert">Producten konden niet laden · <button class="wk-link" type="button" (click)="loadProducts(supplier.id)">Opnieuw</button></p>
+                } @else if (!products().length) {
+                  <p class="sup-muted">Nog geen producten bij deze leverancier.</p>
+                } @else {
+                  <div class="wk-table sup-ptable" role="table" aria-label="Producten">
+                    <div class="wk-thead" role="row">
+                      <span class="wk-th" role="columnheader">Product</span>
+                      <span class="wk-th wk-th--num" role="columnheader">EXW</span>
+                      <span class="wk-th wk-th--num" role="columnheader">Laatst besteld</span>
+                    </div>
+                    <div class="sup-pbody" role="rowgroup">
+                      @for (product of activeProducts(); track product.rowId) {
+                        <ng-container *ngTemplateOutlet="deskProduct; context: { $implicit: product }" />
+                      }
+                      @if (inactiveProducts().length) {
+                        <div class="wk-tr sup-pfold" role="row">
+                          <span class="wk-td" role="cell"><button class="wk-link" type="button" [attr.aria-expanded]="showInactiveProducts()" (click)="toggleInactiveProducts()">{{ inactiveProducts().length }} inactief <span class="sup-fold__chev" aria-hidden="true">›</span></button></span>
+                        </div>
+                        @if (showInactiveProducts()) {
+                          @for (product of inactiveProducts(); track product.rowId) {
+                            <ng-container *ngTemplateOutlet="deskProduct; context: { $implicit: product }" />
+                          }
+                        }
+                      }
+                    </div>
+                  </div>
+                }
+              </section>
               <div class="sup-pair">
                 <section class="sup-sec" aria-labelledby="sup-terms-title">
                   <h3 class="sup-sec__title" id="sup-terms-title">Inkoopafspraken</h3>
@@ -272,6 +314,38 @@ function blank(): Supplier {
       <button class="fab" type="button" (click)="open(null)">+ Leverancier</button>
     }
 
+    <!-- One product row of a supplier: photo, name · kleur · maat on one line (ellipsis), version · ref · last order under it. -->
+    <ng-template #deskProduct let-product>
+      <a class="wk-tr wk-tr--link sup-prow" role="row" [class.sup-prow--off]="!product.active || !product.productActive"
+         [attr.title]="product.productActive ? null : 'Product inactief'" [routerLink]="['/products', product.productId]">
+        <span class="wk-td sup-prod" role="cell">
+          @if (product.photoUrl) { <img class="sup-prod__photo" [appAuthSrc]="product.photoUrl" appAuthLazy alt="" draggable="false" /> }
+          @else { <span class="sup-prod__photo sup-prod__photo--none" aria-hidden="true">◈</span> }
+          <span class="sup-prod__body">
+            <span class="sup-prod__line"><b class="sup-prod__name">{{ productTitle(product) }}</b>@if (product.preferred) { <span class="wk-pill tone-accent">Voorkeur</span> }@if (!product.active) { <span class="wk-pill wk-pill--outline">Inactief</span> }</span>
+            <span class="sup-prod__sub">{{ productSub(product) }}</span>
+          </span>
+        </span>
+        <span class="wk-td wk-td--num sup-prod__price" role="cell">@if (product.exwPrice != null) { {{ product.exwPrice | cur: (product.exwCurrency ?? 'USD') }} } @else { — }</span>
+        <span class="wk-td wk-td--num" role="cell">{{ product.lastOrder?.orderDate | dateNl }}</span>
+      </a>
+    </ng-template>
+    <ng-template #phoneProduct let-product>
+      <a class="ios-cell" [class.sup-prow--off]="!product.active || !product.productActive" [routerLink]="['/products', product.productId]" (click)="close()">
+        @if (product.photoUrl) { <img class="ios-thumb" [appAuthSrc]="product.photoUrl" appAuthLazy alt="" draggable="false" /> }
+        @else { <span class="ios-thumb sup-thumb--none" aria-hidden="true">◈</span> }
+        <span class="ios-cell__body">
+          <span class="ios-cell__title">{{ productTitle(product) }}</span>
+          <span class="ios-cell__sub">{{ productSub(product) }}</span>
+        </span>
+        <span class="ios-cell__trail">
+          <span class="ios-cell__value ios-cell__value--strong sup-prod__price">@if (product.exwPrice != null) { {{ product.exwPrice | cur: (product.exwCurrency ?? 'USD') }} } @else { — }</span>
+          @if (product.preferred) { <span class="ios-cell__meta sup-pref">Voorkeur</span> } @else if (!product.active) { <span class="ios-cell__meta">Inactief</span> }
+        </span>
+        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+      </a>
+    </ng-template>
+
     @if (menu(); as open) {
       <app-context-menu class="sup-menu" [title]="open.supplier.name" [items]="menuItems" [anchor]="open.anchor" variant="ios" cancelLabel="Annuleren"
                         (pick)="menu.set(null); removeFromList(open.supplier)" (closed)="menu.set(null)" />
@@ -328,6 +402,31 @@ function blank(): Supplier {
                         </span>
                         <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                       </a>
+                    }
+                  </div>
+                }
+              </section>
+              <section class="ios-section">
+                @let listState = productsStateOf(draft().id);
+                <div class="ios-section__head"><h2>Producten</h2>@if (listState === 'ready') { <span class="ios-section__trail">{{ productCounts().active }}</span> }</div>
+                @if (listState === 'loading') {
+                  <app-skeleton kind="group" [rows]="2" />
+                } @else if (listState === 'error') {
+                  <p class="ios-section__foot" role="alert">Producten konden niet laden · <button class="wk-link" type="button" (click)="loadProducts(draft().id)">Opnieuw</button></p>
+                } @else if (!products().length) {
+                  <p class="ios-section__foot">Nog geen producten bij deze leverancier.</p>
+                } @else {
+                  <div class="ios-group ios-group--thumbs">
+                    @for (product of activeProducts(); track product.rowId) {
+                      <ng-container *ngTemplateOutlet="phoneProduct; context: { $implicit: product }" />
+                    }
+                    @if (inactiveProducts().length) {
+                      <button class="ios-cell ios-cell--action sup-pfold" type="button" [attr.aria-expanded]="showInactiveProducts()" (click)="toggleInactiveProducts()">{{ inactiveProducts().length }} inactief <span class="sup-fold__chev" aria-hidden="true">›</span></button>
+                      @if (showInactiveProducts()) {
+                        @for (product of inactiveProducts(); track product.rowId) {
+                          <ng-container *ngTemplateOutlet="phoneProduct; context: { $implicit: product }" />
+                        }
+                      }
                     }
                   </div>
                 }
@@ -553,12 +652,59 @@ export class SupplierList {
   });
   overviewOf(id: number | null | undefined) { return id == null ? undefined : this.overview().get(id); }
 
+  /* ---- the products this supplier makes (several suppliers, 2026-10-25): one request per supplier shown */
+  readonly productTitle = supplierProductTitle;
+  readonly productSub = supplierProductSub;
+  /** The supplier the product list belongs to; an answer that arrives after another supplier was chosen is dropped. */
+  readonly productsFor = signal<number | null>(null);
+  readonly productsState = signal<'loading' | 'ready' | 'error'>('loading');
+  readonly products = signal<SupplierProductRow[]>([]);
+  readonly showInactiveProducts = signal(false);
+  readonly activeProducts = computed(() => this.products().filter((row) => row.active));
+  readonly inactiveProducts = computed(() => this.products().filter((row) => !row.active));
+  readonly productCounts = computed(() => supplierProductCount(this.products()));
+  private productsRequest = 0;
+
   constructor() {
     /* Deep links (the product hero) filter the list straight to one supplier and choose it. */
     const q = inject(ActivatedRoute).snapshot.queryParamMap.get('q');
     if (q) this.query.set(q);
     void this.load();
     void this.loadContainers();
+    /* Desk: the chosen supplier's products load with it; the phone loads them when its sheet opens. */
+    effect(() => {
+      if (!this.desktop.active()) return;
+      const id = this.selectedId();
+      untracked(() => {
+        if (id != null && this.productsFor() !== id) void this.loadProducts(id);
+      });
+    });
+  }
+
+  /** The list's state for this supplier: another supplier's list (or none yet) reads as loading. */
+  productsStateOf(id: number | null | undefined): 'loading' | 'ready' | 'error' {
+    return id != null && this.productsFor() === id ? this.productsState() : 'loading';
+  }
+
+  async loadProducts(supplierId: number | null | undefined): Promise<void> {
+    if (supplierId == null) return;
+    const request = ++this.productsRequest;
+    this.productsFor.set(supplierId);
+    this.productsState.set('loading');
+    this.products.set([]);
+    this.showInactiveProducts.set(false);
+    try {
+      const rows = await this.sourcing.supplierProducts(supplierId);
+      if (request !== this.productsRequest || this.productsFor() !== supplierId) return;
+      this.products.set(sortSupplierProducts(rows));
+      this.productsState.set('ready');
+    } catch {
+      if (request === this.productsRequest && this.productsFor() === supplierId) this.productsState.set('error');
+    }
+  }
+
+  toggleInactiveProducts(): void {
+    this.showInactiveProducts.update((open) => !open);
   }
 
   reload(): void { void this.load(); }
@@ -677,6 +823,7 @@ export class SupplierList {
     this.editMode.set(!supplier || this.desktop.active());
     this.saveAttempted.set(false);
     this.editing.set(true);
+    if (supplier && !this.desktop.active()) void this.loadProducts(supplier.id);
   }
 
   close(): void {
