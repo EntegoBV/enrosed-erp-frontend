@@ -97,7 +97,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
-import { applyCostsPlan, applyCostsToast, missingProductIds } from './purchase-apply-costs';
+import { applyCostsPlan, applyCostsToast, costsStale, missingProductIds, staleNotice } from './purchase-apply-costs';
 import { statusBackOptions, type StatusBackSheetState, type StatusBackTarget } from './purchase-status-back';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
@@ -925,8 +925,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.destinationEur, line) | eurUp: decimals() }}</span></span></div>
                 @if (line.extraRevenueEur) {
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? 'per stuk' : 'hele regel' }}</span></span>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">{{ perPiece() ? (display ? 'per display' : 'per stuk') : 'hele regel' }}</span></span>
                     <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.extraRevenueEur, line) | eurUp: decimals() }}</span></span></div>
+                }
+                <!-- Spread into the piece price by a key: inside Geland, so the build-up shows it. -->
+                @if (line.separateEur && line.separateEur > 0) {
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Inspectie en andere kosten</span></span>
+                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ amt(line.separateEur, line) | eurUp: decimals() }}</span></span></div>
                 }
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">{{ perPiece() ? (display ? 'Geland per display' : 'Geland per stuk') : 'Geland totaal' }}</span></span>
                   <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ perPiece() ? (line.landedUnitEur | eurUp: 3) : (line.totalEur | eur) }}</span>
@@ -1545,7 +1550,7 @@ export class PurchaseEditor {
     if (!data) return [];
     return actionsMenu({
       status: data.order.status, step: this.nextStep()?.to ?? null, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
+      costsApplied: this.costsApplied(), staleCount: this.costsStaleNow().count, partner: data.order.partnerCustomerId != null, canQuote: this.quoteLines().length > 0,
       dirty: this.dirty(), saving: this.saving(), booking: this.booking(), deleting: this.deletingOrder(), stepBackBusy: this.stepBackBusy(),
     });
   });
@@ -4918,6 +4923,13 @@ export class PurchaseEditor {
     const byId = new Map(this.products().map((product) => [product.id, product]));
     return data.costing.lines.some((line) => byId.get(line.productId)?.landedCostSource === data.order.number);
   });
+  /** Products that carry an older cost of this container than it calculates now: the container changed after applying. */
+  readonly costsStaleNow = computed(() => {
+    const data = this.view();
+    return data ? costsStale(data.order.number, data.costing.lines, this.products()) : { count: 0, productIds: [], largestEur: 0 };
+  });
+  /** The one warn line above the products, with 'Opnieuw toepassen ›' beside it; null while nothing differs. */
+  readonly costsStaleText = computed(() => staleNotice(this.costsStaleNow()));
 
   /* ---- Kostprijzen toepassen: the sheet shows every product's cost now and next first */
   /**

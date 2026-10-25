@@ -66,6 +66,8 @@ import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoi
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
+import { salesCostBuild, type SalesCostRow } from './sales-cost-build';
+import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 
 /**
  * Sales order and quote.
@@ -78,7 +80,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet,
+            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
   template: `
     @if (view(); as data) {
@@ -1419,7 +1421,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
       }
 
       @if (costSheet(); as sheet) {
-        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="costSheet.set(null)">
+        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="closeCostSheet()">
           <div body>
             @if (sheet.rows.length) {
               <dl class="cost-sheet">
@@ -1430,8 +1432,9 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
                   </div>
                 }
               </dl>
-              @if (sheet.source) {
-                <p class="hint">Kostprijs uit calculatie <b>{{ sheet.source }}</b>.</p>
+              @if (sheet.source) { <p class="hint">{{ sheet.source }}</p> }
+              @if (sheet.missing) {
+                <p class="hint">{{ sheet.missing }}@if (sheet.product) { <button class="linklike" type="button" (click)="costHistoryOpen.set(true)">Historiek ›</button>}</p>
               }
             } @else {
               <p class="hint">Opbouw laden…</p>
@@ -1439,9 +1442,12 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
           </div>
           <div foot style="display:contents">
             <span class="spacer"></span>
-            <button class="btn" type="button" (click)="costSheet.set(null)">Sluiten</button>
+            <button class="btn" type="button" (click)="closeCostSheet()">Sluiten</button>
           </div>
         </app-sheet>
+        @if (costHistoryOpen() && sheet.product; as product) {
+          <app-product-cost-history-sheet [product]="product" (closed)="costHistoryOpen.set(false)" />
+        }
       }
 
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
@@ -2427,42 +2433,39 @@ export class SalesEditor {
   }
 
   /* ---- where the landed cost came from, one tap deep ---- */
-  readonly costSheet = signal<{ title: string; source: string | null;
-    rows: { label: string; hint?: string; eur: number; sum?: boolean }[] } | null>(null);
+  /**
+   * The cost frozen on the line, with its parts only when a history row of the product kept them
+   * for exactly that cost (salesCostBuild): never today's container calculation under it.
+   */
+  readonly costSheet = signal<{ productId: number; title: string; rows: SalesCostRow[]; source: string | null; missing: string | null;
+    product: Product | null } | null>(null);
+  /** The product's Kostprijshistoriek, stacked on the cost sheet. */
+  readonly costHistoryOpen = signal(false);
 
   async openCostSheet(line: PricedLine): Promise<void> {
-    this.costSheet.set({ title: line.description, source: null, rows: [] });
-    try {
-      const product = await this.catalog.product(line.productId);
-      const source = product.landedCostSource;
-      const rows: { label: string; hint?: string; eur: number; sum?: boolean }[] = [];
-      let found = false;
-      if (source) {
-        const orders = await this.sourcing.purchaseOrders();
-        const view = orders.find((item) => item.order.number === source);
-        const costingLine = view?.costing.lines.find((item) => item.productId === line.productId);
-        if (costingLine && costingLine.quantity > 0) {
-          found = true;
-          const per = (total: number) => total / costingLine.quantity;
-          rows.push({ label: 'Inkoopprijs (EXW)', hint: `${costingLine.quantity.toLocaleString('nl-BE')} ${this.lineUnit(line.productId).plural} in ${source}`, eur: per(costingLine.goodsEur) });
-          if (costingLine.originEur) rows.push({ label: '+ Lokale kosten bij vertrek', eur: per(costingLine.originEur) });
-          if (costingLine.freightEur) rows.push({ label: '+ Zeevracht', eur: per(costingLine.freightEur) });
-          if (costingLine.dutyEur) rows.push({ label: `+ Invoerrechten ${costingLine.dutyRatePct} %`, eur: per(costingLine.dutyEur) });
-          if (costingLine.destinationEur) rows.push({ label: '+ Kosten na aankomst', eur: per(costingLine.destinationEur) });
-          if (costingLine.extraRevenueEur) rows.push({ label: '+ Enrosed kost', eur: per(costingLine.extraRevenueEur) });
-        }
-      }
-      rows.push({ label: `Gelande kost per ${this.lineUnit(line.productId).singular}`, hint: found ? undefined : 'incl. transport en rechten',
-        eur: line.landedUnitCost, sum: true });
-      const advance = this.view()?.order && isAdvanceDocument(this.view()!.order);
-      rows.push({ label: advance ? `Voorschot per ${this.lineUnit(line.productId).singular}` : 'Netto verkoop', eur: line.netUnitPrice });
-      if (!advance && this.showsMargin()) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${this.lineUnit(line.productId).singular}`,
-        eur: this.marginPerUnit(line), sum: true });
-      this.costSheet.set({ title: line.description, source: source ?? null, rows });
-    } catch {
-      this.costSheet.update((sheet) => sheet && { ...sheet,
-        rows: [{ label: `Gelande kost per ${this.lineUnit(line.productId).singular}`, eur: line.landedUnitCost, sum: true }] });
-    }
+    this.costHistoryOpen.set(false);
+    this.costSheet.set({ productId: line.productId, title: line.description, rows: [], source: null, missing: null, product: null });
+    const [product, history] = await Promise.all([
+      this.catalog.product(line.productId).catch(() => null),
+      this.catalog.productCostHistory(line.productId).catch(() => []),
+    ]);
+    const order = this.view()?.order;
+    const unit = this.lineUnit(line.productId);
+    const build = salesCostBuild({ costEur: line.landedUnitCost, unit, docType: order?.docType, history,
+      containerSale: order?.sourcePurchaseOrderId != null && !order.partnerPurchaseOrderId });
+    const rows = [...build.rows];
+    const advance = order && isAdvanceDocument(order);
+    rows.push({ label: advance ? `Voorschot per ${unit.singular}` : 'Netto verkoop', eur: line.netUnitPrice });
+    if (!advance && this.showsMargin()) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${unit.singular}`,
+      eur: this.marginPerUnit(line), sum: true });
+    /* Another line's sheet may have opened meanwhile: this answer is only for its own. */
+    this.costSheet.update((sheet) => sheet?.productId === line.productId
+      ? { ...sheet, rows, source: build.source, missing: build.missing, product } : sheet);
+  }
+
+  closeCostSheet(): void {
+    this.costHistoryOpen.set(false);
+    this.costSheet.set(null);
   }
 
   /* ---- extra line discount, thought in percent or in euros ---- */

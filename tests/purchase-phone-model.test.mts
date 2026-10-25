@@ -10,7 +10,7 @@ import {
   HANDOFF_MS, PHONE_TABS, STEP_BUTTON, actionsMenu, calculationMadeOn, costsAppliedFor, costsSupersededFor, editNextStep, landedTile, linePriceText, nacalcGlance,
   nextStepCard, orderNumberLocked, parseTab,
   countWords, lineCount, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
-  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary,
+  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, takeHandoff, unsavedSummary, differenceCount, stepLabel,
   type ActionsMenuState, type AskedStep, type PhoneTab, type StepHandoff,
 } from '../src/app/features/purchasing/purchase-phone-model.ts';
 
@@ -374,6 +374,33 @@ test('Acties holds the old Afronden card and Meer acties, in order, per status',
     { next: true, apply: false, quote: true, copy: false, pdf: false, 'step-back': true, delete: true });
   assert.equal(disabled({ deleting: true }).delete, true);
   assert.equal(disabled({ status: 'ONTVANGEN', step: null, stockBooked: false, booking: true }).book, true);
+});
+
+test('products carrying an older cost of this container bring Kostprijzen back, never over a newer container (cost-fix Q2)', () => {
+  const read = (extra: Partial<Parameters<typeof readNextStep>[0]> = {}) =>
+    readNextStep({ status: 'ONTVANGEN', lineCount: 3, stockBooked: true, costsApplied: true, ...extra });
+  assert.equal(read(), null);
+  assert.equal(read({ stale: true }), 'KOSTPRIJZEN');
+  assert.equal(read({ stale: false }), null);
+  assert.equal(read({ stale: true, superseded: true }), null, 'a newer container\'s costs are never pushed aside');
+  assert.equal(read({ stale: true, stockBooked: false }), 'BIJBOEKEN', 'the shelf first');
+  assert.equal(read({ stale: true, status: 'BESTELD' }), 'VERTROKKEN', 'the status road first');
+  assert.equal(read({ stale: true, lineCount: 0 }), null);
+  /* The card says why the step is back, in a count. */
+  assert.deepEqual(seen(nextStepCard('KOSTPRIJZEN', 3, 3)), { title: 'Kostprijzen opnieuw toepassen?',
+    text: '3 producten dragen een oudere kostprijs dan deze container nu rekent.' });
+  assert.equal(nextStepCard('KOSTPRIJZEN', 3, 1).text, '1 product draagt een oudere kostprijs dan deze container nu rekent.');
+  assert.equal(nextStepCard('KOSTPRIJZEN', 3).title, 'Klaar voor de volgende stap?');
+  assert.equal(nextStepCard(null, 3, 2).title, 'Container afgerond');
+  /* Acties and the buttons name it again, with the count. */
+  const apply = (extra: Partial<ActionsMenuState>) => actionsMenu(menuState({ status: 'ONTVANGEN', step: null, ...extra })).find((item) => item.id === 'apply')!.label;
+  assert.equal(apply({ costsApplied: true, staleCount: 3 }), 'Kostprijzen opnieuw toepassen · 3 verschillen');
+  assert.equal(apply({ costsApplied: true, staleCount: 1 }), 'Kostprijzen opnieuw toepassen · 1 verschil');
+  assert.equal(apply({ costsApplied: true, staleCount: 0 }), 'Opnieuw kostprijzen toepassen');
+  assert.equal(apply({ costsApplied: false }), 'Kostprijzen toepassen');
+  assert.deepEqual([differenceCount(1), differenceCount(1200)], ['1 verschil', '1.200 verschillen']);
+  assert.deepEqual([stepLabel('KOSTPRIJZEN', true), stepLabel('KOSTPRIJZEN', false), stepLabel('BESTELLEN', true)],
+    ['Kostprijzen opnieuw toepassen', 'Kostprijzen toepassen', 'Bestellen']);
 });
 
 /* ---- the save bar --------------------------------------------------------- */

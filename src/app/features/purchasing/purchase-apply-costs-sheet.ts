@@ -20,8 +20,8 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     <app-sheet [title]="p.again ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen'" variant="ios"
                [wide]="desktop.active()" (closed)="cancel.emit()">
       <div body class="ac-sheet" [attr.inert]="busy() ? '' : null">
-        <p class="ac-sheet__intro">De berekende kostprijs (per display of per stuk, zoals het product verkocht wordt) wordt op de
-          producten in de catalogus gezet en overschrijft wat daar staat. Alle marges op verkooporders rekenen vanaf dan met deze cijfers.</p>
+        <!-- Existing sales lines keep the cost frozen on them (SalesOrderService.withCostSnapshots); only new lines take this one. -->
+        <p class="ac-sheet__intro">De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost.</p>
         @if (!p.rows.length) {
           <p class="ac-sheet__empty">Deze container heeft nog geen producten.</p>
         }
@@ -35,7 +35,8 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
               } @else {
                 <span class="linklike ac-row__history ac-row__history--none" aria-hidden="true">Historiek ›</span>
               }
-              <small class="ac-row__basis">{{ row.quantity }}@if (row.per) { · kostprijs {{ row.per }}}</small>
+              <small class="ac-row__basis">{{ row.quantity }}@if (row.per) { · kostprijs {{ row.per }}}@if (row.catalogue; as price) {
+                · <span class="ac-row__price">catalogus @if (price.fromEur !== null) {{{ price.fromEur | eur }} → }{{ price.toEur | eur }}</span>}</small>
               @if (row.state === 'skipped') {
                 <p class="ac-row__skip">
                   niets ontvangen · blijft {{ row.currentEur !== null ? (row.currentEur | eur: 4) : 'zonder kostprijs' }}
@@ -102,6 +103,7 @@ import { applyCostsButton, type ApplyCostRow, type ApplyCostsPlan } from './purc
     /* A product the screen could not load has no history to open; the hidden link keeps its width, so the figures line up. */
     .ac-row__history--none { visibility: hidden; }
     .ac-row__basis { grid-area: basis; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
+    .ac-row__price { white-space: nowrap; }
     .ac-row__skip { grid-area: figs; margin: 2px 0 0; color: var(--muted); font-size: 12.5px; font-style: italic; }
     .ac-row__figures { grid-area: figs; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
     .ac-fig { display: grid; align-content: start; gap: 1px; min-width: 0; }

@@ -386,7 +386,9 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
     assert.equal(text.match(/<app-purchase-apply-costs-sheet /g)?.length, 1, name);
     assert.match(text, /@if \(applyPlan\(\); as plan\) \{\s*<app-purchase-apply-costs-sheet \[plan\]="plan" \[orderId\]="data\.order\.id" \[busy\]="applyBusy\(\)"\s+\(confirm\)="confirmApply\(\)" \(cancel\)="closeApply\(\)" \/>/, name);
   }
-  assert.equal(desk.match(/\(click\)="apply\(\)"/g)?.length, 1, 'desk');
+  /* Afronden's action, and the warn line above the products when they carry an older cost of this container (cost-fix Q2). */
+  assert.equal(desk.match(/\(click\)="apply\(\)"/g)?.length, 2, 'desk');
+  assert.match(desk, /@if \(costsStaleText\(\); as stale\) \{[\s\S]*?\(click\)="apply\(\)">Opnieuw toepassen ›<\/button>/);
   /* The phone editor: Acties, the Nacalculatie and the read view's handed KOSTPRIJZEN step all open the sheet. */
   assert.match(editorSource, /case 'apply': this\.apply\(\); break;/);
   assert.match(editorSource, /\(applyCosts\)="apply\(\)"/);
@@ -398,12 +400,15 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   assert.match(desk, /Zet de gelande kost per display of per stuk op de productkaarten\./);
 });
 
-test('the sheet parses, keeps the old sentence and the wording rules', async () => {
+test('the sheet parses, says what applying does and keeps the wording rules', async () => {
   const sheet = await readFile(new URL('../src/app/features/purchasing/purchase-apply-costs-sheet.ts', import.meta.url), 'utf8');
   const template = /template:\s*`([\s\S]*?)`,\s*styles:/.exec(sheet)?.[1] ?? '';
   assert.equal(parseTemplate(template, 'purchase-apply-costs-sheet.html').errors, null);
   assert.match(template, /p\.again \? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen'/);
-  assert.match(template.replace(/\s+/g, ' '), /De berekende kostprijs \(per display of per stuk, zoals het product verkocht wordt\) wordt op de producten in de catalogus gezet en overschrijft wat daar staat\. Alle marges op verkooporders rekenen vanaf dan met deze cijfers\./);
+  /* Existing sales lines keep their frozen cost: the old 'Alle marges op verkooporders' sentence was untrue (cost-fix Q5). */
+  assert.match(template.replace(/\s+/g, ' '), /De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost\./);
+  assert.doesNotMatch(template, /Alle marges op verkooporders/);
+  assert.match(template, /@if \(row\.catalogue; as price\) \{\s*· <span class="ac-row__price">catalogus @if \(price\.fromEur !== null\) \{\{\{ price\.fromEur \| eur \}\} → \}\{\{ price\.toEur \| eur \}\}<\/span>\}/);
   assert.match(template, />Annuleren</);
   assert.match(template, /Historiek ›/);
   /* A product the screen could not load: no history button, its width kept, and no basis words. */
@@ -419,4 +424,57 @@ test('the sheet parses, keeps the old sentence and the wording rules', async () 
   /* The words on screen: tags, bindings and control flow stripped. */
   const words = template.replace(/<[^>]*>/g, ' ').replace(/\{\{[^}]*\}\}/g, ' ').replace(/@\w+[^{]*\{/g, ' ');
   assert.doesNotMatch(words, /\bset\b|begroot|\bst\b/i);
+});
+
+/* ---- cost-fix Q1/Q5: stale costs and the catalogue price ------------------ */
+
+/** The euro formatter writes a no-break space; the assertions read plain spaces. */
+const spaces = (value: string | null): string | null => value?.replace(/ /g, ' ') ?? null;
+
+test('costsStale: products carrying this container\'s cost that it no longer calculates, nothing else', () => {
+  const products = [
+    product(401, 'Rose in dome 15x30 single - Blue', 8.318, 'PO-2026-014'),
+    product(402, 'Rose in dome 15x30 single - Red', 10.3858, 'PO-2026-014'),
+    product(403, 'Rose in dome 20x40', 12.5, 'PO-2026-015'),
+    product(404, 'Rose in dome 10x20', 6.2, 'PO-2026-014'),
+    product(405, 'Hart in doos', 4.1, 'PO-2026-014'),
+    product(406, 'Nieuwe stolp', null, null),
+  ];
+  const lines = [line(401, 18, 10.3858), line(402, 18, 10.38584), line(403, 24, 11.2), line(404, 30, 6.1), line(405, 0, 0), line(406, 12, 3),
+    line(407, 5, 9)];
+  const stale = apply.costsStale('PO-2026-014', lines, products);
+  /* Equal at 4 decimals is fresh; another container's cost (newer or older) is not this one's to fix; a line that received
+     nothing is never applied, so it would never clear; a product the screen does not know is left out. */
+  assert.deepEqual(plain(stale), { count: 2, productIds: [401, 404], largestEur: 2.0678 });
+  assert.equal(spaces(apply.staleNotice(stale)), '2 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07)');
+  const one = apply.costsStale('PO-2026-014', [line(404, 30, 6.1)], products);
+  assert.equal(spaces(apply.staleNotice(one)), '1 product draagt een oudere kostprijs van deze container (▼ € 0,10)');
+  /* Under a cent the change keeps its decimals, so it never reads as € 0,00. */
+  assert.equal(spaces(apply.staleNotice({ count: 1, largestEur: 0.0004 })), '1 product draagt een oudere kostprijs van deze container (▲ € 0,0004)');
+  assert.equal(apply.staleNotice(apply.costsStale('PO-2026-014', [line(402, 18, 10.3858)], products)), null);
+  assert.deepEqual(plain(apply.costsStale('PO-2026-014', [], products)), { count: 0, productIds: [], largestEur: 0 });
+  /* Applying again clears it: every stale product then carries the line's cost. */
+  const applied = products.map((p) => ({ ...p, landedCostEur: lines.find((l) => l.productId === p.id && l.quantity > 0 && p.landedCostSource === 'PO-2026-014')?.landedUnitEur ?? p.landedCostEur }));
+  assert.equal(apply.costsStale('PO-2026-014', lines, applied).count, 0);
+});
+
+test('the catalogue price follows the cost by the server\'s rule, unless the product has a fixed price', () => {
+  const dome = { ...product(401, 'Rose in dome 15x30 single', 8.318, 'PO-2026-014'), markupPct: 50, fixedSalesPriceEur: null, computedSalesPriceEur: 12.48 };
+  const row = apply.applyCostRow(ORDER, line(401, 18, 10.3858), dome);
+  assert.equal(row.state, 'up');
+  assert.deepEqual(plain(row.catalogue), { fromEur: 12.48, toEur: 15.58 });
+  assert.equal(apply.applyCostRow(ORDER, line(401, 18, 10.3858), { ...dome, fixedSalesPriceEur: 19.95 }).catalogue, null, 'a fixed price stays');
+  assert.equal(apply.applyCostRow(ORDER, line(401, 18, 8.318), dome).catalogue, null, 'unchanged cost, unchanged price');
+  assert.deepEqual(plain(apply.applyCostRow(ORDER, line(401, 18, 6), { ...dome, landedCostEur: null, landedCostSource: null, computedSalesPriceEur: 0 }).catalogue),
+    { fromEur: null, toEur: 9 }, 'a first cost: only the new price');
+  /* An older payload without the computed price works the price now out the same way. */
+  assert.deepEqual(plain(apply.applyCostRow(ORDER, line(401, 18, 10.3858), { ...dome, computedSalesPriceEur: 0 }).catalogue), { fromEur: 12.48, toEur: 15.58 });
+  assert.equal(apply.applyCostRow(ORDER, line(401, 0, 0), dome).catalogue, null, 'nothing received, nothing applied');
+  assert.equal(apply.applyCostRow(ORDER, line(401, 18, 10.3858), null).catalogue, null);
+  /* Half-up to the cent like the server, also where the binary double sits just under the half. */
+  assert.equal(apply.catalogueAt(1.005, 0), 1.01);
+  assert.equal(apply.catalogueAt(10.385, null), 10.39);
+  assert.equal(apply.catalogueAt(8.318, 50), 12.48);
+  /* A cost change too small to move the cent shows no catalogue line. */
+  assert.equal(apply.applyCostRow(ORDER, line(401, 18, 8.3181), dome).catalogue, null);
 });

@@ -63,6 +63,7 @@ test('the phone Ordernummer is fixed from Besteld on: a disabled field with a sh
 
 test('the Overzicht card follows the dock\'s step (readNextStep), not the status alone (I-B6)', async () => {
   const view = await read('purchase-view.ts');
-  assert.match(view, /@let card = nextStepCard\(readStep\(\), data\.costing\.lines\.length\);\s*<h3 id="mpo-actions-title">\{\{ card\.title \}\}<\/h3>\s*<p>\{\{ card\.text \}\}<\/p>/);
+  // The card also counts the products that carry an older cost of this container (cost-fix Q2).
+  assert.match(view, /@let card = nextStepCard\(readStep\(\), data\.costing\.lines\.length, costsStaleNow\(\)\.count\);\s*<h3 id="mpo-actions-title">\{\{ card\.title \}\}<\/h3>\s*<p>\{\{ card\.text \}\}<\/p>/);
   assert.doesNotMatch(view, /actionTitle\(|actionDescription\(/);
 });

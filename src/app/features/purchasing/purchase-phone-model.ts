@@ -288,26 +288,42 @@ export function stepToward(to: string | null | undefined): AskedStep | null {
   return to === 'BESTELD' ? 'BESTELLEN' : to === 'ONDERWEG' ? 'VERTROKKEN' : to === 'ONTVANGEN' ? 'ONTVANGEN' : null;
 }
 
-/** The read view's dock step: the status road, then the shelf, then the catalogue costs; nothing on an empty container. */
+/**
+ * The read view's dock step: the status road, then the shelf, then the catalogue costs; nothing on an
+ * empty container. The costs come back when products carry an older cost of this container (cost-fix Q2).
+ */
 export function readNextStep(s: {
   status: PurchaseOrder['status']; lineCount: number; stockBooked: boolean | null | undefined; costsApplied: boolean;
   /** A newer container's costs sit on some of these products: this one must not push them aside (amendment G12). */
   superseded?: boolean;
+  /** Products carry an older cost of this container than it calculates now (costsStale). */
+  stale?: boolean;
 }): PhoneStep | null {
   if (s.lineCount <= 0) return null;
   if (s.status === 'CONCEPT') return 'BESTELLEN';
   if (s.status === 'BESTELD') return 'VERTROKKEN';
   if (s.status === 'ONDERWEG') return 'ONTVANGEN';
   if (s.stockBooked === false) return 'BIJBOEKEN';
-  return !s.costsApplied && !s.superseded ? 'KOSTPRIJZEN' : null;
+  return (!s.costsApplied || s.stale) && !s.superseded ? 'KOSTPRIJZEN' : null;
+}
+
+/** '1 verschil', '3 verschillen': products whose cost differs from the container's calculation. */
+export function differenceCount(count: number): string {
+  return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'verschil' : 'verschillen'}`;
+}
+
+/** The step's button; Kostprijzen once applied says opnieuw, as Acties does. */
+export function stepLabel(step: PhoneStep, costsApplied: boolean): string {
+  return step === 'KOSTPRIJZEN' && costsApplied ? 'Kostprijzen opnieuw toepassen' : STEP_BUTTON[step];
 }
 
 /**
  * The Overzicht card under 'Volgende stap', in words: it follows the dock's
  * readNextStep, so the card never says 'afgerond' while the dock still
- * offers a step (I-B6). Null means the road is done.
+ * offers a step (I-B6). Null means the road is done; `stale` counts the
+ * products that carry an older cost of this container.
  */
-export function nextStepCard(step: PhoneStep | null, lineCount: number): { title: string; text: string } {
+export function nextStepCard(step: PhoneStep | null, lineCount: number, stale = 0): { title: string; text: string } {
   if (lineCount <= 0) {
     return { title: 'Voeg eerst producten toe', text: 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.' };
   }
@@ -321,7 +337,10 @@ export function nextStepCard(step: PhoneStep | null, lineCount: number): { title
     case 'BIJBOEKEN':
       return { title: 'Klaar voor de volgende stap?', text: 'Ontvangen, nog niet bijgeboekt: de stuks staan nog niet in de voorraad.' };
     case 'KOSTPRIJZEN':
-      return { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
+      return stale > 0
+        ? { title: 'Kostprijzen opnieuw toepassen?',
+          text: `${stale === 1 ? '1 product draagt' : `${stale.toLocaleString('nl-BE')} producten dragen`} een oudere kostprijs dan deze container nu rekent.` }
+        : { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
     default:
       return { title: 'Container afgerond', text: 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.' };
   }
@@ -408,6 +427,8 @@ export interface ActionsMenuState {
   lineCount: number;
   stockBooked: boolean | null | undefined;
   costsApplied: boolean;
+  /** Products carrying an older cost of this container (costsStale().count); 0 or absent when none. */
+  staleCount?: number;
   partner: boolean;
   canQuote: boolean;
   dirty: boolean;
@@ -434,7 +455,8 @@ export function actionsMenu(s: ActionsMenuState): ContextMenuItem[] {
       iconName: 'stock', disabled: s.booking });
   }
   items.push(
-    { id: 'apply', label: s.costsApplied ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
+    { id: 'apply', label: (s.staleCount ?? 0) > 0 ? `Kostprijzen opnieuw toepassen · ${differenceCount(s.staleCount!)}`
+      : s.costsApplied ? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen',
       hint: 'Gelande kostprijs per display of per stuk naar de producten', iconName: 'tag' },
     { id: 'quote', label: s.partner ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken', iconName: 'sales', disabled: !s.canQuote },
     { id: 'copy', label: 'Deze container kopiëren', iconName: 'copy' },
