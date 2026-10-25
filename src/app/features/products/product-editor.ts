@@ -40,6 +40,12 @@ import { messageOf } from '../../core/api/errors';
 import { STANDARD_COLOURS, COLOUR_SWATCHES } from '../../core/api/geo';
 import { ProductPublicationEditor } from './product-publication-editor';
 import { ProductSupplierAgreementEditor } from './product-supplier-agreement-editor';
+import type { ProductSupplierChange, ProductSupplierRow } from '../../core/api/product-supplier-models';
+import { ProductSupplierList } from './product-supplier-list';
+import {
+  agreementSupplierChoices, mirrorPatch, noteWrite, otherActiveCount, purchaseFieldsForPut, purchaseMode, sortSupplierRows,
+  supplierMissing, type SupplierRowsState,
+} from './product-suppliers';
 import { ProductPhotosPanel } from './product-photos-panel';
 import { salesPhoto } from '../../shared/sales-photo';
 import { ProductVariantGroup } from './product-variant-group';
@@ -92,7 +98,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource,
+    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList,
   ],
   template: `
     @if (!desktop.active()) {
@@ -471,6 +477,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             <details class="identity-extra identity-extra--article span-2" [open]="desktop.active()">
               <summary><span>Artikelgegevens<small>Leverancier en omschrijving</small></span><span aria-hidden="true">⌄</span></summary>
               <div class="identity-extra__body form-grid">
+            @if (purchaseMode() === 'new' || purchaseMode() === 'legacy') {
             <div class="field span-2">
               <label class="req" for="p-supplier">Leverancier</label>
               <select class="select" id="p-supplier" [ngModel]="draft().supplierId"
@@ -482,6 +489,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
                 }
               </select>
             </div>
+            } @else {
+            <!-- Several suppliers (2026-10-25): the rows in Inkoop own the supplier; here only the Voorkeur. -->
+            <div class="field span-2 supplier-line" id="p-supplier-line">
+              <span class="supplier-line__label">Leverancier</span>
+              <div class="supplier-line__value">
+                <b [title]="preferredSupplierName()">{{ preferredSupplierName() || '—' }}</b>
+                @if (purchaseMode() === 'rows' && otherSupplierCount() > 0) { <span class="supplier-line__more">+{{ otherSupplierCount() }}</span> }
+                <button class="linklike supplier-line__edit" type="button" (click)="focusField('purchasing', 'ps-add')">Wijzigen in Inkoop ›</button>
+              </div>
+            </div>
+            }
             <div class="field span-2">
               <label for="p-description">Omschrijving op offerte <span class="opt"></span></label>
               <textarea class="textarea" id="p-description" rows="3"
@@ -820,10 +838,20 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     <section class="card editor-section erp-workspace__section" id="purchasing" aria-labelledby="purchasing-title">
       <div class="card__head section-head erp-workspace__section-head">
         <span class="section-head__number erp-workspace__section-index" aria-hidden="true">04</span>
-        <div><h2 id="purchasing-title">Inkoop</h2><p>Fabrieksprijs, valuta en kostprijsopbouw</p></div>
+        <div><h2 id="purchasing-title">Inkoop</h2><p>Leveranciers, fabrieksprijs en kostprijsopbouw</p></div>
       </div>
       <div class="card__body">
+        @if (purchaseMode() === 'rows') {
+          <app-product-supplier-list [productId]="draft().id ?? 0" [rows]="supplierRows()" [suppliers]="suppliers()"
+                                     [unitSingular]="salesUnit(draft()).singular" [disabled]="formWriteBusy()" [desktop]="desktop.active()"
+                                     (changed)="onSupplierRowsChanged($event)" (reload)="reloadSupplierRows()" />
+        } @else if (purchaseMode() === 'loading') {
+          <div class="supplier-rows-loading" role="status" aria-label="Leveranciers laden"><app-skeleton kind="lines" [rows]="2" /></div>
+        } @else if (purchaseMode() === 'legacy' && supplierRowsState() === 'error') {
+          <p class="supplier-rows-error" role="status">Leveranciers konden niet laden · <button class="linklike" type="button" (click)="reloadSupplierRows()">Opnieuw</button></p>
+        }
         <div class="form-grid">
+          @if (purchaseMode() === 'new' || purchaseMode() === 'legacy') {
           <div class="field">
             <label class="req" for="p-exw">EXW prijs</label>
             <input class="input num right" id="p-exw" appDecimal
@@ -849,6 +877,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
             </div>
             <span class="hint">Wat de leverancier per {{ salesUnit(draft()).singular }} extra rekent bovenop de EXW-prijs: een display, een giftbox, een inlay. Telt mee in de kostprijs.</span>
           </div>
+          }
           <div class="field">
             <label for="p-hs">HS-code <span class="opt"></span></label>
             <select class="select" id="p-hs" [ngModel]="draft().hsCode"
@@ -1112,18 +1141,32 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         </div>
       </section>
 
+      <!-- Several suppliers: another supplier's row shows its own note and photos (saved through the row's note call). -->
       <app-product-supplier-agreement-editor
         class="card editor-section erp-workspace__section" id="agreements"
         [productId]="draft().id"
-        [supplierId]="draft().supplierId"
-        [persistedSupplierId]="savedSupplierId()"
+        [supplierId]="agreementOtherRow()?.supplierId ?? draft().supplierId"
+        [persistedSupplierId]="agreementOtherRow()?.supplierId ?? savedSupplierId()"
               [productDirty]="dirty()"
-        [supplierName]="selectedSupplierName()"
-        [note]="draft().supplierNote"
+        [supplierName]="agreementOtherRow()?.supplierName ?? selectedSupplierName()"
+        [note]="agreementNote()"
+        [sharingAllowed]="!agreementOtherRow()"
         [disabled]="saving() || photoUploading() || translationSaving()"
-        (noteChange)="patch({ supplierNote: $event })"
+        (noteChange)="changeAgreementNote($event)"
         (applicabilitySaved)="agreementGroupSaved()"
-      />
+      >
+        @if (agreementChoices().length >= 2) {
+          <div agreementSupplier class="field agreement-supplier">
+            <label for="pa-supplier">Leverancier</label>
+            <select class="select" id="pa-supplier" [disabled]="agreementDirty()" [attr.title]="agreementDirty() ? 'Eerst opslaan' : null"
+                    [ngModel]="agreementSelectedId()" (ngModelChange)="agreementSupplierId.set($event)">
+              @for (choice of agreementChoices(); track choice.id) {
+                <option [ngValue]="choice.id">{{ choice.label }}</option>
+              }
+            </select>
+          </div>
+        }
+      </app-product-supplier-agreement-editor>
 
       <!-- Public content is desktop work: long texts, translations and
            image curation do not belong on a phone at the fair. -->
@@ -1497,6 +1540,17 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .select--status-off { background-color: var(--surface-2); color: var(--muted); }
     .select--status-demo { background-color: var(--warn-soft); color: var(--warn); }
     .variant-pending { border-color: var(--rose-soft); background: var(--rose-soft); }
+    /* Several suppliers (2026-10-25): the Voorkeur line in Basisgegevens, the rows' loading/failed states, the Afspraken choice. */
+    .supplier-line__label { font-size: 12.5px; font-weight: 650; color: var(--ink-2); }
+    .supplier-line__value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; min-height: 46px;
+      padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+    .supplier-line__value b { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 650; }
+    .supplier-line__more { color: var(--muted); font-size: 13px; font-weight: 700; }
+    .supplier-line__edit { margin-left: auto; font-size: 12.5px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+    .supplier-rows-loading { margin-bottom: 14px; }
+    .supplier-rows-error { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+    .supplier-rows-error .linklike { font-size: 12.5px; font-weight: 650; }
+    .agreement-supplier { margin: 0; max-width: 420px; }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
     @media (max-width: 679px) {
       .editor-canvas .editor-section,
@@ -2089,6 +2143,158 @@ export class ProductEditor implements OnDestroy {
   /** Supplier whose private agreement photos currently belong to on the server. */
   readonly savedSupplierId = signal<number | null>(null);
   readonly suppliers = signal<Supplier[]>([]);
+
+  /* ---- several suppliers (2026-10-25): the product's supplier rows ---- */
+  readonly supplierRows = signal<ProductSupplierRow[]>([]);
+  readonly supplierRowsState = signal<SupplierRowsState>('loading');
+  /** The product the rows belong to; rows of another product read as still loading. */
+  private readonly supplierRowsProductId = signal<number | null>(null);
+  private supplierRowsVersion = 0;
+  /** The supplier whose agreement the Afspraken tab shows; null follows the Voorkeur. */
+  readonly agreementSupplierId = signal<number | null>(null);
+  /** Unsaved agreement notes of the other suppliers' rows, keyed by supplier id (null clears). */
+  readonly rowNoteDrafts = signal<Record<number, string | null>>({});
+  readonly purchaseMode = computed(() => {
+    const product = this.draft();
+    const fits = product.id !== null && this.supplierRowsProductId() === product.id;
+    return purchaseMode(product.id, fits ? this.supplierRowsState() : 'loading', fits ? this.supplierRows().length : 0,
+      product.supplierId);
+  });
+  readonly preferredSupplierName = computed(() =>
+    this.supplierRows().find((row) => row.preferred)?.supplierName ?? this.selectedSupplierName());
+  readonly otherSupplierCount = computed(() => otherActiveCount(this.supplierRows()));
+  /** Rows of this product with two or more suppliers: the Afspraken tab offers the choice. */
+  private readonly agreementRows = computed(() =>
+    this.purchaseMode() === 'rows' && this.supplierRows().length >= 2 ? this.supplierRows() : []);
+  readonly agreementChoices = computed(() => agreementSupplierChoices(this.agreementRows()));
+  readonly agreementSelectedId = computed(() => {
+    const rows = this.agreementRows();
+    const chosen = this.agreementSupplierId();
+    if (chosen !== null && rows.some((row) => row.supplierId === chosen)) return chosen;
+    return rows.find((row) => row.preferred)?.supplierId ?? this.draft().supplierId;
+  });
+  /** The chosen row when it is not the Voorkeur: the tab shows its own note and photos. */
+  readonly agreementOtherRow = computed(() => {
+    const row = this.agreementRows().find((item) => item.supplierId === this.agreementSelectedId());
+    return row && !row.preferred ? row : null;
+  });
+  readonly agreementNote = computed(() => {
+    const row = this.agreementOtherRow();
+    if (!row) return this.draft().supplierNote;
+    const drafts = this.rowNoteDrafts();
+    return row.supplierId in drafts ? drafts[row.supplierId] : row.supplierNote;
+  });
+  /** A row note typed and not saved yet; a draft equal to its row's note is clean. */
+  readonly rowNotesDirty = computed(() => {
+    const rows = this.supplierRows();
+    return Object.entries(this.rowNoteDrafts()).some(([supplierId, note]) => {
+      const row = rows.find((item) => item.supplierId === Number(supplierId));
+      return !!row && (note ?? '') !== (row.supplierNote ?? '');
+    });
+  });
+
+  changeAgreementNote(note: string | null): void {
+    const row = this.agreementOtherRow();
+    if (!row) {
+      this.patch({ supplierNote: note });
+      return;
+    }
+    this.rowNoteDrafts.update((drafts) => ({ ...drafts, [row.supplierId]: note }));
+  }
+
+  /** The rows of one product; a late answer of another product is dropped, a failure falls back to today's fields. */
+  private async loadSupplierRows(productId: number): Promise<void> {
+    const version = ++this.supplierRowsVersion;
+    if (this.supplierRowsProductId() !== productId) {
+      this.supplierRows.set([]);
+      this.rowNoteDrafts.set({});
+      this.agreementSupplierId.set(null);
+      this.supplierRowsState.set('loading');
+      this.supplierRowsProductId.set(productId);
+    } else if (this.supplierRowsState() === 'error') {
+      this.supplierRowsState.set('loading');
+    }
+    try {
+      const rows = await this.catalog.productSuppliers(productId);
+      if (version !== this.supplierRowsVersion || this.supplierRowsProductId() !== productId) return;
+      this.supplierRows.set(sortSupplierRows(rows));
+      this.supplierRowsState.set('ready');
+    } catch {
+      if (version !== this.supplierRowsVersion || this.supplierRowsProductId() !== productId) return;
+      this.supplierRowsState.set('error');
+    }
+  }
+
+  reloadSupplierRows(): void {
+    const productId = this.draft().id;
+    if (productId !== null) void this.loadSupplierRows(productId);
+  }
+
+  /**
+   * A row write answered with the rows and the product's mirror. The mirror
+   * lands in the draft and in its baseline (as afterBooking does), so other
+   * unsaved edits stay unsaved and the row change never reads as one. A typed,
+   * unsaved agreement note stays with the supplier it was typed for.
+   */
+  onSupplierRowsChanged(change: ProductSupplierChange): void {
+    const before = this.draft();
+    const baseline = this.baseline();
+    const saved = baseline ? JSON.parse(baseline) as Product : null;
+    const patch = mirrorPatch(change.product);
+    const nextPreferred = change.product.supplierId;
+    const noteTyped = !!saved && (before.supplierNote ?? '') !== (saved.supplierNote ?? '');
+    const rows = sortSupplierRows(change.rows);
+    this.supplierRows.set(rows);
+    if (before.supplierId !== nextPreferred) {
+      const drafts = { ...this.rowNoteDrafts() };
+      const carried = nextPreferred !== null && nextPreferred in drafts ? drafts[nextPreferred] : undefined;
+      if (nextPreferred !== null) delete drafts[nextPreferred];
+      if (noteTyped && before.supplierId !== null && rows.some((row) => row.supplierId === before.supplierId)) {
+        drafts[before.supplierId] = before.supplierNote;
+      }
+      this.rowNoteDrafts.set(drafts);
+      /* Unsaved agreement work keeps showing the supplier it belongs to. */
+      if (this.agreementSupplierId() === null && before.supplierId !== null
+          && (noteTyped || (this.agreementEditor()?.dirty() ?? false))) {
+        this.agreementSupplierId.set(before.supplierId);
+      }
+      this.draft.update((p) => ({ ...p, ...patch, ...(carried !== undefined ? { supplierNote: carried } : {}) }));
+    } else {
+      this.draft.update((p) => ({ ...p, ...patch, ...(noteTyped ? { supplierNote: p.supplierNote } : {}) }));
+    }
+    if (saved) this.baseline.set(JSON.stringify({ ...saved, ...patch }));
+    this.savedSupplierId.set(nextPreferred);
+  }
+
+  /**
+   * The other suppliers' agreement notes, each through its row's note call.
+   * A success clears that draft; a failure keeps it (agreementDirty stays true)
+   * and answers the partial-save message.
+   */
+  private async saveRowNotes(productId: number): Promise<string | null> {
+    let failure: string | null = null;
+    for (const [key, note] of Object.entries(this.rowNoteDrafts())) {
+      const supplierId = Number(key);
+      const row = this.supplierRows().find((item) => item.supplierId === supplierId);
+      if (row && (note ?? '') !== (row.supplierNote ?? '')) {
+        try {
+          const change = await this.catalog.updateProductSupplierNote(productId, row.id, noteWrite(note, row));
+          if (this.draft().id !== productId) return failure;
+          this.onSupplierRowsChanged(change);
+        } catch (error: unknown) {
+          failure ??= `Product opgeslagen · afspraak ${row.supplierName} niet opgeslagen: ${messageOf(error, 'Opslaan mislukt')}`;
+          if ((error as { status?: number } | null)?.status === 409) void this.loadSupplierRows(productId);
+          continue;
+        }
+      }
+      this.rowNoteDrafts.update((drafts) => {
+        const next = { ...drafts };
+        delete next[supplierId];
+        return next;
+      });
+    }
+    return failure;
+  }
   readonly categories = signal<Category[]>([]);
   readonly hsCodes = signal<HsCode[]>([]);
   readonly families = signal<ProductFamily[]>([]);
@@ -2365,7 +2571,8 @@ export class ProductEditor implements OnDestroy {
   readonly photoRevision = signal(0);
   readonly agreementEditor = viewChild(ProductSupplierAgreementEditor);
   readonly agreementBusy = computed(() => this.agreementEditor()?.busy() ?? false);
-  readonly agreementDirty = computed(() => this.agreementEditor()?.dirty() ?? false);
+  /** Photos, captions and colours in the agreement editor, plus the other suppliers' unsaved notes. */
+  readonly agreementDirty = computed(() => (this.agreementEditor()?.dirty() ?? false) || this.rowNotesDirty());
   private agreementGroupError: string | null = null;
   agreementGroupSaved(): void {
     if (this.agreementGroupError !== null && this.saveError() === this.agreementGroupError) {
@@ -2573,6 +2780,8 @@ export class ProductEditor implements OnDestroy {
       this.draft.set(blankProduct(null, 'USD'));
       this.markClean();
     }
+    /* The supplier rows come with the product (several suppliers, 2026-10-25). */
+    void this.loadSupplierRows(productId);
     try {
       const product = await this.catalog.product(productId);
       if (version !== this.productLoadVersion || Number(this.id()) !== productId) return;
@@ -3424,7 +3633,8 @@ export class ProductEditor implements OnDestroy {
   readonly missingFields = computed(() => {
     const draft = this.draft();
     const missing: { tab: string; field: string; label: string }[] = [];
-    if (!draft.supplierId) missing.push({ tab: 'identity', field: 'p-supplier', label: 'leverancier' });
+    const supplier = supplierMissing(this.purchaseMode(), this.supplierRows().length, draft.supplierId);
+    if (supplier) missing.push(supplier);
     if (!draft.name.trim()) missing.push({ tab: 'identity', field: 'p-name', label: 'productnaam' });
     if (!(draft.colour ?? '').trim()) missing.push({ tab: 'identity', field: 'p-colour', label: 'kleur' });
     if ((draft.carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() === null) {
@@ -3493,6 +3703,7 @@ export class ProductEditor implements OnDestroy {
     }
     this.settleOrderStep();
     const wasNew = this.isNew();
+    const rowsMode = this.purchaseMode();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);
     this.saving.set(true);
@@ -3511,7 +3722,10 @@ export class ProductEditor implements OnDestroy {
       const agreementResult = saved.id === null
         ? null
         : await this.agreementEditor()?.flush(saved.id) ?? null;
+      const rowNoteFailure = saved.id === null ? null : await this.saveRowNotes(saved.id);
       this.markClean();
+      /* Today's fields were saved: the server has made the product's own row by now. */
+      if (!wasNew && saved.id !== null && (rowsMode === 'legacy' || rowsMode === 'loading')) void this.loadSupplierRows(saved.id);
       /* Colour, activity and membership shape the photo overview too. */
       this.photoRevision.update((revision) => revision + 1);
       const agreementRemaining = agreementResult?.remaining ?? 0;
@@ -3520,7 +3734,8 @@ export class ProductEditor implements OnDestroy {
           ? 'Product opgeslagen · de kleurkoppeling is nog niet opgeslagen. Controleer de afspraak en pas de kleuren opnieuw toe.'
           : agreementRemaining > 0
           ? `Product opgeslagen · ${agreementRemaining} afspraakfoto${agreementRemaining === 1 ? '' : '’s'} nog niet geüpload. Probeer de resterende afspraken opnieuw op te slaan.`
-          : 'Product opgeslagen · één of meer bijschriften bij de afspraakfoto’s zijn nog niet opgeslagen. Probeer opnieuw.';
+          : rowNoteFailure
+          ?? 'Product opgeslagen · één of meer bijschriften bij de afspraakfoto’s zijn nog niet opgeslagen. Probeer opnieuw.';
         this.agreementGroupError = agreementResult?.groupPending ? partialMessage : null;
         this.saveError.set(partialMessage);
         this.savedHere.set(true);
@@ -3712,6 +3927,8 @@ export class ProductEditor implements OnDestroy {
     const movesToFamily = familyChanged && desiredFamilyId !== null;
     const updated = await this.catalog.updateProduct(product.id, {
       ...product,
+      /* Several suppliers: with rows the four purchase fields go as null (keep); the rows own them. */
+      ...purchaseFieldsForPut(this.purchaseMode(), product),
       /* A non-null family move belongs in the same transaction as the product edits.
          Null on the ordinary PUT preserves the current family; unlink is explicit below. */
       familyId: movesToFamily ? desiredFamilyId : null,

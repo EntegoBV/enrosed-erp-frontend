@@ -10,7 +10,7 @@ const source = await readFile(new URL('../src/app/features/products/product-supp
 const parsed = ts.createSourceFile('product-supplier-agreement-editor.ts', source, ts.ScriptTarget.Latest, true);
 const declaration = parsed.statements.find((n): n is ts.ClassDeclaration => ts.isClassDeclaration(n) && n.name?.text === 'ProductSupplierAgreementEditor');
 assert.ok(declaration);
-const external = new Set(['catalog', 'agreements', 'ui', 'productId', 'supplierId', 'persistedSupplierId', 'supplierName', 'note', 'disabled', 'productDirty', 'noteChange', 'applicabilitySaved']);
+const external = new Set(['catalog', 'agreements', 'ui', 'productId', 'supplierId', 'persistedSupplierId', 'supplierName', 'note', 'disabled', 'productDirty', 'sharingAllowed', 'noteChange', 'applicabilitySaved']);
 const members = declaration.members.filter(m => !ts.isConstructorDeclaration(m) && !(m.name && ts.isIdentifier(m.name) && external.has(m.name.text)));
 const selected = ts.factory.updateClassDeclaration(declaration, declaration.modifiers?.filter(m => !ts.isDecorator(m)), declaration.name, undefined, undefined, members);
 const code = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [selected])), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
@@ -103,4 +103,25 @@ test('a successful group retry only clears its own parent error, preserving unre
   parent.agreementGroupError = 'Group save failed'; parent.saveError.set('Other product validation failed');
   parent.agreementGroupSaved(); assert.equal(parent.saveError(), 'Other product validation failed');
   assert.match(source, /\(applicabilitySaved\)="agreementGroupSaved\(\)"/);
+});
+
+test('several suppliers: load, upload and reorder name the supplier scope; colour sharing only for the Voorkeur', async () => {
+  const { editor } = harness();
+  const calls: unknown[][] = [];
+  editor.agreements.get = async (...args: unknown[]) => { calls.push(['get', ...args]); return { ...editor.agreement(), photos: [photo(4, 'Front'), photo(5, 'Back')] }; };
+  editor.reload();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls[0], ['get', 1, 9]);
+  editor.catalog.reorderSupplierAgreementPhotos = async (...args: unknown[]) => { calls.push(['order', ...args]); return [photo(5, 'Back'), photo(4, 'Front')]; };
+  await editor.move(5, -1);
+  assert.deepEqual(calls.find((call) => call[0] === 'order'), ['order', 1, [5, 4], 9]);
+  editor.catalog.uploadSupplierAgreementPhoto = async (...args: unknown[]) => { calls.push(['upload', ...args]); return { ...photo(6, ''), caption: null }; };
+  editor.pending.set([{ id: -1, supplierId: 9, file: { name: 'a.png' }, caption: 'Side', previewUrl: 'blob:a', status: 'queued', error: null }]);
+  await editor.uploadPending(1);
+  const upload = calls.find((call) => call[0] === 'upload')!;
+  assert.equal(upload[1], 1);
+  assert.equal(upload[3], 'Side');
+  assert.equal(upload[4], 9, 'the photo goes to the supplier it was chosen for');
+  assert.match(source, /\} @else if \(sharingAllowed\(\) && shared\.familyId && shared\.available && shared\.eligibleVariants\.length > 1\) \{/);
+  assert.match(source, /<ng-content select="\[agreementSupplier\]" \/>/);
 });

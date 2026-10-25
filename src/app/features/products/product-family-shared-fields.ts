@@ -80,7 +80,7 @@ export const PRODUCT_FAMILY_SHARED_FIELD_GROUPS: readonly ProductFamilySharedFie
       {
         key: 'PURCHASE_PRICE',
         label: 'EXW-prijs en extra kost',
-        summary: 'EXW-bedrag, munt en extra kost per stuk; berekende kostprijzen blijven apart.',
+        summary: 'EXW-bedrag, munt en extra kost van de voorkeursleverancier; alleen naar kleuren met dezelfde voorkeursleverancier.',
       },
       {
         key: 'HS_CODE',
