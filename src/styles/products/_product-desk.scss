@@ -144,6 +144,49 @@ app-product-desk .pdk-move small { color: var(--muted); font-size: 11.5px; }
 app-product-desk .pdk-move strong { color: var(--ok); font-weight: 700; font-variant-numeric: tabular-nums; }
 app-product-desk .pdk-move strong.minus { color: var(--danger); }
 
+/* ---- Leveranciers (2026-10-25): one row per supplier, two lines; a long name ends in an ellipsis, the price never wraps ---- */
+app-product-desk .pdk-line__more { padding: 0; font-size: 13px; font-weight: 650; }
+app-product-desk .pdk-suppliers { display: grid; }
+app-product-desk .pdk-suppliers--off { margin-top: 4px; }
+app-product-desk .pdk-supplier { display: flex; align-items: flex-start; gap: 12px; min-width: 0; padding: 8px 0; border-bottom: 1px solid var(--line); }
+app-product-desk .pdk-supplier:last-child { border-bottom: 0; }
+app-product-desk .pdk-supplier.is-off { opacity: .72; }
+app-product-desk .pdk-supplier__main { display: grid; flex: 1; gap: 1px; min-width: 0; }
+app-product-desk .pdk-supplier__line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+app-product-desk .pdk-supplier__line .wk-pill { flex: none; }
+app-product-desk .pdk-supplier__name { min-width: 0; overflow: hidden; font-size: 13.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+app-product-desk .pdk-supplier__sub { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+app-product-desk .pdk-supplier__price { flex: none; font-size: 13.5px; font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+app-product-desk .pdk-supplier__price small { margin-left: 5px; color: var(--muted); font-size: 11px; font-weight: 600; }
+
+/* ---- Batches (2026-10-25): two lines per batch in the .pdk-level look; title and sub end in an ellipsis ---- */
+app-product-desk .pdk-batches { display: grid; gap: 6px; }
+app-product-desk .pdk-batches--empty { margin-top: 6px; }
+app-product-desk .pdk-batch {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+app-product-desk .pdk-batch:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+app-product-desk .pdk-batch__main { display: grid; flex: 1; gap: 1px; min-width: 0; }
+app-product-desk .pdk-batch__top { display: flex; align-items: center; gap: 5px; min-width: 0; }
+app-product-desk .pdk-batch__main b { min-width: 0; overflow: hidden; font-size: 13.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+app-product-desk .pdk-batch__main small { min-width: 0; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+app-product-desk .pdk-batch__tag {
+  flex: none; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--rose) 12%, var(--surface)); color: var(--rose-dark);
+  font-size: 10.5px; font-style: normal; font-weight: 700; line-height: 17px; white-space: nowrap;
+}
+app-product-desk .pdk-batch__num { display: grid; flex: none; justify-items: end; gap: 1px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+app-product-desk .pdk-batch__num strong { font-size: 14px; font-weight: 700; }
+app-product-desk .pdk-batch__num strong.is-warn { color: var(--warn); }
+app-product-desk .pdk-batch__num small { color: var(--muted); font-size: 11.5px; }
+app-product-desk .pd-empty.pdk-batch-note { margin-top: 10px; border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); color: var(--warn); }
+
+/* the Afspraken supplier choice (two or more suppliers) and the supplier of an earlier issue */
+app-product-desk #pd-agreements .pdk-card__head > div { min-width: 0; }
+app-product-desk .pdk-agree-pick { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+app-product-desk .pdk-agree-pick .input { flex: 0 1 240px; width: 240px; min-width: 0; max-width: 100%; min-height: 30px; padding: 3px 26px 3px 9px; font-size: 12.5px; background-position: right 9px center; text-overflow: ellipsis; }
+app-product-desk .pd-issues__supplier { display: inline-block; max-width: 18ch; overflow: hidden; color: var(--ink-2); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+
 /* agreements: folded to 136 px with a fade */
 app-product-desk .pdk-note--folded { position: relative; max-height: 136px; overflow: hidden; }
 app-product-desk .pdk-note--folded::after { content: ''; position: absolute; right: 0; bottom: 0; left: 0; height: 44px; background: linear-gradient(transparent, var(--warn-soft)); }
