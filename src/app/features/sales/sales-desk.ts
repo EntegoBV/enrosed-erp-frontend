@@ -587,7 +587,7 @@ interface JourneyStep {
                         <td class="c-money num">
                           <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line)"
                                   [class.is-bad]="!isAdvance(data.order) && (profitPerPiece() ? marginPerUnit(line) : line.marginEur) < 0"
-                                  [title]="'Gelande kost van ' + line.description">
+                                  [title]="(line.stockUnitCost != null ? 'Kost bij levering van ' : 'Gelande kost van ') + line.description">
                             <b>@if (isAdvance(data.order)) { Voorschot } @else { {{ (profitPerPiece() ? marginPerUnit(line) : line.marginEur) | eur: profitPerPiece() ? 2 : 0 }} }</b>
                             <small>kost {{ line.landedUnitCost | eur: 2 }} <i aria-hidden="true">›</i></small>
                           </button>
@@ -1108,11 +1108,11 @@ interface JourneyStep {
 
       <!-- ============================ sheets: the same ones the phone editor opens -->
       @if (costSheet(); as sheet) {
-        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="closeCostSheet()">
+        <app-sheet [title]="sheet.heading + ' · ' + sheet.title" (closed)="closeCostSheet()">
           <div body>
             @if (sheet.rows.length) {
               <dl class="desk-cost">
-                @for (row of sheet.rows; track row.label) {
+                @for (row of sheet.rows; track $index) {
                   <div [class.desk-cost__sum]="row.sum">
                     <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
                     <dd class="num">{{ row.eur | eur: 4 }}</dd>

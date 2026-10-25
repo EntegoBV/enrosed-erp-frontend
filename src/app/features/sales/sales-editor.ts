@@ -67,6 +67,10 @@ import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { salesCostBuild, type SalesCostRow } from './sales-cost-build';
+import { salesStockCostRows } from './sales-stock-cost';
+import { StockBatchApi } from '../../core/api/stock-batch-api';
+import type { SalesStockCost } from '../../core/api/stock-batch-models';
+import { batchFormat } from '../../core/api/stock-batch-units';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 
 /**
@@ -877,7 +881,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                       <!-- Tapping the cost opens where every cent came from. -->
                       <button class="line-internal__unit line-internal__unit--btn" type="button"
                               (click)="openCostSheet(line)">
-                        <dt>Gelande kost <i class="stock-tile__chev" aria-hidden="true"></i></dt>
+                        <dt>{{ line.stockUnitCost != null ? 'Kost bij levering' : 'Gelande kost' }} <i class="stock-tile__chev" aria-hidden="true"></i></dt>
                         <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ {{ lineUnit(line.productId).singular }}</small></dd>
                       </button>
                       <div class="line-internal__unit">
@@ -1421,11 +1425,11 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
       }
 
       @if (costSheet(); as sheet) {
-        <app-sheet [title]="'Gelande kost · ' + sheet.title" (closed)="closeCostSheet()">
+        <app-sheet [title]="sheet.heading + ' · ' + sheet.title" (closed)="closeCostSheet()">
           <div body>
             @if (sheet.rows.length) {
               <dl class="cost-sheet">
-                @for (row of sheet.rows; track row.label) {
+                @for (row of sheet.rows; track $index) {
                   <div [class.cost-sheet__sum]="row.sum">
                     <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt>
                     <dd class="num">{{ row.eur | eur: 4 }}</dd>
@@ -2340,6 +2344,7 @@ export class SalesEditor {
 
   protected readonly sales = inject(SalesApi);
   protected readonly catalog = inject(CatalogApi);
+  private readonly stockBatches = inject(StockBatchApi);
   private readonly sourcing = inject(SourcingApi);
   protected readonly router = inject(Router);
   protected readonly ui = inject(Ui);
@@ -2436,35 +2441,69 @@ export class SalesEditor {
   /* ---- where the landed cost came from, one tap deep ---- */
   /**
    * The cost frozen on the line, with its parts only when a history row of the product kept them
-   * for exactly that cost (salesCostBuild): never today's container calculation under it.
+   * for exactly that cost (salesCostBuild): never today's container calculation under it. After
+   * shipment (stock batches) the line carries the stock cost instead: the sheet lists the batches
+   * the pieces left from (salesStockCostRows), the expected cost apart.
    */
-  readonly costSheet = signal<{ request: number; title: string; rows: SalesCostRow[]; source: string | null; missing: string | null;
-    product: Product | null } | null>(null);
+  readonly costSheet = signal<{ request: number; heading: string; title: string; rows: SalesCostRow[]; source: string | null;
+    missing: string | null; product: Product | null } | null>(null);
   /** The product's Kostprijshistoriek, stacked on the cost sheet. */
   readonly costHistoryOpen = signal(false);
   /** Each opening of the cost sheet: a late answer fills only the sheet it was asked for, never another line's (same product or not). */
   private costSheetRequests = 0;
+  /** The batches a shipped order's pieces left from, per order id while the view lives; a failed load is asked again next time. */
+  private readonly stockCostCache = new Map<number, Promise<SalesStockCost | null>>();
+
+  private salesStockCost(orderId: number): Promise<SalesStockCost | null> {
+    let load = this.stockCostCache.get(orderId);
+    if (!load) {
+      load = this.stockBatches.salesStockCost(orderId).catch(() => {
+        this.stockCostCache.delete(orderId);
+        return null;
+      });
+      this.stockCostCache.set(orderId, load);
+    }
+    return load;
+  }
 
   async openCostSheet(line: PricedLine): Promise<void> {
     const request = ++this.costSheetRequests;
     this.costHistoryOpen.set(false);
-    this.costSheet.set({ request, title: line.description, rows: [], source: null, missing: null, product: null });
-    const [product, history] = await Promise.all([
+    const orderId = this.view()?.order.id;
+    const stockUnitCost = line.stockUnitCost ?? null;
+    this.costSheet.set({ request, heading: stockUnitCost != null ? 'Kost bij levering' : 'Gelande kost', title: line.description,
+      rows: [], source: null, missing: null, product: null });
+    const [product, history, stock] = await Promise.all([
       this.catalog.product(line.productId).catch(() => null),
       /* Null, not []: a failed request says nothing about what the history kept. */
       this.catalog.productCostHistory(line.productId).catch(() => null),
+      stockUnitCost != null && orderId != null ? this.salesStockCost(orderId) : Promise.resolve(null),
     ]);
     const order = this.view()?.order;
     const unit = this.lineUnit(line.productId);
-    const build = salesCostBuild({ costEur: line.landedUnitCost, unit, docType: order?.docType, history,
-      currentCostEur: product?.landedCostEur, containerSale: order?.sourcePurchaseOrderId != null && !order.partnerPurchaseOrderId });
-    const rows = [...build.rows];
+    const stockLine = stockUnitCost != null && stock?.shipped
+      ? stock.lines.find((item) => item.productId === line.productId) ?? null : null;
+    let rows: SalesCostRow[];
+    let source: string | null = null;
+    let missing: string | null = null;
+    if (stockUnitCost != null && stockLine) {
+      rows = salesStockCostRows(stockLine, batchFormat(unit), stockUnitCost, line.expectedUnitCost ?? null, this.documentWord());
+    } else {
+      /* Before shipment, or the batches did not load: the document's own cost and its kept parts. */
+      const build = salesCostBuild({ costEur: line.expectedUnitCost ?? line.landedUnitCost, unit, docType: order?.docType, history,
+        currentCostEur: product?.landedCostEur, containerSale: order?.sourcePurchaseOrderId != null && !order.partnerPurchaseOrderId });
+      rows = [...build.rows];
+      /* The margin below reads the stock cost: it stays in the sheet. */
+      if (stockUnitCost != null) rows.push({ label: 'Kost bij levering', hint: `per ${unit.singular}`, eur: stockUnitCost });
+      source = build.source;
+      missing = build.missing;
+    }
     const advance = order && isAdvanceDocument(order);
     rows.push({ label: advance ? `Voorschot per ${unit.singular}` : 'Netto verkoop', eur: line.netUnitPrice });
     if (!advance && this.showsMargin()) rows.push({ label: `${this.marginPerUnit(line) < 0 ? 'Verlies' : 'Winst'} per ${unit.singular}`,
       eur: this.marginPerUnit(line), sum: true });
     this.costSheet.update((sheet) => sheet?.request === request
-      ? { ...sheet, rows, source: build.source, missing: build.missing, product } : sheet);
+      ? { ...sheet, rows, source, missing, product } : sheet);
   }
 
   closeCostSheet(): void {
