@@ -69,7 +69,7 @@ app-purchase-desk .pdk-tile .is-bad{color:var(--danger)}
 app-purchase-desk .pdk-tile--go{background:var(--rose);box-shadow:none;color:#fff}
 app-purchase-desk button.pdk-tile--go:hover:not(:disabled){background:var(--rose-dark);box-shadow:none}
 app-purchase-desk .pdk-tile--go .pdk-tile__label,app-purchase-desk .pdk-tile--go .pdk-tile__sub,app-purchase-desk .pdk-tile--go .pdk-tile__chev{color:rgb(255 255 255/82%)}
-app-purchase-desk .pdk-tile--go .pdk-tile__value{display:-webkit-box;margin:2px 0 1px;font-size:14.5px;line-height:1.3;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+app-purchase-desk .pdk-tile--go .pdk-tile__value{display:-webkit-box;margin:2px 0 1px;font-size:14.5px;line-height:1.3;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 app-purchase-desk .pdk-tile--done .pdk-tile__value{color:var(--ok);font-size:15.5px}
 /* What waits on us, as the card's own foot (was a separate amber banner). */
 app-purchase-desk .pdk-attn{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-height:40px;padding:8px 18px;border-top:1px solid #f0dcbc;border-radius:0 0 15px 15px;background:var(--warn-soft);color:#7c450b;font-size:13px}

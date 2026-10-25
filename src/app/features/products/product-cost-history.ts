@@ -23,7 +23,7 @@ import type { CostDriftNotice } from './product-price-build';
   imports: [RouterLink, EurPipe, NumPipe, DateNlPipe, CurPipe, TrendChart, Skeleton],
   template: `
     @if (drift(); as d) {
-      <p class="pch__drift" role="note"><b>{{ d.orderNumber }} rekent nu {{ d.unitEur | eur: 2 }} {{ d.per }}</b> @if (d.basisNote; as note) {({{ note }})} @else {({{ d.up ? '+' : '−' }} {{ d.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', d.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+      <p class="pch__drift" role="note"><b>{{ d.orderNumber }} rekent nu {{ d.unitEur | eur: 2 }} {{ d.per }}</b>@if (d.basisNote; as note) { ({{ note }})} @else { ({{ d.up ? '+' : '−' }}&nbsp;{{ d.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', d.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
     }
     @if (loading()) {
       <div class="pch__state" role="status" aria-label="Historiek laden"><app-skeleton kind="lines" [rows]="3" /></div>

@@ -1919,10 +1919,11 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .cost-sheet { margin:0;padding:0 }
     .cost-sheet div { display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line) }
     .cost-sheet dt { color:var(--ink-2);font-size:12.5px }
-    .cost-sheet dt small { display:block;color:var(--muted);font-size:10.5px }
+    .cost-sheet dt small { display:block;color:var(--muted);font-size:10.5px;font-weight:500 }
     .cost-sheet dd { margin:0;font-size:13px;font-weight:650 }
     .cost-sheet__sum { font-weight:800 }
     .cost-sheet__sum dt { color:var(--ink);font-weight:750 }
+    .cost-sheet ~ .hint { margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.45 }
     .pricing-row { display:flex;align-items:center;gap:11px;width:100%;padding:13px 16px;border:0;background:transparent;
       font:inherit;text-align:left;cursor:pointer }
     .pricing-row:hover { background:var(--surface-2) }

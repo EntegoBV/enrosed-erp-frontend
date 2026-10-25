@@ -431,7 +431,7 @@ export type { ReceivedContainer } from './received-containers';
           <div class="price-build" role="region" aria-label="Prijsopbouw">
             @if (priceBuild(); as build) {
               @if (build.drift; as drift) {
-                <p class="price-build__drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> @if (drift.basisNote; as note) {({{ note }})} @else {({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+                <p class="price-build__drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b>@if (drift.basisNote; as note) { ({{ note }})} @else { ({{ drift.up ? '+' : '−' }}&nbsp;{{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
               }
               <dl class="price-build__list">
                 @for (row of build.rows; track row.label) {

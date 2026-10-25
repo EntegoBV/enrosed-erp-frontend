@@ -120,7 +120,7 @@ app-product-view .pph-loading { display: grid; gap: 14px; padding: 8px 16px; }
 .sheet--ios .pph-sheet .price-build__list { margin: 0; padding: 0; }
 .sheet--ios .pph-sheet .price-build__list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
 .sheet--ios .pph-sheet .price-build__list > div:last-child { border-bottom: 0; }
-.sheet--ios .pph-sheet .price-build__list dt small { display: block; color: var(--muted); font-size: 12px; }
+.sheet--ios .pph-sheet .price-build__list dt small { display: block; color: var(--muted); font-size: 12px; font-weight: 500; }
 .sheet--ios .pph-sheet .price-build__list dd { margin: 0; font-weight: 650; font-variant-numeric: tabular-nums; }
 .sheet--ios .pph-sheet .price-build__sum { font-weight: 700; }
 .sheet--ios .pph-sheet .price-build__note dd { color: var(--ok); }

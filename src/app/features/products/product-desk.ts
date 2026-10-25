@@ -247,7 +247,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </button>
           </div>
           @if (driftNotice(); as drift) {
-            <p class="pd-drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> @if (drift.basisNote; as note) {({{ note }})} @else {({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+            <p class="pd-drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b>@if (drift.basisNote; as note) { ({{ note }})} @else { ({{ drift.up ? '+' : '−' }}&nbsp;{{ drift.absEur | eur: 2 }})} · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
           }
           <div class="pdk-flow">
             <div class="pdk-flow__step">
@@ -343,7 +343,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                   <div><dt>Kostprijs</dt><dd>
                     @if (sourceOrderId(); as orderId) { <a [routerLink]="['/purchasing', orderId]">{{ product.landedCostSource }} ›</a> }
                     @else { {{ product.landedCostSource || 'Handmatig' }} }
-                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie: transport, rechten en Enrosed kost per stuk' : 'nog geen ontvangen container achter deze kostprijs' }}</small></dd></div>
+                    <small>{{ product.landedCostSource ? 'de inkoopcalculatie: transport, rechten en Enrosed kost per ' + salesUnit(product).singular : 'nog geen ontvangen container achter deze kostprijs' }}</small></dd></div>
                   <div><dt>Extra kost</dt><dd>@if (product.extraUnitCost; as extra) { {{ extra | cur: product.exwCurrency }} } @else { — }<small>per {{ salesUnit(product).singular }}, bv. display of giftbox, telt mee in de kostprijs</small></dd></div>
                   <div><dt>Prijsregel</dt><dd>{{ hasFixedSalesPrice(product) ? (product.fixedSalesPriceEur | eur: 2) : (product.markupPct | num) + ' % opslag' }}<small>{{ hasFixedSalesPrice(product) ? 'vaste verkoopprijs, los van de kostprijs' : 'op de gelande kostprijs; de marge is wat overblijft' }}</small></dd></div>
                 </dl>
