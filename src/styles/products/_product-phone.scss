@@ -84,6 +84,8 @@ app-product-view .pph-bad { color: var(--danger); font-weight: 650; }
 app-product-view .pph-live { color: var(--muted); }
 app-product-view .pph-live.on { color: var(--ok); font-weight: 600; }
 app-product-view .pph-warn { color: var(--warn); font-weight: 600; }
+/* The source container now calculates another cost: a short warn line under the cost figures. */
+app-product-view .pph-figs .pph-drift, app-product-view .pph-drift { color: var(--warn); font-weight: 600; }
 app-product-view .pph-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 app-product-view .ios-cell__trail .pph-wrap { text-align: right; }
 app-product-view .pph-points { padding: 0 16px 12px; }
@@ -122,6 +124,9 @@ app-product-view .pph-loading { display: grid; gap: 14px; padding: 8px 16px; }
 .sheet--ios .pph-sheet .price-build__note dd { color: var(--ok); }
 .sheet--ios .pph-sheet .price-build__aside { color: var(--muted); font-size: 13px; }
 .sheet--ios .pph-sheet .price-build__source { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.sheet--ios .pph-sheet .price-build__drift { margin: 0 0 8px; padding: 9px 12px; border-radius: 12px; background: var(--warn-soft); color: #7c450b; font-size: 13px; line-height: 1.45; }
+.sheet--ios .pph-sheet .price-build__drift a { color: inherit; font-weight: 650; }
+.sheet--ios .pph-sheet .price-build__live { margin: 14px 0 2px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 /* A location stays with its figure and an order number stays whole: lines break only between the parts. */
 app-product-view .pph-nw { display: inline-block; }
 

@@ -20,6 +20,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet } from './stock-booking-sheet';
 import { ProductChannelPrice } from './product-channel-price';
 import { StockMovementSource } from './stock-movement-source';
+import type { PriceRow } from './product-price-build';
 
 /** A media query as a signal, for the component that asks (removes its listener on destroy). */
 function mediaSignal(query: string) {
@@ -162,6 +163,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               @if (product.landedCostEur; as landed) {
                 <strong>{{ landed | eur: 2 }}</strong>
                 <span>@if (product.landedCostSource; as source) { geland · <span class="pdk-nw">{{ source }}</span> } @else { geland, incl. transport en rechten }</span>
+                @if (driftNotice(); as drift) { <span class="pdk-drift">nu {{ drift.unitEur | eur: 2 }} in <span class="pdk-nw">{{ drift.orderNumber }}</span></span> }
               } @else {
                 <strong>—</strong>
                 <span>nog geen kostprijs</span>
@@ -244,6 +246,9 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               {{ priceOpen() ? 'Opbouw verbergen' : 'Opbouw tonen ›' }}
             </button>
           </div>
+          @if (driftNotice(); as drift) {
+            <p class="pd-drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> ({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }}) · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+          }
           <div class="pdk-flow">
             <div class="pdk-flow__step">
               <small>EXW-prijs</small>
@@ -255,6 +260,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <small>Kostprijs</small>
               <b>@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</b>
               <span>@if (product.landedCostSource; as source) { geland · <span class="pdk-nw">{{ source }}</span> } @else { incl. transport en rechten }</span>
+              @if (driftNotice(); as drift) { <span class="pdk-drift">nu {{ drift.unitEur | eur: 2 }} in <span class="pdk-nw">{{ drift.orderNumber }}</span></span> }
               <button class="linklike pdk-flow__link" type="button" (click)="openHistory()">Historiek ›</button>
             </div>
             <i class="pdk-flow__op" aria-hidden="true">→</i>
@@ -290,26 +296,40 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </div>
             @if (priceTab() === 'history') {
               <div class="pd-price__history">
-                <app-product-cost-history [productId]="product.id!" [product]="product" [sourceLink]="historySourceLink()" />
+                <app-product-cost-history [productId]="product.id!" [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" [drift]="driftNotice()" />
               </div>
             } @else {
             <div class="pd-price__detail">
               @if (priceBuild(); as build) {
                 @if (build.rows.length) {
-                  <div class="desk-chain">
-                    @for (row of chainRows(); track $index) {
-                      <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last" [class.pd-chain__row--margin]="row.margin">
-                        <i aria-hidden="true">{{ row.mark }}</i>
-                        <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
-                        <b>{{ row.eur | eur: 2 }}</b>
+                  <div class="pd-price__build">
+                    <div class="desk-chain">
+                      @for (row of chainRows(); track $index) {
+                        <div class="desk-chain__row" [class.desk-chain__row--sub]="row.sum && !row.last" [class.desk-chain__row--total]="row.last" [class.pd-chain__row--margin]="row.margin">
+                          <i aria-hidden="true">{{ row.mark }}</i>
+                          <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
+                          <b>{{ row.eur | eur: 2 }}</b>
+                        </div>
+                      }
+                    </div>
+                    @if (asideRows().length) {
+                      <p class="pd-aside">
+                        @for (row of asideRows(); track $index; let last = $last) {{{ row.label }} <b>{{ row.eur | eur: 2 }}</b>@if (!last) { · }}
+                      </p>
+                    }
+                    @if (build.live; as live) {
+                      <div class="pd-kicker pd-live__title">{{ live.title }}</div>
+                      <div class="desk-chain">
+                        @for (row of liveRows(); track $index) {
+                          <div class="desk-chain__row" [class.desk-chain__row--total]="row.last">
+                            <i aria-hidden="true">{{ row.mark }}</i>
+                            <span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span>
+                            <b>{{ row.eur | eur: 2 }}</b>
+                          </div>
+                        }
                       </div>
                     }
                   </div>
-                  @if (asideRows().length) {
-                    <p class="pd-aside">
-                      @for (row of asideRows(); track $index; let last = $last) {{{ row.label }} <b>{{ row.eur | eur: 2 }}</b>@if (!last) { · }}
-                    </p>
-                  }
                 } @else {
                   <p class="pd-empty">Nog geen kostprijs of catalogusprijs. <a [routerLink]="['/products', product.id, 'edit']">Vul ze in via Bewerken ›</a></p>
                 }
@@ -667,7 +687,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
       <app-photo-lightbox [photos]="galleryPhotos()" [(index)]="lightbox" />
       <app-product-supplier-agreement-photo-viewer [photos]="agreementPhotos()" [(index)]="agreementLightbox" />
       @if (historyOpen()) {
-        <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
+        <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" [drift]="driftNotice()" (closed)="historyOpen.set(false)" />
       }
       <!-- Voorraad boeken: the one sheet for every booking, at page level. -->
       @if (bookingSheet(); as booking) {
@@ -706,13 +726,9 @@ export class ProductDesk extends ProductView {
   readonly noteOpen = signal(false);
   private openedFor: number | null = null;
 
-  /** The build-up loads with the product, so "Opbouw tonen" opens at once. */
+  /** The build-up loads with the product (ProductView.loadProduct), so "Opbouw tonen" opens at once. */
   constructor() {
     super();
-    effect(() => {
-      const product = this.product();
-      if (product && product.id !== null && this.priceBuild() === null) void this.loadPriceBuild(product);
-    });
     /* Another product: its description and supplier note open folded. The series chips' stock is ProductView's memberStock. */
     effect(() => {
       const id = this.product()?.id ?? null;
@@ -785,20 +801,23 @@ export class ProductDesk extends ProductView {
   }
 
 
-  /** Per-piece rows of the build-up: a mark, the label without its "+", and the last one as the total. */
-  readonly chainRows = computed(() => {
-    const rows = (this.priceBuild()?.rows ?? []).filter((row) => !row.aside);
+  /** Per-piece rows of the build-up: a mark, the label without its "+" or "±", and the last one as the total. */
+  readonly chainRows = computed(() => this.chainOf((this.priceBuild()?.rows ?? []).filter((row) => !row.aside)));
+  /** The source container's calculation of today, in the same marks; its own total closes it. */
+  readonly liveRows = computed(() => this.chainOf(this.priceBuild()?.live?.rows ?? []));
+
+  private chainOf(rows: readonly PriceRow[]) {
     const lastSum = rows.map((row) => !!row.sum).lastIndexOf(true);
     return rows.map((row, index) => ({
-      mark: row.note ? '◆' : row.sum ? '=' : row.label.startsWith('+') ? '+' : '·',
-      label: row.label.replace(/^\+\s*/, ''),
+      mark: row.note ? '◆' : row.sum ? '=' : row.label.startsWith('+') ? '+' : row.label.startsWith('±') ? '±' : '·',
+      label: row.label.replace(/^[+±]\s*/, ''),
       hint: row.note ? `catalogusprijs min kostprijs, wat er per ${this.salesUnit(this.product()).singular} overblijft` : row.hint,
       eur: row.eur,
       sum: !!row.sum,
       last: index === lastSum,
       margin: !!row.note,
     }));
-  });
+  }
 
   readonly asideRows = computed(() => (this.priceBuild()?.rows ?? []).filter((row) => row.aside));
 

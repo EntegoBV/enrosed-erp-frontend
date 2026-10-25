@@ -8,6 +8,7 @@ import { CurPipe, DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { TrendChart, TrendSeries } from '../../shared/trend-chart';
 import { productCostBasis } from './product-cost-basis';
 import { costHistoryView, emptyCostHistory, excludedNote, replacedNote, type CostDelta, type CostSourceLink } from './product-cost-history-model';
+import type { CostDriftNotice } from './product-price-build';
 
 /**
  * The line of landed costs a product carried: every container that set
@@ -21,6 +22,9 @@ import { costHistoryView, emptyCostHistory, excludedNote, replacedNote, type Cos
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, EurPipe, NumPipe, DateNlPipe, CurPipe, TrendChart, Skeleton],
   template: `
+    @if (drift(); as d) {
+      <p class="pch__drift" role="note"><b>{{ d.orderNumber }} rekent nu {{ d.unitEur | eur: 2 }} {{ d.per }}</b> ({{ d.up ? '+' : '−' }} {{ d.absEur | eur: 2 }}) · <a [routerLink]="['/purchasing', d.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+    }
     @if (loading()) {
       <div class="pch__state" role="status" aria-label="Historiek laden"><app-skeleton kind="lines" [rows]="3" /></div>
     } @else if (error()) {
@@ -153,6 +157,8 @@ import { costHistoryView, emptyCostHistory, excludedNote, replacedNote, type Cos
     .pch__delta span { color: var(--muted); font-size: 11px; line-height: 1.35; }
     .pch__delta.is-up b { color: var(--danger); }
     .pch__delta.is-down b { color: var(--ok); }
+    .pch__drift { margin: 0 0 12px; padding: 9px 12px; border-radius: 12px; background: var(--warn-soft); color: #7c450b; font-size: 12.5px; line-height: 1.45; }
+    .pch__drift a { color: inherit; font-weight: 650; }
     .pch__note { margin: 0 0 12px; padding: 9px 12px; border-radius: 12px; background: var(--warn-soft); color: #7c450b; font-size: 12px; line-height: 1.45; }
     .pch__muted { margin: -6px 0 12px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
     .pch__chart { margin: 0 0 12px; padding: 8px 6px 2px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
@@ -214,6 +220,10 @@ export class ProductCostHistory {
   readonly currentOrderId = input<number | null>(null);
   /** The order of the cost's source: the link of an empty history, and of rows that name it without keeping its id. */
   readonly sourceLink = input<CostSourceLink | null>(null);
+  /** The rows the product page already fetched for its build-up; without them the history asks itself. */
+  readonly preloaded = input<readonly ProductCostHistoryEntry[] | null>(null);
+  /** The product page knows its source container now calculates another cost: the header says so, with the way to apply again. */
+  readonly drift = input<CostDriftNotice | null>(null);
 
   readonly entries = signal<ProductCostHistoryEntry[]>([]);
   readonly loading = signal(true);
@@ -237,6 +247,13 @@ export class ProductCostHistory {
 
   private readonly loader = effect(() => {
     const id = this.productId();
+    const given = this.preloaded();
+    if (given) {
+      this.entries.set([...given]);
+      this.error.set(null);
+      this.loading.set(false);
+      return;
+    }
     this.loading.set(true);
     this.error.set(null);
     this.catalog.productCostHistory(id)

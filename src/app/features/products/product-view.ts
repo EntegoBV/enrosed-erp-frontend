@@ -14,13 +14,15 @@ import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../.
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
-import { Category, StockLevel, LandedCostLine, Product, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
+import { Category, StockLevel, Product, ProductCostHistoryEntry, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
 import { salesPhoto } from '../../shared/sales-photo';
 import { photoKeyForProductPhoto, placeCards, resolvedPlaces, tileUses, variantShortLabel } from './product-photos-state';
 import { ProductPlaceLine, ProductPlacesLine } from './product-places-line';
+import { appliedParts, costBuild, impliedDutyPct, liveParts, type CostBuild, type CostDriftNotice, type PriceRow } from './product-price-build';
+import { costQuantity, costWords, entryCostBasis, productCostBasis } from './product-cost-basis';
 
-interface PriceRow { label: string; hint?: string; eur: number; sum?: boolean; note?: boolean; aside?: boolean; }
-interface PriceBuild { rows: PriceRow[]; source: string | null; sourceFound: boolean; }
+/** The stored cost explained and the road on to the catalogue price; today's container calculation apart, with the drift. */
+interface PriceBuild { rows: PriceRow[]; source: string | null; live: CostBuild['live']; drift: CostDriftNotice | null; }
 import { IosNav } from '../../shared/ios-nav';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { NavHistory } from '../../core/platform/nav-history-service';
@@ -143,6 +145,7 @@ export type { ReceivedContainer } from './received-containers';
                 <small>Kostprijs ›</small>
                 @if (product.landedCostEur; as landed) { <strong>{{ landed | eur: 2 }}</strong> } @else { <strong>—</strong> }
                 <span>@if (product.landedCostSource; as source) { geland · <span class="pph-nw">{{ source }}</span> } @else { incl. transport en rechten }</span>
+                @if (driftNotice(); as drift) { <span class="pph-drift">nu {{ drift.unitEur | eur: 2 }} in <span class="pph-nw">{{ drift.orderNumber }}</span></span> }
               </button>
               <button type="button" [class.ok]="(margin()?.eur ?? 0) >= 0" [class.bad]="(margin()?.eur ?? 0) < 0" (click)="openPriceInfo(product)">
                 <small>Marge</small>
@@ -225,7 +228,7 @@ export type { ReceivedContainer } from './received-containers';
                 <span class="ios-cell__value num">{{ extra | cur: product.exwCurrency }}</span></div>
             }
             <button class="ios-cell" type="button" (click)="openHistory()">
-              <span class="ios-cell__body"><span class="ios-cell__title">Kostprijs</span><span class="ios-cell__sub pph-wrap">@if (product.landedCostSource; as source) { geland · <span class="pph-nw">{{ source }}</span> · historiek } @else { incl. transport en rechten · historiek }</span></span>
+              <span class="ios-cell__body"><span class="ios-cell__title">Kostprijs</span><span class="ios-cell__sub pph-wrap">@if (product.landedCostSource; as source) { geland · <span class="pph-nw">{{ source }}</span> · historiek } @else { incl. transport en rechten · historiek }</span>@if (driftNotice(); as drift) {<span class="ios-cell__sub pph-wrap pph-drift">nu {{ drift.unitEur | eur: 2 }} in <span class="pph-nw">{{ drift.orderNumber }}</span></span>}</span>
               <span class="ios-cell__value num">@if (product.landedCostEur; as landed) { {{ landed | eur: 2 }} } @else { — }</span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </button>
@@ -427,6 +430,9 @@ export type { ReceivedContainer } from './received-containers';
         <ng-template #priceBuildTpl>
           <div class="price-build" role="region" aria-label="Prijsopbouw">
             @if (priceBuild(); as build) {
+              @if (build.drift; as drift) {
+                <p class="price-build__drift" role="note"><b>{{ drift.orderNumber }} rekent nu {{ drift.unitEur | eur: 2 }} {{ drift.per }}</b> ({{ drift.up ? '+' : '−' }} {{ drift.absEur | eur: 2 }}) · <a [routerLink]="['/purchasing', drift.orderId]" [queryParams]="{ apply: 1 }">Opnieuw toepassen ›</a></p>
+              }
               <dl class="price-build__list">
                 @for (row of build.rows; track row.label) {
                   <div [class.price-build__sum]="row.sum" [class.price-build__note]="row.note"
@@ -436,10 +442,16 @@ export type { ReceivedContainer } from './received-containers';
                   </div>
                 }
               </dl>
+              @if (build.live; as live) {
+                <p class="price-build__live">{{ live.title }}</p>
+                <dl class="price-build__list">
+                  @for (row of live.rows; track $index) {
+                    <div [class.price-build__sum]="row.sum"><dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt><dd class="num">{{ row.eur | eur: 2 }}</dd></div>
+                  }
+                </dl>
+              }
               @if (build.source) {
-                <p class="price-build__source">
-                  Kostprijs uit calculatie <b>{{ build.source }}</b>{{ build.sourceFound ? '' : ' - die calculatie is niet meer beschikbaar, dus zonder uitsplitsing' }}.
-                </p>
+                <p class="price-build__source">Kostprijs toegepast uit <b>{{ build.source }}</b>.</p>
               } @else {
                 <p class="price-build__source">Nog geen kostprijs uit een inkoopcalculatie; transport en invoerrechten komen erbij zodra een calculatie is toegepast.</p>
               }
@@ -457,7 +469,7 @@ export type { ReceivedContainer } from './received-containers';
                 <button type="button" [class.on]="priceTab() === 'history'" (click)="priceTab.set('history')">Historiek</button>
               </div>
               @if (priceTab() === 'history') {
-                @if (product.id; as id) { <app-product-cost-history [productId]="id" [product]="product" [sourceLink]="historySourceLink()" /> }
+                @if (product.id; as id) { <app-product-cost-history [productId]="id" [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" [drift]="driftNotice()" /> }
               } @else {
                 <ng-container *ngTemplateOutlet="priceBuildTpl" />
               }
@@ -469,7 +481,7 @@ export type { ReceivedContainer } from './received-containers';
         }
 
         @if (historyOpen()) {
-          <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" (closed)="historyOpen.set(false)" />
+          <app-product-cost-history-sheet [product]="product" [sourceLink]="historySourceLink()" [preloaded]="costHistoryRows()" [drift]="driftNotice()" (closed)="historyOpen.set(false)" />
         }
 
         <!-- Voorraad boeken: the one sheet for every booking, at page level. -->
@@ -765,6 +777,15 @@ export class ProductView {
     window.history.replaceState(window.history.state, '', url);
   }
   readonly priceBuild = signal<PriceBuild | null>(null);
+  /** The source container now calculates another cost: the price card, the cost tiles and the history say so. */
+  readonly driftNotice = computed(() => this.priceBuild()?.drift ?? null);
+  private priceBuildRequest: { productId: number; request: Promise<void> } | null = null;
+  /** The cost history fetched for the build-up, handed to the Historiek so it does not ask again. */
+  private readonly costHistory = signal<{ productId: number; rows: ProductCostHistoryEntry[] } | null>(null);
+  readonly costHistoryRows = computed(() => {
+    const history = this.costHistory();
+    return history && history.productId === this.product()?.id ? history.rows : null;
+  });
   /** Id of the purchase calculation the cost price came from, when it still exists. */
   readonly sourceOrderId = signal<number | null>(null);
   /** The card tiles open the build-up as a sheet on every screen size. */
@@ -807,60 +828,65 @@ export class ProductView {
   }
 
   /**
-   * Rebuilds the road from factory price to catalogue price. The per-piece
-   * transport, duty and handling live on the purchase calculation the
-   * cost price came from; when that calculation is gone, the cost price
-   * is shown as one line.
+   * Rebuilds the road from factory price to catalogue price. The cost part
+   * comes from the product's cost history and the one container that set it
+   * (by the newest row's order id; by the cost's source number when the row
+   * kept none): the stored cost from its own parts, and that container's
+   * calculation of today as a block of its own, never mixed. One request per
+   * product open; the page starts it on load, so the drift shows on the tiles.
    */
-  protected async loadPriceBuild(product: Product): Promise<void> {
-    const source = product.landedCostSource;
-    let line: LandedCostLine | null = null;
-    let view: PurchaseOrderView | undefined;
-    if (source) {
-      try {
-        const orders = await this.purchaseOrdersFor(product.id);
-        view = orders.find((item) => item.order.number === source);
-        line = view?.costing.lines.find((item) => item.productId === product.id) ?? null;
-      } catch {
-        line = null;
-      }
+  protected loadPriceBuild(product: Product): Promise<void> {
+    if (product.id === null) return Promise.resolve();
+    if (this.priceBuildRequest?.productId !== product.id) {
+      this.priceBuildRequest = { productId: product.id, request: this.buildPrice(product, product.id, this.loadVersion) };
     }
-    /* The same words as on the calculation, so both screens read alike. */
-    const labels = view?.costLabels;
-    if (this.product()?.id !== product.id) return;
+    return this.priceBuildRequest.request;
+  }
 
-    const rows: PriceRow[] = [];
-    const per = (total: number, quantity: number) => quantity > 0 ? total / quantity : 0;
-    if (line && line.quantity > 0) {
-      rows.push({ label: 'Inkoopprijs (EXW)', hint: `${line.quantity.toLocaleString('nl-BE')} ${productSalesUnit(product).plural} in ${source}`, eur: per(line.goodsEur, line.quantity) });
-      if (line.originEur) {
-        rows.push({ label: `+ ${labels?.originCostsLabel || 'Lokale kosten bij vertrek'}`,
-          hint: `${labels?.originRoute ? labels.originRoute + ' · ' : ''}vervoer naar de haven, export, laden`,
-          eur: per(line.originEur, line.quantity) });
-      }
-      if (line.freightEur) {
-        rows.push({ label: `+ ${labels?.seaFreightLabel || 'Zeevracht'}`,
-          hint: `${labels?.seaFreightRoute ? labels.seaFreightRoute + ' · ' : ''}containerprijs verdeeld per m³`,
-          eur: per(line.freightEur, line.quantity) });
-      }
-      if (line.dutyEur || line.dutyRatePct) {
-        rows.push({ label: `+ Invoerrechten ${line.dutyRatePct} %`,
-          hint: `douane, op basis van HS-code ${product.hsCode || line.dutySource}`,
-          eur: per(line.dutyEur, line.quantity) });
-      }
-      if (line.destinationEur) {
-        rows.push({ label: `+ ${labels?.destinationCostsLabel || 'Kosten na aankomst'}`,
-          hint: 'havenkosten, inklaring en levering aan het magazijn',
-          eur: per(line.destinationEur, line.quantity) });
-      }
-      if (line.extraRevenueEur) {
-        rows.push({ label: '+ Enrosed kost', hint: 'vast bedrag per container, verdeeld over de stuks',
-          eur: per(line.extraRevenueEur, line.quantity) });
-      }
-      rows.push({ label: `Kostprijs per ${productSalesUnit(product).singular}`, eur: product.landedCostEur ?? line.landedUnitEur, sum: true });
-    } else if (product.landedCostEur) {
-      rows.push({ label: `Kostprijs per ${productSalesUnit(product).singular}`, hint: 'incl. transport en rechten', eur: product.landedCostEur, sum: true });
+  private async buildPrice(product: Product, id: number, version: number): Promise<void> {
+    const history = await this.catalog.productCostHistory(id).catch(() => null);
+    if (version !== this.loadVersion) return;
+    if (history) this.costHistory.set({ productId: id, rows: history });
+    const applied = appliedParts(product, history ?? []);
+    const newest = applied.row;
+    const source = product.landedCostSource;
+    /* The full list is loaded for the containers anyway; only a cost known by its number alone looks in it. */
+    const byNumber = async () => source ? (await this.purchaseOrdersFor(id)).find((item) => item.order.number === source) ?? null : null;
+    let view: PurchaseOrderView | null = null;
+    try {
+      if (newest?.purchaseOrderId == null) view = await byNumber();
+      else if (!newest.containerGone) view = await this.sourcing.purchaseOrder(newest.purchaseOrderId).catch(byNumber);
+    } catch {
+      view = null;
     }
+    if (version !== this.loadVersion || this.product()?.id !== id) return;
+    this.sourceOrderId.set(view?.order.id ?? null);
+
+    const line = view?.costing.lines.find((item) => item.productId === id) ?? null;
+    const current = productCostBasis(product);
+    /* The stored cost reads in the basis it was applied on; today's calculation in today's. */
+    const appliedBasis = newest && applied.matches ? entryCostBasis(newest, current) : current;
+    const orderText = view?.order.number ?? newest?.source ?? source;
+    const cost = costBuild({
+      storedEur: product.landedCostEur,
+      applied,
+      live: liveParts(line),
+      order: view ? { id: view.order.id, number: view.order.number } : null,
+      appliedPer: costWords(appliedBasis).per,
+      livePer: costWords(current).per,
+      /* The same words as on the calculation, so both screens read alike. */
+      appliedWords: {
+        labels: view?.costLabels, hsCode: product.hsCode,
+        dutyPct: applied.parts ? impliedDutyPct(applied.parts) : null,
+        goodsHint: newest?.quantity && orderText ? `${costQuantity(appliedBasis, newest.quantity)} in ${orderText}` : null,
+      },
+      liveWords: {
+        labels: view?.costLabels, hsCode: product.hsCode, dutyPct: line?.dutyRatePct ?? null,
+        goodsHint: line && view ? `${costQuantity(current, line.quantity)} in ${view.order.number}` : null,
+      },
+    });
+
+    const rows: PriceRow[] = [...cost.applied];
     const price = this.displayPrice();
     if (price !== null) {
       if (this.hasFixedSalesPrice(product)) {
@@ -877,7 +903,7 @@ export class ProductView {
     if (costOther) rows.push({ label: `${costOther.sign} Kostprijs ${costOther.per}`, eur: costOther.price, aside: true });
     const priceOther = otherBasisPrice(product, price);
     if (priceOther) rows.push({ label: `${priceOther.sign} Catalogusprijs ${priceOther.per}`, eur: priceOther.price, aside: true });
-    this.priceBuild.set({ rows, source, sourceFound: line !== null });
+    this.priceBuild.set({ rows, source, live: cost.live, drift: cost.drift });
   }
 
   /** Three latest lines of the stock book; "Meer" unfolds the rest. */
@@ -1045,7 +1071,7 @@ export class ProductView {
   readonly loadError = signal<string | null>(null);
   readonly reloading = signal(false);
   private loadedId: number | null = null;
-  /** One purchase-order request per product open, shared by the containers, the cost source and the build-up. */
+  /** One purchase-order request per product open, for the containers and for a cost source known only by its number. */
   private ordersRequest: { productId: number; request: Promise<PurchaseOrderView[]> } | null = null;
 
   protected purchaseOrdersFor(productId: number | null): Promise<PurchaseOrderView[]> {
@@ -1074,6 +1100,8 @@ export class ProductView {
     this.historyOpen.set(false);
     this.priceTab.set('build');
     this.priceBuild.set(null);
+    this.priceBuildRequest = null;
+    this.costHistory.set(null);
     this.stockHistory.set(null);
     this.allMovesOpen.set(false);
     this.bookingSheet.set(null);
@@ -1133,13 +1161,8 @@ export class ProductView {
     this.categories.set(categories);
     this.suppliers.set(suppliers);
     this.sourceOrderId.set(null);
-    if (product.landedCostSource) {
-      void this.purchaseOrdersFor(product.id).then((orders) => {
-        if (version !== this.loadVersion) return;
-        this.sourceOrderId.set(
-          orders.find((item) => item.order.number === product.landedCostSource)?.order.id ?? null);
-      }).catch(() => {});
-    }
+    /* The build-up also finds the cost's source order and whether it now calculates another cost. */
+    void this.loadPriceBuild(product);
     const requestedSection = ['product-overview', 'product-core', 'product-packaging', 'stock-card', 'product-media', 'product-agreements', 'product-publication', 'pd-agreements']
       .find((id) => `#${id}` === window.location.hash);
     if (requestedSection) setTimeout(() => { if (version === this.loadVersion) this.scrollToDetailSection(requestedSection); }, 0);

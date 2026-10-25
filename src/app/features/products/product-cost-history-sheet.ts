@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
-import type { Product } from '../../core/api/models';
+import type { Product, ProductCostHistoryEntry } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Sheet } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import { ProductCostHistory } from './product-cost-history';
 import type { CostSourceLink } from './product-cost-history-model';
+import type { CostDriftNotice } from './product-price-build';
 
 /**
  * Kostprijshistoriek as a sheet of its own, the one way into the history
@@ -20,7 +21,7 @@ import type { CostSourceLink } from './product-cost-history-model';
       <div body class="pch-sheet">
         <p class="pch-sheet__name">{{ title().name }}@if (title().variant; as variant) {<span> · {{ variant }}</span>}</p>
         @if (product().id; as id) {
-          <app-product-cost-history [productId]="id" [product]="product()" [currentOrderId]="currentOrderId()" [sourceLink]="sourceLink()" />
+          <app-product-cost-history [productId]="id" [product]="product()" [currentOrderId]="currentOrderId()" [sourceLink]="sourceLink()" [preloaded]="preloaded()" [drift]="drift()" />
         }
       </div>
       <div foot style="display:contents">
@@ -45,6 +46,9 @@ export class ProductCostHistorySheet {
   readonly currentOrderId = input<number | null>(null);
   /** The order of the cost's source, linked from the history even when its rows kept no order id. */
   readonly sourceLink = input<CostSourceLink | null>(null);
+  /** The product page's rows and drift, passed on to the history. */
+  readonly preloaded = input<readonly ProductCostHistoryEntry[] | null>(null);
+  readonly drift = input<CostDriftNotice | null>(null);
   readonly closed = output<void>();
 
   /** The series name and the variant, so the colours of one series never read alike. */
