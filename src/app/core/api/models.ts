@@ -6,6 +6,7 @@
  */
 
 import type { BankStatementLine } from './banking-api';
+import type { ProductSupplierOffer } from './product-supplier-models';
 
 export type Currency = 'EUR' | 'USD' | 'CNY';
 export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
@@ -559,6 +560,8 @@ export interface Product {
    * never sent back.
    */
   readonly unitsPerOrderStep?: number;
+  /** Only on GET /api/products?supplierId=X: that supplier's row. */
+  offer?: ProductSupplierOffer | null;
 }
 
 /**
@@ -1134,6 +1137,12 @@ export interface PurchaseOrderLine {
   issueNote?: string | null;
   /** The Enrosed kost this line carries when the buyer spreads it by hand (allocExtra MANUAL). */
   extraShareEur?: number | null;
+  /** The product_supplier row of the order's supplier; server-owned, sent back as loaded, ignored by the server. */
+  productSupplierId?: number | null;
+  /** That row's Versie, snapshotted when the order is placed; server-owned, sent back as loaded, ignored by the server. */
+  supplierVersionLabel?: string | null;
+  /** The supplier's own reference, snapshotted when the order is placed; server-owned, sent back as loaded, ignored by the server. */
+  supplierReference?: string | null;
 }
 
 /** An earlier container on which a product arrived short or damaged. */
@@ -1150,6 +1159,8 @@ export interface ReceiptIssue {
   laterDamaged?: number;
   laterMissing?: number;
   laterNote?: string | null;
+  /** The supplier of that container. Absent on older backends. */
+  supplierId?: number | null;
 }
 
 /** One complaint on a received container: counted at receipt, or reported while unpacking. */
@@ -1897,6 +1908,8 @@ export interface SalesOrderLine {
    * the API strips it from every write, the server alone decides it.
    */
   readonly unitsPerOrderStep?: number | null;
+  /** Server stamp: what the pieces cost that left stock at shipment, by batch. Absent before shipment and on older servers. */
+  readonly stockCostEur?: number | null;
 }
 
 /** A hand-built pallet: label plus product/carton assignments. */
@@ -2041,6 +2054,10 @@ export interface PricedLine {
    * Absent from older servers, which round to full cartons.
    */
   unitsPerOrderStep?: number;
+  /** The line's own cost before shipment: the quote snapshot. */
+  expectedUnitCost?: number | null;
+  /** What the pieces cost that left stock, by batch; margins use it after shipment. */
+  stockUnitCost?: number | null;
 }
 
 export interface PricedOrder {

@@ -30,8 +30,10 @@ export interface ProductSupplierAgreement {
 @Injectable({ providedIn: 'root' })
 export class ProductSupplierAgreementApi {
   private readonly http = inject(HttpClient);
-  get(productId: number): Promise<ProductSupplierAgreement> {
-    return firstValueFrom(this.http.get<ProductSupplierAgreement>(api(`/api/products/${productId}/supplier-agreement`)));
+  /** Without supplierId (or with the preferred one) today's agreement; another supplier with a row gets its own. */
+  get(productId: number, supplierId?: number | null): Promise<ProductSupplierAgreement> {
+    const query = supplierId === null || supplierId === undefined ? '' : `?supplierId=${supplierId}`;
+    return firstValueFrom(this.http.get<ProductSupplierAgreement>(api(`/api/products/${productId}/supplier-agreement${query}`)));
   }
   saveApplicability(productId: number, revision: string, productIds: number[]): Promise<ProductSupplierAgreement> {
     return firstValueFrom(this.http.put<ProductSupplierAgreement>(api(`/api/products/${productId}/supplier-agreement/applicability`), { revision, productIds }));

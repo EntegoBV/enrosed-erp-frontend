@@ -15,6 +15,7 @@ import {
 } from './purchase-pdf-options';
 import { DEFAULT_PURCHASE_CONTAINER_TYPE, PurchaseContainerType } from './geo';
 import { PurchaseInspectionOptions, purchaseInspectionQuery } from './purchase-inspection-options';
+import type { SupplierProductRow } from './product-supplier-models';
 
 export type {
   NormalizedPurchasePdfOptions, PurchasePdfAudience, PurchasePdfLayout, PurchasePdfOptions,
@@ -41,6 +42,11 @@ export class SourcingApi {
 
   deleteSupplier(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/suppliers/${id}`)));
+  }
+
+  /** The products a supplier makes (one row per product_supplier row, inactive ones included). */
+  supplierProducts(supplierId: number): Promise<SupplierProductRow[]> {
+    return firstValueFrom(this.http.get<SupplierProductRow[]>(api(`/api/suppliers/${supplierId}/products`)));
   }
 
   purchaseOrders(): Promise<PurchaseOrderView[]> {
@@ -388,9 +394,14 @@ export class SourcingApi {
       api(`/api/purchase-orders/${id}/unarchive`), {}));
   }
 
-  /** Legt de berekende kostprijzen vast op de producten. */
-  applyLandedCosts(id: number): Promise<LandedCost> {
-    return firstValueFrom(this.http.post<LandedCost>(api(`/api/purchase-orders/${id}/apply`), {}));
+  /**
+   * Legt de berekende kostprijzen vast op de batches van deze container en op
+   * de productkaarten. A product card that carries a newer container keeps its
+   * cost unless its id is in overwriteNewerProductIds ("Ook op de productkaart").
+   */
+  applyLandedCosts(id: number, overwriteNewerProductIds: number[] = []): Promise<LandedCost> {
+    return firstValueFrom(this.http.post<LandedCost>(
+      api(`/api/purchase-orders/${id}/apply`), { overwriteNewerProductIds }));
   }
   /* ---- freight-rate log (dashboard market card) ---- */
 

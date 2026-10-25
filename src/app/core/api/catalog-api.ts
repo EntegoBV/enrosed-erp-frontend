@@ -10,6 +10,9 @@ import {
   ProductPhotoOverview, ProductPhotoRoleKey, ProductPhotoScope, UnitName,
   ProductPhotoExportRequest, ProductPhotoExportResult,
 } from './models';
+import type {
+  ProductPutBody, ProductSupplierChange, ProductSupplierNoteWrite, ProductSupplierRow, ProductSupplierWrite,
+} from './product-supplier-models';
 import { rememberUnitNames } from '../../features/products/product-sales-unit';
 
 export type CatalogLayout = 'SIMPLE' | 'BROCHURE';
@@ -55,6 +58,11 @@ export interface WebsiteVisibilityResult {
   family: ProductFamily;
   rebuildQueued: boolean;
   notice: string | null;
+}
+
+/** "?supplierId=S" for one supplier's agreement photos; '' keeps the product's preferred supplier. */
+function supplierQuery(supplierId: number | null | undefined): string {
+  return supplierId === null || supplierId === undefined ? '' : `?supplierId=${supplierId}`;
 }
 
 /**
@@ -137,7 +145,8 @@ export class CatalogApi {
     return firstValueFrom(this.http.post<Product>(api('/api/products'), body));
   }
 
-  updateProduct(id: number, product: Product): Promise<Product> {
+  /** A ProductPutBody may carry null purchase fields: the server keeps those values (several suppliers, 2026-10-25). */
+  updateProduct(id: number, product: Product | ProductPutBody): Promise<Product> {
     return firstValueFrom(
       this.http.put<Product>(api(`/api/products/${id}`), this.productWriteBody(product)));
   }
@@ -175,7 +184,7 @@ export class CatalogApi {
    * texts[].variantSize. The size-neutral backend ignores it; an older backend
    * keeps its per-language rows instead of losing them on this save.
    */
-  private productWriteBody(product: Product): Product {
+  private productWriteBody(product: Product | ProductPutBody): ProductPutBody {
     /* unitsPerOrderStep is the server's own figure; the setting travels as packaging.orderStep. */
     const { unitsPerOrderStep: _serverStep, ...body } = product;
     return {
@@ -204,6 +213,44 @@ export class CatalogApi {
 
   deleteProduct(id: number): Promise<void> {
     return firstValueFrom(this.http.delete<void>(api(`/api/products/${id}`)));
+  }
+
+  /* ------------------------------------------ leveranciers per product */
+
+  /** The product_supplier rows: preferred first, then active, then by supplier name. */
+  productSuppliers(productId: number): Promise<ProductSupplierRow[]> {
+    return firstValueFrom(this.http.get<ProductSupplierRow[]>(api(`/api/products/${productId}/suppliers`)));
+  }
+
+  addProductSupplier(productId: number, body: ProductSupplierWrite): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.post<ProductSupplierChange>(api(`/api/products/${productId}/suppliers`), body));
+  }
+
+  updateProductSupplier(productId: number, rowId: number, body: ProductSupplierWrite): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.put<ProductSupplierChange>(
+      api(`/api/products/${productId}/suppliers/${rowId}`), body));
+  }
+
+  /** Only the agreement note of one row ('' clears). */
+  updateProductSupplierNote(productId: number, rowId: number, body: ProductSupplierNoteWrite): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.put<ProductSupplierChange>(
+      api(`/api/products/${productId}/suppliers/${rowId}/note`), body));
+  }
+
+  /** Makes the row the product's Voorkeur; the product card follows it. */
+  setPreferredProductSupplier(productId: number, rowId: number): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.put<ProductSupplierChange>(
+      api(`/api/products/${productId}/suppliers/${rowId}/preferred`), {}));
+  }
+
+  setProductSupplierActive(productId: number, rowId: number, active: boolean): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.put<ProductSupplierChange>(
+      api(`/api/products/${productId}/suppliers/${rowId}/active`), { active }));
+  }
+
+  deleteProductSupplier(productId: number, rowId: number): Promise<ProductSupplierChange> {
+    return firstValueFrom(this.http.delete<ProductSupplierChange>(
+      api(`/api/products/${productId}/suppliers/${rowId}`)));
   }
 
   /* --------------------------------------------------- productfamilies */
@@ -485,22 +532,26 @@ export class CatalogApi {
 
   /* ------------------------------------------ leveranciersafspraakfoto's */
 
-  /** Ordered, supplier-scoped photos that only enter the supplier agreement PDF. */
-  supplierAgreementPhotos(productId: number): Promise<ProductSupplierAgreementPhoto[]> {
+  /**
+   * Ordered, supplier-scoped photos that only enter the supplier agreement PDF.
+   * Without supplierId the product's preferred supplier.
+   */
+  supplierAgreementPhotos(productId: number, supplierId?: number | null): Promise<ProductSupplierAgreementPhoto[]> {
     return firstValueFrom(this.http.get<ProductSupplierAgreementPhoto[]>(
-      api(`/api/products/${productId}/supplier-agreement/photos`)));
+      api(`/api/products/${productId}/supplier-agreement/photos${supplierQuery(supplierId)}`)));
   }
 
   uploadSupplierAgreementPhoto(
     productId: number,
     file: File,
     caption: string | null = null,
+    supplierId?: number | null,
   ): Promise<ProductSupplierAgreementPhoto> {
     const form = new FormData();
     form.append('file', file, file.name);
     if (caption?.trim()) form.append('caption', caption.trim());
     return firstValueFrom(this.http.post<ProductSupplierAgreementPhoto>(
-      api(`/api/products/${productId}/supplier-agreement/photos`), form));
+      api(`/api/products/${productId}/supplier-agreement/photos${supplierQuery(supplierId)}`), form));
   }
 
   updateSupplierAgreementPhotoCaption(
@@ -517,9 +568,10 @@ export class CatalogApi {
   reorderSupplierAgreementPhotos(
     productId: number,
     photoIds: number[],
+    supplierId?: number | null,
   ): Promise<ProductSupplierAgreementPhoto[]> {
     return firstValueFrom(this.http.put<ProductSupplierAgreementPhoto[]>(
-      api(`/api/products/${productId}/supplier-agreement/photos/order`), photoIds));
+      api(`/api/products/${productId}/supplier-agreement/photos/order${supplierQuery(supplierId)}`), photoIds));
   }
 
   deleteSupplierAgreementPhoto(productId: number, photoId: number): Promise<void> {
