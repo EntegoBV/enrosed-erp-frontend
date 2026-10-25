@@ -47,6 +47,7 @@ const SECTION_TAB: Readonly<Record<string, PhoneTab>> = {
   'purchase-products-section': 'producten',
   'purchase-capacity-section': 'producten',
   'purchase-costs-section': 'kosten',
+  'purchase-calc-section': 'kosten',
   'purchase-summary-section': 'kosten',
   'purchase-result-section': 'kosten',
   'purchase-payment-result': 'kosten',
@@ -238,15 +239,23 @@ export function linePriceText(own: { price: number | null | undefined; currency:
 
 export interface NacalcGlance {
   concept: boolean; label: string; pill: string; pillTone: string; eindkostEur: number; afspraakEur: number;
-  verschilText: string; verschilWords: string; verschilTone: 'in' | 'warn' | 'none'; sub: string; foot: string;
+  /** 'Verschil · 5,0 %', or 'Verschil' without a percentage. */
+  verschilTitle: string;
+  /** '€ 3.271,34 minder' | '€ 120,00 meer' | 'geen verschil': the phone's one wording, never a sign. */
+  verschilText: string;
+  /** 'waarvan € 30,00 na te kijken' while part of it waits for a review; '' otherwise. */
+  reviewText: string;
+  verschilTone: 'in' | 'warn' | 'none'; sub: string; foot: string;
 }
 
-/** The Nacalculatie's headline for Overzicht: eindkost, Afspraak and the difference, never a new figure. */
+/**
+ * The Nacalculatie's headline for Overzicht: eindkost, Afspraak and the difference, never a new figure.
+ * The Verschil reads as on the phone's Nacalculatie (purchase-phone-money's verschilText): '€ x minder'.
+ */
 export function nacalcGlance(head: NacalcHeadline): NacalcGlance {
   const concept = head.kind === 'concept';
   const verschil = head.verschilEur;
-  const pct = head.verschilPct === null || !verschil ? '' : `${ONE_DECIMAL.format(Math.abs(head.verschilPct))} % `;
-  const review = head.reviewEur > 0 ? ` · waarvan ${eur(head.reviewEur)} na te kijken` : '';
+  const pct = head.verschilPct === null || !Math.round(verschil * 100) ? '' : `${ONE_DECIMAL.format(Math.abs(head.verschilPct))} %`;
   const tone = head.pill.tone;
   return {
     concept,
@@ -255,10 +264,12 @@ export function nacalcGlance(head: NacalcHeadline): NacalcGlance {
     pillTone: tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : '',
     eindkostEur: head.eindkostEur,
     afspraakEur: head.begrootEur,
-    // Only the signed amount stands in the row's trail; the percentage leads the words below, so a phone never cuts it.
-    verschilText: verschil ? `${verschil > 0 ? '+ ' : '− '}${eur(Math.abs(verschil))}` : eur(0),
-    verschilWords: pct + (verschil < 0 ? 'goedkoper dan afgesproken' : verschil > 0 ? 'duurder dan afgesproken' : 'geen verschil') + review,
-    verschilTone: verschil < 0 ? 'in' : verschil > 0 || head.reviewEur > 0 ? 'warn' : 'none',
+    // One line at 375 px: the percentage beside the title, the amount with its word in the trail.
+    verschilTitle: pct ? `Verschil · ${pct}` : 'Verschil',
+    verschilText: Math.round(verschil * 100) ? `${eur(Math.abs(verschil))} ${verschil < 0 ? 'minder' : 'meer'}` : 'geen verschil',
+    reviewText: head.reviewEur > 0 ? `waarvan ${eur(head.reviewEur)} na te kijken` : '',
+    // Minder is green; a settled meer is plain, a meer (or anything) still to review is warn.
+    verschilTone: verschil < 0 ? 'in' : head.reviewEur > 0 ? 'warn' : 'none',
     sub: concept ? 'volgens de calculatie · nog niets betaald' : '',
     foot: concept
       ? 'De nacalculatie begint bij de bestelling: zodra betalingen genoteerd zijn, zie je hier wat de container echt kost.'

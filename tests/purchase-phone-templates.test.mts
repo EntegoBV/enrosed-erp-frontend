@@ -28,9 +28,10 @@ test('the step confirmation and the Nacalculatie glance parse and only take inpu
   assert.match(sheet, /Je openstaande wijzigingen worden mee opgeslagen\./);
   assert.match(sheet, /id="mpo-step-tracking"/);
   const glance = templateOf(await read('app/features/purchasing/purchase-nacalc-glance.ts'));
-  for (const words of ['Afspraak', 'Verschil met afspraak', 'Volledige nacalculatie', 'Nacalculatie laden…', 'De nacalculatie is nog niet beschikbaar.']) {
+  for (const words of ['Afspraak', '{{ g.verschilTitle }}', '{{ g.verschilText }}', '{{ g.reviewText }}', 'Volledige nacalculatie', 'Nacalculatie laden…', 'De nacalculatie is nog niet beschikbaar.']) {
     assert.ok(glance.includes(words), words);
   }
+  assert.doesNotMatch(glance, /Verschil met afspraak|verschilWords/, "2026-10-25: 'Verschil · 5,0 %' beside '€ x minder', one line");
   assert.doesNotMatch(glance, /begroot/i);
 });
 
@@ -39,12 +40,13 @@ test('the read view: one card over five panes, every section once, the Nacalcula
   const template = templateOf(source);
   assert.equal(parseTemplate(template, 'purchase-view.html').errors, null);
   for (const id of ['purchase-overview', 'purchase-receipt-section', 'purchase-actions-section', 'purchase-products-section', 'purchase-capacity-section',
-    'purchase-costs-section', 'purchase-result-section', 'purchase-payments-section', 'purchase-partner-section', 'purchase-files-section',
+    'purchase-costs-section', 'purchase-calc-section', 'purchase-result-section', 'purchase-payments-section', 'purchase-partner-section', 'purchase-files-section',
     'purchase-reports-section']) {
     assert.ok(template.includes(`id="${id}"`), id);
   }
+  for (const id of ['purchase-costs-section', 'purchase-calc-section', 'purchase-result-section']) assert.equal(count(template, `id="${id}"`), 1, id);
   for (const tag of ['<app-purchase-nacalc-overview mode="read"', '<app-purchase-payment-overview mode="read"', '<app-purchase-partner-payments',
-    '<app-purchase-partner-panel', '<app-purchase-nacalc-glance', '<app-purchase-step-confirm-sheet']) {
+    '<app-purchase-partner-panel', '<app-purchase-nacalc-glance', '<app-purchase-step-confirm-sheet', '<app-purchase-payee-sheet']) {
     assert.equal(count(template, tag), 1, tag);
   }
   const at = (marker: string) => { const index = template.indexOf(marker); assert.ok(index >= 0, marker); return index; };
@@ -52,6 +54,17 @@ test('the read view: one card over five panes, every section once, the Nacalcula
   const nacalc = at('<app-purchase-nacalc-overview mode="read"');
   assert.ok(kosten < nacalc && nacalc < at('id="mpo-pane-betalingen"'), 'the Nacalculatie sits in the Kosten pane');
   assert.doesNotMatch(template.slice(kosten, nacalc), /<details/, 'never collapsed');
+  // 2026-10-25: once ordered the Nacalculatie opens Kosten and the calculation follows; a concept keeps the calculation first.
+  const calc = at('id="purchase-calc-section"');
+  assert.ok(at('id="purchase-costs-section"') < nacalc && nacalc < calc && calc < at('id="mpo-pane-betalingen"'), 'the Nacalculatie before the calculation');
+  assert.match(template, /@if \(data\.order\.status === 'CONCEPT'\) \{ <ng-container \[ngTemplateOutlet\]="calcBlock" \/> \}\s*<!-- Nacalculatie/);
+  assert.match(template, /@if \(data\.order\.status !== 'CONCEPT'\) \{ <ng-container \[ngTemplateOutlet\]="calcBlock" \/> \}\s*<ng-template #calcBlock>\s*<div id="purchase-calc-section"/);
+  assert.match(template, /<h2 id="mpo-costs-title">Calculatie<\/h2><p>Gelande kostprijs · intern<\/p>/);
+  // The Totaal geland tile goes to the calculation, the Betalingen cell to the Nacalculatie at the top.
+  assert.match(template, /\(click\)="scrollToCard\('purchase-calc-section', 'purchase-costs-section'\)"/);
+  // A payee tapped in the Nacalculatie opens on top of Kosten; the tab stays.
+  assert.match(template, /\(openPayee\)="kostenPayee\.set\(\$event\)"/);
+  assert.match(template, /<app-purchase-payee-sheet \[payee\]="item" mode="read"[^>]*\(add\)="afterKostenSheet\(recordPayment, \$event\)" \(edit\)="afterKostenSheet\(showPayment, \$event\)"/);
   const glance = at('<app-purchase-nacalc-glance');
   assert.ok(at('id="mpo-pane-overzicht"') < glance && glance < at('id="mpo-pane-producten"'), 'the headline sits on Overzicht');
   assert.ok(at('<app-purchase-payment-overview mode="read"') > at('id="mpo-pane-betalingen"') && at('<app-purchase-payment-overview mode="read"') < at('id="mpo-pane-dossier"'));
@@ -67,7 +80,8 @@ test('the read view: one card over five panes, every section once, the Nacalcula
   assert.doesNotMatch(template, /desktop\.active\(\)/, 'phone only: the desk is PurchaseDesk');
   // Sheets and menus render at host level: after the phone frame, never in the nav, the tabs or a pane.
   const frameEnd = at('<!-- Sheets and menus at host level');
-  for (const sheet of ['<app-context-menu', '<app-purchase-step-confirm-sheet', '<app-sheet title="Productregel"', '<app-purchase-quote-sheet', '<app-purchase-pdf-sheet']) {
+  for (const sheet of ['<app-context-menu', '<app-purchase-step-confirm-sheet', '<app-sheet title="Productregel"', '<app-purchase-quote-sheet', '<app-purchase-pdf-sheet',
+    '<app-purchase-payee-sheet']) {
     assert.ok(at(sheet) > frameEnd, sheet);
   }
 });
@@ -123,7 +137,7 @@ test('review round 1: figures and their words reach a screen reader, a keyboard 
   }
   assert.ok(!editor.includes("{{ perPiece() && display ? ' /display' : '' }}"), 'the label says display; the value has no unit tail');
   // The glance's row title wraps rather than cutting the difference.
-  assert.match(templateOf(await read('app/features/purchasing/purchase-nacalc-glance.ts')), /<span class="ios-cell__title mpo-wrap">Verschil met afspraak<\/span>/);
+  assert.match(templateOf(await read('app/features/purchasing/purchase-nacalc-glance.ts')), /<span class="ios-cell__title mpo-wrap">\{\{ g\.verschilTitle \}\}<\/span>/);
   assert.match(await read('styles/purchase-phone.scss'), /\.mpo-tile__label\{display:-webkit-box;[^}]*-webkit-line-clamp:2\}/);
 });
 
@@ -269,4 +283,105 @@ test('the payment sheet opened from the phone\'s Betalingen tab is bound as the 
   const overview = editor.indexOf('<app-purchase-payment-overview mode="edit"', pane);
   assert.ok(pane > 0 && overview > pane && overview < editor.indexOf('id="mpo-pane-dossier"'));
   assert.match(editor.slice(overview, editor.indexOf('/>', overview)), /\(add\)="requestPayment\(\$event\)" \(edit\)="requestEdit\(\$event\)" \(addTransfer\)="requestAddTransfer\(\$event\)"/);
+});
+
+test('Betalingen, the payee sheet and the Nacalculatie on the phone say one net Verschil, in rows of two lines (PO-2026-005, 2026-10-25)', async () => {
+  const body = (source: string, file: string): string => {
+    const template = /template:\s*`([\s\S]*?)`,\n(?:\s*styles:|\}\))/.exec(source)?.[1];
+    assert.ok(template, file);
+    assert.equal(parseTemplate(template, file).errors, null, file);
+    return template;
+  };
+  const overviewSource = await read('app/features/purchasing/purchase-payment-overview.ts');
+  const sheetSource = await read('app/features/purchasing/purchase-payee-sheet.ts');
+  const nacalcSource = await read('app/features/purchasing/purchase-nacalc-overview.ts');
+  const overview = body(overviewSource, 'purchase-payment-overview.html');
+  const sheet = body(sheetSource, 'purchase-payee-sheet.html');
+  const nacalc = body(nacalcSource, 'purchase-nacalc-overview.html');
+  for (const [name, template] of [['overview', overview], ['sheet', sheet], ['nacalc', nacalc]] as const) {
+    // "Wat is daar minder betaald en meer betaald? die + - etc?": no gross pair, no begroot, the Afspraak by its name.
+    assert.doesNotMatch(template, /Minder betaald|Meer betaald|differenceLines|goedkoper dan|duurder dan|begroot\b/, name);
+    assert.ok(template.includes('Afspraak'), name);
+  }
+  // Betalingen: the card has no operator column; Verschil, the payees it comes from, Open; the Afspraak closes Hoe is dit opgebouwd?.
+  const card = overview.slice(overview.indexOf('<section class="ios-card pp-summary"'), overview.indexOf('@if (todos().length'));
+  assert.doesNotMatch(card, /wk-equation__op/);
+  for (const words of ['<div class="pp-summary__status wk-amount--in"><app-icon name="tick" [size]="14" /> Alles betaald</div>', '<dt>Afspraak</dt>', '<dt>Betaald</dt>',
+    '<div class="pp-summary__verschil"><dt>Verschil', '@for (line of byPayee(); track line.payee)', 'waarvan te veel betaald · nakijken', '<dt>Open</dt>',
+    '@for (row of bridgeRows(); track row.key)', '[class.is-sum]="row.sum"', 'meterOf(sum)']) {
+    assert.ok(card.includes(words), words);
+  }
+  assert.doesNotMatch(overview, /Afgesproken, betaald en open per ontvanger|Nacalculatie en kostprijs/);
+  // Ontvangers: one two-line row per payee; its terms, invoice files and credits are one tap away in its sheet.
+  const payees = overview.slice(overview.indexOf('<h2>Ontvangers</h2>'), overview.indexOf('<h2>Alle betalingen'));
+  assert.match(payees, /<span class="pp-payee__top"><span class="ios-cell__title">\{\{ item\.label \}\}<\/span><span class="ios-cell__meta" \[class\]="tone\(word\.tone\)">\{\{ word\.word \}\}<\/span><\/span>/);
+  assert.match(payees, /<span class="ios-cell__sub">\{\{ figures\(item\) \}\}<\/span>/);
+  assert.doesNotMatch(payees, /item\.terms|item\.credits|invoiceFiles|Nog geen factuur|pp-payee__trail/);
+  // A payment: two lines, the bank as a mark with its words for a screen reader; Afrekening stays in its detail.
+  for (const template of [overview, sheet]) {
+    assert.match(template, /class="ios-cell pp-row pp-row2"/);
+    assert.match(template, /\{\{ line\(row\) \}\}@if \(mark\(row\); as proof\)/);
+    assert.match(template, /role="img" \[attr\.aria-label\]="proof\.label"/);
+    assert.doesNotMatch(template.slice(template.indexOf('pp-row2'), template.indexOf('pp-row2') + 900), /settlesLabel/);
+  }
+  assert.match(overview, /<span class="ios-cell__body">Afrekening<\/span><span class="ios-cell__value">\{\{ row\.settlesLabel \|\| 'Niet afgerekend' \}\}<\/span>/);
+  assert.match(overview, /<span class="ios-cell__title">Nacalculatie<\/span><\/span>\s*@if \(nacalc\(\); as n\) \{ <span class="ios-cell__trail"><span class="ios-cell__meta" \[class\]="pillTone\(n\.pill\.tone\)">\{\{ n\.pill\.label \}\}/);
+
+  // The payee sheet: the status on the receipt, one Verschil, Termijnen before Factuur, a term in two lines with one word.
+  const receipt = sheet.slice(sheet.indexOf('<div class="ios-card payee-sheet__receipt">'), sheet.indexOf('<h2>Termijnen</h2>'));
+  assert.doesNotMatch(receipt, /wk-equation__op/);
+  assert.match(receipt, /<div class="payee-sheet__status" \[class\]="tone\(word\.tone\)">/);
+  assert.match(receipt, /@if \(difference\(\); as verschil\) \{\s*<div><dt>Verschil/);
+  assert.ok(sheet.indexOf('<h2>Termijnen</h2>') < sheet.indexOf('<h2>Factuur</h2>'), 'the terms explain the receipt\'s Verschil');
+  assert.match(sheet, /<h2>Termijnen<\/h2><span class="ios-section__trail">\{\{ trail\(\) \}\}<\/span>/);
+  assert.match(sheet, /<span class="pp-line2"><span class="ios-cell__sub">\{\{ term\.paidEur \| eur \}\} van \{\{ term\.fullEur \| eur \}\}<\/span>/);
+  assert.match(sheet, /@if \(term\.statusNote\) \{ <span class="ios-cell__sub">\{\{ term\.statusNote \}\}<\/span> \}/, 'a netted term keeps its note');
+  assert.match(sheet, /<h2>Opbouw van de afspraak<\/h2>@if \(item\.payee === 'LOGISTICS'\) \{ <span class="ios-section__trail">uit Kosten<\/span> \}/);
+  assert.match(sheet, /<span class="pp-line2"><span class="ios-cell__title">\{\{ fw\.title \}\}<\/span>@if \(fw\.note\) \{ <span class="ios-cell__meta">\{\{ fw\.note \}\}<\/span> \}<\/span>/);
+  assert.match(sheet, /verlaagt \} @else \{ Verlaagt \} de eindkost, niet Betaald of Open\./);
+  assert.match(sheetSource, /readonly lead = computed\(\(\) => sheetLead\(this\.payee\(\), this\.supplierName\(\)\)\);/);
+  // Every edit action stays where it was.
+  for (const words of ['Betaalplan wijzigen', 'Tegoed noteren…', 'Factuur toevoegen…', 'Inspectie via leverancier', 'Afrekening ongedaan maken', 'Afrekenen…',
+    'Verschil van {{ item.openEur | eur }} afrekenen', 'Extra betaling noteren', 'Gegevens invullen', 'Toewijzen aan alle betalingen']) {
+    assert.ok(sheet.includes(words), words);
+  }
+
+  // The Nacalculatie: the story card, where the difference sits, the receipt, per product with the list visible, then the cost basis.
+  const order = ['<div class="ios-card np-story">', '<h2>Waar het verschil zit</h2>', '<h2>Ontvangst</h2>', '<h2>Per product</h2>', '<h2>Kostbasis</h2>', '<h2>Partner</h2>', '<h2>Toelichting</h2>'];
+  order.reduce((last, marker) => { const at = nacalc.indexOf(marker); assert.ok(at > last, marker); return at; }, -1);
+  const story = nacalc.slice(nacalc.indexOf('<div class="ios-card np-story">'), nacalc.indexOf('<h2>Waar het verschil zit</h2>'));
+  assert.doesNotMatch(story, /wk-equation__op/);
+  for (const words of ['{{ storySub(head) }}', 'meterOf(book.summary)', '<dt>Afspraak</dt>', '<div class="is-total"><dt>Verschil@if (pct(head); as p)', 'waarvan te veel betaald · nakijken',
+    'waarvan bijkomende kosten', 'waarvan koersverschil (bank)', 'head.sentence']) {
+    assert.ok(story.includes(words), words);
+  }
+  assert.match(nacalc, /<h2>Waar het verschil zit<\/h2><span class="ios-section__trail">afspraak → eindkost<\/span>/);
+  assert.match(nacalc, /@for \(row of chain\(\); track row\.key\)/);
+  assert.match(nacalc, /\(click\)="openPayee\.emit\(row\.payee\)"/);
+  assert.match(nacalc, /@if \(todo\(\); as todo\)/, 'the one action cell stays');
+  assert.match(nacalc, /@else if \(grossLine\(\); as gross\)/, 'the gross pair as one sentence');
+  assert.doesNotMatch(nacalc, /Tik op een ontvanger|Afgerekende verschillen|Hoe verhoudt dit zich tot Kosten\?|Kostprijs per product|np-hero|np-payee|np-mix/);
+  const products = nacalc.slice(nacalc.indexOf('<h2>Per product</h2>'), nacalc.indexOf('<h2>Kostbasis</h2>'));
+  assert.doesNotMatch(products, /<details/, 'the list is visible');
+  for (const words of ['@for (line of productLines(); track', '(click)="productOpen.set(line.row)"', 'Toon alle {{ n.products.length }} producten', 'Incl. Enrosed kost']) {
+    assert.ok(products.includes(words), words);
+  }
+  assert.match(nacalc, /<app-sheet \[title\]="row\.name" variant="ios" \(closed\)="productOpen\.set\(null\)">/);
+  assert.match(nacalc, /<a class="btn btn--primary" \[routerLink\]="\['\/products', row\.productId\]">Naar product<\/a>/);
+  const basis = nacalc.slice(nacalc.indexOf('<h2>Kostbasis</h2>'), nacalc.indexOf('<h2>Partner</h2>'));
+  for (const words of ['Enrosed kost', 'Kostbasis voor prijzen', 'Van calculatie naar afspraak', '@for (row of bridge(); track row.key)', 'Kostprijzen toepassen ›']) {
+    assert.ok(basis.includes(words), words);
+  }
+  assert.match(nacalcSource, /readonly bridge = computed\(\(\) => afspraakBridge\(this\.nacalc\(\)\?\.bridge\.rows \?\? \[\]\)\);/);
+});
+
+test('the phone money styles stay on their hosts and their own classes; the retired list classes are gone', async () => {
+  const payments = await read('styles/purchase-payments.scss');
+  const nacalc = await read('styles/purchase-nacalc.scss');
+  assert.doesNotMatch(payments, /\.pp-payee__trail|\.pp-term\b|\.pp-invoice/);
+  assert.doesNotMatch(nacalc, /\.np-hero|\.np-mix|\.np-payee|\.np-term\b/);
+  for (const rule of ['.pp-summary__status{', '.pp-payee__top{', '.pp-line2{', ':is(app-purchase-payment-overview,app-purchase-payee-sheet) .pp-row2 ', '.pp-bridge .wk-equation>.is-sum{']) {
+    assert.ok(payments.includes(rule), rule);
+  }
+  for (const rule of ['.np-story{', '.np-chain{', '.np-chain__row{', '.np-product__line{', '.np .np-range ']) assert.ok(nacalc.includes(rule), rule);
 });

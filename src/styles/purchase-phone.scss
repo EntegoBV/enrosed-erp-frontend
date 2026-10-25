@@ -81,6 +81,8 @@ app-purchase-editor .mpo-address,app-purchase-editor .mpo-address .supplier-addr
 .mpo-head__copy h2{margin:0;font-size:20px;font-weight:750;letter-spacing:-.01em}
 .mpo-head__copy p{margin:1px 0 0;color:var(--muted);font-size:13px;line-height:1.35}
 .mpo-head>.wk-pill,.mpo-head>.ios-capsule{flex:none}
+/* Kosten of an ordered container: the calculation follows the Nacalculatie, a clear gap above its head */
+app-purchase-view #purchase-result-section+#purchase-calc-section{margin-top:28px}
 .mpo-attention{align-items:flex-start}
 .mpo-attention>.mpo-attention__count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:12px;font-weight:800;line-height:1}
 .mpo-attention__body{display:grid;gap:2px}

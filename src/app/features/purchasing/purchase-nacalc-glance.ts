@@ -27,8 +27,9 @@ import { nacalcGlance, type PhonePaymentState } from './purchase-phone-model';
           @if (!g.concept) {
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Afspraak</span></span>
               <span class="ios-cell__trail"><span class="ios-cell__value">{{ g.afspraakEur | eur }}</span></span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">Verschil met afspraak</span>
-              <span class="ios-cell__sub mpo-glance__words">{{ g.verschilWords }}</span></span>
+            <!-- 'Verschil · 5,0 %' · '€ 3.271,34 minder' in one line, as on the Nacalculatie; a review adds its amount under it. -->
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ g.verschilTitle }}</span>
+              @if (g.reviewText) { <span class="ios-cell__sub mpo-glance__words wk-amount--warn">{{ g.reviewText }}</span> }</span>
               <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong"
                 [class.wk-amount--in]="g.verschilTone === 'in'" [class.wk-amount--warn]="g.verschilTone === 'warn'">{{ g.verschilText }}</span></span></div>
           }

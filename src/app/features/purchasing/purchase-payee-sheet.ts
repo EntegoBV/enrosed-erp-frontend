@@ -8,13 +8,16 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import {
-  DUE_MOMENT, SUPPLIER_GOODS_CIF, differenceLines, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  DUE_MOMENT, ledgerDifferenceNote, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
   type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
-  bankProofSub, creditMenuItems, dayOf, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
+  bankProofSub, creditMenuItems, dayOf, formatEur, monthOf, paymentMenuItems, settleWith, termHasMenu, termMenuItems, termOpen, termPayment, toneClass,
 } from './purchase-payment-menus';
-import { invoiceCoverage, invoiceFileKind, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import { invoiceCoverage, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
+import {
+  fileWords, payeeWord, paymentLine, planTrail, proofMark, sheetLead, termWord, verschilText, type PhoneAmount, type PhoneWord,
+} from './purchase-phone-money';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 
 /**
@@ -31,15 +34,21 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
     @let item = payee();
     <app-sheet [title]="item.label" variant="ios" (closed)="closed.emit()">
       <div body class="payee-sheet">
-        <p class="payee-sheet__lead"><b [class]="tone(item.status.tone)">{{ item.status.label }}</b> · {{ basis() }}</p>
+        <!-- What the agreement rests on; the status sits on the receipt, the plan on Termijnen. -->
+        @if (lead(); as text) { <p class="payee-sheet__lead">{{ text }}</p> }
         <div class="ios-card payee-sheet__receipt">
+          @let word = status();
+          <div class="payee-sheet__status" [class]="tone(word.tone)">@if (word.tone === 'ok') { <app-icon name="tick" [size]="14" /> }{{ word.word }}</div>
           @if (item.payee === 'OTHER') {
             <dl class="wk-equation"><div class="is-total"><dt>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div></dl>
           } @else {
             <dl class="wk-equation">
               <div><dt>Afspraak</dt><dd>{{ item.agreedEur | eur }}</dd></div>
-              <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div>
-              @for (line of differenceLines(item); track line.label) { <div><dt><span class="wk-equation__op" aria-hidden="true">{{ line.op }}</span>{{ line.label }}</dt><dd>{{ line.eur | eur }}</dd></div> }
+              <div><dt>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div>
+              @if (difference(); as verschil) {
+                <div><dt>Verschil@if (differenceNote(); as note) { <small> · {{ note }}</small> }</dt><dd [class]="amountTone(item.reviewEur > 0 ? 'warn' : verschil.tone)">{{ verschil.text }}</dd></div>
+                @if (item.reviewEur > 0) { <div class="is-sub"><dt>waarvan te veel betaald · nakijken</dt><dd class="wk-amount--warn">{{ item.reviewEur | eur }}</dd></div> }
+              }
               <div class="is-total"><dt>Open</dt><dd>{{ item.openEur | eur }}</dd></div>
             </dl>
             @if (item.openEur > 0) {
@@ -47,6 +56,39 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             }
           }
         </div>
+
+        @if (item.payee === 'SUPPLIER' && item.terms.length) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Termijnen</h2><span class="ios-section__trail">{{ trail() }}</span></div>
+            <div class="ios-group">
+              @for (term of item.terms; track term.due) {
+                <!-- Two lines: the term and its own Verschil (or what is open), then paid of its Afspraak and one word. -->
+                @let tw = termWordOf(term);
+                @let ta = termAmount(term, tw);
+                <button class="ios-cell payee-sheet__term" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
+                  <span class="ios-cell__body">
+                    <span class="pp-line2"><span class="ios-cell__title">{{ term.label }}</span>@if (ta) { <span class="ios-cell__value ios-cell__value--strong" [class]="amountTone(ta.tone)">{{ ta.text }}</span> }</span>
+                    <span class="pp-line2"><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span>
+                      @if (termActionable(term) || tw.tone === 'warn') { <span class="ios-cell__meta" [class]="tone(tw.tone)">{{ tw.word }}</span> }
+                      @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ tw.word }}</span> }</span>
+                    @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
+                  @if (termTappable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
+                </button>
+              }
+            </div>
+          </section>
+        } @else if (item.composition.length) {
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Opbouw van de afspraak</h2>@if (item.payee === 'LOGISTICS') { <span class="ios-section__trail">uit Kosten</span> }</div>
+            <div class="ios-group">
+              @for (line of item.composition; track line.label) {
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ line.label }}</span>@if (line.hint) { <span class="ios-cell__sub">{{ line.hint }}</span> }</span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ line.amountEur | eur }}</span></span></div>
+              }
+            </div>
+            <p class="ios-section__foot">{{ item.compositionConsistent ? 'Betalingen worden per ontvanger bijgehouden, niet per kostenregel.' : 'Opbouw uit Kosten; wijkt af van de afspraak.' }}</p>
+          </section>
+        }
 
         @if (showInvoices()) {
           <section class="ios-section">
@@ -76,9 +118,11 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                 } @else {
                   @for (file of item.invoiceFiles; track file.documentId) {
                     <!-- The name and its words get the whole width; 'Gegevens invullen' goes on its own line under them. -->
+                    @let fw = fileWordsOf(file);
                     <div class="ios-cell payee-sheet__filecell">
                       <button class="ios-cell__body payee-sheet__file" type="button" (click)="invoiceFile.emit({ documentId: file.documentId, name: file.originalFilename })">
-                        <span class="ios-cell__title">{{ file.originalFilename }}</span><span class="ios-cell__sub">{{ fileKind(file) }}</span></button>
+                        <span class="pp-line2"><span class="ios-cell__title">{{ fw.title }}</span>@if (fw.note) { <span class="ios-cell__meta">{{ fw.note }}</span> }</span>
+                        <span class="ios-cell__sub payee-sheet__filename">{{ file.originalFilename }}</span></button>
                       @if (mode() === 'edit') { <button class="ios-capsule ios-capsule--tinted payee-sheet__fill" type="button" [disabled]="busy()" (click)="fillIn(file)">Gegevens invullen</button> }
                     </div>
                   }
@@ -88,36 +132,6 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             @if (item.viaSupplier && !item.invoices.length) {
               <p class="ios-section__foot">{{ item.supplierInvoice ? 'Factuur via leverancier · ' + item.supplierInvoice.number : 'Factuur van de leverancier nog niet ingevoerd' }}</p>
             }
-          </section>
-        }
-
-        @if (item.payee === 'SUPPLIER' && item.terms.length) {
-          <section class="ios-section">
-            <div class="ios-section__head"><h2>Termijnen</h2></div>
-            <div class="ios-group">
-              @for (term of item.terms; track term.due) {
-                <button class="ios-cell payee-sheet__term" type="button" [class.payee-sheet__term--done]="!termTappable(term)" (click)="tapTerm(term, $event)">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}@if (term.differenceEur) { · {{ abs(term.differenceEur) | eur }} {{ term.differenceEur < 0 ? 'minder' : 'meer' }} }</span>
-                    @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
-                  <span class="ios-cell__trail">
-                    @if (termActionable(term) || term.status.tone === 'warn') { <span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span> }
-                    @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ term.status.label }}</span> }
-                  </span>
-                  @if (termTappable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
-                </button>
-              }
-            </div>
-          </section>
-        } @else if (item.composition.length) {
-          <section class="ios-section">
-            <div class="ios-section__head"><h2>Opbouw van de afspraak</h2></div>
-            <div class="ios-group">
-              @for (line of item.composition; track line.label) {
-                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ line.label }}</span>@if (line.hint) { <span class="ios-cell__sub">{{ line.hint }}</span> }</span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ line.amountEur | eur }}</span></span></div>
-              }
-            </div>
-            <p class="ios-section__foot">{{ item.compositionConsistent ? 'Betalingen worden per ontvanger bijgehouden, niet per kostenregel.' : 'Opbouw uit Kosten; wijkt af van de afspraak.' }}</p>
           </section>
         }
 
@@ -143,7 +157,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                 }
               }
             </div>
-            <p class="ios-section__foot">@if (item.creditOpenEur > 0) { Nog {{ item.creditOpenEur | eur }} te ontvangen. }Een tegoed verlaagt de eindkost; Betaald en Open blijven gelijk.</p>
+            <p class="ios-section__foot">@if (item.creditOpenEur > 0) { Nog {{ item.creditOpenEur | eur }} te ontvangen · verlaagt } @else { Verlaagt } de eindkost, niet Betaald of Open.</p>
           </section>
         }
 
@@ -152,12 +166,11 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
           @if (item.rows.length) {
             <div class="ios-group">
               @for (row of item.rows; track row.id) {
-                <button class="ios-cell pp-row" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
+                <button class="ios-cell pp-row pp-row2" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
                         (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || act('edit', row.payment)">
                   <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                   <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                    <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties · eerste {{ dayShort(row.firstPaidOn) }} }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
-                    @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
+                    <span class="ios-cell__sub">{{ line(row) }}@if (mark(row); as proof) { · @if (proof.icon) { <span class="pp-row__mark" [class.pp-row__mark--bank]="proof.icon === 'bank'" role="img" [attr.aria-label]="proof.label"><app-icon [name]="proof.icon" [size]="12" /></span> }@if (proof.text) { {{ proof.text }} } }</span></span>
                   <span class="ios-cell__trail">
                     <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                     @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
@@ -253,9 +266,8 @@ export class PurchasePayeeSheet {
   readonly tone = toneClass;
   readonly day = dayOf;
   readonly month = monthOf;
-  readonly abs = Math.abs;
-  readonly differenceLines = differenceLines;
-  readonly proofText = bankProofSub;
+  readonly line = paymentLine;
+  readonly fileWordsOf = fileWords;
   /** Leverancier, Transport and Inspectie always; Bijkomende kosten only once it has invoices or invoice files. */
   readonly showInvoices = computed(() => {
     const item = this.payee();
@@ -273,18 +285,23 @@ export class PurchasePayeeSheet {
     const item = this.payee();
     return item.payee === 'SUPPLIER' && item.invoices.length ? invoiceTermsLine(item.terms) : '';
   });
-  readonly basis = computed(() => {
-    const payee = this.payee();
-    switch (payee.payee) {
-      case 'SUPPLIER': return [this.supplierName(), payee.basis.startsWith(SUPPLIER_GOODS_CIF) ? 'goederen + zeevracht (CIF)' : '',
-        payee.terms.length ? this.planLabel() : 'geen betaalplan'].filter(Boolean).join(' · ');
-      case 'OTHER': return 'Bankkosten, koerier, wisselkoers · zonder afspraak';
-      case 'LOGISTICS': return payee.basis.endsWith('(CIF)') ? 'Afspraak uit Kosten · zeevracht via de leverancier (CIF)' : 'Afspraak uit Kosten';
-      // 'Afspraak inspectie € 300,00 · via leverancier': the owner's word, with what it is made of.
-      case 'SEPARATE': return payee.basis;
-      default: return 'Afspraak uit Kosten';
-    }
+  /** The supplier's name, CIF or DDP, 'Afspraak inspectie € 300,00 · via leverancier'; '' leaves the lead out. */
+  readonly lead = computed(() => sheetLead(this.payee(), this.supplierName()));
+  /** The payee's one status word, on top of its receipt. */
+  readonly status = computed(() => payeeWord(this.payee().status));
+  /** The receipt's Verschil: one net figure, or null when the payee paid its Afspraak and nothing waits for a review. */
+  readonly difference = computed<PhoneAmount | null>(() => {
+    const item = this.payee();
+    return Math.round(item.differenceEur * 100) !== 0 || item.reviewEur > 0 ? verschilText(item) : null;
   });
+  /** Only what the status word above does not say: still to review, or the koersverschil. */
+  readonly differenceNote = computed(() => {
+    const item = this.payee();
+    const note = ledgerDifferenceNote(item);
+    return note === 'na afrekening' || this.difference()?.text.endsWith(note) ? '' : note;
+  });
+  /** '1/3 · 1/3 · 1/3': the plan beside Termijnen; the moments are in the term labels. */
+  readonly trail = computed(() => planTrail(this.planLabel(), this.payee().terms.map(term => term.label)));
 
   moment(due: Due): string { return DUE_MOMENT[due]; }
   dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
@@ -303,13 +320,20 @@ export class PurchasePayeeSheet {
     if (invoice.documentId != null) this.invoiceFile.emit({ documentId: invoice.documentId, name: invoice.documentName });
   }
 
-  /** 'Proforma (PI)' or 'Factuurbestand zonder gegevens' under the file's name. */
-  fileKind(file: PurchaseInvoiceFile): string { return invoiceFileKind(file); }
   fillIn(file: PurchaseInvoiceFile): void {
     this.close(() => this.invoice.emit({ payee: this.payee().payee, file }));
   }
   finite(value: number): boolean { return Number.isFinite(value); }
   termActionable(term: LedgerTerm): boolean { return termOpen(term); }
+  termWordOf(term: LedgerTerm): PhoneWord { return termWord(term, this.payee().status.kind === 'PLANNED'); }
+  /** A term's own Verschil, else what is open on it (warn when due), else nothing. */
+  termAmount(term: LedgerTerm, word: PhoneWord): PhoneAmount | null {
+    if (Math.round(term.differenceEur * 100) !== 0) return verschilText({ differenceEur: term.differenceEur, fxEur: term.fxEur, reviewEur: word.word === 'Nakijken' ? 1 : 0 });
+    if (Math.round(term.openEur * 100) > 0) return { text: `${formatEur(term.openEur)} open`, tone: term.state === 'due' ? 'warn' : 'none' };
+    return null;
+  }
+  amountTone(tone: PhoneAmount['tone']): string { return tone === 'in' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : ''; }
+  mark(row: LedgerRow): ReturnType<typeof proofMark> { return proofMark(bankProofSub(row), { linked: row.bank.linked, creditOffset: !!row.creditOffset }); }
   /** The read view only records what is open; the editor also opens a paid term's menu (settle, undo, correct its payment). */
   termTappable(term: LedgerTerm): boolean { return this.mode() === 'edit' ? termHasMenu(term) : termOpen(term); }
 
