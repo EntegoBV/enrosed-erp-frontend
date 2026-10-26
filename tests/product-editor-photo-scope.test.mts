@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { salesPhoto } from '../src/app/shared/sales-photo.ts';
+import { purchaseFieldsForPut } from '../src/app/features/products/product-suppliers.ts';
 
 // Execute the production photo-workspace, refresh and save/leave expressions with real Angular signals.
 const source = await readFile(new URL('../src/app/features/products/product-editor.ts', import.meta.url), 'utf8');
@@ -30,7 +31,7 @@ function family(changes: Record<string, unknown> = {}) {
 
 function harness({ familyId = 3 as number | null, savedFamilyId = 3 as number | null, id = 10 as number | null } = {}) {
   const exports: { ProductEditor?: new () => any } = {};
-  vm.runInNewContext(javascript, { exports, computed, signal, salesPhoto, structuredClone });
+  vm.runInNewContext(javascript, { exports, computed, signal, salesPhoto, structuredClone, purchaseFieldsForPut });
   const editor = new exports.ProductEditor!();
   const product = { id, familyId, name: 'Bowl rood', photos: [ownPhoto, seriesPhoto] };
   const pending = signal(0);
@@ -56,7 +57,7 @@ function harness({ familyId = 3 as number | null, savedFamilyId = 3 as number | 
     productLoadVersion: 1,
     activeTab: signal('identity'), kies: signal(''), editorReady: signal(true),
     router: { navigate: async (commands: unknown[], extras: unknown) => { navigations.push([commands, extras]); return true; } },
-    agreementDirty: signal(false), translationDirty: signal(false),
+    agreementDirty: signal(false), translationDirty: signal(false), purchaseMode: signal('rows'),
     saving: signal(false), translationSaving: signal(false), agreementBusy: signal(false),
     sharedFieldsBusy: signal(false), stockSaving: signal(false), takingCode: signal(false), leaveQuestion: signal<any>(null),
     save: async () => { await editor.updateWithPendingPhotos(editor.draft(), manager); },
@@ -249,4 +250,16 @@ test('the section head has no count badge and the translations hint lives in the
   assert.ok(section.length > 500 && section.length < 5000, 'The photo section of the template');
   assert.doesNotMatch(section, /vertalingen|reeksfoto|hoofdfoto|section-head__count/i);
   assert.match(source, /photosPanel\(\)\?\.pillTemplate\(\)/);
+});
+
+test('several suppliers: with rows the product PUT sends the four purchase fields as null (keep); the fallback sends its own', async () => {
+  for (const [mode, expected] of [['rows', [null, null, null, null]], ['legacy', [3, 2.35, 'USD', 0.1]], ['loading', [3, 2.35, 'USD', 0.1]]] as const) {
+    const { editor, manager } = harness();
+    const bodies: any[] = [];
+    editor.catalog.updateProduct = async (_target: number, value: any) => { bodies.push(value); return value; };
+    editor.purchaseMode.set(mode);
+    await editor.updateWithPendingPhotos({ ...editor.draft(), supplierId: 3, exwPrice: 2.35, exwCurrency: 'USD', extraUnitCost: 0.1 }, manager);
+    assert.deepEqual([bodies[0].supplierId, bodies[0].exwPrice, bodies[0].exwCurrency, bodies[0].extraUnitCost], expected, mode);
+    assert.equal(bodies[0].name, 'Bowl rood', 'the rest of the product goes as it is');
+  }
 });

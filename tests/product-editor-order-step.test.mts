@@ -7,6 +7,7 @@ import { computed, signal } from '@angular/core';
 import type { UnitName } from '../src/app/core/api/models.ts';
 import * as orderSteps from '../src/app/features/products/product-order-step.ts';
 import * as salesUnits from '../src/app/features/products/product-sales-unit.ts';
+import { supplierMissing } from '../src/app/features/products/product-suppliers.ts';
 
 /*
  * "Hoe verkoop je dit product?" (2026-10-15): the sales card's members and the
@@ -53,7 +54,7 @@ const plain = (text: string) => text.replace(/ /g, ' ');
 function setup(packaging: Record<string, unknown>, options: { piecesPerCarton?: number | null; saved?: boolean; price?: number; fixedPrice?: boolean; desktop?: boolean } = {}) {
   salesUnits.rememberUnitNames(NAMES);
   const editorExports: { ProductEditor?: new () => any } = {};
-  vm.runInNewContext(editorFile.javascript, { exports: editorExports, computed, ...salesUnits, ...orderSteps });
+  vm.runInNewContext(editorFile.javascript, { exports: editorExports, computed, ...salesUnits, ...orderSteps, supplierMissing });
   const editor = new editorExports.ProductEditor!();
   const product = {
     id: 45, familyId: null, colour: 'Red', colourHex: '#C0303A', name: 'Diamantroos', supplierId: 1, stockQuantity: 96,
@@ -62,7 +63,8 @@ function setup(packaging: Record<string, unknown>, options: { piecesPerCarton?: 
       piecesPerUnit: null, salesUnit: 'PIECE', unitKey: 'bowl', ...packaging },
     carton: { piecesPerCarton: options.piecesPerCarton === undefined ? 40 : options.piecesPerCarton },
   };
-  Object.assign(editor, { draft: signal(product), autoCartonPieces: signal(null), priceStrategy: signal('FIXED') });
+  Object.assign(editor, { draft: signal(product), autoCartonPieces: signal(null), priceStrategy: signal('FIXED'),
+    purchaseMode: signal('rows'), supplierRows: signal([{ supplierId: 1 }]) });
   const cardExports: { ProductSalesSetup?: new () => any } = {};
   vm.runInNewContext(cardFile.javascript, { exports: cardExports, computed, signal, ...salesUnits, ...orderSteps });
   const card = new cardExports.ProductSalesSetup!();

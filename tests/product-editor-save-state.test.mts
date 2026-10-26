@@ -6,6 +6,7 @@ import ts from 'typescript';
 import { computed, signal } from '@angular/core';
 import { priceBasisConfirmation } from '../src/app/features/products/product-sales-unit.ts';
 import { stockCellEdit } from '../src/app/features/products/stock-booking.ts';
+import { mirrorPatch, noteWrite, sortSupplierRows } from '../src/app/features/products/product-suppliers.ts';
 
 /**
  * Run the production save, stock, leave and publication-state expressions with
@@ -18,7 +19,8 @@ const original = parsed.statements.find((node): node is ts.ClassDeclaration => t
 assert.ok(original);
 const names = new Set(['dirty', 'familyDirty', 'workspacePublicationLive', 'workspacePublicationShortLabel',
   'workspacePublicationLabel', 'workspaceDirty', 'canDeactivate', 'warnBeforeUnload', 'confirmDiscardTranslations',
-  'save', 'copy', 'saveShortcut', 'markClean', 'formWriteBusy', 'toolbarBusy', 'saveBusy', 'quickSetStock', 'loadStockHistory']);
+  'save', 'copy', 'saveShortcut', 'markClean', 'formWriteBusy', 'toolbarBusy', 'saveBusy', 'quickSetStock', 'loadStockHistory',
+  'agreementDirty', 'rowNotesDirty', 'onSupplierRowsChanged', 'saveRowNotes']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size, 'Every tested production member must still exist');
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),
@@ -36,6 +38,7 @@ function harness() {
   const exports: { ProductEditor?: new () => any } = {};
   vm.runInNewContext(javascript, {
     exports, computed, HostListener: () => () => {}, priceBasisConfirmation, stockCellEdit, escapeHtml: (text: string) => text,
+    mirrorPatch, noteWrite, sortSupplierRows, messageOf: (failure: { error?: { message?: string } }, fallback: string) => failure?.error?.message ?? fallback,
     window: { confirm: () => { confirmCalls++; return translationDiscard; } },
   });
   const editor = new exports.ProductEditor!();
@@ -50,7 +53,9 @@ function harness() {
     draft: signal(initial), baseline: signal(JSON.stringify(initial)),
     family: signal(family()), savedFamily: signal(family()), familyLoading: signal(false), familyLoadError: signal(false),
     saving: signal(false), photoUploading: signal(false), translationSaving: signal(false), translationDirty: signal(false),
-    agreementBusy: signal(false), agreementDirty: signal(false), sharedFieldsBusy: signal(false),
+    agreementBusy: signal(false), agreementChildDirty: signal(false), sharedFieldsBusy: signal(false),
+    supplierRows: signal([]), rowNoteDrafts: signal({}), agreementSupplierId: signal(null), purchaseMode: signal('rows'),
+    loadSupplierRows: async () => {},
     leaveQuestion: signal(null), readinessIssues: signal([]), pendingPhotos: signal(0), photoRevision: signal(0),
     save: async () => {},
     editorReady: signal(true), autoCartonPieces: signal(null), autoCartonWeight: signal(null), settleOrderStep: () => {}, missingFields: signal([]),
@@ -60,7 +65,7 @@ function harness() {
     persistFamilyDraft: async () => { editor.savedFamily.set(structuredClone(editor.family())); },
     updateWithPendingPhotos: async () => structuredClone(editor.draft()),
     createWithPendingPhotos: async () => ({ ...structuredClone(editor.draft()), id: 99 }),
-    agreementEditor: () => ({ flush: async () => ({ remaining: 0 }) }),
+    agreementEditor: () => ({ flush: async () => ({ remaining: 0 }), dirty: editor.agreementChildDirty }),
     planPublishFix: () => null,
     ui: {
       toast: (message: string, type?: string) => notifications.push({ message, type }),
@@ -74,7 +79,7 @@ function harness() {
     },
     canCopyVariant: signal(true), copyVariantConflict: signal(null), copying: signal(true),
     copyColour: signal('White'), copyColourHex: signal('#FFFFFF'), copySize: signal('XL'),
-    catalog: { duplicateProduct: async () => ({ id: 101, sku: 'COPY-101' }) },
+    catalog: { duplicateProduct: async () => ({ id: 101, sku: 'COPY-101' }), updateProductSupplierNote: async () => { throw new Error('not stubbed'); } },
     stockSaving: signal(false), takingCode: signal(false), stockDraft: signal<number | null>(null), stockLevels: signal([]), stockHistory: signal(null),
   });
   editor.isNew = () => editor.draft().id === null;
@@ -263,7 +268,7 @@ test('return-to navigation starts only after product and agreement writes have c
   const { editor, save, navigations } = harness();
   editor.returnTo.set('/sales/12/edit');
   let completed = false;
-  editor.agreementEditor = () => ({ flush: async () => {
+  editor.agreementEditor = () => ({ dirty: editor.agreementChildDirty, flush: async () => {
     assert.equal(editor.saving(), true, 'Navigation stays locked through the final write');
     completed = true;
     return { remaining: 0 };
@@ -295,8 +300,8 @@ test('new-product and copy navigation also happen after the write lock is releas
 test('a failed agreement caption reports partial save and stays on the editor', async () => {
   const { editor, save, notifications, navigations } = harness();
   editor.returnTo.set('/sales/12/edit');
-  editor.agreementDirty.set(true);
-  editor.agreementEditor = () => ({ flush: async () => ({ savedCaptions: 0, uploaded: 0, remaining: 0 }) });
+  editor.agreementChildDirty.set(true);
+  editor.agreementEditor = () => ({ dirty: editor.agreementChildDirty, flush: async () => ({ savedCaptions: 0, uploaded: 0, remaining: 0 }) });
   await save();
   assert.equal(editor.dirty(), false, 'The product write really succeeded');
   assert.equal(editor.agreementDirty(), true, 'The failed caption remains pending');
@@ -309,7 +314,7 @@ test('a failed agreement caption reports partial save and stays on the editor', 
 test('remaining agreement uploads report partial save even before child dirty state updates', async () => {
   const { editor, save, notifications, navigations } = harness();
   editor.returnTo.set('/sales/12/edit');
-  editor.agreementEditor = () => ({ flush: async () => ({ remaining: 2 }) });
+  editor.agreementEditor = () => ({ dirty: editor.agreementChildDirty, flush: async () => ({ remaining: 2 }) });
   await save();
   assert.match(editor.saveError(), /2 afspraakfoto.*nog niet geüpload/);
   assert.equal(notifications.at(-1)?.type, 'err');
@@ -353,7 +358,7 @@ test('save sends missing fields through the reveal-and-focus helper before any w
     editor.focusField = (tab: string, field: string) => focused.push({ tab, field });
     editor.persistFamilyDraft = async () => { writes.push('family'); };
     editor.updateWithPendingPhotos = async () => { writes.push('product/photos'); return editor.draft(); };
-    editor.agreementEditor = () => ({ flush: async () => { writes.push('agreements'); return { remaining: 0 }; } });
+    editor.agreementEditor = () => ({ dirty: editor.agreementChildDirty, flush: async () => { writes.push('agreements'); return { remaining: 0 }; } });
     await save();
     assert.deepEqual(focused, [{ tab: 'identity', field }], 'The helper opens the native details before focusing');
     assert.deepEqual(writes, []);
@@ -498,4 +503,138 @@ test('the Voorraad tiles are text fields read by parseCount, so the browser neve
   assert.match(source, /<input class="history-levels__qty num" type="text" inputmode="numeric" autocomplete="off"/);
   assert.doesNotMatch(source, /history-levels__qty num" type="number"/);
   assert.doesNotMatch(source, /Geef een heel aantal stuks/);
+});
+
+/* Several suppliers (2026-10-25): a row write, the other suppliers' notes and the save. */
+function supplierRow(id: number, supplierId: number, supplierName: string, extra: Record<string, unknown> = {}) {
+  return { id, productId: 10, supplierId, supplierName, preferred: false, active: true, versionLabel: null, supplierReference: null,
+    exwPrice: 2, exwCurrency: 'USD', extraUnitCost: null, moq: null, leadTimeDays: null, supplierNote: null, photoCount: 0,
+    lastOrder: null, lastCost: null, purchaseLineCount: 0, updatedAt: `2026-10-25T10:00:0${id % 10}.000001Z`, ...extra };
+}
+function supplierHarness() {
+  const context = harness();
+  const { editor } = context;
+  const product = { id: 10, active: true, name: 'Glass dome', supplierId: 3, supplierNote: 'A note', exwPrice: 8.5, exwCurrency: 'USD',
+    extraUnitCost: null, carton: { piecesPerCarton: 1, weightKg: 1 }, publicationIssues: [] };
+  editor.draft.set(product);
+  editor.baseline.set(JSON.stringify(product));
+  editor.savedSupplierId.set(3);
+  editor.supplierRows.set([supplierRow(701, 3, 'Jerry', { preferred: true, supplierNote: 'A note', exwPrice: 8.5 }),
+    supplierRow(702, 7, 'Rosegift', { supplierNote: 'B note', exwPrice: 9.1 })]);
+  return context;
+}
+const change = (rows: unknown[], product: Record<string, unknown>) => ({ rows, product });
+
+test('a supplier row change lands in the draft and its baseline: the editor is not dirty after it', () => {
+  const { editor } = supplierHarness();
+  const rows = [supplierRow(701, 3, 'Jerry', { preferred: true, supplierNote: 'A note', exwPrice: 8.75, extraUnitCost: 0.1 }),
+    supplierRow(702, 7, 'Rosegift', { supplierNote: 'B note' })];
+  editor.onSupplierRowsChanged(change(rows, { supplierId: 3, supplierNote: 'A note', exwPrice: 8.75, exwCurrency: 'USD', extraUnitCost: 0.1 }));
+  assert.equal(editor.dirty(), false);
+  assert.equal(editor.draft().exwPrice, 8.75, 'the mirror of the Voorkeur lands in the draft');
+  assert.equal(editor.draft().extraUnitCost, 0.1);
+  assert.equal(editor.savedSupplierId(), 3);
+  assert.deepEqual(editor.supplierRows().map((row: { id: number }) => row.id), [701, 702]);
+});
+
+test('a name typed before the row change stays dirty after it, and only the mirror moves', () => {
+  const { editor } = supplierHarness();
+  editor.draft.set({ ...editor.draft(), name: 'Glass dome XL' });
+  editor.onSupplierRowsChanged(change(editor.supplierRows(),
+    { supplierId: 7, supplierNote: 'B note', exwPrice: 9.1, exwCurrency: null, extraUnitCost: null }));
+  assert.equal(editor.dirty(), true, 'the typed name is still unsaved');
+  assert.equal(editor.draft().name, 'Glass dome XL');
+  assert.equal(editor.draft().supplierId, 7);
+  assert.equal(editor.draft().exwCurrency, 'USD', 'a null mirror currency reads USD');
+  assert.equal(JSON.parse(editor.baseline()).name, 'Glass dome', 'the baseline keeps the saved name');
+  assert.equal(JSON.parse(editor.baseline()).supplierId, 7, 'the baseline follows the new Voorkeur');
+  assert.equal(editor.savedSupplierId(), 7);
+  editor.draft.set({ ...editor.draft(), name: 'Glass dome' });
+  assert.equal(editor.dirty(), false, 'typing the name back reads clean: nothing but the name differed');
+});
+
+test('a Voorkeur switch keeps a typed Voorkeur note with its own supplier, as that row\'s unsaved note', () => {
+  const { editor } = supplierHarness();
+  editor.draft.set({ ...editor.draft(), supplierNote: 'A note, typed' });
+  editor.onSupplierRowsChanged(change(
+    [supplierRow(701, 3, 'Jerry', { supplierNote: 'A note' }), supplierRow(702, 7, 'Rosegift', { preferred: true, supplierNote: 'B note' })],
+    { supplierId: 7, supplierNote: 'B note', exwPrice: 9.1, exwCurrency: 'USD', extraUnitCost: null }));
+  assert.equal(editor.draft().supplierNote, 'B note', 'the product note is the new Voorkeur\'s');
+  assert.deepEqual({ ...editor.rowNoteDrafts() }, { 3: 'A note, typed' });
+  assert.equal(editor.agreementSupplierId(), 3, 'the Afspraken tab keeps showing the supplier the note was typed for');
+  assert.equal(editor.dirty(), false);
+  assert.equal(editor.agreementDirty(), true, 'the typed note is still to save, now through its row');
+});
+
+test('a row note draft makes agreementDirty true; a draft equal to the stored note does not', () => {
+  const { editor } = supplierHarness();
+  assert.equal(editor.agreementDirty(), false);
+  editor.rowNoteDrafts.set({ 7: 'B note, longer' });
+  assert.equal(editor.agreementDirty(), true);
+  editor.rowNoteDrafts.set({ 7: 'B note' });
+  assert.equal(editor.agreementDirty(), false);
+  editor.rowNoteDrafts.set({ 9: 'a supplier no longer on the product' });
+  assert.equal(editor.agreementDirty(), false);
+  editor.agreementChildDirty.set(true);
+  assert.equal(editor.agreementDirty(), true, 'photos and captions of the agreement editor still count');
+});
+
+test('save writes a changed row note through the note call before the editor reads clean', async () => {
+  const { editor, save, notifications } = supplierHarness();
+  const calls: unknown[] = [];
+  editor.rowNoteDrafts.set({ 7: 'B note, longer' });
+  editor.catalog.updateProductSupplierNote = async (productId: number, rowId: number, body: unknown) => {
+    calls.push([productId, rowId, body]);
+    assert.equal(editor.saving(), true, 'the note is written inside the save');
+    return change([supplierRow(701, 3, 'Jerry', { preferred: true, supplierNote: 'A note', exwPrice: 8.5 }),
+      supplierRow(702, 7, 'Rosegift', { supplierNote: 'B note, longer' })],
+    { supplierId: 3, supplierNote: 'A note', exwPrice: 8.5, exwCurrency: 'USD', extraUnitCost: null });
+  };
+  await save();
+  assert.deepEqual(calls, [[10, 702, { supplierNote: 'B note, longer', updatedAt: '2026-10-25T10:00:02.000001Z' }]]);
+  assert.deepEqual({ ...editor.rowNoteDrafts() }, {});
+  assert.equal(editor.agreementDirty(), false);
+  assert.equal(editor.dirty(), false);
+  assert.equal(editor.saveError(), null);
+  assert.equal(notifications.at(-1)?.message, 'Opgeslagen');
+});
+
+test('a failed row note keeps its draft and reports a partial save with the reason', async () => {
+  const { editor, save, notifications, navigations } = supplierHarness();
+  editor.returnTo.set('/sales/12/edit');
+  editor.rowNoteDrafts.set({ 7: 'B note, longer' });
+  editor.catalog.updateProductSupplierNote = async () => {
+    throw { status: 409, error: { message: 'Deze leverancier is intussen gewijzigd; laad het product opnieuw.' } };
+  };
+  let reloads = 0;
+  editor.loadSupplierRows = async () => { reloads++; };
+  await save();
+  assert.deepEqual({ ...editor.rowNoteDrafts() }, { 7: 'B note, longer' });
+  assert.equal(editor.agreementDirty(), true);
+  assert.equal(editor.dirty(), false, 'the product write itself succeeded');
+  assert.match(editor.saveError(), /^Product opgeslagen · afspraak Rosegift niet opgeslagen: Deze leverancier is intussen gewijzigd/);
+  assert.equal(notifications.at(-1)?.type, 'err');
+  assert.equal(reloads, 1, 'a 409 loads the rows again, so the next try carries the new updatedAt');
+  assert.equal(navigations.length, 0);
+});
+
+test('after a save from the fallback fields the rows load again; with rows they do not', async () => {
+  for (const [mode, expected] of [['legacy', 1], ['loading', 1], ['rows', 0]] as const) {
+    const { editor, save } = supplierHarness();
+    let reloads = 0;
+    editor.purchaseMode.set(mode);
+    editor.loadSupplierRows = async () => { reloads++; };
+    await save();
+    assert.equal(reloads, expected, mode);
+  }
+});
+
+test('the product PUT leaves the purchase fields to the rows, and the missing supplier points at the right field', () => {
+  assert.match(source, /\.\.\.purchaseFieldsForPut\(this\.purchaseMode\(\), product\),/);
+  assert.match(source, /const supplier = supplierMissing\(this\.purchaseMode\(\), this\.supplierRows\(\)\.length, draft\.supplierId\);/);
+  assert.match(source, /<app-product-supplier-list \[productId\]="draft\(\)\.id \?\? 0"/);
+  assert.match(source, /Leveranciers konden niet laden · <button class="linklike" type="button" \(click\)="reloadSupplierRows\(\)">Opnieuw<\/button>/);
+  assert.match(source, /<p>Leveranciers, fabrieksprijs en kostprijsopbouw<\/p>/);
+  assert.match(source, /<select class="select" id="pa-supplier" \[disabled\]="agreementDirty\(\)" \[attr\.title\]="agreementDirty\(\) \? 'Eerst opslaan' : null"/);
+  assert.match(source, /Wijzigen in Inkoop ›<\/button>/);
 });

@@ -66,6 +66,8 @@ export interface SupplierAgreementFlushResult {
     </div>
 
     <div class="card__body agreement-body">
+      <!-- The host's supplier choice when the product has several suppliers. -->
+      <ng-content select="[agreementSupplier]" />
       <div class="scope-note" role="note">
         <span class="scope-note__lock" aria-hidden="true">⌁</span>
         <div>
@@ -90,7 +92,7 @@ export interface SupplierAgreementFlushResult {
             </div>
             @if (productDirty()) { <small>Sla eerst de productwijzigingen op.</small> }
           </section>
-        } @else if (shared.familyId && shared.available && shared.eligibleVariants.length > 1) {
+        } @else if (sharingAllowed() && shared.familyId && shared.available && shared.eligibleVariants.length > 1) {
           <section class="shared-agreement" aria-label="Toepasselijke kleuren">
             <b>Dezelfde afspraak voor meerdere kleuren</b>
             <p>Selecteer de kleuren waarvoor deze opgeslagen tekst en foto’s gelden. Eigen afspraken van die kleuren blijven bewaard en komen terug na loskoppelen.</p>
@@ -766,6 +768,8 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
   readonly note = input<string | null>(null);
   readonly disabled = input(false);
   readonly productDirty = input(false);
+  /** Colour sharing is the Voorkeur's only (several suppliers, 2026-10-25): false hides the block. */
+  readonly sharingAllowed = input(true);
   readonly agreement = signal<ProductSupplierAgreement | null>(null);
   readonly selectedVariantIds = signal<number[]>([]);
   readonly noteChange = output<string | null>();
@@ -984,10 +988,12 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
           ),
         );
         try {
+          /* The photo's own scope: the supplier it was chosen for, which is the persisted one whenever an upload can run. */
           const saved = await this.catalog.uploadSupplierAgreementPhoto(
             productId,
             pending.file,
             normalizeSupplierAgreementCaption(pending.caption),
+            pending.supplierId,
           );
           URL.revokeObjectURL(pending.previewUrl);
           this.pending.update((items) => items.filter((item) => item.id !== pending.id));
@@ -1084,6 +1090,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
       const saved = await this.catalog.reorderSupplierAgreementPhotos(
         productId,
         supplierAgreementOrderIds(movedScope),
+        this.persistedSupplierId(),
       );
       this.replaceSupplierPhotos(saved);
       await this.loadPhotos(productId, this.supplierId()!, true);
@@ -1211,7 +1218,7 @@ export class ProductSupplierAgreementEditor implements OnDestroy {
     this.loading.set(true);
     this.loadError.set(null);
     try {
-      const agreement = await this.agreements.get(productId);
+      const agreement = await this.agreements.get(productId, supplierId);
       if (
         version !== this.loadVersion ||
         this.productId() !== productId ||
