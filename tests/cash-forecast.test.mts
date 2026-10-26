@@ -740,6 +740,7 @@ test('50/50 financing retains editable markup and forecasts own cost recovery pl
   assert.equal(sheet.netEur, 2500);
   assert.equal(sheet.lane.at(-1)!.eur, 2500);
   assert.equal(sheet.partnerScenario?.settlementEur, 7500);
+  assert.equal(sheet.backEur, 12500, 'container lifetime receipts include advances and the remaining settlement');
 });
 
 test('fully partner-financed cost still has ENROSED profit; financing and result percentages are independent', () => {
@@ -786,8 +787,24 @@ test('partner price margin stays based on the goods price for every pricing mode
     const opts = partnerOptions();
     opts.defaults = { ...opts.defaults, priceMode, markupEurPerUnit: 5 };
     const sheet = poSheet(input, opts, 43)!;
-    assert.equal(sheet.backEur, 2500);
+    assert.equal(sheet.backEur, 12500);
+    assert.equal(sheet.partnerScenario?.settlementEur, 2500);
     assert.equal(sheet.marginPct, 33.3, priceMode);
     assert.equal(sheet.partnerScenario?.profitEur, 2500);
+  }
+});
+
+test('partner sheet receipts, outgoings and net reconcile for co-financing, full financing and a loss', () => {
+  for (const [financingPct, markupPct, expectedBack] of [[50, 50, 12500], [100, 50, 12500], [100, -50, 7500]]) {
+    const input = partnerExample(financingPct, 50);
+    const opts = partnerOptions();
+    opts.defaults.markupPct = markupPct;
+    const sheet = poSheet(input, opts, 43)!;
+    assert.equal(sheet.backEur, expectedBack);
+    assert.equal(sheet.backEur - sheet.paidEur - sheet.outstandingEur, sheet.netEur);
+    assert.equal(sheet.backEur, sheet.partnerScenario!.advanceEur + sheet.partnerScenario!.settlementEur);
+    assert.equal(sheet.lane.at(-1)!.eur, sheet.netEur);
+    assert.equal(buildCashForecast(input, opts).scenario.sources[0].backEur, sheet.partnerScenario!.settlementEur,
+      'the future scenario must not count the advances twice');
   }
 });

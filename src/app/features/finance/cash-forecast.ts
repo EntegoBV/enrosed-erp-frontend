@@ -1617,10 +1617,13 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
     .reduce((sum, line) => sum + toCents(choice?.costBasis === 'PRICING' ? line.pricingEur : line.externalEur), 0);
   const marginPct = !choice || proceedsCents <= 0 ? 0 : round1((proceedsCents - pricingCostCents) / proceedsCents * 100);
   const departure = order.status === 'BESTELD' ? departureOf(order, stored) : null;
+  // The container sheet covers its full lifetime: total receipts include the
+  // advances, while the scenario source still forecasts only the settlement.
+  const totalBackCents = backCents + toCents(order.partnerTerms?.advanceEur);
   return {
     orderId, title, status: order.status, partner: order.partner,
-    netEur: toEur(backCents + toCents(order.partnerTerms?.advanceEur) - paidCents - outstandingCents), breakEvenOn, breakEvenText,
-    paidEur: toEur(paidCents), outstandingEur: toEur(outstandingCents), backEur: toEur(backCents), marginPct, choice,
+    netEur: toEur(totalBackCents - paidCents - outstandingCents), breakEvenOn, breakEvenText,
+    paidEur: toEur(paidCents), outstandingEur: toEur(outstandingCents), backEur: toEur(totalBackCents), marginPct, choice,
     departure: departure ? { date: departure.date, certainty: departure.certainty, ruleText: departure.text, stored: !!stored?.expectedShipOn } : null,
     lane, flows, likelyPaid: matches, products: plan?.products ?? [], salesWindow, partnerScenario: plan?.partnerScenario,
   };
