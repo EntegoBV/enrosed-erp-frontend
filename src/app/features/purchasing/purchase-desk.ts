@@ -1,4 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
+import { PurchaseTracking } from './purchase-tracking';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { LandedCostLine, Payee, Product } from '../../core/api/models';
@@ -105,7 +106,7 @@ export class PurchaseDeskStyles {}
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseTracking, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -235,6 +236,10 @@ export class PurchaseDeskStyles {}
             </div>
           }
         </section>
+
+        @if (!editing() && data.order.trackingReference) {
+          <app-purchase-tracking class="pdk-tracking" [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
+        }
 
         <div class="pdk-body" [class.pdk-body--docked]="railShown()">
           <!-- ============================ the main pane: products, payments or the nacalculatie -->
@@ -560,7 +565,7 @@ export class PurchaseDeskStyles {}
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                         @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <a routerLink="/purchasing/tracking" [queryParams]="{ order: data.order.id }">{{ data.order.trackingReference }} ›</a> } @else { — }@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
                     </section>
                     <section class="pdk-sec" aria-labelledby="pdk-sec-route">
@@ -1338,6 +1343,7 @@ export class PurchaseDeskStyles {}
     /* Sheets of the desk template: report damage, add a document, receive. */
     .issue-kind{margin-top:2px}
     :host{display:block;min-width:0}
+    .pdk-tracking{margin-top:16px}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -1544,6 +1550,7 @@ export class PurchaseDesk extends PurchaseEditor {
   });
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly workbench = viewChild(PurchasePaymentWorkbench);
+  readonly trackingPanel = viewChild(PurchaseTracking);
 
   /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
   readonly hostWidth = elementWidth(() => this.host.nativeElement);
@@ -1566,6 +1573,11 @@ export class PurchaseDesk extends PurchaseEditor {
     super();
     /* Docking closes the drawer, so a narrower window later starts without one. */
     effect(() => { if (this.railDocked()) untracked(() => this.drawerOpen.set(false)); });
+  }
+
+  showTracking(): void {
+    this.closeDrawer(false);
+    this.trackingPanel()?.showDetails();
   }
 
   switchView(view: 'products' | 'payments' | 'nacalc'): void {
