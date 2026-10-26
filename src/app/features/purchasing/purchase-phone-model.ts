@@ -289,22 +289,31 @@ export function stepToward(to: string | null | undefined): AskedStep | null {
 }
 
 /**
- * The read view's dock step: the status road, then the shelf, then the catalogue costs; nothing on an
- * empty container. The costs come back when products carry an older cost of this container (cost-fix Q2).
+ * The read view's dock step: the status road, then the shelf, then the costs; nothing on an empty
+ * container. The card part is today's: the costs come back when products carry an older cost of this
+ * container (cost-fix Q2), never while a newer container sits on some of them. The batch part (batches
+ * round, 2026-10-25) adds the step while this container's live batches still carry its calculation
+ * (batchPending) or a cost it no longer calculates (batchStale); both are false before batches start, so
+ * the rule is then exactly today's. Applying clears every part; a sold-out container never asks.
  */
 export function readNextStep(s: {
   status: PurchaseOrder['status']; lineCount: number; stockBooked: boolean | null | undefined; costsApplied: boolean;
-  /** A newer container's costs sit on some of these products: this one must not push them aside (amendment G12). */
+  /** A newer container's costs sit on some of these products: the card part stays back (amendment G12). */
   superseded?: boolean;
-  /** Products carry an older cost of this container than it calculates now (costsStale). */
+  /** Products carry an older card cost of this container than it calculates now (costsStale, the card part). */
   stale?: boolean;
+  /** Live batches of this container still carry its calculation, not an applied cost. */
+  batchPending?: boolean;
+  /** Live batches of this container carry a cost it no longer calculates. */
+  batchStale?: boolean;
 }): PhoneStep | null {
   if (s.lineCount <= 0) return null;
   if (s.status === 'CONCEPT') return 'BESTELLEN';
   if (s.status === 'BESTELD') return 'VERTROKKEN';
   if (s.status === 'ONDERWEG') return 'ONTVANGEN';
   if (s.stockBooked === false) return 'BIJBOEKEN';
-  return (!s.costsApplied || s.stale) && !s.superseded ? 'KOSTPRIJZEN' : null;
+  const card = (!s.costsApplied || s.stale) && !s.superseded;
+  return card || s.batchPending || s.batchStale ? 'KOSTPRIJZEN' : null;
 }
 
 /** '1 verschil', '3 verschillen': products whose cost differs from the container's calculation. */

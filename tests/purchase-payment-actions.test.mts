@@ -74,6 +74,8 @@ function setup() {
     save: () => { calls.push({ type: 'SAVE' }); return api.save(); },
     refreshPaymentState: (id: number) => { calls.push({ type: 'REFRESH', id }); return api.refresh(id); },
     loadPayments: async (id: number) => { calls.push({ type: 'LOAD', id }); },
+    /* The container's stock batches (2026-10-25), fetched again after a receipt that books: quiet here. */
+    loadStockBatches: async () => {},
     openPayment: (...args: unknown[]) => calls.push({ type: 'OPEN', args }),
     editPayment: (value: any) => calls.push({ type: 'EDIT', id: value.id }),
     removePayment: (value: any) => calls.push({ type: 'REMOVE', id: value.id }),

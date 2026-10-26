@@ -5,6 +5,7 @@ import { Category, Product } from '../../core/api/models';
 import { Sheet } from '../../shared/ui';
 import { CurPipe, NumPipe } from '../../shared/pipes';
 import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
+import { offerChip, offerPriceNote } from './purchase-supplier-version';
 
 /**
  * The desk's product sheet: every product of the supplier that is not on
@@ -14,7 +15,8 @@ import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
  * that filters the right - and one row per variant with photo, SKU, stock,
  * cartons, EXW price, a quantity (one carton pre-filled, Enter adds) and
  * Toevoegen. The sheet only reports what was picked; the desk owns the
- * order.
+ * order. The list carries this supplier's price per product (its offer);
+ * a product with several suppliers shows this one's Versie as a pill.
  */
 @Component({
   selector: 'app-purchase-desk-picker',
@@ -54,7 +56,8 @@ import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
                   <div class="pick__row" [class.pick__row--variant]="family.products.length > 1">
                     @if (photoOf(product); as photo) { <img [appAuthSrc]="photo" alt="" /> } @else { <i aria-hidden="true">◈</i> }
                     <span class="pick__copy">
-                      <strong>
+                      <strong class="pick__title">
+                        <span class="pick__name" [title]="product.name">
                         @if (family.products.length > 1) {
                           @if (product.colour) {
                             <i class="pick__dot" [class.pick__dot--empty]="!hex(product)"
@@ -63,10 +66,13 @@ import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
                         } @else {
                           {{ strip(product.name, product.colour) }}@if (variant(product); as label) { <em>{{ label }}</em> }
                         }
+                        </span>
+                        <!-- This supplier's Versie, after the name in both branches: a pill, never the variant's <em>, so it never reads as a colour or size. -->
+                        @if (offerChip(product); as chip) { <span class="wk-pill pick__version">{{ chip }}</span> }
                       </strong>
                       <small>{{ product.sku }} · {{ product.stockQuantity | num }} op voorraad · {{ cartonOf(product) | num }}/doos</small>
                     </span>
-                    <span class="pick__price">{{ product.exwPrice ?? 0 | cur: (product.exwCurrency ?? 'USD') }}<small>{{ product.exwPrice == null ? 'productkaart' : 'EXW' }}</small></span>
+                    <span class="pick__price">{{ product.exwPrice ?? 0 | cur: (product.exwCurrency ?? 'USD') }}<small>{{ offerPriceNote(product) }}</small></span>
                     <input class="input num right pick__qty" type="number" min="1" step="1" inputmode="numeric"
                            [attr.aria-label]="'Aantal ' + product.name"
                            [ngModel]="quantityOf(product)" (ngModelChange)="setQuantity(product, +$event)"
@@ -77,7 +83,7 @@ import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
               </div>
             }
           } @empty {
-            <p class="hint pick__empty">{{ query().trim() ? 'Niets gevonden bij deze leverancier.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
+            <p class="hint pick__empty">{{ query().trim() ? 'Niets gevonden bij deze leverancier · voeg de leverancier toe op het product.' : 'Alle producten van deze leverancier staan al op de container.' }}</p>
           }
         </div>
       </div>
@@ -103,7 +109,11 @@ import { colourHexOf, stripColour, variantOf } from './purchase-desk-format';
     .pick__row{display:grid;grid-template-columns:44px minmax(0,1fr) 110px 84px auto;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line)}.pick__family>.pick__row:first-child{border-top:0}
     .pick__row--variant{padding-left:22px}.pick__row--variant img,.pick__row--variant>i{width:36px;height:36px}
     .pick__row img,.pick__row>i{width:44px;height:44px;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:var(--surface-2)}.pick__row>i{display:grid;place-items:center;color:var(--muted);font-style:normal}
-    .pick__copy{display:grid;min-width:0;line-height:1.25}.pick__copy strong{font-size:13px}.pick__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}.pick__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+    .pick__copy{display:grid;min-width:0;line-height:1.25}.pick__copy strong{font-size:13px}
+    .pick__title{display:flex;align-items:flex-start;gap:6px;min-width:0}.pick__name{min-width:0}
+    /* Beside a Versie pill the name keeps one line (ellipsis, full name in its title): the row stays two lines. */
+    .pick__title:has(.pick__version) .pick__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pick__version{display:block;flex:none;max-width:160px;overflow:hidden;font-size:10.5px;line-height:20px;text-overflow:ellipsis;white-space:nowrap}.pick__copy em{margin-left:6px;color:var(--muted);font-style:normal;font-weight:600}.pick__copy small{overflow:hidden;color:var(--muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
     .pick__dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.pick__dot--empty{background:var(--surface)!important}
     .pick__price{display:grid;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}.pick__price small{color:var(--muted);font-size:10px;font-weight:600}
     .pick__qty{min-height:36px}
@@ -165,6 +175,8 @@ export class PurchaseDeskPicker {
 
   readonly strip = stripColour;
   readonly variant = variantOf;
+  readonly offerChip = offerChip;
+  readonly offerPriceNote = offerPriceNote;
 
   hex(product: Product): string | null {
     return colourHexOf(product.colourHex, product.colour);

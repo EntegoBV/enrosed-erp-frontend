@@ -162,3 +162,41 @@ app-purchase-desk .purchase-payment-plan-trigger>span{flex:none}
 
 /* ---- receive sheet: 'Wat was er mis?' takes the whole row under the two counts (B6) */
 app-purchase-desk .receive-line__field--note{grid-column:1/-1}
+
+/* ---- stock batches (2026-10-25): "Batches uit deze container" under the products. The card is its own component, so the
+   products table's look (scoped to the desk's template) is repeated here for it; its own columns, never the 726 px minimum. */
+app-purchase-desk .pbc-desk{container:pbc/inline-size;border-top:1px solid var(--line)}
+app-purchase-desk .pbc-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+app-purchase-desk .pbc-bar>div{flex:1;min-width:0}
+app-purchase-desk .pbc-bar h2{margin:0;font-size:15px}
+app-purchase-desk .pbc-bar p{margin:0;color:var(--muted);font-size:11.5px}
+app-purchase-desk .desk-table--batches{min-width:0;table-layout:fixed}
+app-purchase-desk .desk-table--batches{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+/* Wider than the contract's 92/112/92/104 px: "24 displays + 8 los" and "Kost per eenheid" then stay on one line. */
+app-purchase-desk .desk-table--batches .c-bin{width:100px}
+app-purchase-desk .desk-table--batches .c-bout{width:134px}
+app-purchase-desk .desk-table--batches .c-bleft{width:134px}
+app-purchase-desk .desk-table--batches .c-bcost{width:124px}
+app-purchase-desk .desk-table--batches .c-bval{width:88px}
+app-purchase-desk .desk-table--batches thead th{padding:9px 10px 9px 8px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+app-purchase-desk .desk-table--batches td{padding:9px 10px 9px 8px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.25;text-align:right;font-variant-numeric:tabular-nums}
+app-purchase-desk .desk-table--batches :is(th,td).c-bprod{padding-left:16px;text-align:left}
+/* Two lines per row: the figure (it may break between its units and the loose pieces) and one small line with an ellipsis. */
+app-purchase-desk .desk-table--batches td b{display:block;font-weight:650;overflow-wrap:normal}
+app-purchase-desk .desk-table--batches .pbc-part{display:inline-block;white-space:nowrap}
+app-purchase-desk .desk-table--batches .pbc-part+.pbc-part{margin-left:.3em}
+app-purchase-desk .desk-table--batches .pbc-sub{display:block;margin-top:2px;overflow:hidden;color:var(--muted);font-size:10.5px;text-overflow:ellipsis;white-space:nowrap}
+app-purchase-desk .desk-table--batches .pbc-name{display:block;min-width:0;overflow:hidden;color:var(--ink);font-weight:650;text-decoration:none;text-overflow:ellipsis;white-space:nowrap}
+app-purchase-desk .desk-table--batches .pbc-name:hover{color:var(--rose-dark);text-decoration:underline}
+app-purchase-desk .desk-table--batches .pbc-warn{color:var(--warn)}
+app-purchase-desk .desk-table--batches .pbc-from{display:none}
+app-purchase-desk .desk-table--batches tbody tr:last-child td{border-bottom:0}
+app-purchase-desk .desk-table--batches tfoot th{padding:10px 10px 10px 8px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+app-purchase-desk .desk-table--batches tfoot th.c-bprod{color:var(--muted);font-size:10px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
+/* A narrow pane drops Ontvangen; its figure stays as the Nog cell's second line. */
+@container pbc (max-width:759.98px){
+  app-purchase-desk .desk-table--batches .c-bin{display:none}
+  app-purchase-desk .desk-table--batches .pbc-from{display:block}
+}
+/* One product, several suppliers (2026-10-25): the line's Versie in the product meta never pushes the cell wider. */
+app-purchase-desk .desk-product__meta .desk-product__version{max-width:100%;overflow:hidden;text-overflow:ellipsis}

@@ -38,6 +38,7 @@ import { PurchaseOrderedSuccess } from './purchase-ordered-success';
 import { PurchaseStatusSuccess } from './purchase-status-success';
 import { PurchaseStatusBackSheet } from './purchase-status-back-sheet';
 import { PurchaseApplyCostsSheet } from './purchase-apply-costs-sheet';
+import { PurchaseBatchesCard } from './purchase-batches-card';
 import { PurchasePdfSheet } from './purchase-pdf-sheet';
 import { PurchaseActivity } from '../activity/purchase-activity';
 import { FilePicker } from '../../shared/file-picker';
@@ -105,7 +106,7 @@ export class PurchaseDeskStyles {}
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
-            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
+            SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     <app-purchase-desk-styles />
@@ -204,7 +205,7 @@ export class PurchaseDeskStyles {}
                 <span class="pdk-tile__value">{{ step === 'BIJBOEKEN' && booking() ? 'Bezig…' : stepLabel(step, costsApplied()) }}</span>
                 <span class="pdk-tile__sub">@switch (step) {
                   @case ('BIJBOEKEN') { @if (data.order.receivedOn) { ontvangen {{ data.order.receivedOn | dateNl }} · nog niet in de voorraad } @else { de stuks staan nog niet in de voorraad } }
-                  @case ('KOSTPRIJZEN') { @if (costsStaleNow().count; as stale) { {{ differenceCount(stale) }} met de productkaarten } @else { zet de gelande kost op de productkaarten } }
+                  @case ('KOSTPRIJZEN') { @if (costsStaleCard().count; as n) { {{ differenceCount(n) }} met de productkaarten } @else if (batchStaleCount(); as n) { {{ differenceCount(n) }} met de batches } @else { zet de gelande kost op de {{ batchesStarted() ? 'batches en productkaarten' : 'productkaarten' }} } }
                   @default { {{ dirty() ? 'slaat eerst op' : 'klaar wanneer jij het bent' }} }
                 }</span>
                 <app-icon class="pdk-tile__chev" name="chevron-right" [size]="14" />
@@ -297,10 +298,8 @@ export class PurchaseDeskStyles {}
               <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
               <div class="wk-banner wk-banner--warn wk-banner--inset desk-stale" role="status">
                 <span class="wk-banner__text">{{ keepAmounts(stale) }}</span>
-                <!-- Not while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
-                @if (!costsSupersededNow()) {
-                  <span class="wk-banner__actions"><button class="wk-link" type="button" [disabled]="saving()" (click)="apply()">Opnieuw toepassen ›</button></span>
-                }
+                <!-- Always offered: the server keeps a newer container's card unless the sheet's row is ticked (batches round, 2026-10-25). -->
+                <span class="wk-banner__actions"><button class="wk-link" type="button" [disabled]="saving()" (click)="apply()">Opnieuw toepassen ›</button></span>
               </div>
             }
 
@@ -384,6 +383,7 @@ export class PurchaseDeskStyles {}
                                 }{{ variant }}
                               </span>
                             }
+                            @if (lineVersion(line.productId); as version) { <span class="desk-product__version">{{ version }}</span> }
                             @if (editing() && !isReceived() && cartonNotice(draftQuantity(line.productId, line.quantity), line.productId); as note) {
                               <span role="status">{{ note }}</span>
                             }
@@ -514,6 +514,12 @@ export class PurchaseDeskStyles {}
                   <span class="alert__icon" aria-hidden="true">!</span>
                   <div><b>{{ fill.fillPercent | num: 0 }}%</b> · {{ fill.overflowCbm | cbm }} boven de {{ containerLabel(data.order.containerType) }}. Vaak past dit nog net; reken niet op meer.</div>
                 </div>
+              }
+            }
+            <!-- Stock batches (2026-10-25): what this container booked, once batches started. -->
+            @if (stockBatches(); as batches) {
+              @if (batches.started && stockBatchRows().length) {
+                <app-purchase-batches-card layout="desk" [data]="batches" [rows]="stockBatchRows()" />
               }
             }
             </div>
@@ -892,7 +898,8 @@ export class PurchaseDeskStyles {}
                     </section>
                     <section>
                       <header class="desk-dossier__head"><strong>Documenten <small>{{ (documents() ?? []).length }}</small></strong>
-                        <span class="desk-dossier__head-actions"><a class="linklike" routerLink="/files" [queryParams]="{ view: 'purchase', doel: data.order.id }">In Documenten &amp; media ›</a>
+                        <span class="desk-dossier__head-actions"><a class="linklike" routerLink="/costs" [queryParams]="{ view: 'invoices', po: data.order.id }">Facturen ›</a>
+                        <a class="linklike" routerLink="/files" [queryParams]="{ view: 'purchase', doel: data.order.id }">In Documenten &amp; media ›</a>
                         <button class="btn btn--sm" type="button" (click)="openDocument()">+ Document</button></span></header>
                       <button class="desk-drop" type="button" (click)="openDocument()" (dragover)="$event.preventDefault()" (drop)="dropDocument($event)">
                         <b>Sleep een bestand hierheen</b><small>of klik om te kiezen · PDF, foto of Office, tot 25 MB</small>
@@ -962,7 +969,7 @@ export class PurchaseDeskStyles {}
                     }
                     <div class="desk-actions">
                       @if (readStep() !== 'KOSTPRIJZEN') {
-                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}@if (costsStaleCount(); as stale) { · {{ differenceCount(stale) }}}</b><small>Zet de gelande kost per display of per stuk op de productkaarten.</small></span><i aria-hidden="true">›</i></button>
+                        <button class="desk-action" type="button" (click)="apply()"><span><b>{{ costsApplied() ? 'Kostprijzen opnieuw toepassen' : 'Kostprijzen toepassen' }}@if (costsStaleCount(); as stale) { · {{ differenceCount(stale) }}}</b><small>{{ batchesStarted() ? 'Zet de gelande kost op de batches van deze container en op de productkaarten.' : 'Zet de gelande kost per display of per stuk op de productkaarten.' }}</small></span><i aria-hidden="true">›</i></button>
                       }
                       <button class="desk-action" type="button" (click)="duplicate()"><span><b>Container kopiëren</b><small>Nieuwe calculatie met dezelfde producten en kosten.</small></span><i aria-hidden="true">›</i></button>
                       <button class="desk-action" type="button" [disabled]="!quoteLines().length" (click)="quoteOpen.set(true)"><span><b>{{ data.order.partnerCustomerId ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken' }}</b><small>{{ data.order.partnerCustomerId ? 'Eén conceptfactuur per voorschottermijn, nog niet verstuurd.' : 'Dezelfde producten en aantallen op een nieuwe offerte voor een klant.' }}</small></span><i aria-hidden="true">›</i></button>
@@ -1303,7 +1310,8 @@ export class PurchaseDeskStyles {}
                                      (closed)="statusCelebration.set(null)" (action)="celebrationAction(celebration)" />
       }
       @if (applyPlan(); as plan) {
-        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()" (confirm)="confirmApply()" (cancel)="closeApply()" />
+        <app-purchase-apply-costs-sheet [plan]="plan" [orderId]="data.order.id" [busy]="applyBusy()" [started]="batchesStarted()"
+                                        (confirm)="confirmApply($event)" (cancel)="closeApply()" />
       }
       @if (pdfOpen()) {
         <app-purchase-pdf-sheet [orderId]="data.order.id" [orderNumber]="data.order.number" [dirty]="dirty()" [saving]="saving()"
@@ -1479,7 +1487,8 @@ export class PurchaseDesk extends PurchaseEditor {
     const data = this.view();
     if (!data) return null;
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleCard().count > 0,
+      batchPending: this.batchPendingNow(), batchStale: this.batchStaleCount() > 0 });
   });
   readonly differenceCount = differenceCount;
   readonly stepLabel = stepLabel;

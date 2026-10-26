@@ -10,6 +10,8 @@ import * as units from '../src/app/features/products/product-sales-unit.ts';
 import * as containers from '../src/app/features/purchasing/container-name.ts';
 import * as geo from '../src/app/core/api/geo.ts';
 import * as phoneModel from '../src/app/features/purchasing/purchase-phone-model.ts';
+import * as batchesModel from '../src/app/features/purchasing/purchase-batches-model.ts';
+import type { PurchaseStockBatchRow, PurchaseStockBatches } from '../src/app/core/api/stock-batch-models.ts';
 
 // purchase-apply-costs and product-cost-basis import their siblings without an
 // extension, which node cannot resolve; run them through the TypeScript
@@ -198,7 +200,9 @@ const editorSource = await readFile(new URL('../src/app/features/purchasing/purc
 const editorJavascript = isolatedClass(editorSource, 'purchase-editor.ts', 'PurchaseEditor', new Set(['applyFor', 'applyBusy',
   'otherProducts', 'lineProducts', 'refreshOtherProducts', 'applyPlan', 'apply', 'closeApply', 'confirmApply', 'reloadOrderQuietly', 'preview', 'save',
   'savedOrder', 'saving', 'deletingOrder', 'dirty', 'previewTimer', 'previewVersion', 'paymentPlanBusy', 'payingBusy', 'adjustments', 'products', 'load',
-  'costsApplied', 'costsStaleNow', 'costsSupersededNow', 'costsStaleText', 'costsStaleCount']));
+  'costsApplied', 'costsStaleNow', 'costsSupersededNow', 'costsStaleText', 'costsStaleCount',
+  /* Stock batches (2026-10-25): the container's batches, the card part of the stale costs and the loader. */
+  'stockBatches', 'stockBatchVersion', 'loadStockBatches', 'batchesStarted', 'costsStaleCard']));
 
 function view(order: Partial<PurchaseOrder> = {}): PurchaseOrderView {
   return { order: { id: 14, number: 'PO-2026-014', alias: 'container/2026/014', supplierId: 7, status: 'ONTVANGEN', notes: '', ...order },
@@ -215,9 +219,15 @@ function setup(start = view()) {
   const elsewhere = new Map<number, Product>();
   let releaseApply: (() => void) | null = null;
   let routeId = start.order.id;
+  /* The container's batches as the server answers them; null = batches not started (the endpoint still answers). */
+  let batches: PurchaseStockBatches | null = null;
+  const batchCalls: number[] = [];
+  const overwrites: number[][] = [];
   const exports: Record<string, new () => any> = {};
   vm.runInNewContext(editorJavascript, { exports, signal, computed, clearTimeout, applyCostsPlan: apply.applyCostsPlan,
     applyCostsToast: apply.applyCostsToast, missingProductIds: apply.missingProductIds, costsStale: apply.costsStale, staleNotice: apply.staleNotice,
+    withOverwrite: apply.withOverwrite, batchPiecesByProduct: batchesModel.batchPiecesByProduct, batchStale: batchesModel.batchStale,
+    mergeStale: batchesModel.mergeStale,
     costsSupersededCount: phoneModel.costsSupersededCount,
     messageOf: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback });
   const editor = new exports['PurchaseEditor']();
@@ -236,8 +246,9 @@ function setup(start = view()) {
         if (failSave) throw new Error('Opslaan mislukt');
         return view(order);
       },
-      applyLandedCosts: async () => {
+      applyLandedCosts: async (_id: number, overwriteNewerProductIds: number[] = []) => {
         calls.push('apply');
+        overwrites.push([...overwriteNewerProductIds]);
         if (releaseApply === null) await new Promise<void>((resolve) => { releaseApply = resolve; });
         if (failApply) throw failApply;
         catalogue = PRODUCTS.map((p) => ({ ...p, landedCostSource: 'PO-2026-014' }));
@@ -263,9 +274,17 @@ function setup(start = view()) {
       categories: async () => [],
       stockLocations: async () => [],
     },
+    stockBatchApi: {
+      forPurchaseOrder: async (id: number) => {
+        batchCalls.push(id);
+        return batches ?? { started: false, booked: true, rows: [], totals: { piecesIn: 0, piecesLeft: 0, valueLeftEur: 0, valueComplete: true },
+          costs: { applied: 0, calculated: 0, card: 0, none: 0, stale: 0, staleLargestEur: 0 } };
+      },
+    },
   });
   editor.savedOrder.set(JSON.stringify(start.order));
-  return { editor, calls, toasts, elsewhere,
+  return { editor, calls, toasts, elsewhere, batchCalls, overwrites,
+    setBatches: (value: PurchaseStockBatches | null) => { batches = value; },
     failNextApply: (error: Error) => { failApply = error; },
     failNextSave: () => { failSave = true; },
     routeTo: (id: number) => { routeId = id; },
@@ -389,13 +408,15 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   const desk = await readFile(new URL('../src/app/features/purchasing/purchase-desk.ts', import.meta.url), 'utf8');
   for (const [name, text] of [['phone', editorSource], ['desk', desk]] as const) {
     assert.equal(text.match(/<app-purchase-apply-costs-sheet /g)?.length, 1, name);
-    assert.match(text, /@if \(applyPlan\(\); as plan\) \{\s*<app-purchase-apply-costs-sheet \[plan\]="plan" \[orderId\]="data\.order\.id" \[busy\]="applyBusy\(\)"\s+\(confirm\)="confirmApply\(\)" \(cancel\)="closeApply\(\)" \/>/, name);
+    /* The confirm hands over the newer products ticked "Ook op de productkaart"; the sheet knows whether batches started. */
+    assert.match(text, /@if \(applyPlan\(\); as plan\) \{\s*<app-purchase-apply-costs-sheet \[plan\]="plan" \[orderId\]="data\.order\.id" \[busy\]="applyBusy\(\)" \[started\]="batchesStarted\(\)"\s+\(confirm\)="confirmApply\(\$event\)" \(cancel\)="closeApply\(\)" \/>/, name);
   }
   /* Afronden's action, and the warn line above the products when they carry an older cost of this container (cost-fix Q2). */
   assert.equal(desk.match(/\(click\)="apply\(\)"/g)?.length, 2, 'desk');
   assert.match(desk, /@if \(costsStaleText\(\); as stale\) \{[\s\S]*?\(click\)="apply\(\)">Opnieuw toepassen ›<\/button>/);
-  /* Beside a newer container no one-click apply: the server writes every line and would push its cost aside (G12). */
-  assert.match(desk, /@if \(!costsSupersededNow\(\)\) \{\s*<span class="wk-banner__actions"><button class="wk-link" type="button" \[disabled\]="saving\(\)" \(click\)="apply\(\)">Opnieuw toepassen ›<\/button><\/span>\s*\}/);
+  /* Beside a newer container the apply is offered too: the server keeps those cards unless the sheet's row is ticked (batches round). */
+  assert.match(desk, /<span class="wk-banner__text">\{\{ keepAmounts\(stale\) \}\}<\/span>\s*<!--[^>]*-->\s*<span class="wk-banner__actions"><button class="wk-link" type="button" \[disabled\]="saving\(\)" \(click\)="apply\(\)">Opnieuw toepassen ›<\/button><\/span>/);
+  assert.doesNotMatch(desk, /@if \(!costsSupersededNow\(\)\)/);
   assert.match(desk, /@if \(costsStaleCount\(\); as stale\) \{ · \{\{ differenceCount\(stale\) \}\}\}<\/b>/);
   assert.match(editorSource, /staleCount: this\.costsStaleCount\(\),/);
   /* The Volgende stap tile and Afronden name the step alike (I-B7); Afronden adds the count when the costs step is back. */
@@ -409,7 +430,8 @@ test('desk and phone open the sheet from their apply buttons and host it once', 
   assert.doesNotMatch(editorSource, /applyCostsNow|applyingCosts/, 'no apply without the sheet');
   const phoneView = await readFile(new URL('../src/app/features/purchasing/purchase-view.ts', import.meta.url), 'utf8');
   assert.match(phoneView, /if \(step === 'KOSTPRIJZEN'\) this\.handOff\(step, null\);/, 'the read view skips its own question');
-  assert.match(phoneView, /\{\{ stale \}\}@if \(!costsSupersededNow\(\)\) \{ · <a class="mpo-stale__link" \[routerLink\]="\['\/purchasing', data\.order\.id, 'edit'\]" \[queryParams\]="\{ apply: 1, tab: 'producten' \}">Opnieuw toepassen ›<\/a>\}/);
+  assert.match(phoneView, /\{\{ stale \}\} · <a class="mpo-stale__link" \[routerLink\]="\['\/purchasing', data\.order\.id, 'edit'\]" \[queryParams\]="\{ apply: 1, tab: 'producten' \}">Opnieuw toepassen ›<\/a><\/span>/);
+  assert.doesNotMatch(phoneView, /@if \(!costsSupersededNow\(\)\)/);
   assert.doesNotMatch(editorSource, /ui\.confirm\(\s*\{\s*title: again/, 'the generic confirm is gone');
   assert.match(desk, /Zet de gelande kost per display of per stuk op de productkaarten\./);
 });
@@ -420,9 +442,10 @@ test('the sheet parses, says what applying does and keeps the wording rules', as
   assert.equal(parseTemplate(template, 'purchase-apply-costs-sheet.html').errors, null);
   assert.match(template, /p\.again \? 'Opnieuw kostprijzen toepassen' : 'Kostprijzen toepassen'/);
   /* Existing sales lines keep their frozen cost: the old 'Alle marges op verkooporders' sentence was untrue (cost-fix Q5). */
-  assert.match(template.replace(/\s+/g, ' '), /De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost\./);
+  assert.match(template.replace(/\s+/g, ' '), /@if \(started\(\)\) \{ <p class="ac-sheet__intro">De kostprijs komt op de batches van deze container en op de productkaart; bestaande verkoopregels houden hun kost\.<\/p> \} @else \{ <p class="ac-sheet__intro">De kostprijs komt op de productkaart: nieuwe verkoopregels rekenen ermee, bestaande regels houden hun kost\.<\/p> \}/);
   assert.doesNotMatch(template, /Alle marges op verkooporders/);
-  assert.match(template, /@if \(row\.catalogue; as price\) \{\s*· <span class="ac-row__price">catalogus @if \(price\.fromEur !== null\) \{\{\{ price\.fromEur \| eur \}\} → \}\{\{ price\.toEur \| eur \}\}<\/span>\}/);
+  /* A newer card kept beside this container (batches round) keeps its catalogue price too: no catalogue line on that row. */
+  assert.match(template, /@if \(row\.keepsCard \? null : row\.catalogue; as price\) \{\s*· <span class="ac-row__price">catalogus @if \(price\.fromEur !== null\) \{\{\{ price\.fromEur \| eur \}\} → \}\{\{ price\.toEur \| eur \}\}<\/span>\}/);
   assert.match(template, />Annuleren</);
   assert.match(template, /Historiek ›/);
   /* A product the screen could not load: no history button, its width kept, and no basis words. */
@@ -438,6 +461,13 @@ test('the sheet parses, says what applying does and keeps the wording rules', as
   assert.match(template, /\[attr\.data-newer\]="row\.newer \? '' : null"/);
   assert.match(template, /@if \(row\.newer\) \{<span class="ac-fig__newer"> · nieuwer<\/span>\}/);
   assert.match(template, /niets ontvangen · blijft/);
+  /* Batches round: a newer row can be ticked, a kept row says its card stays, the shelf count joins the basis line. */
+  assert.match(template, /@if \(row\.newer\) \{\s*<label class="ac-row__keep"><input type="checkbox" \[checked\]="overwrite\(\)\.has\(row\.productId\)"[^>]*\/> Ook op de productkaart<\/label>/);
+  assert.match(template, /@if \(row\.keepsCard\) \{\s*<b>\{\{ started\(\) \? 'batch' : '—' \}\}<\/b><span>productkaart blijft<\/span>/);
+  assert.match(template, /@if \(leftText\(row\); as left\) \{\s*· <span class="ac-row__left">nog \{\{ left \}\} op voorraad<\/span>\}/);
+  assert.match(template, /\(click\)="confirm\.emit\(request\(\)\)"/);
+  assert.match(sheet, /readonly confirm = output<number\[\]>\(\);/);
+  assert.match(sheet, /readonly newerText = computed\(\(\) => newerNotice\(this\.shown\(\)\.kept, this\.started\(\)\)\);/);
   assert.match(template, /<app-product-cost-history-sheet \[product\]="product" \[currentOrderId\]="orderId\(\)"/);
   /* The words on screen: tags, bindings and control flow stripped. */
   const words = template.replace(/<[^>]*>/g, ' ').replace(/\{\{[^}]*\}\}/g, ' ').replace(/@\w+[^{]*\{/g, ' ');
@@ -524,8 +554,10 @@ test('stale beside a newer container: the line names those products and the shee
   assert.deepEqual(plain(plan.rows.map((row: { productId: number; newer: boolean }) => [row.productId, row.newer])),
     [[401, false], [403, true], [404, false], [405, false], [406, false]]);
   assert.equal(plan.newer, 1);
-  assert.equal(apply.newerNotice(plan.newer), '1 product draagt de kostprijs van een nieuwere container: toepassen zet die terug naar deze container.');
-  assert.equal(apply.newerNotice(3), '3 producten dragen de kostprijs van een nieuwere container: toepassen zet die terug naar deze container.');
+  /* The server keeps a newer card unless it is ticked (batches round, 2026-10-25): the line says it stays. */
+  assert.equal(plan.kept, 1);
+  assert.equal(apply.newerNotice(plan.kept), '1 product draagt een nieuwere container: zijn productkaart blijft.');
+  assert.equal(apply.newerNotice(3), '3 producten dragen een nieuwere container: hun productkaart blijft.');
   assert.equal(apply.newerNotice(0), null);
 });
 
@@ -541,11 +573,11 @@ test('the editor counts over every line\'s product, another supplier\'s too, and
   assert.deepEqual(plain(editor.costsStaleNow()), { count: 1, productIds: [309], largestEur: -0.2 });
   assert.equal(spaces(editor.costsStaleText()), '1 product draagt een oudere kostprijs van deze container (▼ € 0,20)');
   assert.equal(editor.costsStaleCount(), 1);
-  /* A newer container on product 302: the line says so and no count invites the one-click apply. */
+  /* A newer container on product 302: the line says so; the count stays, since the server keeps that card (batches round). */
   editor.products.set(PRODUCTS.map((p) => p.id === 302 ? { ...p, landedCostSource: 'PO-2026-020' } : p));
   assert.equal(editor.costsSupersededNow(), 1);
   assert.equal(spaces(editor.costsStaleText()), '1 product draagt een oudere kostprijs van deze container (▼ € 0,20) · 1 met een nieuwere container');
-  assert.equal(editor.costsStaleCount(), 0);
+  assert.equal(editor.costsStaleCount(), 1);
   /* An answer for another order never lands. */
   editor.otherProducts.set([]);
   const late = editor.refreshOtherProducts(14);
@@ -554,4 +586,131 @@ test('the editor counts over every line\'s product, another supplier\'s too, and
   assert.deepEqual(plain(editor.otherProducts()), []);
   /* Fetched once the order is in, not only when the sheet opens. */
   assert.match(editorSource, /this\.view\.set\(view\);\n    void this\.refreshOtherProducts\(orderId\);/);
+});
+
+/* ---- batches round (2026-10-25): newer cards stay unless ticked, the batch part of the costs -------- */
+
+function batchRow(productId: number, extra: Partial<PurchaseStockBatchRow> = {}): PurchaseStockBatchRow {
+  return {
+    id: productId, productId, kind: 'RECEIPT', owner: 'OWN', purchaseOrderId: 14, orderNumber: 'PO-2026-014', containerName: 'container/2026/014',
+    containerGone: false, supplierId: 7, supplierName: 'Leverancier', productSupplierId: null, receivedOn: '2026-09-01', bookedAt: '2026-09-02T08:00:00Z',
+    unitPieces: 1, piecesIn: 100, piecesLeft: 40, soldPieces: 60, lostPieces: 0, earlierPieces: 0, otherPieces: 0, costState: 'APPLIED',
+    unitCostEur: 8.87, unitCostExclEnrosedEur: 8.5, parts: null, costAppliedAt: null, costAppliedBy: null, valueLeftEur: 354.8, next: true,
+    calcUnitEur: 8.87, stale: false, note: null, sku: `SKU-${productId}`, productName: `Product ${productId}`, ...extra,
+  };
+}
+function batchesOf(rows: PurchaseStockBatchRow[], costs: Partial<PurchaseStockBatches['costs']> = {}): PurchaseStockBatches {
+  return { started: true, booked: true, rows, totals: { piecesIn: 0, piecesLeft: 0, valueLeftEur: 0, valueComplete: true },
+    costs: { applied: 0, calculated: 0, card: 0, none: 0, stale: 0, staleLargestEur: 0, ...costs } };
+}
+/* 403 carries a newer container's cost (PO-2026-015), 405 one of PO-2026-016 but received nothing here. */
+const NEWER_PRODUCTS = [
+  product(401, 'Rose in dome 15x30 single - Blue', 8.318, 'PO-2026-014'),
+  product(403, 'Rose in dome 20x40', 12.5, 'PO-2026-015'),
+  product(404, 'Rose in dome 10x20', 6.2, 'PO-2026-011', { kind: 'DISPLAY', piecesPerUnit: 12, salesUnit: 'DISPLAY', unitKey: 'roos' }),
+  product(405, 'Hart in doos', 4.1, 'PO-2026-016'),
+];
+const NEWER_LINES = [line(401, 18, 10.3858), line(403, 24, 11.2), line(404, 30, 6.1), line(405, 0, 0)];
+
+test('a newer row keeps its card unless ticked; the request names the ticked ones; the shelf count rides along', () => {
+  const left = new Map([[403, { pieces: 100, unitPieces: 1 }], [404, { pieces: 604, unitPieces: 12 }]]);
+  const plan = apply.applyCostsPlan(ORDER, NEWER_LINES, NEWER_PRODUCTS, left);
+  assert.deepEqual(plain(plan.rows.map((row: any) => [row.productId, row.newer, row.keepsCard])),
+    [[401, false, false], [403, true, true], [404, false, false], [405, false, false]], 'a line that received nothing is never applied, so never newer');
+  assert.deepEqual([plan.newer, plan.kept], [1, 1]);
+  assert.deepEqual(plain(plan.rows[1].leftPieces), { pieces: 100, unitPieces: 1 });
+  assert.deepEqual(plain(plan.rows[2].leftPieces), { pieces: 604, unitPieces: 12 });
+  assert.equal(plan.rows[0].leftPieces, null, 'no batch of this container for it');
+  assert.deepEqual(plain(apply.applyCostsRequest(plan)), [], 'nothing ticked: the guard keeps every newer card');
+  /* Ticked in the sheet: the card is written after all, and only ticked newer rows go into the request. */
+  const ticked = apply.withOverwrite(plan, new Set([403, 401]));
+  assert.deepEqual([ticked.kept, ticked.rows[1].keepsCard, ticked.rows[0].keepsCard], [0, false, false]);
+  assert.deepEqual(plain(apply.applyCostsRequest(ticked)), [403]);
+  assert.deepEqual(plain(apply.applyCostsRequest(apply.applyCostsPlan(ORDER, NEWER_LINES, NEWER_PRODUCTS, null, new Set([403])))), [403]);
+  assert.equal(apply.applyCostsPlan(ORDER, NEWER_LINES, NEWER_PRODUCTS).rows[1].leftPieces, null, 'before batches start');
+  /* The figures of a kept row are still shown: now, new and the difference stay as they were. */
+  assert.deepEqual([plan.rows[1].currentEur, plan.rows[1].newEur, plan.rows[1].state], [12.5, 11.2, 'down']);
+});
+
+test('the sheet\'s warn line and the toast count the cards kept; staleNotice keeps its suffix', () => {
+  assert.equal(apply.newerNotice(1, true), '1 product draagt een nieuwere container: zijn productkaart blijft, alleen de batch krijgt deze kost.');
+  assert.equal(apply.newerNotice(2, true), '2 producten dragen een nieuwere container: hun productkaart blijft, alleen de batch krijgt deze kost.');
+  assert.equal(apply.newerNotice(2, false), '2 producten dragen een nieuwere container: hun productkaart blijft.');
+  assert.equal(apply.newerNotice(0, true), null);
+  const counts = { changed: 3, unchanged: 1, unknown: 0, skipped: 1 };
+  assert.equal(apply.applyCostsToast({ ...counts, kept: 1 }), 'Kostprijs van 3 producten gewijzigd, 1 ongewijzigd · 1 overgeslagen (niets ontvangen) · 1 productkaart behouden');
+  assert.equal(apply.applyCostsToast({ ...counts, skipped: 0, kept: 2 }), 'Kostprijs van 3 producten gewijzigd, 1 ongewijzigd · 2 productkaarten behouden');
+  assert.equal(apply.applyCostsToast({ ...counts, kept: 0 }), 'Kostprijs van 3 producten gewijzigd, 1 ongewijzigd · 1 overgeslagen (niets ontvangen)');
+  assert.equal(apply.applyCostsToast(counts), 'Kostprijs van 3 producten gewijzigd, 1 ongewijzigd · 1 overgeslagen (niets ontvangen)', 'an older plan without kept');
+  assert.equal(spaces(apply.staleNotice({ count: 2, largestEur: 2.0678 }, 1)), '2 producten dragen een oudere kostprijs van deze container (tot ▲ € 2,07) · 1 met een nieuwere container');
+});
+
+test('the editor loads the batches of a booked container, merges their stale part and sends the ticked ids', async () => {
+  const start = { ...view(), costing: { lines: NEWER_LINES } } as unknown as PurchaseOrderView;
+  const { editor, calls, toasts, elsewhere, batchCalls, overwrites, setBatches, release, routeTo } = setup(start);
+  /* Products of another supplier's list: the sheet fetches them by id when it opens. */
+  for (const p of NEWER_PRODUCTS) elsewhere.set(p.id!, p);
+  editor.products.set(NEWER_PRODUCTS);
+  /* Not started: the card hides, the rules are today's. */
+  await editor.loadStockBatches(14, start);
+  assert.deepEqual(batchCalls, [14]);
+  assert.equal(editor.batchesStarted(), false);
+  /* Started: 404's batch is stale (6,20 on the shelf, the container now 6,10), 401's card part is stale too. */
+  setBatches(batchesOf([batchRow(401, { unitCostEur: 10.3858, calcUnitEur: 10.3858 }), batchRow(404, { stale: true, unitCostEur: 6.2, calcUnitEur: 6.1 })],
+    { applied: 2, stale: 1, staleLargestEur: -0.1 }));
+  await editor.loadStockBatches(14, start);
+  assert.equal(editor.batchesStarted(), true);
+  assert.deepEqual(plain(editor.costsStaleCard()), { count: 1, productIds: [401], largestEur: 2.0678 });
+  assert.deepEqual(plain(editor.costsStaleNow()), { count: 2, productIds: [401, 404], largestEur: 2.0678 });
+  assert.equal(editor.costsStaleCount(), 2);
+  assert.equal(editor.costsApplied(), true, 'applied on the card already; the batches say so too');
+  /* A container whose cards all carry other sources still counts as applied once its batches are. */
+  editor.products.set(NEWER_PRODUCTS.map((p) => ({ ...p, landedCostSource: 'PO-2026-099' })));
+  assert.equal(editor.costsApplied(), true);
+  setBatches(batchesOf([batchRow(401, { costState: 'CALCULATED' })], { calculated: 1 }));
+  await editor.loadStockBatches(14, start);
+  assert.equal(editor.costsApplied(), false);
+  editor.products.set(NEWER_PRODUCTS);
+  /* Not booked, or not received: no call, no card. */
+  await editor.loadStockBatches(14, view({ stockBooked: false } as Partial<PurchaseOrder>));
+  assert.equal(editor.stockBatches(), null);
+  await editor.loadStockBatches(14, view({ status: 'ONDERWEG' }));
+  assert.deepEqual(batchCalls, [14, 14, 14]);
+  /* The sheet: the shelf count per product, then confirm with 403 ticked. */
+  setBatches(batchesOf([batchRow(403, { piecesLeft: 100 }), batchRow(404, { piecesLeft: 604, unitPieces: 12 })], { applied: 2 }));
+  await editor.loadStockBatches(14, start);
+  await editor.apply();
+  const plan = editor.applyPlan();
+  assert.deepEqual(plain(plan.rows.map((row: any) => row.leftPieces)), [null, { pieces: 100, unitPieces: 1 }, { pieces: 604, unitPieces: 12 }, null]);
+  assert.equal(plan.kept, 1);
+  const confirming = editor.confirmApply([403]);
+  release();
+  await confirming;
+  assert.deepEqual(overwrites, [[403]]);
+  assert.match(toasts.at(-1)![0], /^Kostprijs van 3 producten gewijzigd/);
+  assert.doesNotMatch(toasts.at(-1)![0], /behouden/, '403 was ticked: no card kept');
+  assert.equal(batchCalls.at(-1), 14, 'the batches are fetched again after applying');
+  assert.ok(calls.includes('apply'));
+  /* Unticked: the toast names the kept card; the request is empty. (The mock's reload answers the default lines: put this order back.) */
+  editor.view.set(start);
+  await editor.apply();
+  assert.equal(editor.applyPlan().kept, 1);
+  const again = editor.confirmApply();
+  release();
+  await again;
+  assert.deepEqual(overwrites.at(-1), []);
+  assert.match(toasts.at(-1)![0], / · 1 productkaart behouden$/);
+  /* Another order: the old order's batches are gone at once; its own are asked for. */
+  routeTo(15);
+  await editor.load(15);
+  assert.equal(editor.view().order.id, 15);
+  assert.equal(editor.stockBatches(), null, 'never the previous container\'s batches');
+  assert.equal(batchCalls.at(-1), 15);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(editor.stockBatches()?.started, true, 'its own answer lands');
+  /* A call for an order that is no longer shown asks nothing and changes nothing. */
+  const before = editor.stockBatches();
+  await editor.loadStockBatches(14, start);
+  assert.equal(batchCalls.at(-1), 15);
+  assert.equal(editor.stockBatches(), before);
 });

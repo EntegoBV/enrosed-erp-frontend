@@ -60,6 +60,12 @@ import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
 import { costsStale, staleNotice } from './purchase-apply-costs';
+import { StockBatchApi } from '../../core/api/stock-batch-api';
+import type { PurchaseStockBatches } from '../../core/api/stock-batch-models';
+import { batchFormat } from '../../core/api/stock-batch-units';
+import { batchPending, batchStale, mergeStale, purchaseBatchRows } from './purchase-batches-model';
+import { PurchaseBatchesCard } from './purchase-batches-card';
+import { lineVersionText } from './purchase-supplier-version';
 import {
   costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
@@ -81,7 +87,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
-            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
+            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchaseBatchesCard],
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
@@ -201,6 +207,13 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               </section>
             }
 
+            <!-- Stock batches (2026-10-25): what this container booked, once batches started. -->
+            @if (stockBatches(); as batches) {
+              @if (batches.started && stockBatchRows().length) {
+                <app-purchase-batches-card layout="phone" [data]="batches" [rows]="stockBatchRows()" />
+              }
+            }
+
             <app-purchase-nacalc-glance [nacalc]="nacalc()" [state]="paymentState()" (open)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
 
             <section class="ios-section" id="purchase-actions-section" tabindex="-1" aria-labelledby="mpo-actions-title">
@@ -280,8 +293,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               @if (costsStaleText(); as stale) {
                 <!-- The container changed after its costs were applied: some products carry an older cost of it (cost-fix Q2). -->
                 <div class="wk-banner wk-banner--warn wk-banner--inset mpo-stale" role="status">
-                  <!-- No link while a newer container sits on some products: applying writes every line and would push its cost aside (G12). -->
-                  <span class="wk-banner__text">{{ stale }}@if (!costsSupersededNow()) { · <a class="mpo-stale__link" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ apply: 1, tab: 'producten' }">Opnieuw toepassen ›</a>}</span>
+                  <!-- Always offered: the server keeps a newer container's card unless the sheet's row is ticked (batches round, 2026-10-25). -->
+                  <span class="wk-banner__text">{{ stale }} · <a class="mpo-stale__link" [routerLink]="['/purchasing', data.order.id, 'edit']" [queryParams]="{ apply: 1, tab: 'producten' }">Opnieuw toepassen ›</a></span>
                 </div>
               }
 
@@ -352,7 +365,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                               </span>
                             }
                           </span>
-                          <span class="ios-cell__sub mpo-wrap">{{ group.totals.pieces | num }} st · {{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</span>
+                          <!-- A product on its own has no variant row: its line's Versie joins the figures here. -->
+                          <span class="ios-cell__sub mpo-wrap">@if (group.standalone ? lineVersionText(orderLineOf(group.entries[0].line.productId)) : null; as version) {{{ version }} · }{{ group.totals.pieces | num }} st · {{ group.totals.cartons | num }} dozen · {{ group.totals.cbm | cbm }}</span>
                         </span>
                         <span class="ios-cell__trail">
                           <span class="ios-cell__value ios-cell__value--strong">{{ perPiece() ? landedRangeText(group.totals.unitMinEur, group.totals.unitMaxEur) : (group.totals.totalEur | eur) }}</span>
@@ -371,7 +385,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                               </span>
                               <span class="ios-cell__body">
                                 <span class="ios-cell__title mpo-wrap">{{ variantTitle(entry.product, entry.line.productName) }}</span>
-                                <span class="ios-cell__sub mpo-wrap">{{ entry.line.quantity | num }} st · {{ entry.line.cartons | num }} dozen · {{ entry.line.cbm | cbm }}</span>
+                                <span class="ios-cell__sub mpo-wrap">@if (lineVersionText(orderLineOf(entry.line.productId)); as version) {{{ version }} · }{{ entry.line.quantity | num }} st · {{ entry.line.cartons | num }} dozen · {{ entry.line.cbm | cbm }}</span>
                               </span>
                               <span class="ios-cell__trail">
                                 @if (perPiece()) {
@@ -552,6 +566,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   } @empty {
                     <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub mpo-wrap">Nog geen bestanden bij deze container.</span></span></div>
                   }
+                  <a class="ios-cell" routerLink="/costs" [queryParams]="{ view: 'invoices', po: data.order.id }">
+                    <span class="ios-cell__body"><span class="ios-cell__title mpo-link">Facturen</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </a>
                   <a class="ios-cell" routerLink="/files" [queryParams]="{ view: 'purchase', doel: data.order.id }">
                     <span class="ios-cell__body"><span class="ios-cell__title mpo-link">In Documenten &amp; media</span></span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
@@ -1213,6 +1231,7 @@ export class PurchaseView {
 
   private async load(id: number): Promise<void> {
     this.view.set(null);
+    this.stockBatches.set(null);
     this.loadError.set(null);
     this.workspaceSection.set(rootSectionOf(parseTab(this.tab())));
     this.lineSheet.set(null);
@@ -1256,6 +1275,37 @@ export class PurchaseView {
     this.suppliers.set(suppliers);
     this.view.set(view);
     this.loadPartnerFinancing();
+    void this.loadStockBatches(view);
+  }
+
+  /* ---- stock batches (2026-10-25): what this container booked, once batches started */
+  private readonly stockBatchApi = inject(StockBatchApi);
+  /** The batches this container booked; null before it is received and booked, on a failed call, or before the answer. */
+  readonly stockBatches = signal<PurchaseStockBatches | null>(null);
+
+  /** The editor's rule: only a received container whose stock is booked (an old order without the flag counts as booked). */
+  private async loadStockBatches(view: PurchaseOrderView): Promise<void> {
+    if (view.order.status !== 'ONTVANGEN' || view.order.stockBooked === false) return;
+    let found: PurchaseStockBatches | null;
+    try { found = await this.stockBatchApi.forPurchaseOrder(view.order.id); } catch { found = null; }
+    if (this.view()?.order.id === view.order.id) this.stockBatches.set(found);
+  }
+
+  /** The batches card's rows, in the units each product sells in. */
+  readonly stockBatchRows = computed(() => {
+    const data = this.stockBatches();
+    if (!data?.started) return [];
+    const products = this.products();
+    return purchaseBatchRows(data, (productId) => {
+      const product = products.find((candidate) => candidate.id === productId);
+      return batchFormat(product ? productSalesUnit(product) : { singular: 'stuk', plural: 'stuks' });
+    });
+  });
+
+  readonly lineVersionText = lineVersionText;
+  /** The order line behind a calculation line: its Versie snapshot (this view loads every product without offers). */
+  orderLineOf(productId: number): PurchaseOrderLine | undefined {
+    return this.view()?.order.lines.find((line) => line.productId === productId);
   }
 
   amt(value: number, line: { quantity: number }): number {
@@ -1404,6 +1454,7 @@ export class PurchaseView {
       { id: 'quote', label: data.order.partnerCustomerId != null ? 'Conceptvoorschotfacturen maken' : 'Verkoopofferte maken', iconName: 'sales',
         disabled: !quoteLinesOf(data).length },
       { id: 'files', label: 'Documenten & media', iconName: 'folder' },
+      { id: 'invoices', label: 'Facturen', iconName: 'document' },
     ];
     if (data.order.status === 'ONTVANGEN') items.push({ id: 'analysis', label: 'Ontvangstanalyse', iconName: 'analytics' });
     return items;
@@ -1415,6 +1466,7 @@ export class PurchaseView {
     if (id == null) return;
     if (item.id === 'quote') this.quoteOpen.set(true);
     else if (item.id === 'files') void this.routerNav.navigate(['/files'], { queryParams: { view: 'purchase', doel: id } });
+    else if (item.id === 'invoices') void this.routerNav.navigate(['/costs'], { queryParams: { view: 'invoices', po: id } });
     else if (item.id === 'analysis') void this.routerNav.navigate(['/analyses/purchasing'], { queryParams: { orderId: id } });
   }
 
@@ -1424,20 +1476,25 @@ export class PurchaseView {
   readonly stepLabel = stepLabel;
   readonly costsApplied = computed(() => {
     const data = this.view();
-    return !!data && costsAppliedFor(data.costing.lines, this.products(), data.order.number);
+    const batches = this.stockBatches();
+    return !!data && (costsAppliedFor(data.costing.lines, this.products(), data.order.number) || (!!batches?.started && batches.costs.applied > 0));
   });
   readonly readStep = computed<PhoneStep | null>(() => {
     const data = this.view();
     if (!data) return null;
+    const batches = this.stockBatches();
     return readNextStep({ status: data.order.status, lineCount: data.costing.lines.length, stockBooked: data.order.stockBooked,
-      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleNow().count > 0 });
+      costsApplied: this.costsApplied(), superseded: this.costsSupersededNow() > 0, stale: this.costsStaleCard().count > 0,
+      batchPending: batchPending(batches), batchStale: batchStale(batches).count > 0 });
   });
-  /** Products that carry an older cost of this container than it calculates now (the editor's rule). */
-  readonly costsStaleNow = computed(() => {
+  /** Products that carry an older card cost of this container than it calculates now (the editor's rule). */
+  readonly costsStaleCard = computed(() => {
     const data = this.view();
     return data ? costsStale(data.order.number, data.costing.lines, this.products()) : { count: 0, productIds: [], largestEur: 0 };
   });
-  /** Products that carry a newer container's cost: no one-click apply then (the editor's rule). */
+  /** The card part and the batch part together, each product once (the editor's rule). */
+  readonly costsStaleNow = computed(() => mergeStale(this.costsStaleCard(), batchStale(this.stockBatches())));
+  /** Products that carry a newer container's cost: named in the warn line; the apply keeps those cards (the editor's rule). */
   readonly costsSupersededNow = computed(() => {
     const data = this.view();
     return data ? costsSupersededCount(data.costing.lines, this.products(), data.order.number) : 0;

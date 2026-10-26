@@ -52,6 +52,8 @@ function setup() {
     loadDocuments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
     /* The other suppliers' products of the lines (stale costs), fetched once the order shows: quiet here. */
     refreshOtherProducts: async () => {},
+    /* The container's stock batches (2026-10-25), fetched once a booked order shows: quiet here. */
+    stockBatches: signal(null), loadStockBatches: async () => {},
     ui: { toast: (text: string, tone?: string) => { toasts.push([text, tone]); } },
     sourcing: {
       payments: (id: number) => pending(payments, id).promise,

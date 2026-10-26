@@ -63,6 +63,8 @@ function setup() {
     loadPayments: async () => {}, loadPartnerDocs: async () => {}, loadBankLines: async () => {},
     /* The other suppliers' products of the lines (stale costs), fetched once the order shows: quiet here. */
     refreshOtherProducts: async () => {},
+    /* The container's stock batches (2026-10-25), fetched once a booked order shows: quiet here. */
+    stockBatches: signal(null), loadStockBatches: async () => {},
     sourcing: {
       documents: (id: number) => { calls.push(`GET documents ${id}`); return api.documents(id); },
       purchaseOrder: (id: number) => { calls.push(`GET order ${id}`); return api.purchaseOrder(id); },
