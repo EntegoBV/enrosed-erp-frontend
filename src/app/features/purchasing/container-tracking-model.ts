@@ -50,6 +50,55 @@ export function trackingWebUrl(value: string | null | undefined): string | null 
   } catch { return null; }
 }
 
+export interface CarrierLookup {
+  carrier: 'Evergreen' | 'ONE' | 'CMA CGM';
+  url: string;
+  reference: string;
+  referenceLabel: 'B/L' | 'Container' | 'Referentie';
+}
+
+/** ISO 6346 check digit. Identifying a box never identifies its contractual carrier. */
+export function validatedContainerReference(raw: string): string | null {
+  const candidates = [...raw.toUpperCase().matchAll(/(?<![A-Z0-9])([A-Z]{3}[UJZ])[ -]?([0-9]{7})(?![A-Z0-9])/g)]
+    .map((match) => match[1] + match[2]);
+  const unique = [...new Set(candidates)];
+  if (unique.length !== 1) return null;
+  const number = unique[0];
+  const sum = [...number.slice(0, 10)].reduce((total, char, index) => {
+    const alphabet = char.charCodeAt(0) - 65;
+    const value = /[0-9]/.test(char) ? Number(char) : 10 + alphabet + Math.floor((alphabet + 9) / 10);
+    return total + value * 2 ** index;
+  }, 0);
+  return (sum % 11) % 10 === Number(number[10]) ? number : null;
+}
+
+/** Manual carrier portals from explicit B/L/carrier evidence only, never a vessel name or box prefix. */
+export function carrierLookup(row: Pick<ContainerTracking, 'trackingReference' | 'carrier'>): CarrierLookup | null {
+  const raw = row.trackingReference.trim().toUpperCase();
+  const evergreen = raw.match(/\bEGLV([0-9]{12})\b/);
+  const one = raw.match(/\b(ONEY[A-Z0-9]{6,20})\b/);
+  const cmaBl = raw.match(/\b(?:B\/L|BOL|BL)\s*:?\s*(SHZ[A-Z0-9]{6,16})\b/);
+  const houseBl = cmaBl && /\bHOUSE\s*$/.test(raw.slice(0, cmaBl.index));
+  const cma = (!!cmaBl && !houseBl) || /^CMA[ -]?CGM$/.test((row.carrier ?? '').trim().toUpperCase())
+    || /\b(?:REDERIJ|CARRIER)\s*:?\s*CMA[ -]?CGM\b/.test(raw) || /^CMA[ -]?CGM\s*(?:[:;|·]|$)/.test(raw);
+  if ([!!evergreen, !!one, !!cma].filter(Boolean).length !== 1) return null;
+  if (evergreen) return {
+    carrier: 'Evergreen', url: 'https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do',
+    reference: evergreen[1], referenceLabel: 'B/L',
+  };
+  const container = validatedContainerReference(raw);
+  if (one) return {
+    carrier: 'ONE', url: 'https://www.one-line.com/one-ecom/manage-shipment/cargo-tracking'
+      + (container ? `?trakNoParam=${container}&trakNoTpCdParam=C` : ''),
+    reference: container ?? one[1], referenceLabel: container ? 'Container' : 'B/L',
+  };
+  return {
+    carrier: 'CMA CGM', url: 'https://www.cma-cgm.com/ebusiness/tracking',
+    reference: cmaBl?.[1] ?? container ?? row.trackingReference.trim(),
+    referenceLabel: cmaBl ? 'B/L' : container ? 'Container' : 'Referentie',
+  };
+}
+
 export function validTrackingPosition(position: TrackingPosition | null | undefined): position is TrackingPosition {
   return !!position && Number.isFinite(position.lat) && Number.isFinite(position.lon)
     && Math.abs(position.lat) <= 90 && Math.abs(position.lon) <= 180;
