@@ -15,7 +15,7 @@ import { CashState } from './cash-state';
 import { HOW_TEXTS } from './analyses-how';
 import {
   adjusted, amountText, chartBuffer, dataQuality, forecastMarkers, forecastSeries, itemLink, kpiCards, lineLink, marginOfMarkup, monthName, parseAmount, phoneKrapBanner,
-  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, standardMarkupNote, suggestionText, underBuffer,
+  phoneRowSub, pct, ruleSummary, ruleSwitches, scenarioOutcome, signedWhole, sourcePriceText, standardMarkupNote, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, KpiCard, RuleSwitch } from './cash-view';
 import { cashCommittedView, cashLikelyPaidView, cashLowestView, cashRuleView, cashScenarioSalesView, cashStockPlanView } from './drill-cash';
@@ -107,8 +107,18 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
         <section class="ios-section" aria-labelledby="cf-phone-scenario">
           <div class="ios-section__head ios-section__head--prominent">
             <h2 id="cf-phone-scenario">Scenario</h2>
-            <button class="ios-section__link" type="button" (click)="state.clearDefaults()">Wissen</button>
+            <button class="ios-section__link" type="button" (click)="state.clearDefaults()">Standaard herstellen</button>
           </div>
+          <div class="ios-group cf-phone__choices">
+            <button class="ios-cell" type="button" (click)="sheet.set('price')"><span class="ios-cell__body"><span class="ios-cell__title">Standaardprijs &amp; marge</span></span>
+              <span class="ios-cell__value">{{ priceText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
+            <button class="ios-cell" type="button" (click)="sheet.set('pace')"><span class="ios-cell__body"><span class="ios-cell__title">Verkocht in</span></span>
+              <span class="ios-cell__value">{{ weeksText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
+            <button class="ios-cell" type="button" (click)="sheet.set('payment')"><span class="ios-cell__body"><span class="ios-cell__title">Klant betaalt na</span></span>
+              <span class="ios-cell__value">{{ daysText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
+          </div>
+          <p class="ios-section__foot">{{ choiceFoot() }}</p>
+          <div class="cf-sources-caption"><b>Voorraad en containers</b><span>Ontvangsten tot {{ day(f.horizonEnd) }} · incl. btw</span></div>
           <div class="ios-group cf-phone__sources">
             @for (source of f.scenario.sources; track source.id) {
               <div class="ios-cell cf-src-cell" [class.is-off]="!source.included" [class.is-locked]="source.locked">
@@ -117,24 +127,22 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
                 <button class="cf-src-cell__body" type="button" [disabled]="source.id === 'stock' && !source.products?.length"
                         [attr.aria-haspopup]="source.id === 'stock' ? 'dialog' : null" (click)="openSource(source)">
                   <span class="ios-cell__title">{{ source.label }}@if (isAdjusted(source)) { <i class="cf-dot" aria-label="aangepast"></i> }</span>
-                  <span class="ios-cell__sub">{{ source.locked ? 'Partner · ' + source.lockedText : source.sub }}</span>
+                  <span class="ios-cell__sub">{{ source.sub }}</span>
+                  @if (source.partnerScenario; as partner) { <span class="cf-partner-badge">Partner · {{ pctText(partner.profitSharePct) }} % resultaat voor ENROSED</span> }
                 </button>
                 <span class="ios-cell__trail">
-                  <span class="ios-cell__value ios-cell__value--strong">{{ source.included && !source.locked ? '+ ' + whole(source.cashInHorizonEur) : '—' }}</span>
-                  @if (source.included && !source.locked) { <span class="ios-cell__meta">binnen tot {{ day(f.horizonEnd) }}</span> }
+                  <span class="ios-cell__value ios-cell__value--strong">{{ source.included && !source.locked ? signed(source.cashInHorizonEur) : '—' }}</span>
+                  @if (source.choice) { <span class="ios-cell__meta">{{ sourcePrice(source) }}</span> }
                 </span>
+                @if (source.id !== 'stock') {
+                  <button class="cf-source-edit" type="button" (click)="openSource(source)" [attr.aria-label]="(source.choice ? 'Marge en tempo wijzigen: ' : 'Details openen: ') + source.label">
+                    {{ source.choice ? 'Marge en tempo' : 'Details' }}<app-icon name="chevron-right" [size]="13" />
+                  </button>
+                }
               </div>
             } @empty { <div class="ios-cell"><span class="ios-cell__sub">Geen voorraad en geen open inkooporders.</span></div> }
           </div>
-          <div class="ios-group cf-phone__choices">
-            <button class="ios-cell" type="button" (click)="sheet.set('price')"><span class="ios-cell__body"><span class="ios-cell__title">Prijs</span></span>
-              <span class="ios-cell__value">{{ priceText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
-            <button class="ios-cell" type="button" (click)="sheet.set('pace')"><span class="ios-cell__body"><span class="ios-cell__title">Verkocht in</span></span>
-              <span class="ios-cell__value">{{ weeksText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
-            <button class="ios-cell" type="button" (click)="sheet.set('payment')"><span class="ios-cell__body"><span class="ios-cell__title">Klant betaalt na</span></span>
-              <span class="ios-cell__value">{{ daysText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
-          </div>
-          <p class="ios-section__foot">{{ choiceFoot() }}</p>
+
         </section>
 
         <!-- "Binnen" is the figure above (Scenario binnen); the card keeps the margin and the VAT (design C.7). -->
@@ -362,6 +370,8 @@ export class CashPhone {
   readonly day = dayMon;
   readonly wd = weekdayDayMonth;
   readonly signed = signedWhole;
+  readonly pctText = pct;
+  readonly sourcePrice = sourcePriceText;
   readonly rowSub = phoneRowSub;
   readonly suggestion = suggestionText;
   readonly abs = Math.abs;
@@ -448,7 +458,9 @@ export class CashPhone {
   readonly choiceFoot = computed(() => {
     const basis = this.location().costBasis === 'PRICING' ? 'kost met Enrosed-kost' : 'externe kost';
     const note = this.location().markupPct === null ? standardMarkupNote(this.history()?.realisedMarkupPct ?? null, this.history()?.realisedSample) : '';
-    return `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}${note ? ` · ${note}` : ''}. Verandert niets aan orders of betalingen.`;
+    const mode = this.location().priceMode;
+    const price = mode === 'LIST' ? 'Lijstprijzen per product' : mode === 'HISTORIC' ? 'Factuurprijzen uit de laatste 12 maanden' : mode === 'EUR_PER_UNIT' ? `Opslag ${eur(this.location().markupEurPerUnit ?? 0)} per stuk` : `Opslag ${pct(this.markup())} % op ${basis} = marge ${marginOfMarkup(this.markup())}`;
+    return `${price}. Geldt voor bronnen zonder eigen prijskeuze. Tik op een container om die apart aan te passen.`;
   });
 
   /** "Hoe gerekend": the one text of the tab, the desk's popover reads it too (design C.9). */

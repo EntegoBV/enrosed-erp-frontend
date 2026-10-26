@@ -95,6 +95,9 @@ export interface ForecastOrder {
   invoiceNumbers?: string[];
   /** 'Inspectie via leverancier': the inspection item names the supplier. */
   inspectionViaSupplier?: boolean;
+  /** Financing is separate from our share of the auction result. Amounts exclude VAT. */
+  partnerTerms?: { financingPct: number; profitSharePct: number; advanceEur: number; vatPct: number;
+    settlementRecorded: boolean; advances: { date: Iso; amountEur: number; title: string; paid: boolean; approx: boolean }[] };
 }
 export interface ForecastInvoice { salesOrderId: number; number: string; party: string; partner: boolean; advance: boolean; dueDate: Iso; remainingEur: number; delayDays: number; }
 export interface ForecastAdvanceRow { orderId: number; orderNumber: string; rowId: number; label: string; party: string; dueDate: Iso | null; amountInclEur: number; vatEur: number; }
@@ -146,9 +149,12 @@ export interface ResolvedChoice {
   defaultSellWeeks: number; seasonalAvailable: boolean;
   origin: Record<'priceMode' | 'markupPct' | 'markupEurPerUnit' | 'costBasis' | 'sellWeeks' | 'paymentDays' | 'seasonal' | 'included', ChoiceOrigin>;
 }
+export interface PartnerScenario { financingPct: number; profitSharePct: number; proceedsEur: number; externalCostEur: number;
+  advanceEur: number; profitEur: number; settlementEur: number; }
 export interface ScenarioSource { id: 'stock' | number; label: string; sub: string; status: 'STOCK' | 'CONCEPT' | 'BESTELD' | 'ONDERWEG';
   included: boolean; locked: boolean; lockedText: string | null; choice: ResolvedChoice | null;
   units: number; costEur: number; backEur: number; cashInHorizonEur: number;
+  partnerScenario?: PartnerScenario;
   /** The stock's sales plan per product (Analyses drill "Huidige voorraad"): Σ backEur = backEur. Only on the stock. */
   products?: { productId: number | null; name: string; units: number; costUnitEur: number; priceUnitEur: number; backEur: number }[]; }
 export interface LikelyPaidMatch { lineId: number; itemKey: string; orderId: number | null; title: string; amountEur: number;
@@ -193,6 +199,7 @@ export interface PoSheet {
   choice: ResolvedChoice | null; departure: { date: Iso; certainty: ForecastCertainty; ruleText: string; stored: boolean } | null;
   lane: { day: Iso; eur: number }[]; flows: PoFlowRow[]; likelyPaid: LikelyPaidMatch[]; products: PoProductRow[];
   salesWindow: { from: Iso; to: Iso; weeks: number; text: string } | null;
+  partnerScenario?: PartnerScenario;
 }
 export interface OrderDateSuggestion { orderId: number; currentDate: Iso; currentLowestEur: number; currentLowestDay: Iso;
   suggestedDate: Iso; rule: 'buffer' | 'lowest'; }
@@ -639,8 +646,8 @@ export function resolveChoice(order: ForecastOrder | null, stored: PurchaseOrder
   const [sellWeeks, sellWeeksOrigin] = pick(stored?.sellWeeks, defaults.sellWeeks, defaultWeeks);
   const [paymentDays, paymentDaysOrigin] = pick(stored?.paymentDays, defaults.paymentDays, history.paymentDays ?? 30);
   const [seasonal, seasonalOrigin] = pick(stored?.seasonal, defaults.seasonal, seasonalAvailable);
-  const statusIncluded = !order ? true : !order.partner && !order.archived && (order.status === 'BESTELD' || order.status === 'ONDERWEG');
-  const [included, includedOrigin] = pick(order?.partner ? null : stored?.included, null, statusIncluded);
+  const statusIncluded = !order ? true : !order.archived && !order.partnerTerms?.settlementRecorded && (order.status === 'BESTELD' || order.status === 'ONDERWEG');
+  const [included, includedOrigin] = pick(stored?.included, null, statusIncluded);
   const orderDate = !order ? today : order.status === 'CONCEPT' ? (stored?.orderDateOverride ?? order.orderDate) : order.orderDate;
   return {
     priceMode, markupPct: finite(markupPct), markupEurPerUnit: finite(markupEurPerUnit), costBasis,
@@ -957,7 +964,7 @@ function vatNets(input: CashForecastInput, quarters: readonly Quarter[], items: 
       : index === 1 ? toCents(knownRow?.knownNetEur) : 0;
     let net = known + carry;
     for (const item of items) {
-      if (item.vatEur > 0 && item.amountEur > 0 && inQuarter(item.vatDate, q)) net -= toCents(item.vatEur);
+      if (item.vatEur !== 0 && inQuarter(item.vatDate, q)) net -= toCents(item.vatEur);
       if (item.kind === 'IMPORT_VAT' && inQuarter(item.date, q)) net += toCents(item.deductibleVatEur);
     }
     carry = Math.max(0, net);
@@ -1005,7 +1012,7 @@ function scenarioVatItems(input: CashForecastInput, quarters: readonly Quarter[]
 /* ============================================================= scenario */
 
 interface SalesPlan { items: ForecastItem[]; slow: ForecastItem[]; backCents: number; costCents: number; units: number;
-  products: PoProductRow[]; window: { from: Iso; to: Iso; weeks: number } | null; seasonal: boolean; }
+  products: PoProductRow[]; window: { from: Iso; to: Iso; weeks: number } | null; seasonal: boolean; partnerScenario?: PartnerScenario; }
 
 function unitPriceOf(line: ForecastOrderLine, choice: ResolvedChoice, costUnit: number): number {
   const markup = round4(costUnit * (1 + choice.markupPct / 100));
@@ -1020,7 +1027,7 @@ function unitPriceOf(line: ForecastOrderLine, choice: ResolvedChoice, costUnit: 
 
 /** The weekly sales of one source from `start`: price per product, spread over the sell weeks, paid after the payment term. */
 function salesPlan(input: CashForecastInput, keyBase: string, titleBase: string, orderId: number | null, lines: readonly ForecastOrderLine[],
-  choice: ResolvedChoice, start: Iso): SalesPlan {
+  choice: ResolvedChoice, start: Iso, order?: ForecastOrder): SalesPlan {
   const today = input.today;
   const products: PoProductRow[] = [];
   let backCents = 0;
@@ -1040,24 +1047,39 @@ function salesPlan(input: CashForecastInput, keyBase: string, titleBase: string,
   }
   const weeks = Math.max(1, choice.sellWeeks);
   const seasonal = choice.seasonal && !!input.history.seasonal;
-  if (backCents <= 0) return { items: [], slow: [], backCents, costCents, units, products, window: null, seasonal };
+  let partnerScenario: PartnerScenario | undefined;
+  if (order?.partner) {
+    const terms = order.partnerTerms;
+    const profitSharePct = Math.max(0, Math.min(100, terms?.profitSharePct ?? 50));
+    const externalCents = lines.filter(line => line.quantity > 0).reduce((sum, line) => sum + toCents(line.externalEur), 0);
+    const advanceCents = toCents(terms?.advanceEur);
+    const profitCents = Math.round((backCents - externalCents) * profitSharePct / 100);
+    partnerScenario = { financingPct: terms?.financingPct ?? 100, profitSharePct, proceedsEur: toEur(backCents),
+      externalCostEur: toEur(externalCents), advanceEur: toEur(advanceCents), profitEur: toEur(profitCents),
+      settlementEur: toEur(externalCents + profitCents - advanceCents) };
+    // The advance already enters the bank through its invoice/schedule. Only the remaining
+    // settlement enters the scenario; its margin is our share of profit (including losses).
+    backCents = externalCents + profitCents - advanceCents;
+    costCents = externalCents - advanceCents;
+  }
+  if (!units || (!partnerScenario && backCents <= 0)) return { items: [], slow: [], backCents, costCents, units, products, window: null, seasonal, partnerScenario };
   const saleDays = Array.from({ length: weeks }, (_, index) => addDays(start, 7 * index));
   const weights = saleDays.map((day) => (seasonal ? input.history.seasonal![Number(day.slice(5, 7)) - 1] : 1));
   const excl = distributeCents(backCents, weights);
   const cost = distributeCents(costCents, weights);
-  const vatPct100 = Math.round(finite(input.history.vatPct) * 100);
+  const vatPct100 = Math.round(finite(order?.partner ? order.partnerTerms?.vatPct ?? input.history.vatPct : input.history.vatPct) * 100);
   const source: ForecastSource = orderId === null ? { type: 'stock' } : { type: 'container', orderId };
   const make = (index: number, shift: number): ForecastItem => {
     const sale = addDays(saleDays[index], shift);
     const cash = weekdayOrMonday(addDays(sale, choice.paymentDays));
     const vat = Math.round(excl[index] * vatPct100 / 10000);
     return itemOf({ key: `${keyBase}:${index}`, layer: 'SCENARIO', rule: null, kind: 'SALES', certainty: 'SCENARIO', ruleDate: cash,
-      ruleText: `verkoop ${dm(sale)} + ${choice.paymentDays} d betaaltermijn`, amountCents: excl[index] + vat, vatCents: vat, vatDate: sale,
-      costCents: cost[index], title: `${titleBase} · verkoop week ${index + 1}/${weeks}`, party: null, orderId, source }, today);
+      ruleText: `${partnerScenario ? 'partnerafrekening' : 'verkoop'} ${dm(sale)} + ${choice.paymentDays} d betaaltermijn`, amountCents: excl[index] + vat, vatCents: vat, vatDate: sale,
+      costCents: cost[index], title: `${titleBase} · ${partnerScenario ? 'partnerafrekening' : 'verkoop'} week ${index + 1}/${weeks}`, party: null, orderId, source }, today);
   };
   return {
     items: saleDays.map((_, index) => make(index, 0)), slow: saleDays.map((_, index) => make(index, SLOW_SALES_DAYS)),
-    backCents, costCents, units, products, window: { from: saleDays[0], to: saleDays[saleDays.length - 1], weeks }, seasonal,
+    backCents, costCents, units, products, window: { from: saleDays[0], to: saleDays[saleDays.length - 1], weeks }, seasonal, partnerScenario,
   };
 }
 
@@ -1095,14 +1117,14 @@ function scenarioOf(input: CashForecastInput, options: ForecastOptions): Scenari
     const label = order.alias ? `${order.number} · ${order.alias}` : order.number;
     const status = order.status as ScenarioSource['status'];
     const units = order.lines.reduce((sum, line) => sum + finite(line.quantity), 0);
-    if (order.partner) {
-      sources.push({ id: order.orderId, label, sub: 'Partner · Volgt het voorschotschema, geen marge', status, included: false, locked: true,
-        lockedText: 'Volgt het voorschotschema, geen marge', choice: null, units,
+    if (order.partner && order.partnerTerms?.settlementRecorded) {
+      sources.push({ id: order.orderId, label, sub: 'Partner · afrekening uitgegeven', status, included: false, locked: true,
+        lockedText: 'Afrekening uitgegeven; verkoopscenario niet opnieuw toegevoegd', choice: null, units,
         costEur: toEur(order.lines.reduce((sum, line) => sum + toCents(line.externalEur), 0)), backEur: 0, cashInHorizonEur: 0 });
       continue;
     }
     const choice = resolveChoice(order, own, options.defaults, input.history, today, input.products);
-    const plan = salesPlan(input, `sales:${order.orderId}`, forecastContainerName(order), order.orderId, order.lines, choice, salesStartOf(order, own, today));
+    const plan = salesPlan(input, `sales:${order.orderId}`, forecastContainerName(order), order.orderId, order.lines, choice, salesStartOf(order, own, today), order);
     if (choice.included) {
       if (order.status === 'CONCEPT') {
         for (const row of input.containerRows) {
@@ -1120,8 +1142,9 @@ function scenarioOf(input: CashForecastInput, options: ForecastOptions): Scenari
     const arrival = arrivalOf(order, own).date;
     const sub = order.status === 'CONCEPT' ? `Bestellen ${dMon(orderDayOf(order, own))}`
       : `${order.status === 'ONDERWEG' ? 'Onderweg' : 'Besteld'} · aankomst ${dMon(arrival)}`;
-    sources.push({ id: order.orderId, label, sub, status, included: choice.included, locked: false, lockedText: null, choice, units: plan.units || units,
-      costEur: toEur(plan.costCents), backEur: toEur(plan.backCents), cashInHorizonEur: choice.included ? inHorizon(plan.items) : 0 });
+    sources.push({ id: order.orderId, label, sub: plan.partnerScenario ? `Partner · ${grouped(plan.partnerScenario.financingPct)}% financiering · ${grouped(plan.partnerScenario.profitSharePct)}% resultaat voor ENROSED` : sub,
+      status, included: choice.included, locked: false, lockedText: null, choice, units: plan.units || units,
+      costEur: toEur(plan.costCents), backEur: toEur(plan.backCents), cashInHorizonEur: choice.included ? inHorizon(plan.items) : 0, partnerScenario: plan.partnerScenario });
   }
   return { sources, items, slow };
 }
@@ -1501,7 +1524,7 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
   if (!order) return null;
   const today = input.today;
   const stored = storedMap(input).get(orderId) ?? null;
-  const choice = order.partner ? null : resolveChoice(order, stored, options.defaults, input.history, today, input.products);
+  const choice = order.partnerTerms?.settlementRecorded ? null : resolveChoice(order, stored, options.defaults, input.history, today, input.products);
   const title = order.alias ? `${order.number} · ${order.alias}` : order.number;
   const outflows = input.containerRows.filter((row) => row.orderId === orderId && toCents(row.remainingEur) > 0)
     .map((row) => itemOf({ ...containerDraft(order, row, stored, today), layer: 'BASE' }, today));
@@ -1510,7 +1533,7 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
   const pool = [...base.activeBefore.filter((item) => !outflowKeys.has(item.key) && item.kind !== 'VAT'), ...outflows];
   const matches = likelyPaid(pool, input.bankLines, today, options.dismissed).filter((match) => outflowKeys.has(match.itemKey));
   const matchOf = new Map(matches.map((match) => [match.itemKey, match]));
-  const plan = choice ? salesPlan(input, `sales:${orderId}`, forecastContainerName(order), orderId, order.lines, choice, salesStartOf(order, stored, today)) : null;
+  const plan = choice ? salesPlan(input, `sales:${orderId}`, forecastContainerName(order), orderId, order.lines, choice, salesStartOf(order, stored, today), order) : null;
 
   const paidCents = toCents(order.paidEur);
   const outstandingCents = -sumCents(outflows);
@@ -1527,11 +1550,15 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
     events.push({ day: payments.length ? [...payments].sort((left, right) => left.paidOn.localeCompare(right.paidOn))[0].paidOn : today, cents: -paidCents, outflow: true });
   }
   for (const item of outflows) events.push({ day: matchOf.get(item.key)?.day ?? item.date, cents: toCents(item.amountEur), outflow: true });
-  for (const item of plan?.items ?? []) events.push({ day: item.date, cents: toCents(item.amountEur) - toCents(item.vatEur), outflow: false });
+  for (const advance of order.partnerTerms?.advances ?? []) events.push({ day: advance.date, cents: toCents(advance.amountEur), outflow: false });
+  for (const item of plan?.items ?? []) {
+    const cents = toCents(item.amountEur) - toCents(item.vatEur);
+    events.push({ day: item.date, cents, outflow: cents < 0 });
+  }
   events.sort((left, right) => left.day.localeCompare(right.day));
 
   let breakEvenOn: Iso | null = null;
-  if (!order.partner) {
+  if (choice) {
     const lastOutflow = events.filter((event) => event.outflow).map((event) => event.day).sort().pop() ?? null;
     let cumulative = 0;
     for (let index = 0; index < events.length; index++) {
@@ -1542,7 +1569,7 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
     }
   }
   const arrival = arrivalOf(order, stored).date;
-  const breakEvenText = order.partner ? 'Partnercontainer · volgt het voorschotschema, geen marge'
+  const breakEvenText = order.partnerTerms?.settlementRecorded ? 'Partnercontainer · afrekening telt apart mee'
     : breakEvenOn ? `Terugverdiend op ${wdDMon(breakEvenOn)} · ${Math.round(daysBetween(arrival, breakEvenOn) / 7)} weken na aankomst`
       : 'Nog niet terugverdiend binnen de verkoopperiode';
 
@@ -1570,11 +1597,10 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
       : { date: item.date, approx: item.certainty !== 'FIXED', title: short(item), status: `Afspraak · ${item.ruleText}`, amountEur: item.amountEur, kind: 'open', lineId: null });
   }
   if (order.partner) {
-    for (const row of input.advanceRows.filter((advance) => advance.orderId === orderId)) {
-      const due = row.dueDate && row.dueDate >= today ? row.dueDate : today;
-      dated.push({ date: due, approx: row.dueDate === null || row.dueDate < today, title: row.label,
-        status: row.dueDate ? `Afspraak · voorschotschema · vervalt ${dm(row.dueDate)}` : 'Afspraak · voorschotschema · geen vervaldag',
-        amountEur: toEur(toCents(row.amountInclEur) - toCents(row.vatEur)), kind: 'open', lineId: null });
+    for (const row of order.partnerTerms?.advances ?? []) {
+      dated.push({ date: row.date, approx: row.approx, title: row.title,
+        status: row.paid ? 'Partnerfinanciering · ontvangen' : 'Partnerfinanciering · verwacht',
+        amountEur: row.amountEur, kind: row.paid ? 'paid' : 'open', lineId: null });
     }
   }
   dated.sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''));
@@ -1582,17 +1608,21 @@ export function poSheet(input: CashForecastInput, options: ForecastOptions, orde
     { date: null, approx: false, title: 'Enrosed-kost', status: 'intern, geen transactie', amountEur: toEur(toCents(order.internalMarkupEur)), kind: 'internal', lineId: null }];
   const salesWindow = plan?.window && choice ? { ...plan.window, text: `${dMonRange(plan.window.from, plan.window.to)} · ${plan.window.weeks} w · ${plan.seasonal ? 'seizoen' : 'gelijkmatig'} · ${choice.paymentDays} d` } : null;
   if (plan && salesWindow) {
-    flows.push({ date: salesWindow.from, approx: true, title: `Verkoop · ${grouped(plan.units)} stuks`, status: salesWindow.text, amountEur: toEur(backCents), kind: 'sales', lineId: null });
+    flows.push({ date: salesWindow.from, approx: true, title: `${order.partner ? 'Partnerafrekening' : 'Verkoop'} · ${grouped(plan.units)} stuks`, status: salesWindow.text, amountEur: toEur(backCents), kind: 'sales', lineId: null });
   }
-  const marginPct = !choice || backCents <= 0 ? 0 : choice.priceMode === 'MARKUP_PCT'
-    ? round1(choice.markupPct / (100 + choice.markupPct) * 100) : round1((backCents - (plan?.costCents ?? 0)) / backCents * 100);
+  // Price margin describes the estimated goods price before financing/profit sharing.
+  // The partner's net settlement may be zero or negative without changing that ratio.
+  const proceedsCents = plan?.products.reduce((sum, row) => sum + toCents(row.backEur), 0) ?? 0;
+  const pricingCostCents = order.lines.filter(line => line.quantity > 0)
+    .reduce((sum, line) => sum + toCents(choice?.costBasis === 'PRICING' ? line.pricingEur : line.externalEur), 0);
+  const marginPct = !choice || proceedsCents <= 0 ? 0 : round1((proceedsCents - pricingCostCents) / proceedsCents * 100);
   const departure = order.status === 'BESTELD' ? departureOf(order, stored) : null;
   return {
     orderId, title, status: order.status, partner: order.partner,
-    netEur: toEur(backCents - paidCents - outstandingCents), breakEvenOn, breakEvenText,
+    netEur: toEur(backCents + toCents(order.partnerTerms?.advanceEur) - paidCents - outstandingCents), breakEvenOn, breakEvenText,
     paidEur: toEur(paidCents), outstandingEur: toEur(outstandingCents), backEur: toEur(backCents), marginPct, choice,
     departure: departure ? { date: departure.date, certainty: departure.certainty, ruleText: departure.text, stored: !!stored?.expectedShipOn } : null,
-    lane, flows, likelyPaid: matches, products: plan?.products ?? [], salesWindow,
+    lane, flows, likelyPaid: matches, products: plan?.products ?? [], salesWindow, partnerScenario: plan?.partnerScenario,
   };
 }
 

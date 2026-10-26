@@ -1,11 +1,13 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import type { CostBasis, PriceMode } from '../../core/api/models';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { CashState } from './cash-state';
-import { marginOfMarkup, pct, realisedHint, standardMarkupNote } from './cash-view';
+import { pct, realisedHint, standardMarkupNote } from './cash-view';
+import { CashPriceEditor } from './cash-price-editor';
+import { parseCashAmount } from './cash-price-input';
 
 const PRICE_OPTIONS: SegmentOption[] = [
-  { id: 'MARKUP_PCT', label: 'Opslag' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijstprijs' }, { id: 'HISTORIC', label: 'Historisch' },
+  { id: 'MARKUP_PCT', label: 'Marge %' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijstprijs' }, { id: 'HISTORIC', label: 'Historisch' },
 ];
 const BASIS_OPTIONS: SegmentOption[] = [{ id: 'EXTERNAL', label: 'Externe kost' }, { id: 'PRICING', label: '+ Enrosed-kost' }];
 const WEEK_CHOICES = [8, 12, 16, 26];
@@ -19,7 +21,7 @@ const DAY_CHOICES = [14, 30, 45, 60];
 @Component({
   selector: 'app-cash-defaults',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Segmented],
+  imports: [CashPriceEditor, Segmented],
   template: `
     <div class="cf-defaults" [class.cf-defaults--ios]="ios()">
       @if (part() === 'all' || part() === 'price') {
@@ -32,19 +34,17 @@ const DAY_CHOICES = [14, 30, 45, 60];
             <label class="cf-ctl__label" for="cf-def-stuk">Opslag per stuk</label>
             <span class="cf-money"><span>€</span>
               <input id="cf-def-stuk" class="cf-input" type="text" inputmode="decimal" autocomplete="off" [value]="perUnitText()"
+                     [attr.aria-invalid]="perUnitError() ? 'true' : null" [attr.aria-describedby]="perUnitError() ? 'cf-def-stuk-error' : null"
+                     (input)="perUnitError.set(null)"
                      (change)="setPerUnit($any($event.target).value)" /></span>
           </div>
+          @if (perUnitError(); as error) { <p id="cf-def-stuk-error" class="cf-buffer__error" role="alert">{{ error }}</p> }
         } @else {
-          <div class="cf-ctl cf-ctl--inline">
-            <span class="cf-ctl__label">Opslag op kost</span>
-            <span class="cf-step" role="group" aria-label="Opslag op kost">
-              <button type="button" aria-label="5 % minder" [disabled]="markup() <= 0" (click)="stepMarkup(-5)">−</button>
-              <output>{{ pctText(markup()) }} %</output>
-              <button type="button" aria-label="5 % meer" [disabled]="markup() >= 1000" (click)="stepMarkup(5)">+</button>
-            </span>
-          </div>
-          <p class="cf-ctl__hint">= marge {{ marginText() }}@if (realisedText()) { · {{ realisedText() }} }@if (standardNote() && location().markupPct === null) { · {{ standardNote() }} }
-            @if (priceMode() !== 'MARKUP_PCT') { · voor producten zonder {{ priceMode() === 'LIST' ? 'lijstprijs' : 'factuurprijs' }} }</p>
+          @if (priceMode() !== 'MARKUP_PCT') { <p class="cf-ctl__hint">Voor producten zonder {{ priceMode() === 'LIST' ? 'lijstprijs' : 'factuurprijs' }}:</p> }
+          <app-cash-price-editor [variant]="variant()" [markupPct]="markup()" (markupPctChange)="setMarkup($event)" />
+          @if (realisedText() || (standardNote() && location().markupPct === null)) {
+            <p class="cf-ctl__hint">{{ realisedText() }}@if (standardNote() && location().markupPct === null) { · {{ standardNote() }} }</p>
+          }
         }
         <div class="cf-ctl">
           <span class="cf-ctl__label">Kostbasis</span>
@@ -81,6 +81,7 @@ export class CashDefaults {
   readonly priceOptions = PRICE_OPTIONS;
   readonly basisOptions = BASIS_OPTIONS;
   readonly pctText = pct;
+  readonly perUnitError = signal<string | null>(null);
 
   readonly location = this.state.location;
   private readonly history = computed(() => this.state.input()?.history ?? null);
@@ -94,7 +95,6 @@ export class CashDefaults {
   readonly markup = computed(() => this.location().markupPct ?? this.realised() ?? 50);
   readonly perUnitText = computed(() => String(this.location().markupEurPerUnit ?? 0).replace('.', ','));
   readonly costBasis = computed<CostBasis>(() => this.location().costBasis ?? 'EXTERNAL');
-  readonly marginText = computed(() => marginOfMarkup(this.markup()));
 
   readonly weekOptions = computed<SegmentOption[]>(() => {
     const weeks = this.location().sellWeeks;
@@ -133,14 +133,11 @@ export class CashDefaults {
   setDays(value: string): void { this.state.setDefault('paymentDays', value === '' ? null : Number(value)); }
   setSeason(value: string): void { this.state.setDefault('seasonal', value === 'seizoen'); }
 
-  stepMarkup(step: number): void {
-    const next = Math.min(1000, Math.max(0, Math.round((this.markup() + step) / 5) * 5));
-    this.state.setDefault('markupPct', next);
-  }
+  setMarkup(value: number): void { this.state.setDefault('markupPct', value); }
 
   setPerUnit(raw: string): void {
-    const value = Number(String(raw).replace(',', '.'));
-    if (!Number.isFinite(value) || value < 0) return;
-    this.state.setDefault('markupEurPerUnit', Math.round(value * 10000) / 10000);
+    const parsed = parseCashAmount(raw);
+    this.perUnitError.set(parsed.error);
+    if (parsed.error === null) this.state.setDefault('markupEurPerUnit', parsed.value);
   }
 }

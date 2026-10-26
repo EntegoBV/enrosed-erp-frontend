@@ -16,6 +16,7 @@ import { CashPageData, CashSources } from './cash-sources';
 import { cashLink, cashQueryParams, parseCashLocation, withoutScenarioDefaults } from './cash-url';
 import type { CashLocation } from './cash-url';
 import { CHOICE_FIELDS, adjusted, forecastReady, forecastWrite } from './cash-view';
+import { CashWriteQueue } from './cash-write-queue';
 
 const SAVE_DELAY_MS = 600;
 /** The choices a link can carry for every container (the rest only exists per order). */
@@ -52,7 +53,12 @@ export class CashState {
   /** Choices typed here and not yet saved (or, on a server without this round, kept for this visit only). */
   private readonly pending = signal<ReadonlyMap<number, PurchaseOrderForecastWrite>>(new Map());
   private readonly timers = new Map<number, ReturnType<typeof setTimeout>>();
+  private readonly writes = new CashWriteQueue();
   readonly choiceErrors = signal<Readonly<Record<number, string>>>({});
+  /** Includes the debounce and queued requests, so a draft never looks saved too soon. */
+  readonly choiceSaving = computed<ReadonlySet<number>>(() => new Set(
+    this.cashRound() ? [...this.pending().keys()].filter((id) => !this.choiceErrors()[id]) : [],
+  ));
   readonly bufferSaving = signal(false);
 
   constructor() {
@@ -207,17 +213,27 @@ export class CashState {
     if (!this.sources.choicesKnown()) return;
     const timer = this.timers.get(orderId);
     if (timer) { clearTimeout(timer); this.timers.delete(orderId); }
-    const before = this.storedFor(orderId);
-    this.dropPending(orderId);
     this.clearChoiceError(orderId);
-    if (!this.cashRound()) return;
-    try {
-      await this.api.deleteForecast(orderId);
-      this.sources.acceptForecast(orderId, null);
-    } catch (failure) {
-      if (before) this.setPending(orderId, forecastWrite(before, {}));
-      this.choiceErrors.update((errors) => ({ ...errors, [orderId]: messageOf(failure, 'Terug naar standaard lukte niet') }));
-    }
+    if (!this.cashRound()) { this.dropPending(orderId); return; }
+    /* Keep a default-valued draft until DELETE completes. Edits made while
+       resetting then build on the defaults, not on the old server values. */
+    this.setPending(orderId, forecastWrite(null, {}));
+    await this.flush(orderId);
+  }
+
+  choiceStatus(orderId: number): 'saving' | 'error' | 'saved' | 'local' {
+    if (this.choiceErrors()[orderId]) return 'error';
+    if (!this.cashRound()) return 'local';
+    return this.choiceSaving().has(orderId) ? 'saving' : 'saved';
+  }
+
+  /** Retry exactly the draft still shown after a failed write. */
+  async retryChoice(orderId: number): Promise<void> {
+    if (!this.cashRound() || !this.pending().has(orderId)) return;
+    const timer = this.timers.get(orderId);
+    if (timer) { clearTimeout(timer); this.timers.delete(orderId); }
+    this.clearChoiceError(orderId);
+    await this.flush(orderId);
   }
 
   /** Saves the order date a Concept is tried with, with an undo. */
@@ -253,20 +269,27 @@ export class CashState {
   private async flush(orderId: number): Promise<void> {
     const write = this.pending().get(orderId);
     if (!write) return;
-    try {
-      const empty = CHOICE_FIELDS.every((field) => write[field] === null);
-      if (empty) {
-        await this.api.deleteForecast(orderId);
-        this.sources.acceptForecast(orderId, null);
-      } else {
-        this.sources.acceptForecast(orderId, await this.api.saveForecast(orderId, write));
+    await this.writes.run(orderId, async () => {
+      /* A newer edit/reset replaced this queued draft before it started. */
+      if (this.pending().get(orderId) !== write) return;
+      try {
+        const empty = CHOICE_FIELDS.every((field) => write[field] === null);
+        if (empty) {
+          await this.api.deleteForecast(orderId);
+          this.sources.acceptForecast(orderId, null);
+        } else {
+          this.sources.acceptForecast(orderId, await this.api.saveForecast(orderId, write));
+        }
+        if (this.pending().get(orderId) === write) this.clearChoiceError(orderId);
+        this.dropPending(orderId, write);
+      } catch (failure) {
+        /* Keep the latest draft visible and retryable. An older failed
+           request must not attach its error to a newer pending choice. */
+        if (this.pending().get(orderId) === write) {
+          this.choiceErrors.update((errors) => ({ ...errors, [orderId]: messageOf(failure, 'Bewaren bij de container lukte niet') }));
+        }
       }
-      this.dropPending(orderId, write);
-    } catch (failure) {
-      /* The server refused: the inline message says why, the control goes back to what is stored. */
-      this.dropPending(orderId, write);
-      this.choiceErrors.update((errors) => ({ ...errors, [orderId]: messageOf(failure, 'Bewaren bij de container lukte niet') }));
-    }
+    });
   }
 
   /* --------------------------------------------------------------- others */

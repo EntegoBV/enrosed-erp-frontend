@@ -33,13 +33,14 @@ function harness(overrides: { schedule?: (id: number) => Promise<unknown>; withS
     if (failing.has(name)) throw new Error(`${name} failed`);
     return value;
   };
-  const tokens = { banking: Symbol('BankingApi'), finance: Symbol('FinanceApi'), sourcing: Symbol('SourcingApi'), sales: Symbol('SalesApi'), cash: Symbol('CashForecastApi') };
+  const tokens = { banking: Symbol('BankingApi'), finance: Symbol('FinanceApi'), sourcing: Symbol('SourcingApi'), sales: Symbol('SalesApi'), cash: Symbol('CashForecastApi'), tica: Symbol('TicaApi') };
   const services = new Map<symbol, object>([
     [tokens.banking, { accounts: answer('accounts', []), list: answer('statements', [{ id: 1 }]) }],
     [tokens.finance, { bankBalances: answer('balances', []), recurringCosts: answer('recurring', []) }],
     [tokens.sourcing, { purchasePayments: answer('payments', []), partnerAdvanceSchedule: overrides.schedule ?? answer('schedule', null) }],
     [tokens.sales, { company: answer('company', null) }],
     [tokens.cash, { forecasts: answer('forecasts', []), settings: answer('settings', null) }],
+    [tokens.tica, { settlements: answer('ticaSettlements', []), analytics: answer('ticaSales', []) }],
   ]);
   const exports: { CashData?: new () => CashData; cashDataStale?: typeof import('../src/app/features/analyses/cash-sources.ts').cashDataStale } = {};
   vm.runInNewContext(code, {
@@ -49,7 +50,7 @@ function harness(overrides: { schedule?: (id: number) => Promise<unknown>; withS
       if (!service) throw new Error(`Unexpected injection: ${String(token)}`);
       return service;
     },
-    BankingApi: tokens.banking, FinanceApi: tokens.finance, SourcingApi: tokens.sourcing, SalesApi: tokens.sales, CashForecastApi: tokens.cash,
+    BankingApi: tokens.banking, FinanceApi: tokens.finance, SourcingApi: tokens.sourcing, SalesApi: tokens.sales, CashForecastApi: tokens.cash, TicaApi: tokens.tica,
     threeMonthsBack: () => '2026-07-01', bankAccountKey: (key: string) => key, canonicalBankAccount: (key: string) => key,
     bankCheckpoint: () => Number.NaN, paymentLocalDay: () => null, financingsWithSchedule: overrides.withSchedule ?? (() => []),
   });

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type { CostBasis, PriceMode, PurchaseOrderForecastWrite } from '../../core/api/models';
@@ -8,6 +8,8 @@ import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import type { ChoiceOrigin, PoFlowRow, ResolvedChoice } from '../finance/cash-forecast';
 import { dayMon, eurWhole } from '../finance/cash-format';
+import { CashPriceEditor } from './cash-price-editor';
+import { parseCashAmount } from './cash-price-input';
 import { CashState } from './cash-state';
 import { likelyPaidText, lineLink, marginOfMarkup, pct, peakMonth, signedWhole } from './cash-view';
 import type { CashLink } from './cash-view';
@@ -15,7 +17,6 @@ import type { CashLink } from './cash-view';
 const PRICE_OPTIONS: SegmentOption[] = [
   { id: 'MARKUP_PCT', label: 'Opslag %' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijst' }, { id: 'HISTORIC', label: 'Historisch' },
 ];
-const QUICK_MARKUPS = [40, 50, 60, 75];
 
 /**
  * One container on its own (spec §4.4): what it costs, what its sales bring
@@ -27,7 +28,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
 @Component({
   selector: 'app-cash-po-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CashChart, DateField, Icon, NgTemplateOutlet, RouterLink, Segmented],
+  imports: [CashPriceEditor, CashChart, DateField, Icon, NgTemplateOutlet, RouterLink, Segmented],
   template: `
     @if (sheet(); as s) {
       <div class="cf-po" [class.cf-po--ios]="ios()">
@@ -39,19 +40,33 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
           </header>
         }
         <div class="cf-po__headline">
-          @if (s.partner) {
-            <p class="cf-po__partner">Partnercontainer · volgt het voorschotschema, geen marge</p>
+          @if (s.partner && !s.choice) {
+            <p class="cf-po__partner">{{ s.breakEvenText }}</p>
           } @else {
-            <small>Netto voor deze container</small>
+            <small>{{ s.partner ? 'Netto voor ENROSED' : 'Netto voor deze container' }}</small>
             <strong [class.is-neg]="s.netEur < 0" [class.is-pos]="s.netEur > 0">{{ signed(s.netEur) }}</strong>
             <p>{{ s.breakEvenText }}{{ etaText() }}</p>
           }
         </div>
-        @if (lane().length && !s.partner) {
+        @if (lane().length && s.choice) {
           <div class="cf-po__lane">
             <app-cash-chart variant="lane" [series]="lane()" [markers]="laneMarkers()" [today]="state.today" [bufferEur]="null" [height]="ios() ? 150 : 140"
                             ariaLabel="Netto per dag voor deze container" emptyText="Nog geen bewegingen" />
           </div>
+        }
+        @if (s.partnerScenario; as partner) {
+          <details class="cf-partner-summary" [open]="!ios()">
+            <summary class="cf-partner-summary__title"><app-icon name="customers" [size]="17" /><b>Partnerafspraak · {{ pctText(partner.profitSharePct) }} % voor ENROSED</b><app-icon name="chevron-down" [size]="14" /></summary>
+            <p>Partner financiert {{ pctText(partner.financingPct) }} % van de kost. ENROSED ontvangt {{ pctText(partner.profitSharePct) }} % van het resultaat.</p>
+            <dl>
+              <div><dt>Verwachte verkoop excl. btw</dt><dd>{{ whole(partner.proceedsEur) }}</dd></div>
+              <div><dt>Externe containerkost</dt><dd>{{ whole(partner.externalCostEur) }}</dd></div>
+              <div><dt>Resultaat voor ENROSED</dt><dd>{{ signed(partner.profitEur) }}</dd></div>
+              <div><dt>Voorschotten verrekend</dt><dd>{{ whole(partner.advanceEur) }}</dd></div>
+              <div class="is-total"><dt>Verwachte afrekening excl. btw</dt><dd>{{ signed(partner.settlementEur) }}</dd></div>
+            </dl>
+            <small>De verkoopmarge stel je hieronder in. De verdeling volgt de afspraak op de container.</small>
+          </details>
         }
         <div class="cf-po__figs">
           <div><small>Betaald</small><b>{{ whole(s.paidEur) }}</b></div>
@@ -61,7 +76,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
 
         <!-- While the stored choices are unknown every control here waits: a write would replace them. -->
         <fieldset class="cf-po__choices" aria-label="Keuzes voor deze container" [disabled]="state.choicesFailed()">
-          @if (!s.partner && s.choice; as c) {
+          @if (s.choice; as c) {
             <section class="cf-po__sec" aria-label="Verkoop · jouw keuze">
               <h4 class="cf-po__sec-title">Verkoop · jouw keuze @if (c.origin.priceMode === 'stored' || c.origin.markupPct === 'stored' || c.origin.markupEurPerUnit === 'stored') { <span class="cf-adjusted">aangepast</span> }</h4>
               <app-segmented [variant]="ios() ? 'ios' : 'desk'" label="Verkoopprijs" [options]="priceOptions" [value]="c.priceMode" (changed)="change({ priceMode: asPrice($event) })" />
@@ -69,26 +84,17 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
                 @switch (c.priceMode) {
                   @case ('EUR_PER_UNIT') {
                     <label class="cf-po__field"><span>Opslag per stuk</span>
-                      <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag per stuk in euro" [value]="decimal(c.markupEurPerUnit)"
+                      <span class="cf-money"><span>€</span><input class="cf-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag per stuk in euro" [value]="decimal(c.markupEurPerUnit)" [attr.aria-invalid]="priceError() ? true : null"
                         (change)="setPerUnit($any($event.target).value)" /></span></label>
                     <p class="cf-po__note">kost per stuk + dit bedrag = marge {{ pctText(s.marginPct) }} %</p>
                   }
                   @case ('LIST') { <p class="cf-po__note">Prijs per product uit de lijstprijs · marge {{ pctText(s.marginPct) }} %</p> }
                   @case ('HISTORIC') { <p class="cf-po__note">Prijs per product uit je facturen van de laatste 12 maanden · marge {{ pctText(s.marginPct) }} %</p> }
                   @default {
-                    <label class="cf-po__big"><input type="text" inputmode="decimal" autocomplete="off" aria-label="Opslag op de kost in procent" [value]="pctText(c.markupPct)"
-                      (change)="setMarkup($any($event.target).value)" /><span>%</span></label>
-                    <p class="cf-po__note">opslag op de kost = marge <b>{{ margin(c.markupPct) }}</b></p>
-                    <div class="cf-po__chips">
-                      @for (value of quickMarkups; track value) {
-                        <button type="button" class="cf-chip" [class.is-on]="c.markupPct === value" [attr.aria-pressed]="c.markupPct === value" (click)="change({ markupPct: value })">{{ value }} %</button>
-                      }
-                      @if (realised() !== null) {
-                        <button type="button" class="cf-chip cf-chip--soft" [class.is-on]="c.markupPct === realised()" (click)="change({ markupPct: realised() })">vorig jaar {{ pctText(realised()!) }} %</button>
-                      }
-                    </div>
+                    <app-cash-price-editor [variant]="ios() ? 'ios' : 'desk'" [markupPct]="c.markupPct" (markupPctChange)="change({ markupPct: $event })" />
                   }
                 }
+                @if (priceError(); as message) { <p class="cf-po__error" role="alert">{{ message }}</p> }
               </div>
             </section>
 
@@ -141,7 +147,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
               </div>
             </div>
           }
-          @if (s.status === 'CONCEPT' && !s.partner) {
+          @if (s.status === 'CONCEPT' && s.choice) {
             <div class="cf-po__cells">
               <div class="cf-po__cell">
                 <span class="cf-po__cell-head"><span>Bestellen op</span>@if (storedRow()?.orderDateOverride) { <span class="cf-adjusted">aangepast</span> }</span>
@@ -155,12 +161,17 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
         </fieldset>
 
         @if (error(); as message) { <p class="cf-po__error" role="alert">{{ message }}</p> }
-        <div class="cf-po__store">
+        <div class="cf-po__store" role="status" aria-live="polite">
           @if (state.choicesFailed()) {
             <span class="cf-po__failed">Keuzes konden niet laden</span>
             <button class="wk-link" type="button" [disabled]="state.sources.refreshing()" (click)="state.retryChoices()">Opnieuw</button>
           } @else if (state.cashRound()) {
-            <span>Bewaard bij de container.</span>
+            @if (state.choiceStatus(s.orderId) === 'saving') {
+              <span>Bezig met bewaren…</span>
+            } @else if (state.choiceStatus(s.orderId) === 'error') {
+              <span class="cf-po__failed">Nog niet bewaard</span>
+              <button class="wk-link" type="button" (click)="state.retryChoice(s.orderId)">Opnieuw bewaren</button>
+            } @else { <span>Bewaard bij de container.</span> }
             @if (storedRow()) { <button class="wk-link" type="button" (click)="state.resetChoice(s.orderId)">Terug naar standaard</button> }
           } @else {
             <span>Bewaren bij de container kan zodra de server bijgewerkt is.</span>
@@ -209,7 +220,7 @@ const QUICK_MARKUPS = [40, 50, 60, 75];
                 }
               }
             </div>
-            <p class="cf-po__note">Kost per stuk per product, geen containergemiddelde.</p>
+            <p class="cf-po__note">{{ s.partner ? "Verwachte verkoopopbrengst per product, vóór de partnerverdeling hierboven." : "Kost en verkoopprijs per product, excl. btw." }}</p>
           </section>
         }
 
@@ -243,7 +254,6 @@ export class CashPoSheet {
   protected readonly Math = Math;
   readonly ios = computed(() => this.variant() === 'ios');
   readonly priceOptions = PRICE_OPTIONS;
-  readonly quickMarkups = QUICK_MARKUPS;
   readonly dayMon = dayMon;
   readonly pctText = pct;
   readonly margin = marginOfMarkup;
@@ -297,19 +307,18 @@ export class CashPoSheet {
   change(change: Partial<PurchaseOrderForecastWrite>): void {
     const sheet = this.sheet();
     if (sheet) this.state.changeChoice(sheet.orderId, change);
+    this.priceError.set(null);
   }
 
   asPrice(value: string): PriceMode { return value as PriceMode; }
   asBasis(value: string): CostBasis { return value as CostBasis; }
 
-  setMarkup(raw: string): void {
-    const value = Number(String(raw).replace(',', '.'));
-    if (Number.isFinite(value) && value >= 0 && value <= 1000) this.change({ markupPct: Math.round(value * 10) / 10 });
-  }
+  readonly priceError = signal<string | null>(null);
 
   setPerUnit(raw: string): void {
-    const value = Number(String(raw).replace(',', '.'));
-    if (Number.isFinite(value) && value >= 0) this.change({ markupEurPerUnit: Math.round(value * 10000) / 10000 });
+    const parsed = parseCashAmount(raw);
+    if (parsed.error !== null) { this.priceError.set(parsed.error); return; }
+    this.change({ markupEurPerUnit: parsed.value });
   }
 
   flowDate(flow: PoFlowRow): string {
