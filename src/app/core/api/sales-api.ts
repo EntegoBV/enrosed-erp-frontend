@@ -30,11 +30,12 @@ function revisionQuery(webOrderRevision: number | null | undefined): string {
 
 /**
  * A line's applied order step (unitsPerOrderStep) is stamped by the server
- * when it rounds; it never travels back, so a client cannot choose it.
+ * when it rounds, its stock cost (stockCostEur) at shipment; neither travels
+ * back, so a client cannot choose them.
  */
 function orderWriteBody(order: SalesOrder): SalesOrder {
-  if (!order.lines?.some((line) => 'unitsPerOrderStep' in line)) return order;
-  return { ...order, lines: order.lines.map(({ unitsPerOrderStep: _stamp, ...line }) => line) };
+  if (!order.lines?.some((line) => 'unitsPerOrderStep' in line || 'stockCostEur' in line)) return order;
+  return { ...order, lines: order.lines.map(({ unitsPerOrderStep: _stamp, stockCostEur: _stock, ...line }) => line) };
 }
 
 @Injectable({ providedIn: 'root' })
