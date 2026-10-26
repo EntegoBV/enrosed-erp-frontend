@@ -67,7 +67,7 @@ test('the rows: the tab root in full first, then what Meer lists for the group, 
   assert.deepEqual(sales.rows.map((row) => row.label), [
     'Verkooporders', 'TICA', 'Wijzigingen', 'Klanten', 'Login-aanvragen', 'Prospects', 'Contactaanvragen', 'Landen & vracht', 'Kortingen',
   ]);
-  assert.deepEqual(tabMenuFor('purchasing', NAV_GROUPS)!.rows.map((row) => row.label), ['Inkooporders', 'Leveranciers', 'Douane']);
+  assert.deepEqual(tabMenuFor('purchasing', NAV_GROUPS)!.rows.map((row) => row.label), ['Inkooporders', 'Leveranciers', 'Facturen', 'Douane']);
   const products = tabMenuFor('products', NAV_GROUPS)!;
   assert.equal(products.label, 'Producten');
   assert.deepEqual(products.rows.map((row) => row.label), [
@@ -205,7 +205,7 @@ test('the menu\'s current row and the lit tab agree: a row is marked only under 
   const urls = [
     ...MENUS.flatMap((menu) => menu.rows.flatMap((row) => [navItemUrl(row.item), `${row.item.link}/3`])),
     '/sales/79/edit', '/stock/inventaris/telling/3', '/catalog/texts', '/prospects/4?tab=notities',
-    '/dashboard', '/more', '/costs', '/settings', '/settings?sectie=company', '/activity', '/analyses/cash', '/nope',
+    '/dashboard', '/more', '/costs', '/costs?view=invoices&po=62', '/settings', '/settings?sectie=company', '/activity', '/analyses/cash', '/nope',
   ];
   for (const url of urls) {
     const shell = shellAt(url);
@@ -229,6 +229,11 @@ test('the menu\'s current row and the lit tab agree: a row is marked only under 
   const discounts = sales.rows.find((row) => row.item.id === 'discounts')!;
   assert.equal(phoneTabForUrl('/settings?sectie=discounts'), 'more');
   assert.equal(shellAt('/settings?sectie=discounts').menuRowCurrent(sales, discounts), false);
+  /* likewise Kosten & bank's Facturen: no current row under Inkoop on the finder, which lights Meer */
+  const purchasing = MENUS[1];
+  const invoices = purchasing.rows.find((row) => row.item.id === 'invoices')!;
+  assert.equal(phoneTabForUrl('/costs?view=invoices'), 'more');
+  assert.equal(shellAt('/costs?view=invoices').menuRowCurrent(purchasing, invoices), false);
 });
 
 test('liesUnder: on a page, below its path, or below it by the parent chain', () => {
