@@ -58,6 +58,33 @@ test('dismissing an alert does not remove a still-pending proposal from its page
   } finally { injector.destroy(); }
 });
 
+test('container arrival reminders stay out of customer work and dismiss independently', async () => {
+  const arrival = { ...notification('CONTAINER_AANKOMST', 38), orderNumber: 'PO-2026-004', detail: 'Verwacht over 3 dagen' };
+  const sale = notification('VOORSTEL', 38);
+  const { queue, injector } = await queueWith([arrival, sale]);
+  try {
+    assert.equal(queue.actionCount(), 1);
+    assert.deepEqual(queue.actions(), [sale]);
+    assert.deepEqual(queue.arrivals(), [arrival]);
+    assert.equal(queue.news().length, 0);
+    queue.dismiss(arrival);
+    assert.equal(queue.arrivals().length, 0);
+    assert.equal(queue.actionCount(), 1);
+  } finally { injector.destroy(); }
+});
+
+test('dismissing ten-day arrival leaves the three-day notice visible without resurfacing every day', async () => {
+  const ten = { ...notification('CONTAINER_AANKOMST', 38), notificationId: 'purchase-38-voyage-10', detail: 'Aankomst Rotterdam op 12/11/2026', title: 'Over 10 dagen verwacht' };
+  const { queue, injector } = await queueWith([ten]);
+  try {
+    queue.dismiss(ten);
+    queue.items.set([{ ...ten, title: 'Over 9 dagen verwacht' }]);
+    assert.equal(queue.arrivals().length, 0);
+    queue.items.set([{ ...ten, notificationId: 'purchase-38-voyage-3', title: 'Over 3 dagen verwacht' }]);
+    assert.equal(queue.arrivals().length, 1);
+  } finally { injector.destroy(); }
+});
+
 type LoginSummary = { pending: number; intakeFull: boolean; intakeFullSources?: string[] };
 
 function queueWithSummary(summary: () => Promise<LoginSummary>, notifications = async () => ({ items: [] as AppNotification[] })) {

@@ -7,6 +7,7 @@ import { AppNotification } from '../core/api/models';
 import { Sheet } from './ui';
 import { Icon } from './icon';
 import { localDay, oldestFirst, waitLabel, waitingSummary, whenLabel } from './customer-wait';
+import { notificationTarget } from './notification-target';
 
 /**
  * The bell top right: what is waiting on us.
@@ -38,7 +39,7 @@ import { localDay, oldestFirst, waitLabel, waitingSummary, whenLabel } from './c
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'container nadert' : 'containers naderen' }}</b>} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -55,6 +56,14 @@ import { localDay, oldestFirst, waitLabel, waitingSummary, whenLabel } from './c
                 <button class="ios-capsule ios-capsule--sm" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Laden…' : 'Opnieuw proberen' }}</button>
               </div>
             }
+          }
+          @if (arrivalRows().length) {
+            <h3 class="bell-sec">Containers bijna aangekomen</h3>
+            <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
+              @for (row of arrivalRows(); track $index) {
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: 'tone-warn', tile: 'tone-warn', aria: row.when }" />
+              }
+            </ul>
           }
           @if (actionRows().length) {
             <h3 class="bell-sec">Wij zijn aan zet</h3>
@@ -74,7 +83,7 @@ import { localDay, oldestFirst, waitLabel, waitingSummary, whenLabel } from './c
               }
             </ul>
           }
-          @if (!actionRows().length && !newsRows().length) {
+          @if (!actionRows().length && !newsRows().length && !arrivalRows().length) {
             @if (desk()) {
               <div class="wk-empty"><span class="wk-empty__icon" aria-hidden="true"><app-icon name="bell" [size]="20" /></span>
                 <p class="wk-empty__title">Niets openstaand</p><p class="wk-empty__text">Geen klanten die op ons wachten.</p></div>
@@ -222,7 +231,7 @@ export class NotificationBell {
     void this.work.refresh();
   }
 
-  readonly count = this.work.actionCount;
+  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length);
   readonly actions = this.work.actions;
   readonly news = this.work.news;
   readonly loading = this.work.loading;
@@ -239,6 +248,7 @@ export class NotificationBell {
     const now = this.nowMs();
     return this.news().map((item) => ({ item, when: whenLabel(item.at, now) }));
   });
+  readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({ item, when: whenLabel(item.at, this.nowMs()) })));
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
   /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */
@@ -262,7 +272,8 @@ export class NotificationBell {
 
   async go(item: AppNotification): Promise<void> {
     this.sheet.set(false);
-    if (item.orderId) await this.router.navigate(['/sales', item.orderId]);
+    const target = notificationTarget(item);
+    if (target) await this.router.navigate(target.commands, { queryParams: target.queryParams });
   }
 
   /** The row's tile icon by kind. */
@@ -276,6 +287,7 @@ export class NotificationBell {
       case 'GETEKEND': return 'tick';
       case 'AFGEWEZEN': return 'close';
       case 'BEKEKEN': return 'eye';
+      case 'CONTAINER_AANKOMST': return 'purchase';
       default: return 'bell';
     }
   }

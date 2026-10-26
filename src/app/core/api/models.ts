@@ -2714,7 +2714,7 @@ export interface ProductPhotoExportResult {
 /** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'OPNIEUW_VERSTUREN'
-    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN';
+    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST';
   orderId: number | null;
   orderNumber: string;
   customer: string | null;
@@ -2723,6 +2723,10 @@ export interface AppNotification {
   /** Do we need to act, or is this just news? */
   actionNeeded: boolean;
   at: string | null;
+  /** Optional internal destination for native notification delivery. */
+  url?: string | null;
+  /** Stable identity distinguishes ten-day and three-day arrival reminders. */
+  notificationId?: string | null;
 }
 
 export interface NotificationFeed {
