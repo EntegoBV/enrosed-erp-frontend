@@ -5,6 +5,7 @@ import type { ContainerTracking } from '../src/app/core/api/container-tracking-m
 import {
   trackingArrived, trackingMapLink, trackingMapUrl, trackingRows, trackingStale, trackingTime,
   trackingWebUrl, validTrackingPosition,
+  normalizedVesselImo, vesselMapFrameUrl, trackingRefreshNotice,
 } from '../src/app/features/purchasing/container-tracking-model.ts';
 import { phoneTabForUrl } from '../src/app/core/platform/phone-tabs.ts';
 import { parentOf } from '../src/app/core/platform/page-parent.ts';
@@ -15,6 +16,7 @@ const row = (changes: Partial<ContainerTracking> = {}): ContainerTracking => ({
   orderStatus: 'ONDERWEG', status: 'SAILING', statusLabel: 'Onderweg', carrier: 'MSC', vessel: 'Test vessel',
   eta: null, location: 'Rotterdam', position: null, route: [], events: [],
   checkedAt: null, updatedAt: null, nextCheckAt: null, changedAt: null, error: null, trackingUrl: null,
+  source: 'SHIPSGO', vesselImo: null, automatic: true,
   ...changes,
 });
 
@@ -35,6 +37,38 @@ test('search combines words across names, references, ports and carriers without
   assert.deepEqual(trackingRows(rows, 'all', '  HERFST   rotter MSCU ').map((item) => item.orderId), [1]);
   assert.equal(trackingRows(rows, 'active', 'antwerpen').length, 0);
   assert.equal(trackingRows(rows, 'all', 'unknown').length, 0);
+});
+
+test('IMO numbers require seven digits and the weighted check digit before any vessel is linked', () => {
+  assert.equal(normalizedVesselImo('9811000'), '9811000');
+  assert.equal(normalizedVesselImo('  IMO 9722716  '), '9722716');
+  assert.equal(normalizedVesselImo('IMO: 9506291'), '9506291');
+  for (const input of [null, undefined, '', '0000000', '9811001', '981100', '09811000',
+    '98110O0', '9811000&lat=1', 'ship 9811000', '９８１１０００', '981 1000']) {
+    assert.equal(normalizedVesselImo(input), null, String(input));
+  }
+});
+
+test('public vessel maps use the official fixed-host widget with only a validated IMO', () => {
+  const page = 'https://enrosed-erp-frontend-test.vercel.app/purchasing/tracking?order=33';
+  const url = new URL(vesselMapFrameUrl('9722716', page)!);
+  assert.equal(url.origin, 'https://www.vesselfinder.com');
+  assert.equal(url.pathname, '/aismap');
+  assert.equal(url.searchParams.get('imo'), '9722716');
+  assert.equal(url.searchParams.get('track'), 'true');
+  assert.equal(url.searchParams.get('names'), 'true');
+  assert.equal(url.searchParams.get('ra'), 'https://enrosed-erp-frontend-test.vercel.app/purchasing/tracking');
+  assert.equal(vesselMapFrameUrl('9722717', page), null, 'bad checksum must not target a different ship');
+  assert.equal(vesselMapFrameUrl('9722716&imo=9811000', page), null);
+  assert.equal(vesselMapFrameUrl('9722716', 'javascript:alert(1)'), null);
+  assert.equal(vesselMapFrameUrl(null, page), null);
+});
+
+test('public ship events never imply that a container has arrived', () => {
+  const tracked = row({ source: 'VOYDAR', status: 'VESSEL_TRACKING', vesselImo: '9722716', location: 'Rotterdam' });
+  assert.equal(trackingArrived(tracked), false);
+  assert.equal(trackingArrived({ ...tracked, orderStatus: 'ONTVANGEN' }), true);
+  assert.equal(trackingRows([tracked], 'active', '9722716').length, 1);
 });
 
 test('a map requires finite geographic coordinates; zero is a valid coordinate, not a missing value', () => {
@@ -77,6 +111,14 @@ test('a failed latest attempt never makes old successful data fresh', () => {
   assert.equal(trackingStale(row({ updatedAt: '2026-10-26T11:59:00Z', error: 'Provider unavailable' }), now), true);
   assert.equal(trackingStale(row(), now), false, 'unconfigured data is absent, not stale');
   assert.equal(trackingStale(row({ updatedAt: 'invalid' }), now), false);
+});
+
+test('a response reused during cooldown does not claim that a new provider check ran', () => {
+  const before = row({ checkedAt: '2026-10-26T12:00:00Z', changedAt: '2026-10-25T12:00:00Z' });
+  assert.match(trackingRefreshNotice(before, before)!, /geen nieuwe controle uitgevoerd/);
+  assert.equal(trackingRefreshNotice(before, { ...before, error: 'Not available' }), null);
+  assert.match(trackingRefreshNotice(before, { ...before, checkedAt: '2026-10-26T12:16:00Z' })!, /Controle afgerond/);
+  assert.match(trackingRefreshNotice(before, { ...before, checkedAt: '2026-10-26T12:16:00Z', changedAt: '2026-10-26T12:16:00Z' })!, /wijziging gevonden/);
 });
 
 test('times are shown in Belgium, with explicit missing/invalid date wording', () => {

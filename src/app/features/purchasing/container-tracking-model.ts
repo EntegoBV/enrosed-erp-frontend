@@ -12,10 +12,32 @@ export function trackingRows(rows: readonly ContainerTracking[], filter: Trackin
   return rows.filter((row) => {
     if (filter === 'active' && trackingArrived(row)) return false;
     if (filter === 'arrived' && !trackingArrived(row)) return false;
-    const haystack = [row.containerName, row.orderNumber, row.trackingReference, row.carrier, row.vessel, row.location]
+    const haystack = [row.containerName, row.orderNumber, row.trackingReference, row.carrier, row.vessel, row.vesselImo, row.location]
       .filter(Boolean).join(' ').toLocaleLowerCase('nl');
     return words.every((word) => haystack.includes(word));
   });
+}
+
+/** IMO ship numbers contain six digits and a weighted check digit; never turn arbitrary text into a ship. */
+export function normalizedVesselImo(value: string | null | undefined): string | null {
+  const digits = (value ?? '').trim().replace(/^IMO\s*:?\s*/i, '');
+  if (!/^[0-9]{7}$/.test(digits) || digits === '0000000') return null;
+  const sum = [...digits.slice(0, 6)].reduce((total, digit, index) => total + Number(digit) * (7 - index), 0);
+  return sum % 10 === Number(digits[6]) ? digits : null;
+}
+
+/** Matches the public VesselFinder widget's documented IMO mode; never fetches/extracts its positions. */
+export function vesselMapFrameUrl(imo: string | null | undefined, pageUrl: string): string | null {
+  const number = normalizedVesselImo(imo);
+  const referrer = trackingWebUrl(pageUrl);
+  if (!number || !referrer) return null;
+  const page = new URL(referrer);
+  const params = new URLSearchParams({
+    zoom: 'undefined', lat: 'undefined', lon: 'undefined', width: '100%', height: '400',
+    names: 'true', imo: number, track: 'true', fleet: 'false', fleet_name: 'false',
+    fleet_hide_old_positions: 'false', clicktoact: 'false', store_pos: 'true', ra: page.origin + page.pathname,
+  });
+  return `https://www.vesselfinder.com/aismap?${params}`;
 }
 
 /** Only explicit web URLs may leave the app; never trust a stored reference as a resource URL. */
@@ -53,6 +75,16 @@ export function trackingStale(row: Pick<ContainerTracking, 'updatedAt' | 'error'
   if (row.error) return true;
   const fetched = row.updatedAt ? Date.parse(row.updatedAt) : NaN;
   return Number.isFinite(fetched) && now - fetched > (intervalHours * 60 + 10) * 60_000;
+}
+
+/** A suppressed/cooldown response reuses a snapshot; it is not evidence that a new provider check ran. */
+export function trackingRefreshNotice(before: Pick<ContainerTracking, 'checkedAt' | 'changedAt'>,
+    after: Pick<ContainerTracking, 'checkedAt' | 'changedAt' | 'error'>): string | null {
+  if (after.error) return null;
+  if (after.checkedAt === before.checkedAt) return 'De opgeslagen gegevens worden getoond; er is nog geen nieuwe controle uitgevoerd.';
+  return after.changedAt && after.changedAt !== before.changedAt
+    ? 'Er is een wijziging gevonden. De tracking is bijgewerkt.'
+    : 'Controle afgerond. Er zijn geen nieuwe wijzigingen gemeld.';
 }
 
 export function trackingTime(value: string | null | undefined, includeTime = true): string {
