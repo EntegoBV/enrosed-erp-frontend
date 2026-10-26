@@ -58,7 +58,7 @@ import {
   agreementSupplierChoices, issueSupplierName, otherActiveCount, sortSupplierRows, supplierRowHistory, supplierRowMeta,
 } from './product-suppliers';
 import {
-  batchCostParts, batchCostText, batchesHelper, batchesNote, batchRowTitle, batchSub, batchTags, batchTitle, partnerFoot, showBatches, splitBatches,
+  batchCostParts, batchCostText, batchesHelper, batchesNote, batchesTotal, batchRowTitle, batchSub, batchTags, batchTitle, partnerFoot, showBatches, splitBatches,
 } from './product-batches';
 import { ProductBatchSheet } from './product-batch-sheet';
 
@@ -221,7 +221,7 @@ export type { ReceivedContainer } from './received-containers';
         <!-- 2b · Batches: only after the start; the oldest goes out first -->
         @if (shownBatches(); as data) {
           <section class="ios-section" id="product-batches" aria-labelledby="pph-batches-title">
-            <div class="ios-section__head"><h2 id="pph-batches-title">Batches</h2><span class="ios-section__trail">{{ data.summary.valueEur | eur: 0 }}</span></div>
+            <div class="ios-section__head"><h2 id="pph-batches-title">Batches</h2><span class="ios-section__trail">{{ batchesTotalValue() | eur: 0 }}</span></div>
             <div class="ios-group">
               @for (b of batchLists().active; track b.id) {
                 <ng-container *ngTemplateOutlet="phoneBatch; context: { $implicit: b }" />
@@ -800,6 +800,8 @@ export class ProductView {
   readonly batchNote = computed(() => { const data = this.shownBatches(); return data ? batchesNote(data, this.batchFmt()) : null; });
   readonly batchFoot = computed(() => { const data = this.shownBatches(); return data ? partnerFoot(data, this.batchFmt()) : null; });
   readonly batchesHelperText = computed(() => { const data = this.shownBatches(); return data ? batchesHelper(data, this.batchFmt()) : ''; });
+  /** Own plus partner batches: the figure the card's head shows (desk and phone). */
+  readonly batchesTotalValue = computed(() => { const data = this.shownBatches(); return data ? batchesTotal(data) : 0; });
   readonly batchName = batchTitle;
   readonly batchTagsOf = batchTags;
   batchSubOf(batch: StockBatch): string { return batchSub(batch, this.batchFmt()); }

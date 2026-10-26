@@ -129,7 +129,8 @@ test('desk rows: the supplier recipe and the batch row as the contracts give the
   assert.match(template, /<button class="pdk-batch" type="button" \[title\]="batchRowText\(b\)" \(click\)="batchSheet\.set\(b\)">/);
   assert.match(template, /<span class="pdk-batch__num"><strong \[class\.is-warn\]="b\.stale">\{\{ batchCostOf\(b\) \}\}<\/strong>/);
   assert.match(template, /'Uitverkochte batches \(' \+ sold \+ '\)' \+ \(emptyBatchesOpen\(\) \? ' · inklappen' : ' ›'\)/);
-  assert.match(template, /<b class="pdk-total">\{\{ data\.summary\.valueEur \| eur: 0 \}\}<\/b>/);
+  /* The head shows own plus partner batches (batchesTotal), never the own-only value. */
+  assert.match(template, /<b class="pdk-total">\{\{ batchesTotalValue\(\) \| eur: 0 \}\}<\/b>/);
   /* Hero "+n", the Inkoop subtitle, the Afspraken choice and the issues' supplier. */
   assert.match(template, /\(click\)="scrollToDetailSection\('pd-suppliers'\)"[^>]*>\+\{\{ more \}\}<\/button>/);
   assert.match(template, /<small>leveranciers, EXW-prijs en HS-code<\/small>/);

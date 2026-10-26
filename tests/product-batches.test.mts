@@ -4,7 +4,7 @@ import { batchFormat } from '../src/app/core/api/stock-batch-units.ts';
 import type { ProductStockBatches, StockBatch, StockBatchMove } from '../src/app/core/api/stock-batch-models.ts';
 import {
   batchCostParts, batchCostText, batchDate, batchDrift, batchFigures, batchRowTitle, batchStateWord, batchSub, batchTags, batchTitle,
-  batchesHelper, batchesNote, moveDelta, moveLabel, partnerFoot, showBatches, splitBatches,
+  batchesHelper, batchesNote, batchesTotal, moveDelta, moveLabel, partnerFoot, showBatches, splitBatches,
 } from '../src/app/features/products/product-batches.ts';
 
 /* Intl writes a no-break space between € and the figure; compare with a plain space. */
@@ -99,9 +99,9 @@ test('showBatches: only after the start and with batches, unassigned pieces or a
   assert.equal(showBatches(data([], { differencePieces: -2 })), true);
 });
 
-test('batchesHelper names the unit and the partner value apart', () => {
+test('batchesHelper names the unit and the partner part of the total', () => {
   assert.equal(batchesHelper(data([batch()]), displays), 'Oudste gaat eerst · in displays');
-  assert.equal(plain(batchesHelper(data([batch()], { partnerValueEur: 120.4 }), displays)), 'Oudste gaat eerst · in displays · partner € 120 apart');
+  assert.equal(plain(batchesHelper(data([batch()], { partnerValueEur: 120.4 }), displays)), 'Oudste gaat eerst · in displays · waarvan partner € 120');
   assert.equal(batchesHelper(data([batch()]), pieces), 'Oudste gaat eerst · in stuks');
 });
 
@@ -118,7 +118,7 @@ test('batchesNote: without batch first, then the difference, then batches withou
 });
 
 test('partnerFoot only with a partner value', () => {
-  assert.equal(plain(partnerFoot(data([batch()], { partnerValueEur: 120 }), displays)), 'Partner € 120 niet in het totaal');
+  assert.equal(plain(partnerFoot(data([batch()], { partnerValueEur: 120 }), displays)), 'Waarvan partner € 120');
   assert.equal(partnerFoot(data([batch()]), displays), null);
 });
 
@@ -171,4 +171,10 @@ test('moveDelta: signed, in the move\'s own unit, loose pieces apart', () => {
   assert.equal(moveDelta(move({ pieces: 14 }), displays), '+1 + 2 los');
   assert.equal(moveDelta(move({ pieces: -5, unitPieces: 1 }), pieces), '−5');
   assert.equal(moveDelta(move({ pieces: 0 }), displays), '0');
+});
+
+test('batchesTotal adds the partner batches to the own value (product 94: only partner stock, € 193)', () => {
+  assert.equal(batchesTotal(data([batch()], { valueEur: 0, partnerValueEur: 192.96 })), 192.96);
+  assert.equal(batchesTotal(data([batch()], { valueEur: 100.1, partnerValueEur: 20.2 })), 120.3);
+  assert.equal(batchesTotal(data([batch()], { valueEur: 55, partnerValueEur: 0 })), 55);
 });

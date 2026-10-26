@@ -74,9 +74,17 @@ export function showBatches(data: ProductStockBatches | null): boolean {
   return data.batches.length > 0 || data.summary.unassignedPieces !== 0 || data.summary.differencePieces !== 0;
 }
 
-/** "Oudste gaat eerst · in displays", + " · partner € 120 apart". */
+/**
+ * The card's total: own and partner batches together, to the cent. On production every container is a partner
+ * container, so an own-only total read "€ 0" for stock that has a cost.
+ */
+export function batchesTotal(data: ProductStockBatches): number {
+  return Math.round(((data.summary.valueEur ?? 0) + (data.summary.partnerValueEur ?? 0)) * 100) / 100;
+}
+
+/** "Oudste gaat eerst · in displays", + " · waarvan partner € 120". */
 export function batchesHelper(data: ProductStockBatches, fmt: BatchFormat): string {
-  const partner = data.summary.partnerValueEur > 0 ? ` · partner ${fmt.eur(data.summary.partnerValueEur, 0)} apart` : '';
+  const partner = data.summary.partnerValueEur > 0 ? ` · waarvan partner ${fmt.eur(data.summary.partnerValueEur, 0)}` : '';
   return `Oudste gaat eerst · in ${fmt.unit.plural}${partner}`;
 }
 
@@ -94,9 +102,9 @@ export function batchesNote(data: ProductStockBatches, fmt: BatchFormat): string
   return null;
 }
 
-/** "Partner € 120 niet in het totaal" | null. */
+/** "Waarvan partner € 120" (inside the total) | null. */
 export function partnerFoot(data: ProductStockBatches, fmt: BatchFormat): string | null {
-  return data.summary.partnerValueEur > 0 ? `Partner ${fmt.eur(data.summary.partnerValueEur, 0)} niet in het totaal` : null;
+  return data.summary.partnerValueEur > 0 ? `Waarvan partner ${fmt.eur(data.summary.partnerValueEur, 0)}` : null;
 }
 
 /** Ontvangen, Verkocht, Verlies, Vóór de start (only above 0), Nog. */

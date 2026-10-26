@@ -581,7 +581,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
           <section class="pdk-card" id="pd-batches" aria-labelledby="pd-batches-title">
             <div class="pdk-card__head">
               <div><h2 id="pd-batches-title">Batches</h2><p>{{ batchesHelperText() }}</p></div>
-              <b class="pdk-total">{{ data.summary.valueEur | eur: 0 }}</b>
+              <b class="pdk-total">{{ batchesTotalValue() | eur: 0 }}</b>
             </div>
             <div class="pdk-batches">
               @for (b of batchLists().active; track b.id) {
