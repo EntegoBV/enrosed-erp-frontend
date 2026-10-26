@@ -29,7 +29,7 @@
 .cf-recon__warn{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--danger-soft);color:#83261e;font-size:12.5px;font-weight:650}
 
 /* ======================================================================= DESK */
-.cf{display:block;container:cf / inline-size;--cf-side:360px}
+.cf{display:block;container:cf / inline-size;--cf-side:420px}
 .cf-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;min-height:40px;margin:0 0 14px}
 .cf-head__tools{display:flex;flex:none;align-items:center;gap:8px}
 .cf-head__tools .wk-btn app-icon{margin-right:2px}
@@ -424,7 +424,7 @@ button.cf-rule-cell__eur{color:var(--rose-dark);font-weight:650;cursor:pointer}
 /* Below 1120 px of page the register would be squeezed next to the scenario (Datum, two text columns, Bedrag and
    Saldo need about 750 px, so a 1366 window gets this too): the scenario stays beside the chart, scrolling inside
    the chart's height, and the register takes the full width under both. */
-@container cf (max-width:1119.98px){
+@container cf (max-width:1279.98px){
  .cf-grid{grid-template-columns:minmax(0,1fr) var(--cf-side);grid-template-areas:'chart side' 'register register'}
  .cf-main{display:contents}
  .cf-chart-card{grid-area:chart}
@@ -444,3 +444,62 @@ button.cf-rule-cell__eur{color:var(--rose-dark);font-weight:650;cursor:pointer}
 @media (max-width:679.98px){
  .cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Scenario editing: separate selection, price details and settlement amounts. */
+.cf-sources-caption{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;margin:20px calc(var(--ios-inset) + 4px) 8px;font-size:14px}
+.cf-sources-caption>span,.cf-sources-note{color:var(--muted);font-size:12px;line-height:1.45}
+.cf-sources-note{margin:0 0 10px}
+.cf-defaults+.cf-sources-note{margin:10px 0 0}
+.cf-partner-badge{display:block;width:fit-content;max-width:100%;padding:3px 7px;border-radius:7px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:650;line-height:1.4;overflow-wrap:anywhere}
+.cf-src{grid-template-columns:26px minmax(0,1fr) auto;gap:3px 8px;padding:12px 0}
+.cf-src>.cf-check{grid-area:1/1;min-width:20px;min-height:20px}
+.cf-src>.cf-src__body{grid-area:1/2/2/4}
+.cf-src>.cf-partner-badge{grid-column:2/-1}
+.cf-src>.cf-src__amt{grid-column:2;justify-items:start;align-self:center;margin-top:5px}
+.cf-src__amt>span{flex-wrap:wrap;white-space:normal}
+.cf-src__amt b{font-size:15px}
+.cf-source-edit{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:36px;padding:4px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);color:var(--rose-dark);font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+.cf-src>.cf-source-edit{grid-column:3;align-self:center;margin-top:5px}
+.cf-source-edit:is(:hover,:focus-visible){background:var(--rose-soft);border-color:var(--rose-line)}
+.cf-source-edit:focus-visible,.cf-src__body:focus-visible,.cf-src-cell__body:focus-visible{outline:2px solid var(--rose);outline-offset:3px}
+.cf-src-cell{display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 6px;padding:12px 16px 12px 8px;align-items:start}
+.cf-src-cell__check{grid-area:1/1;align-self:start}
+.cf-src-cell__body{grid-area:1/2;gap:4px;min-height:44px}
+.cf-src-cell__body .ios-cell__title{font-weight:600;font-size:16px;line-height:1.35}
+.cf-src-cell__body .ios-cell__sub{font-size:13px;line-height:1.4}
+.cf-src-cell>.ios-cell__trail{grid-area:2/2;align-items:flex-start;padding-top:8px;padding-right:132px;min-height:50px}
+.cf-src-cell>.cf-source-edit{grid-area:2/2;justify-self:end;align-self:end;min-height:44px;font-size:13px}
+.cf-src-cell .ios-cell__value{font-size:17px;white-space:nowrap}
+.cf-src-cell .cf-partner-badge{font-size:12px}
+.cf-phone__choices .ios-cell{min-height:56px}
+.cf-phone .ios-section__head--prominent .ios-section__link{font-size:14px;min-height:44px}
+.cf-po__price>app-cash-price-editor{width:100%}
+.cf-partner-summary{margin:12px 16px;padding:14px;border:1px solid var(--rose-line);border-radius:12px;background:var(--rose-soft)}
+.cf-partner-summary__title{display:flex;align-items:center;gap:7px;color:var(--rose-dark);font-size:14px}
+.cf-partner-summary p{margin:8px 0 12px;font-size:13px;line-height:1.5}
+.cf-partner-summary dl{display:grid;gap:7px;margin:0;font-size:12px;font-variant-numeric:tabular-nums}
+.cf-partner-summary dl>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.cf-partner-summary dt{min-width:0;color:var(--ink-2)}
+.cf-partner-summary dd{margin:0;font-weight:650;white-space:nowrap}
+.cf-partner-summary .is-total{padding-top:8px;border-top:1px solid var(--rose-line);font-weight:700}
+.cf-partner-summary>small{display:block;margin-top:10px;color:var(--muted);font-size:11.5px;line-height:1.45}
+.cf-po--ios .cf-partner-summary{margin:0 var(--ios-inset) 16px;padding:16px;border-radius:var(--ios-radius)}
+.cf-po--ios .cf-partner-summary p,.cf-po--ios .cf-partner-summary dl{font-size:14px}
+.cf-po--ios .cf-partner-summary>small{font-size:12.5px}
+.cf-po--ios .cf-po__store .wk-link{min-height:44px}
+.cf-po--ios .cf-po__price .cf-input{min-height:44px;font-size:16px}
+.cf-po--ios .cf-step{height:44px;grid-template-columns:44px minmax(48px,auto) 44px}
+@media(max-width:374px){
+ .cf-src-cell>.ios-cell__trail{padding-right:0;grid-area:2/2}
+ .cf-src-cell>.cf-source-edit{grid-area:3/2;justify-self:start;margin-top:6px}
+ .cf-po--ios .cf-po__cell--row{grid-template-columns:minmax(0,1fr)}
+ .cf-po--ios .cf-po__figs>div{padding:10px 8px}
+ .cf-po--ios .cf-po__figs b{font-size:14px}
+}
+@media(prefers-reduced-motion:reduce){.cf-loading span,.cf-kpi--loading span,.cf-phone__loading :is(span,b,i){animation:none}}
+
+.cf-partner-summary summary{cursor:pointer;list-style:none;min-height:32px}
+.cf-partner-summary summary::-webkit-details-marker{display:none}
+.cf-partner-summary summary>app-icon:last-child{margin-left:auto;flex:none}
+.cf-partner-summary[open] summary>app-icon:last-child{transform:rotate(180deg)}
+.cf-po--ios .cf-partner-summary summary{min-height:44px}

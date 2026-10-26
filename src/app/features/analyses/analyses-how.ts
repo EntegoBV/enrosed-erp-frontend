@@ -11,6 +11,7 @@ export type HowKey = 'cash' | 'overview' | 'sales' | 'inventory' | 'result'
 /** Every tab's explanation (design/analyses2/design.md §C.9): the desk popover and the phone ⋯ sheet read the same lines. */
 export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   cash: [
+    'Partnercontainers: de prijs bepaalt de verwachte verkoop. ENROSED krijgt de externe kost terug plus het afgesproken aandeel in het resultaat; voorschotten worden daarvan afgetrokken en tellen apart mee. Een uitgegeven afrekening telt via de factuur, zonder nieuw verkoopscenario. Financiering en resultaatverdeling blijven de afspraak van de container.',
     'We vertrekken van het berekende saldo van de rekeningen die meetellen: de laatste saldocontrole plus alle banktransacties daarna.',
     'Open facturen komen binnen op hun vervaldag, plus de dagen die de klant gewoonlijk later betaalt. Wat al vervallen is, staat op vandaag.',
     'Geaccepteerde offertes komen binnen na de leverweek plus de betaalvoorwaarde van de klant; zonder voorwaarde rekenen we 30 dagen.',

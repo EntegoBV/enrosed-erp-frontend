@@ -15,7 +15,7 @@ import { CashState } from './cash-state';
 import { AnHow, HOW_TEXTS } from './analyses-how';
 import {
   RegisterFilter, adjusted, amountText, bankTextShort, chartBuffer, dataQuality, dayItems, filterCounts, forecastMarkers, forecastSeries, groupSummary, itemLink, kpiCards,
-  krapBanner, lineLink, monthStrip, parseAmount, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, suggestionText, underBuffer,
+  krapBanner, lineLink, monthStrip, parseAmount, periodText, pinLegend, registerCsv, registerGroups, pct, ruleSwitches, scenarioOutcome, sourcePriceText, suggestionText, underBuffer,
 } from './cash-view';
 import type { CashLink, KpiCard, RuleSwitch } from './cash-view';
 import { cashCommittedView, cashLikelyPaidView, cashLowestView, cashRuleView, cashScenarioSalesView, cashStockPlanView } from './drill-cash';
@@ -234,10 +234,10 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
               <header class="wk-card__head">
                 <h3 class="wk-card__title">Scenario</h3>
                 <span class="wk-pill tone-ok">{{ includedCount() }} {{ includedCount() === 1 ? 'bron' : 'bronnen' }}</span>
-                <button class="wk-link cf-panel__clear" type="button" (click)="state.clearDefaults()">Wissen</button>
+                <button class="wk-link cf-panel__clear" type="button" (click)="state.clearDefaults()">Standaard herstellen</button>
               </header>
               <section class="cf-panel__sec">
-                <h4 class="cf-sec-title">Wat verkopen we?</h4>
+                <h4 class="cf-sec-title">Voorraad en containers</h4><p class="cf-sources-note">Ontvangsten tot {{ day(f.horizonEnd) }} · incl. btw</p>
                 @for (source of f.scenario.sources; track source.id) {
                   <div class="cf-src" [class.is-off]="!source.included" [class.is-locked]="source.locked">
                     <input class="cf-check" type="checkbox" [checked]="source.included" [disabled]="source.locked || (source.id !== 'stock' && state.choicesFailed())"
@@ -246,18 +246,25 @@ const KIND_TONE: Partial<Record<string, string>> = { CUSTOMER: 'tone-ok', PARTNE
                     <button class="cf-src__body" type="button" [disabled]="source.id === 'stock' && !source.products?.length"
                             [attr.aria-haspopup]="source.id === 'stock' ? 'dialog' : null" (click)="openSource(source)">
                       <b><span class="cf-src__name">{{ source.label }}</span>@if (isAdjusted(source)) { <i class="cf-dot" title="aangepast" aria-label="aangepast"></i> }</b>
-                      <small>@if (source.status === 'CONCEPT') { <span class="wk-pill tone-amber">Concept</span> }@if (source.locked) { <span class="wk-pill tone-plum">Partner</span> }{{ source.locked ? source.lockedText : source.sub }}</small>
+                      <small>@if (source.status === 'CONCEPT') { <span class="wk-pill tone-amber">Concept</span> }@if (source.locked) { <span class="wk-pill tone-plum">Partner</span> }{{ source.sub }}</small>
                     </button>
+                    @if (source.partnerScenario; as partner) { <span class="cf-partner-badge">Partner · {{ pctText(partner.profitSharePct) }} % resultaat voor ENROSED</span> }
                     <!-- Binnen is cash incl. btw up to the horizon, kost the whole plan's cost excl. btw (design D-K6). -->
                     <span class="cf-src__amt"><span><b>{{ source.included && !source.locked ? whole(source.cashInHorizonEur) : '—' }}</b>
-                      @if (source.included && !source.locked) { <small>binnen tot {{ day(f.horizonEnd) }}</small> }</span>
-                      @if (!source.locked) { <small>kost {{ whole(source.costEur) }} excl.</small> }</span>
+                      </span>
+                      @if (source.choice) { <small>{{ sourcePrice(source) }}</small> }</span>
+                    @if (source.id !== 'stock') {
+                      <button class="cf-source-edit" type="button" (click)="openSource(source)" [attr.aria-label]="(source.choice ? 'Marge en tempo wijzigen: ' : 'Details openen: ') + source.label">
+                        {{ source.choice ? 'Marge en tempo' : 'Details' }}<app-icon name="chevron-right" [size]="13" />
+                      </button>
+                    }
                   </div>
                 } @empty { <p class="cf-panel__empty">Geen voorraad en geen open inkooporders.</p> }
               </section>
               <section class="cf-panel__sec">
-                <h4 class="cf-sec-title">Prijs en tempo · standaard voor alle containers</h4>
+                <h4 class="cf-sec-title">Standaardprijs en tempo</h4>
                 <app-cash-defaults variant="desk" />
+                <p class="cf-sources-note">Geldt voor bronnen zonder eigen prijskeuze.</p>
               </section>
               <section class="cf-panel__sec">
                 <h4 class="cf-sec-title">Uitkomst tot {{ day(f.horizonEnd) }}</h4>
@@ -381,6 +388,7 @@ export class CashDesk {
   readonly periodLabel = periodText;
   readonly abs = Math.abs;
   readonly pctText = pct;
+  readonly sourcePrice = sourcePriceText;
   retry(): void { void this.state.sources.reload(this.state.today); }
   setHorizon(value: string): void { this.state.setHorizon(value === '3' ? 3 : value === '12' ? 12 : 6); }
 

@@ -401,7 +401,7 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
   const isAdvanceInvoice = (view: SalesOrderView, orderId: number): boolean => view.order.docType === 'FACTUUR' && view.order.partnerPurchaseOrderId === orderId
     && (view.order.purpose === 'PARTNER_ADVANCE' || (!view.order.purpose && !view.order.partnerSettlement));
   const settled = (orderId: number): boolean => sources.salesOrders.some((view) => view.order.docType === 'FACTUUR' && view.order.partnerPurchaseOrderId === orderId
-    && (view.order.purpose === 'PARTNER_SETTLEMENT' || !!view.order.partnerSettlement) && view.order.status !== 'GEANNULEERD');
+    && (view.order.purpose === 'PARTNER_SETTLEMENT' || !!view.order.partnerSettlement) && view.order.status !== 'CONCEPT' && !DEAD.has(view.order.status));
   const numberOf = new Map(sources.purchaseViews.map((view) => [view.order.id, view.order.number]));
   const advanceRows: ForecastAdvanceRow[] = [];
   for (const schedule of sources.advanceSchedules) {
@@ -417,6 +417,48 @@ export function cashForecastInput(sources: CashForecastSources): CashForecastInp
       advanceRows.push({ orderId: schedule.purchaseOrderId, orderNumber: numberOf.get(schedule.purchaseOrderId) ?? `Inkoop #${schedule.purchaseOrderId}`,
         rowId: row.id, label: row.label, party: nameOf(schedule.partnerCustomerId), dueDate: isoDay(row.dueDate), amountInclEur: eur(incl), vatEur: eur(incl - excl) });
     }
+  }
+
+  // Partner proceeds belong to the partner. ENROSED receives external cost plus its
+  // agreed share of the result, less advances already represented by an invoice/schedule.
+  for (const forecastOrder of orders.filter(order => order.partner)) {
+    const purchase = sources.purchaseViews.find(view => view.order.id === forecastOrder.orderId)!.order;
+    const linked = sources.salesOrders.filter(view => view.order.partnerPurchaseOrderId === forecastOrder.orderId && !DEAD.has(view.order.status));
+    const issued = linked.filter(view => isAdvanceInvoice(view, forecastOrder.orderId) && view.order.status !== 'CONCEPT');
+    const latest = [...linked].filter(view => Number.isFinite(view.priced?.totals?.vatRatePct))
+      .sort((left, right) => Number(right.order.docType === 'FACTUUR' && right.order.status !== 'CONCEPT')
+        - Number(left.order.docType === 'FACTUUR' && left.order.status !== 'CONCEPT')
+        || right.order.orderDate.localeCompare(left.order.orderDate) || right.order.id - left.order.id)[0];
+    const advances: NonNullable<ForecastOrder['partnerTerms']>['advances'] = [];
+    let advanceCents = 0;
+    for (const view of issued) {
+      const fullIncl = cents(view.priced?.totals?.totalInclVat);
+      const fullExcl = cents(view.priced?.totals?.total);
+      if (fullIncl <= 0) continue;
+      // Issued credit notes reduce the advance independently of whether it has been paid.
+      const netIncl = Math.max(0, fullIncl - cents(view.creditedEur));
+      const netExcl = Math.round(fullExcl * netIncl / fullIncl);
+      advanceCents += netExcl;
+      const received = Math.min(netExcl, Math.max(0, Math.round(cents(view.paymentSummary?.receivedEur) * fullExcl / fullIncl)));
+      const paidDay = paidDayOf(view);
+      if (received) advances.push({ date: paidDay ?? today, amountEur: eur(received), title: view.order.number, paid: true, approx: !paidDay });
+      if (netExcl > received) {
+        const due = isoDay(view.order.invoiceDueDate) ?? addDays(view.order.orderDate, 30);
+        advances.push({ date: due < today ? today : due, amountEur: eur(netExcl - received), title: view.order.number, paid: false, approx: due < today });
+      }
+    }
+    for (const row of advanceRows.filter(row => row.orderId === forecastOrder.orderId)) {
+      const amount = cents(row.amountInclEur) - cents(row.vatEur);
+      advanceCents += amount;
+      advances.push({ date: row.dueDate && row.dueDate >= today ? row.dueDate : today, amountEur: eur(amount), title: row.label,
+        paid: false, approx: !row.dueDate || row.dueDate < today });
+    }
+    forecastOrder.partnerTerms = {
+      financingPct: purchase.partnerCostPct ?? 100, profitSharePct: purchase.partnerSharePct ?? 50,
+      advanceEur: eur(advanceCents), vatPct: latest?.priced?.totals?.vatRatePct ?? 21,
+      settlementRecorded: linked.some(view => view.order.docType === 'FACTUUR' && view.order.status !== 'CONCEPT'
+        && (view.order.purpose === 'PARTNER_SETTLEMENT' || !!view.order.partnerSettlement)), advances,
+    };
   }
 
   /* quotes */

@@ -486,3 +486,46 @@ test('unlinked bank receipt matching a TICA reference does not double the foreca
   assert.equal(model.items.some(row => row.kind === 'TICA'), false, 'probable bank payment excluded from future receipts pending explicit matching');
   assert.equal(input.movements.filter(row => row.amountEur === 374.99).length, 1);
 });
+
+test('partner input keeps financing and result shares separate and deducts issued plus pending advances once', () => {
+  const partner = po44();
+  partner.order.partnerCostPct = 50;
+  partner.order.partnerSharePct = 30;
+  const original = salesOrders();
+  const paidAdvance = original.find(view => view.order.id === 521)!;
+  paidAdvance.paymentSummary!.receivedEur = 1210;
+  paidAdvance.paymentSummary!.remainingEur = 4840;
+  paidAdvance.creditedEur = 1210;
+  const input = cashForecastInput(sources({ purchaseViews: [partner], salesOrders: original }));
+  const terms = input.orders[0].partnerTerms!;
+  assert.equal(terms.financingPct, 50);
+  assert.equal(terms.profitSharePct, 30);
+  assert.equal(terms.advanceEur, 14000, '4000 issued net of credit plus 10000 still scheduled; receiving only 1000 does not change the deduction');
+  assert.equal(terms.advances.reduce((sum, row) => sum + row.amountEur, 0), 14000);
+  assert.equal(terms.advances.filter(row => row.paid).reduce((sum, row) => sum + row.amountEur, 0), 1000);
+  assert.equal(terms.vatPct, 21);
+  assert.equal(terms.settlementRecorded, false);
+});
+
+test('unallocated financing is not a phantom advance; partner VAT and settlement state follow its documents', () => {
+  const partner = po44();
+  partner.order.partnerCostPct = 50;
+  const none = cashForecastInput(sources({ purchaseViews: [partner], salesOrders: [], advanceSchedules: [] })).orders[0].partnerTerms!;
+  assert.equal(none.advanceEur, 0, 'no advance cash in base means no deduction from the scenario');
+  assert.equal(none.financingPct, 50);
+  assert.equal(none.profitSharePct, 50, 'backend default for legacy partner agreements');
+  const advance = sale({ id: 700, number: 'VF-700', customerId: 5, orderDate: TODAY, total: 5000, rate: 0,
+    purpose: 'PARTNER_ADVANCE', partnerPurchaseOrderId: 44 });
+  const draft = sale({ id: 701, number: 'PF-701', customerId: 5, orderDate: TODAY, total: 2500,
+    rate: 21, purpose: 'PARTNER_SETTLEMENT', partnerPurchaseOrderId: 44, status: 'CONCEPT' });
+  const recorded = cashForecastInput(sources({ purchaseViews: [partner], salesOrders: [advance, draft], advanceSchedules: [] })).orders[0].partnerTerms!;
+  assert.equal(recorded.vatPct, 0);
+  assert.equal(recorded.advanceEur, 5000);
+  assert.equal(recorded.settlementRecorded, false, 'a draft is not a base receivable yet and must not remove the scenario');
+  draft.order.status = 'VERZONDEN';
+  const issued = cashForecastInput(sources({ purchaseViews: [partner], salesOrders: [advance, draft], advanceSchedules: [] })).orders[0].partnerTerms!;
+  assert.equal(issued.settlementRecorded, true);
+  draft.order.status = 'GEANNULEERD';
+  const cancelled = cashForecastInput(sources({ purchaseViews: [partner], salesOrders: [advance, draft], advanceSchedules: [] })).orders[0].partnerTerms!;
+  assert.equal(cancelled.settlementRecorded, false);
+});

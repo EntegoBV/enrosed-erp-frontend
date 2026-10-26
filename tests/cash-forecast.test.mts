@@ -707,3 +707,87 @@ test('containerDueDates: every open container row on the Kaslijn\'s own day, key
   assert.ok(![...dates.keys()].some((key) => key.startsWith('importvat:')));
   assert.equal(dates.get('container:43:SUPPLIER:ORDERED')?.date, TODAY, 'a reached term is today');
 });
+
+function partnerExample(financingPct = 50, profitSharePct = 50): CashForecastInput {
+  const advanceEur = 10000 * financingPct / 100;
+  return exampleB({ orders: [order43({ partner: true, importVatEur: 0, paidEur: 10000, remainingEur: 0,
+    expectedArrival: '2026-10-16', lines: [{ productId: 1, name: 'Partnerroos', quantity: 1000, externalEur: 10000, pricingEur: 12000,
+      listUnitEur: 15, historicUnitEur: 15, paceUnitsPerWeek: 1000, aheadUnits: 0 }],
+    partnerTerms: { financingPct, profitSharePct, advanceEur, vatPct: 21, settlementRecorded: false,
+      advances: [{ date: TODAY, amountEur: advanceEur, title: 'Partnervoorschot', paid: false, approx: false }] } })],
+    containerRows: [], bankLines: [], openCosts: [], recurring: [], invoices: [], quotes: [], openCreditEur: 0,
+    advanceRows: [{ orderId: 43, orderNumber: 'PO-2026-043', rowId: 1, label: 'Partnervoorschot', party: 'Partner',
+      dueDate: TODAY, amountInclEur: advanceEur * 1.21, vatEur: advanceEur * .21 }], products: [], vatQuarters: [], stored: [] });
+}
+const partnerOptions = () => options({ scenario: true, defaults: { ...NO_DEFAULTS, markupPct: 50, sellWeeks: 1, paymentDays: 0 } });
+
+test('50/50 financing retains editable markup and forecasts own cost recovery plus our result share once', () => {
+  const input = partnerExample();
+  const forecast = buildCashForecast(input, partnerOptions());
+  const source = forecast.scenario.sources[0];
+  assert.equal(source.locked, false);
+  assert.equal(source.included, true);
+  assert.equal(source.choice?.markupPct, 50);
+  assert.deepEqual(source.partnerScenario, { financingPct: 50, profitSharePct: 50, proceedsEur: 15000,
+    externalCostEur: 10000, advanceEur: 5000, profitEur: 2500, settlementEur: 7500 });
+  assert.equal(source.backEur, 7500);
+  assert.equal(forecast.scenario.salesExclEur, 7500);
+  assert.equal(forecast.scenario.marginEur, 2500);
+  assert.equal(forecast.scenario.salesVatEur, 1575, 'partner VAT follows its invoice, not the 12% general mix');
+  assert.equal(forecast.items.filter(item => item.kind === 'PARTNER').reduce((sum, item) => sum + item.amountEur, 0), 6050);
+  const sheet = poSheet(input, partnerOptions(), 43)!;
+  assert.equal(sheet.choice?.markupPct, 50);
+  assert.equal(sheet.netEur, 2500);
+  assert.equal(sheet.lane.at(-1)!.eur, 2500);
+  assert.equal(sheet.partnerScenario?.settlementEur, 7500);
+});
+
+test('fully partner-financed cost still has ENROSED profit; financing and result percentages are independent', () => {
+  const forecast = buildCashForecast(partnerExample(100, 30), partnerOptions());
+  assert.equal(forecast.scenario.sources[0].locked, false);
+  assert.equal(forecast.scenario.salesExclEur, 1500);
+  assert.equal(forecast.scenario.marginEur, 1500);
+  assert.equal(buildCashForecast(partnerExample(50, 0), partnerOptions()).scenario.salesExclEur, 5000, 'zero result share still recovers our funded cost');
+});
+
+test('partner losses create an outgoing settlement and reduce VAT; they never disappear from scenario cash', () => {
+  const input = partnerExample(100, 50);
+  const opts = partnerOptions();
+  opts.defaults.markupPct = -50;
+  const forecast = buildCashForecast(input, opts);
+  assert.equal(forecast.scenario.salesExclEur, -2500);
+  assert.equal(forecast.scenario.salesVatEur, -525);
+  assert.equal(forecast.scenario.marginEur, -2500);
+  assert.equal(forecast.scenario.sources[0].cashInHorizonEur, -3025);
+  const sheet = poSheet(input, opts, 43)!;
+  assert.equal(sheet.breakEvenOn, null, 'financing received before a loss is repaid is not a lasting break-even');
+  assert.equal(sheet.lane.at(-1)!.eur, -2500);
+  const vat = forecast.items.filter(item => item.kind === 'VAT' && item.layer === 'SCENARIO');
+  assert.equal(vat.reduce((sum, item) => sum + item.amountEur, 0), 525);
+});
+
+test('an existing partner settlement cannot be forecast a second time; an excluded partner retains its choice', () => {
+  const input = partnerExample();
+  input.orders[0].partnerTerms!.settlementRecorded = true;
+  const settled = buildCashForecast(input, partnerOptions());
+  assert.equal(settled.scenario.sources[0].locked, true);
+  assert.equal(settled.scenario.salesExclEur, 0);
+  input.orders[0].partnerTerms!.settlementRecorded = false;
+  input.stored = [{ ...exampleC().stored[0], orderId: 43, included: false, markupPct: 70 }];
+  const excluded = buildCashForecast(input, partnerOptions());
+  assert.equal(excluded.scenario.sources[0].choice?.markupPct, 70);
+  assert.equal(excluded.scenario.sources[0].included, false);
+  assert.equal(excluded.scenario.salesExclEur, 0);
+});
+
+test('partner price margin stays based on the goods price for every pricing mode, independent of advances', () => {
+  const input = partnerExample(100, 50);
+  for (const priceMode of ['MARKUP_PCT', 'EUR_PER_UNIT', 'LIST', 'HISTORIC'] as const) {
+    const opts = partnerOptions();
+    opts.defaults = { ...opts.defaults, priceMode, markupEurPerUnit: 5 };
+    const sheet = poSheet(input, opts, 43)!;
+    assert.equal(sheet.backEur, 2500);
+    assert.equal(sheet.marginPct, 33.3, priceMode);
+    assert.equal(sheet.partnerScenario?.profitEur, 2500);
+  }
+});

@@ -1,7 +1,7 @@
 import type { PartnerFinancing, PurchaseOrderForecast, PurchaseOrderForecastWrite } from '../../core/api/models';
 import type { CashChartMarker, CashChartSeries } from '../../shared/cash-chart';
 import type {
-  CashForecast, CashForecastInput, ForecastItem, ForecastMonth, ForecastPin, ForecastRule, Iso, OrderDateSuggestion, RegisterRow,
+  CashForecast, CashForecastInput, ForecastItem, ForecastMonth, ForecastPin, ForecastRule, Iso, OrderDateSuggestion, RegisterRow, ScenarioSource,
 } from '../finance/cash-forecast';
 import { CERTAINTY_LABEL, containerDates } from '../finance/cash-forecast';
 import { dayMon, dayMonth, eur, eurWhole, monthShort, weekdayDayMonth } from '../finance/cash-format';
@@ -420,7 +420,9 @@ export function scenarioOutcome(forecast: CashForecast): ScenarioOutcome {
     salesExclEur: scenario.salesExclEur, salesVatEur: scenario.salesVatEur, inHorizonEur: scenario.inHorizonEur, vatRows,
     vatEur: euros(vatItems.reduce((sum, item) => sum + cents(item.amountEur), 0)),
     vatNote: vatRows.length ? null : `na ${dayMon(forecast.horizonEnd)}`,
-    marginEur: scenario.marginEur, marginPct: scenario.salesExclEur > 0 ? Math.round(scenario.marginEur / scenario.salesExclEur * 1000) / 10 : null,
+    // Partner receipts are the settlement after advances, not gross goods revenue: no comparable margin denominator.
+    marginEur: scenario.marginEur, marginPct: scenario.salesExclEur > 0 && !scenario.sources.some((source) => source.included && source.partnerScenario)
+      ? Math.round(scenario.marginEur / scenario.salesExclEur * 1000) / 10 : null,
     afterHorizonEur: scenario.afterHorizonEur,
   };
 }
@@ -463,6 +465,18 @@ export function amountText(value: number): string {
 export function marginOfMarkup(markupPct: number): string {
   const margin = Math.round(markupPct / (100 + markupPct) * 1000) / 10;
   return `${String(margin).replace('.', ',')} %`;
+}
+
+/** The goods' price assumption, never a partner settlement divided by its remaining cost. */
+export function sourcePriceText(source: Pick<ScenarioSource, 'choice'>): string {
+  const choice = source.choice;
+  if (!choice) return '';
+  switch (choice.priceMode) {
+    case 'MARKUP_PCT': return `Marge ${marginOfMarkup(choice.markupPct)}`;
+    case 'EUR_PER_UNIT': return `+ € ${choice.markupEurPerUnit.toLocaleString('nl-BE', { maximumFractionDigits: 4 })}/stuk`;
+    case 'LIST': return 'Lijstprijs';
+    case 'HISTORIC': return 'Historische prijs';
+  }
 }
 
 /** A percentage with a Dutch comma: 37.5 → '37,5'. */

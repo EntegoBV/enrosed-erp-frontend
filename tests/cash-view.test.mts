@@ -92,6 +92,18 @@ const scenario = buildCashForecast(exampleC(), options({ scenario: true }));
 
 /* ------------------------------------------------------------------ tests */
 
+test('source pricing labels describe goods pricing and never infer margin from a partner settlement', () => {
+  const source = scenario.scenario.sources.find((row) => row.choice)!;
+  const choice = source.choice!;
+  const partner = { ...source, costEur: 50, backEur: 75,
+    partnerScenario: { financingPct: 50, profitSharePct: 50, proceedsEur: 150, externalCostEur: 100, advanceEur: 50, profitEur: 25, settlementEur: 75 } };
+  assert.equal(view.sourcePriceText({ ...partner, choice: { ...choice, priceMode: 'MARKUP_PCT', markupPct: 50 } }), 'Marge 33,3 %');
+  assert.equal(view.sourcePriceText({ choice: { ...choice, priceMode: 'LIST' } }), 'Lijstprijs');
+  assert.equal(view.sourcePriceText({ choice: { ...choice, priceMode: 'HISTORIC' } }), 'Historische prijs');
+  assert.equal(view.sourcePriceText({ choice: { ...choice, priceMode: 'EUR_PER_UNIT', markupEurPerUnit: 0.0001 } }), '+ € 0,0001/stuk');
+  assert.equal(view.sourcePriceText({ choice: null }), '');
+});
+
 test('the 12-month markup keeps its basis when too thin to be the default (critique B4)', () => {
   assert.equal(view.realisedHint(-2.5, { invoices: 12, revenueEur: 90000, markupPct: -2.5 }), '12 mnd: -2,5 %', 'pct() as the hint always wrote it');
   assert.equal(view.realisedHint(null, { invoices: 1, revenueEur: 18846, markupPct: -2.5 }), '12 mnd: -2,5 % (1 factuur, te weinig om op te rekenen)');
@@ -303,6 +315,17 @@ test('the scenario outcome, the order-date sentence and the container texts', ()
     'Lijkt al betaald: KBC-zichtrekening 13/10 · − € 9.000,00 · “PO-2026-043 DEPOSIT 30PCT”. Nog niet gekoppeld; de prognose rekent hem als betaald.');
   assert.equal(view.peakMonth([0.8, 2.4, 0.8, 0.8, 1.6, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8]), 'februari');
   assert.equal(view.peakMonth(null), null);
+});
+
+test('aggregate goods margin percentage is hidden when receipts include partner settlement after advances', () => {
+  const source = scenario.scenario.sources.find((row) => row.choice)!;
+  const partner = { ...source, included: true,
+    partnerScenario: { financingPct: 100, profitSharePct: 50, proceedsEur: 15000, externalCostEur: 10000, advanceEur: 10000, profitEur: 2500, settlementEur: 2500 } };
+  const forecast = { ...scenario, scenario: { ...scenario.scenario, salesExclEur: 2500, marginEur: 2500, sources: [partner] } };
+  assert.equal(view.scenarioOutcome(forecast).marginPct, null, '2500 profit on a 2500 settlement is not 100% sales margin');
+  assert.equal(view.scenarioOutcome(forecast).marginEur, 2500, 'the profit amount remains visible');
+  assert.equal(view.scenarioOutcome({ ...scenario, scenario: { ...scenario.scenario, sources: [...scenario.scenario.sources, { ...partner, included: false }] } }).marginPct, 33.3,
+    'an excluded partner does not suppress the percentage of ordinary sales');
 });
 
 test('a typed buffer: Dutch thousands and decimals, nothing for an empty field', () => {
