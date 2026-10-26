@@ -42,14 +42,16 @@ export class WorkQueue {
 
   /** What we must act on; that is the number on the tab and the bell. */
   readonly actionCount = computed(() =>
-    this.visible().filter((item) => item.actionNeeded).length);
+    this.actions().length);
 
   /** The Wijzigingen page lists all pending proposals, even dismissed alerts. */
   readonly revisionCount = computed(() =>
     this.items().filter((item) => item.kind === 'VOORSTEL' && item.actionNeeded).length);
 
-  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded));
-  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded));
+  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
+  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
+  /** Purchase alerts must never become customer work or a sales-order link. */
+  readonly arrivals = computed(() => this.visible().filter((item) => item.kind === 'CONTAINER_AANKOMST'));
 
   /**
    * Fetches the queue. Not forced, it shares a fetch that is under way, and
@@ -164,5 +166,7 @@ export class WorkQueue {
  * whoever dismissed the first does want to see the second.
  */
 function key(item: AppNotification): string {
+  if (item.kind === 'CONTAINER_AANKOMST' && item.notificationId)
+    return `${item.kind}|${item.notificationId}|${item.detail ?? ''}`;
   return `${item.kind}|${item.orderNumber}|${item.detail ?? ''}`;
 }

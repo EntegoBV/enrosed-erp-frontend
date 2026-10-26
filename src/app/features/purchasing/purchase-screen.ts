@@ -58,6 +58,8 @@ export class PurchaseScreen {
   readonly tab = input<string>();
   /** '1': open the Kostprijzen toepassen sheet once, then drop the param. */
   readonly apply = input<string>();
+  /** Notification links open this order's tracking after the saved order and panel are mounted. */
+  readonly tracking = input<string>();
 
   private readonly desk = viewChild(PurchaseDesk);
   private readonly editor = viewChild(PurchaseEditor);
@@ -70,6 +72,7 @@ export class PurchaseScreen {
   private readonly paymentDues = ['ORDERED', 'SHIPPED', 'FREIGHT', 'ARRIVED'] as const;
   private openedPaymentKey = '';
   private openedApplyKey = '';
+  private openedTrackingKey = '';
   /** The editor opened for a quick payment goes back to the read view once its sheet closes. */
   private returnAfterPayment: { editor: PurchaseEditor; id: string } | null = null;
   private readonly stepHandoff = inject(PurchaseStepHandoff);
@@ -87,11 +90,30 @@ export class PurchaseScreen {
     effect(() => this.openRequestedSection());
     effect(() => this.openRequestedPayment());
     effect(() => this.openRequestedApply());
+    effect(() => this.openRequestedTracking());
     effect(() => this.returnFromPayment());
     effect(() => this.runHandedStep());
     effect(() => this.returnFromStep());
     afterEveryRender(() => this.focusRequestedSection());
     inject(DestroyRef).onDestroy(() => this.dropUntakenStep());
+  }
+
+  private openRequestedTracking(): void {
+    if (this.tracking() !== '1') { this.openedTrackingKey = ''; return; }
+    const desk = this.desk();
+    const screen = desk ?? this.viewer();
+    if (this.mode() === 'edit' || desk?.editing()) return;
+    const order = screen?.view()?.order;
+    const panel = screen?.trackingPanel();
+    if (!order || order.id !== Number(this.id()) || !panel?.ready()) return;
+    const key = panel.scope()!;
+    if (this.openedTrackingKey === key) return;
+    this.openedTrackingKey = key;
+    untracked(() => {
+      if (desk) desk.showTracking(); else panel.showDetails();
+      void this.router.navigate(['/purchasing', this.id()],
+        { queryParams: { tracking: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    });
   }
 
   private openRequestedSection(): void {

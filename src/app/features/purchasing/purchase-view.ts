@@ -1,5 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
+import { purchaseTrackedOrder } from './purchase-tracking-model';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -103,7 +104,11 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
           <section hero class="mpo-summary" id="purchase-overview" tabindex="-1" aria-labelledby="mpo-title">
             <div class="mpo-summary__top">
               <span class="wk-pill" [class]="statusTone(data.order.status)"><span class="wk-pill__dot" aria-hidden="true"></span>{{ statusLabel(data.order.status) }}</span>
-              <span class="mpo-summary__route" [title]="routeText()">{{ routeText() }}</span>
+              @if (data.order.trackingReference) {
+                <button class="mpo-summary__route mpo-track-link" type="button" aria-haspopup="dialog" [attr.aria-label]="'Track & trace: ' + routeText()" title="Track &amp; trace openen" (click)="trackingPanel()?.showDetails()">{{ routeText() }}</button>
+              } @else {
+                <span class="mpo-summary__route" [title]="routeText()">{{ routeText() }}</span>
+              }
             </div>
             <h1 id="mpo-title" class="mpo-summary__title" [title]="containerName(data.order)">{{ containerName(data.order) }}</h1>
             <p class="mpo-summary__sub" [title]="data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName()">{{ data.order.alias ? data.order.number + ' · ' + supplierName() : supplierName() }}</p>
@@ -113,8 +118,15 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 <li class="mpo-progress__step" [class.is-done]="step.state === 'done'" [class.is-now]="step.state === 'now'" [class.is-todo]="step.state === 'todo'"
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="mpo-progress__bar" aria-hidden="true"></span>
-                  <span class="mpo-progress__label">{{ step.label }}</span>
-                  @if (step.date) { <span class="mpo-progress__date">{{ step.prefix ? 'verwacht ' : '' }}{{ step.date | dateNl }}</span> }
+                  @if (data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
+                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
+                      <span class="mpo-progress__label">{{ step.label }}</span>
+                      <span class="mpo-progress__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                    </button>
+                  } @else {
+                    <span class="mpo-progress__label">{{ step.label }}</span>
+                    @if (step.date) { <span class="mpo-progress__date">{{ step.prefix ? 'verwacht ' : '' }}{{ step.date | dateNl }}</span> }
+                  }
                 </li>
               }
             </ol>
@@ -176,11 +188,6 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 <span class="mpo-attention__count" aria-hidden="true">{{ data.attention!.length }}</span>
                 <span class="mpo-attention__body"><b>Actie vereist</b>@for (item of data.attention; track item) { <span>{{ item }}</span> }</span>
               </div>
-            }
-
-            @if (data.order.trackingReference) {
-              <app-purchase-tracking class="mpo-tracking" [orderId]="data.order.id" [trackingReference]="data.order.trackingReference"
-                [active]="activeTab() === 'overzicht'" />
             }
 
             @if (receiptSummary(); as receipt) {
@@ -622,6 +629,9 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
       </div>
 
       <!-- Sheets and menus at host level: never inside the sticky nav, the tabs or a pane. -->
+      @if (data.order.trackingReference) {
+        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
+      }
       @if (kostenPayeeOpen(); as item) {
         <!-- A payee tapped in the Nacalculatie opens on top of Kosten, read-only; a payment row goes to its detail on Betalingen. -->
         <app-purchase-payee-sheet [payee]="item" mode="read" [supplierName]="supplierName()" [planLabel]="planLabel()" [supplier]="kostenSupplier()"
@@ -789,7 +799,11 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   `,
   styles: `
     :host{display:block;min-width:0}
-    .mpo-tracking{margin:0 16px 18px}
+    .mpo-track-link,.mpo-progress__tracking{border:0;background:transparent;color:var(--rose);font:inherit;text-align:inherit;cursor:pointer}
+    .mpo-track-link{padding:4px 0;min-height:36px;text-decoration:underline;text-underline-offset:3px}
+    .mpo-progress__tracking{display:grid;gap:3px;padding:0;min-height:44px;align-content:start;text-align:left}
+    .mpo-progress__tracking .mpo-progress__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
+    .mpo-track-link:focus-visible,.mpo-progress__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
     .mpo-stale{margin:0 16px 14px}.mpo-stale__link{color:inherit;font-weight:700;white-space:nowrap}
   `,
 })
@@ -1454,7 +1468,7 @@ export class PurchaseView {
   readonly statusTone = statusTone;
   readonly progress = computed(() => {
     const data = this.view();
-    return data ? progressSteps(data.order, data.createdAt) : [];
+    return data ? progressSteps(purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? null), data.createdAt) : [];
   });
   readonly routeText = computed(() => `${this.costLabels().loadingPort} → ${this.costLabels().destinationPort}`);
   readonly payTile = computed(() => paymentTile(this.paymentLedger()?.summary ?? null, this.paymentState(), this.planLabel(), PAYEE_LABEL));

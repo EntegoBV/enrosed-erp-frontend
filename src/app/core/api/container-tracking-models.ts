@@ -27,6 +27,13 @@ export interface ContainerTracking {
   carrier: string | null;
   vessel: string | null;
   eta: string | null;
+  /** Canonical saved purchase dates after backend source validation; absent on older servers. */
+  orderExpectedArrival?: string | null;
+  orderShippedOn?: string | null;
+  /** Independently checked order-date source; the embedded ship ETA is not used here. */
+  dateSource?: string | null;
+  dateSourceCheckedAt?: string | null;
+  dateError?: string | null;
   location: string | null;
   position: TrackingPosition | null;
   route: { lat: number; lon: number }[];

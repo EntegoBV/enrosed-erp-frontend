@@ -23,7 +23,7 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
           <div class="tp-status-line">
             @if (showOrderLink() && item.vessel) { <span class="tp-ship"><app-icon name="globe" [size]="15" />{{ item.vessel }}</span> }
             <span class="tp-status" [class.tp-status--ok]="arrived(item)" [class.tp-status--warn]="!!item.error && !!item.source">
-              {{ item.source ? item.statusLabel : 'Schip nog niet gekoppeld' }}
+              {{ item.source || item.dateSource ? item.statusLabel : 'Schip nog niet gekoppeld' }}
             </span>
           </div>
         </div>
@@ -67,10 +67,13 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
           </div>
           <dl class="tp-facts">
             <div class="tp-fact-wide"><dt>{{ item.source === 'VOYDAR' ? 'Laatste havenmelding' : 'Laatst gemelde locatie' }}</dt><dd>{{ item.location || 'Nog geen melding' }}</dd></div>
-            @if (item.eta && item.source !== 'VOYDAR') { <div class="tp-fact-wide"><dt>Verwachte aankomst container</dt><dd>{{ time(item.eta, false) }}</dd></div> }
+            @if (arrivalDate(); as date) { <div class="tp-fact-wide"><dt>Verwachte aankomst container</dt><dd>{{ time(date, false) }}</dd></div> }
+            @if (item.orderShippedOn) { <div class="tp-fact-wide"><dt>Vertrokken volgens order</dt><dd>{{ time(item.orderShippedOn, false) }}</dd></div> }
             <div><dt>Gecontroleerd</dt><dd>{{ item.checkedAt ? time(item.checkedAt) : 'Nog niet gecontroleerd' }}</dd></div>
             <div><dt>Volgende controle</dt><dd>{{ nextCheck() }}</dd></div>
           </dl>
+          @if (item.dateSource) { <p class="tp-small">Datumbron: {{ item.dateSource }}@if (item.dateSourceCheckedAt) { · bron gecontroleerd {{ time(item.dateSourceCheckedAt) }} }</p> }
+          @if (item.dateError) { <p class="tp-feedback" role="status">{{ item.dateError }}</p> }
           @if (carrier(); as provider) {
             <div class="tp-carrier">
               <div class="tp-carrier-title"><app-icon name="purchase" [size]="18" /><strong>Container bij {{ provider.carrier }}</strong></div>
@@ -171,6 +174,7 @@ export class ContainerTrackingPanel {
   });
   readonly mapHref = computed(() => this.vesselHref() || trackingMapLink(this.row().position));
   readonly sourceLink = computed(() => trackingWebUrl(this.row().trackingUrl) || trackingWebUrl(this.row().trackingReference));
+  readonly arrivalDate = computed(() => this.row().orderExpectedArrival !== undefined ? this.row().orderExpectedArrival : this.row().source !== 'VOYDAR' ? this.row().eta : null);
   readonly stale = computed(() => trackingStale(this.row(), Date.now(), this.intervalHours()));
   readonly nextCheck = computed(() => {
     const item = this.row();

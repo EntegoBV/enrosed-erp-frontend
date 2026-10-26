@@ -1,5 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
+import { purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { LandedCostLine, Payee, Product } from '../../core/api/models';
@@ -113,6 +114,7 @@ export class PurchaseDeskStyles {}
     <app-purchase-desk-styles />
     @if (view(); as data) {
       @let title = containerName(data.order);
+      @let trackedOrder = trackingOrder() ?? data.order;
       <app-page-header [title]="title" [subtitle]="containerNumberHint(title, data.order.number) ?? ''"
                        [showBack]="true" [showBell]="false">
         @if (editing()) {
@@ -137,15 +139,22 @@ export class PurchaseDeskStyles {}
                 @if (!data.order.clearance) { <span class="wk-pill tone-warn">inklaring te bevestigen</span> }
                 <h2 class="pdk-who__supplier" [title]="supplierName()">{{ supplierName() }}</h2>
               </div>
-              <p class="pdk-who__meta">{{ containerLabel(data.order.containerType) }} · {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }} · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}@if (data.createdBy?.displayName; as maker) { · gemaakt door {{ maker }} }@if (data.order.trackingReference) { · T&amp;T {{ data.order.trackingReference }} }</p>
+              <p class="pdk-who__meta">{{ containerLabel(data.order.containerType) }} · @if (!editing() && data.order.trackingReference) { <button class="pdk-track-link" type="button" aria-haspopup="dialog" title="Track &amp; trace openen" (click)="showTracking()">{{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }}</button> } @else { {{ costLabels().loadingPort }} → {{ data.order.destinationPort || 'Rotterdam' }} } · lossen op {{ receivingLocationName(data.order.receivingLocationId) }}@if (data.createdBy?.displayName; as maker) { · gemaakt door {{ maker }} }@if (data.order.trackingReference) { · T&amp;T {{ data.order.trackingReference }} }</p>
             </div>
             <ol class="pdk-steps" aria-label="Voortgang van de inkooporder">
               @for (step of progress(); track step.label) {
                 <li class="pdk-step" [class.is-done]="step.state === 'done'" [class.is-now]="step.state === 'now'" [class.is-todo]="step.state === 'todo'"
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="pdk-step__bar" aria-hidden="true"></span>
-                  <span class="pdk-step__label">{{ step.label }}</span>
-                  <span class="pdk-step__date">@if (step.date) { {{ step.prefix ? 'verwacht ' : '' }}{{ step.date | dateNl }} } @else { &nbsp; }</span>
+                  @if (!editing() && data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
+                    <button class="pdk-step__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + '. Track & trace openen'" (click)="showTracking()">
+                      <span class="pdk-step__label">{{ step.label }}</span>
+                      <span class="pdk-step__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                    </button>
+                  } @else {
+                    <span class="pdk-step__label">{{ step.label }}</span>
+                    <span class="pdk-step__date">@if (step.date) { {{ step.prefix ? 'verwacht ' : '' }}{{ step.date | dateNl }} } @else { &nbsp; }</span>
+                  }
                 </li>
               }
             </ol>
@@ -236,10 +245,6 @@ export class PurchaseDeskStyles {}
             </div>
           }
         </section>
-
-        @if (!editing() && data.order.trackingReference) {
-          <app-purchase-tracking class="pdk-tracking" [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
-        }
 
         <div class="pdk-body" [class.pdk-body--docked]="railShown()">
           <!-- ============================ the main pane: products, payments or the nacalculatie -->
@@ -563,9 +568,9 @@ export class PurchaseDeskStyles {}
                         <div><dt>Ordernummer</dt><dd>{{ data.order.number }}</dd></div>
                         <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
-                        @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
+                        @else { <div><dt>Verwacht op</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" aria-haspopup="dialog" (click)="showTracking()">{{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : 'Datum onbekend' }} ›</button> } @else { {{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : '—' }} }</dd></div> }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
                     </section>
                     <section class="pdk-sec" aria-labelledby="pdk-sec-route">
@@ -996,6 +1001,10 @@ export class PurchaseDeskStyles {}
         </ng-template>
       </div>
 
+      @if (!editing() && data.order.trackingReference) {
+        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" [active]="!dirty() && !saving()" />
+      }
+
       @if (drawerShown()) {
         <aside id="pdk-drawer" class="wk-inspector wk-inspector--drawer pdk-drawer" [attr.aria-label]="'Paneel: ' + railTabLabel()">
           <header class="wk-inspector__head">
@@ -1343,7 +1352,11 @@ export class PurchaseDeskStyles {}
     /* Sheets of the desk template: report damage, add a document, receive. */
     .issue-kind{margin-top:2px}
     :host{display:block;min-width:0}
-    .pdk-tracking{margin-top:16px}
+    .pdk-track-link,.pdk-step__tracking{border:0;background:transparent;color:var(--rose);font:inherit;text-align:inherit;cursor:pointer}
+    .pdk-track-link{padding:2px 0;font-weight:650;text-decoration:underline;text-underline-offset:3px}
+    .pdk-step__tracking{display:grid;gap:3px;padding:0;min-height:38px;align-content:start}
+    .pdk-step__tracking .pdk-step__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
+    .pdk-track-link:focus-visible,.pdk-step__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -1481,7 +1494,7 @@ export class PurchaseDesk extends PurchaseEditor {
   /** Concept, Besteld, Vertrokken, Ontvangen with the day each was reached (Ontvangen 'verwacht …' until it happened). */
   readonly progress = computed(() => {
     const data = this.view();
-    return data ? progressSteps(data.order, data.createdAt) : [];
+    return data ? progressSteps(this.trackingOrder() ?? data.order, data.createdAt) : [];
   });
   /** The payment tile in the Betalingen headline's words; a concept shows its Afspraak. */
   readonly payTile = computed(() => {
@@ -1551,6 +1564,10 @@ export class PurchaseDesk extends PurchaseEditor {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly workbench = viewChild(PurchasePaymentWorkbench);
   readonly trackingPanel = viewChild(PurchaseTracking);
+  readonly trackingOrder = computed(() => {
+    const order = this.view()?.order;
+    return order ? (this.editing() ? order : purchaseTrackedOrder(order, this.trackingPanel()?.row() ?? null)) : null;
+  });
 
   /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
   readonly hostWidth = elementWidth(() => this.host.nativeElement);
@@ -1573,10 +1590,27 @@ export class PurchaseDesk extends PurchaseEditor {
     super();
     /* Docking closes the drawer, so a narrower window later starts without one. */
     effect(() => { if (this.railDocked()) untracked(() => this.drawerOpen.set(false)); });
+    const trackingBaseline = new PurchaseTrackingBaseline();
+    effect(() => {
+      const row = this.trackingPanel()?.row() ?? null;
+      untracked(() => {
+        const data = this.view();
+        if (!data) return;
+        const order = trackingBaseline.accept(data.order, row, this.editing() || this.dirty() || this.saving());
+        if (order === data.order) return;
+        // Both edit and read-mode status saves submit the full order. Keep its clean baseline
+        // aligned with confirmed tracking dates without marking them as an unsaved user edit.
+        this.view.set({ ...data, order });
+        this.savedOrder.set(JSON.stringify(order));
+      });
+    });
   }
 
   showTracking(): void {
+    if (this.editing()) return;
+    const fromDrawer = document.activeElement instanceof HTMLElement && !!document.activeElement.closest('#pdk-drawer');
     this.closeDrawer(false);
+    if (fromDrawer) this.host.nativeElement.querySelector<HTMLElement>('.pdk-track-link')?.focus({ preventScroll: true });
     this.trackingPanel()?.showDetails();
   }
 
@@ -1774,7 +1808,7 @@ export class PurchaseDesk extends PurchaseEditor {
   readonly milestones = computed(() => {
     const data = this.view();
     if (!data) return [];
-    const order = data.order;
+    const order = this.trackingOrder() ?? data.order;
     const index = this.stepIndex(order.status);
     const booked = order.stockBooked === true;
     const steps = [
