@@ -289,7 +289,7 @@ export class CostsPage {
     if (location.view === 'bank') return this.bankSub();
     if (location.view === 'invoices') return this.finder?.odooNote() ?? null;
     return ({ open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
-      costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
+      costs: 'Uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
   });
   /** Bank's sub line: "{label} opgehaald {hh:mm}" (an older import: "{d mmm}") per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
   private readonly bankSub = computed(() => {

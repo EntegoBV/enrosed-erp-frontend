@@ -47,6 +47,8 @@ test('six sections in groups; Bank leads and the Overzicht is gone; Facturen ope
   assert.deepEqual(financeSection('bank'), { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true });
   assert.deepEqual(FINANCE_TABS.bank.map((tab) => [tab.id, tab.label, tab.short]), [['accounts', 'Bank', 'Bank'], ['movements', 'Transacties', 'Transacties']]);
   assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.short), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
+  assert.deepEqual(FINANCE_TABS.costs.map((tab) => tab.label), ['Kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen'], "the tab is 'Kosten' since Facturen is its own place");
+  assert.equal(financeSection('costs').hint, 'Uitgaven, inkooporders en vaste kosten');
   assert.deepEqual(FINANCE_TABS.open.map((tab) => tab.short), ['Alles', 'Kosten', 'Containers', 'Vast']);
   assert.deepEqual(FINANCE_TABS.analysis.map((tab) => [tab.id, tab.label, tab.short]), [['costs', 'Kosten', 'Kosten'], ['vat', 'Btw-aangifte', 'Btw']]);
   assert.equal(financeSection('analysis').hint, 'Per categorie, per maand, de btw-aangifte');
@@ -71,6 +73,7 @@ test('FINANCE_NAV: seven places on the keys 1-7 (Facturen first of Boekhouding o
   assert.equal(phoneTabOf({ view: 'costs', tab: 'recurring' }), 'costs');
   assert.equal(phoneTabOf({ view: 'analysis', tab: 'costs' }), 'analysis');
   assert.equal(FINANCE_NAV[0].hint, financeSection('bank').hint, 'one Bank hint');
+  assert.equal(FINANCE_NAV.find((item) => item.id === 'costs')?.hint, financeSection('costs').hint, 'one Inkoop & kosten hint');
   assert.equal(FINANCE_NAV[1].hint, 'Alle banktransacties: koppelen, splitsen en boeken');
   assert.equal(financeNavOf({ view: 'bank', tab: 'accounts' }).id, 'bank');
   assert.equal(financeNavOf({ view: 'bank', tab: 'movements' }).id, 'transactions');

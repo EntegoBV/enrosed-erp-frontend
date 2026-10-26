@@ -31,7 +31,7 @@ export const FINANCE_SECTIONS: readonly FinanceSection[] = [
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true },
   /* Facturen (2026-10-25): every invoice in one finder; on a phone it is reached from the Kosten tab and ⋯. */
   { id: 'invoices', label: 'Facturen', short: 'Facturen', group: 'Boekhouding', icon: 'document', hint: 'Elke factuur: opgeladen, Odoo en verkoop', phoneTab: false },
-  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Uitgaven, inkooporders en vaste kosten', phoneTab: true },
   { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
 ];
 
@@ -48,7 +48,7 @@ export const FINANCE_NAV: readonly FinanceNavItem[] = [
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true, target: { view: 'incoming', tab: 'open' }, key: '4' },
   /* First of Boekhouding in the sidebar, but key 7: the keys 1-6 keep the places they had. */
   { id: 'invoices', label: 'Facturen', short: 'Facturen', group: 'Boekhouding', icon: 'document', hint: 'Elke factuur: opgeladen, Odoo en verkoop', phoneTab: false, target: { view: 'invoices', tab: 'in' }, key: '7' },
-  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true, target: { view: 'costs', tab: 'company' }, key: '5' },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Uitgaven, inkooporders en vaste kosten', phoneTab: true, target: { view: 'costs', tab: 'company' }, key: '5' },
   { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false, target: { view: 'analysis', tab: 'costs' }, key: '6' },
 ];
 
@@ -99,7 +99,8 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
     { id: 'out', label: 'Uitgaand', short: 'Uit' },
   ],
   costs: [
-    { id: 'company', label: 'Facturen & kosten', short: 'Kosten' },
+    /* 'Facturen & kosten' until 2026-10-25: Facturen is its own place now (the rename is one revertible commit). */
+    { id: 'company', label: 'Kosten', short: 'Kosten' },
     { id: 'containers', label: 'Containers', short: 'Containers' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
     { id: 'lists', label: 'Aan wie & beurzen', short: 'Aan wie' },

@@ -68,7 +68,7 @@ test('related detail has a back trail and returns to the original bank list afte
 test('closing deep-linked cost details removes only cost identity and preserves local list filters', () => {
   const { state } = setup({ view: 'costs', tab: 'company', cost: '26', cat: 'DRUKWERK', status: 'paid', period: 'all', q: 'Hello' });
   state.inspect.set({ kind: 'cost', id: 26 });
-  assert.equal(state.inspectorBackLabel(), 'Terug naar facturen & kosten');
+  assert.equal(state.inspectorBackLabel(), 'Terug naar kosten');
   state.closeInspector();
   assert.equal(state.location().cost, null); assert.equal(state.location().q, 'Hello');
   assert.equal(state.location().cat, 'DRUKWERK'); assert.equal(state.location().status, 'paid'); assert.equal(state.location().period, 'all');
@@ -88,7 +88,7 @@ test('the phone segmented reads the short words with four segments, the full nam
   // 2026-10-17 (critique N12): the kit's segmented replaces the native select; shorts only where there are more than two segments.
   const { state, page } = setup({ view: 'costs', tab: 'company' });
   assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
-  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
   state.go({ view: 'incoming', tab: 'open' });
   assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Openstaand', 'Ontvangen'], 'two segments keep their words');
   state.go({ view: 'costs', tab: 'company' });
