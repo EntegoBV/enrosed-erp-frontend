@@ -9,14 +9,15 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, ledgerDifferenceNote, type Due, type LedgerRow, type LedgerSummary, type LedgerTodo, type PayeeLedger, type PaymentLedger,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerSummary, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
 import { invoiceFileText } from './purchase-invoices';
 import {
-  differenceByPayee, landedChain, payeeFigures, payeeWord, paymentLine, proofMark, settledMeter, verschilText, type PhoneAmount, type PhoneTone,
+  differenceByPayee, landedChain, payeeFigures, payeeWord, paymentLine, proofMark, reviewByPayee, settledMeter, verschilSplit,
+  type PhoneAmount, type PhoneTone, type VerschilSplit,
 } from './purchase-phone-money';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
@@ -101,18 +102,28 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
                 <!-- A settled difference counts as done: the bar is paid over paid plus open. -->
                 <div class="wk-meter pp-summary__meter" role="meter" aria-label="Betaald of afgerekend" aria-valuemin="0" aria-valuemax="100"
                      [attr.aria-valuenow]="round(meter.paidPct)"><i class="tone-ok" [style.width.%]="meter.paidPct"></i><i class="tone-warn" [style.width.%]="meter.duePct"></i><i class="is-rest" [style.width.%]="meter.laterPct"></i></div>
-                <!-- As the desk strip reads: Afspraak · Betaald · Verschil x minder · Open; one net Verschil, never a gross − and + pair. -->
+                <!-- As the desk strip reads: Afspraak · Betaald · Verschil x minder · Open; one net settled Verschil, never a gross − and + pair.
+                     An overpayment still to review is a to-do: its own Nakijken row, never folded into the Verschil. -->
                 <dl class="wk-equation">
                   <div><dt>Afspraak</dt><dd>{{ sum.agreedEur | eur }}</dd></div>
                   <div><dt>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
                   @if (hasVerschil(sum)) {
-                    @let verschil = verschilOf(sum);
-                    <div class="pp-summary__verschil"><dt>Verschil@if (verschilNote(sum, verschil); as note) { <small> · {{ note }}</small> }</dt>
-                      <dd [class]="amountTone(sum.reviewEur > 0 ? 'warn' : verschil.tone)">{{ verschil.text }}</dd></div>
-                    @for (line of byPayee(); track line.payee) {
-                      <div class="is-sub"><dt>{{ line.label }}</dt><dd [class.wk-amount--warn]="line.tone === 'warn'">{{ line.text }}</dd></div>
+                    @let split = splitOf(sum);
+                    @if (split.verschil; as verschil) {
+                      <div class="pp-summary__verschil"><dt>Verschil@if (verschilNote(split); as note) { <small> · {{ note }}</small> }</dt>
+                        <dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
+                      @for (line of byPayee(); track line.payee) {
+                        <div class="is-sub"><dt>{{ line.label }}</dt><dd>{{ line.text }}</dd></div>
+                      }
                     }
-                    @if (sum.reviewEur > 0) { <div class="is-sub"><dt>waarvan te veel betaald · nakijken</dt><dd class="wk-amount--warn">{{ sum.reviewEur | eur }}</dd></div> }
+                    @if (split.review; as review) {
+                      @let waiting = reviewBy();
+                      <div class="pp-summary__verschil"><dt>Nakijken@if (waiting.length === 1) { <small> · {{ waiting[0].label }}</small> }</dt>
+                        <dd class="wk-amount--warn">{{ review.text }}</dd></div>
+                      @if (waiting.length > 1) {
+                        @for (line of waiting; track line.payee) { <div class="is-sub"><dt>{{ line.label }}</dt><dd>{{ line.text }}</dd></div> }
+                      }
+                    }
                   }
                   <div class="is-total"><dt>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
                   @if (sum.dueNowEur > 0 && sum.laterEur > 0) { <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div> }
@@ -216,9 +227,9 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
             </section>
 
             <div class="ios-group pp-costs">
-              <!-- The Eindkost and the Verschil are on Kosten, where the Nacalculatie opens; here only its state. -->
+              <!-- What the container cost, in two lines; its Verschil and where it sits are on Kosten, where the Nacalculatie opens. -->
               <button class="ios-cell" type="button" (click)="openCosts.emit()">
-                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie</span>@if (nacalc(); as n) { <span class="ios-cell__sub">{{ n.label }} {{ n.forecastEur | eur }}</span> }</span>
                 @if (nacalc(); as n) { <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="pillTone(n.pill.tone)">{{ n.pill.label }}</span></span> }
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
@@ -388,8 +399,10 @@ export class PurchasePaymentOverview {
       text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
-  /** Under the card's Verschil: the payees it comes from, each with its own net figure. */
+  /** Under the card's Verschil: the payees it comes from, each with its own net figure outside a review; they add up to it. */
   readonly byPayee = computed(() => differenceByPayee(this.ledger()?.visible ?? []));
+  /** Beside Nakijken: the payees whose overpayment still waits for a review. */
+  readonly reviewBy = computed(() => reviewByPayee(this.ledger()?.visible ?? []));
   /** Hoe is dit opgebouwd?: the payees, the Afspraak they add up to, then the Enrosed kost. */
   readonly bridgeRows = computed(() => {
     const book = this.ledger();
@@ -423,11 +436,11 @@ export class PurchasePaymentOverview {
   mark(row: LedgerRow): ReturnType<typeof proofMark> { return proofMark(bankProofSub(row), { linked: row.bank.linked, creditOffset: !!row.creditOffset }); }
   /** A Verschil row only once the payees differ from the Afspraak, or an overpayment waits for a review. */
   hasVerschil(sum: LedgerSummary): boolean { return Math.round(sum.differenceEur * 100) !== 0 || sum.reviewEur > 0; }
-  verschilOf(sum: LedgerSummary): PhoneAmount { return verschilText(sum); }
-  /** 'na afrekening', 'nog na te kijken' or the koersverschil, unless the amount's own word already says it. */
-  verschilNote(sum: LedgerSummary, verschil: PhoneAmount): string {
-    const note = ledgerDifferenceNote(sum);
-    return verschil.text.endsWith(note) ? '' : note;
+  /** The settled Verschil and, apart, what still waits for a review. */
+  splitOf(sum: LedgerSummary): VerschilSplit { return verschilSplit(sum); }
+  /** 'na afrekening' or the koersverschil, unless the amount's own word already says it. */
+  verschilNote(split: VerschilSplit): string {
+    return split.verschil?.text.endsWith(split.note) ? '' : split.note;
   }
   amountTone(tone: PhoneAmount['tone']): string { return tone === 'in' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : ''; }
   pillTone(tone: string): string { return tone === 'ok' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : 'wk-amount--muted'; }

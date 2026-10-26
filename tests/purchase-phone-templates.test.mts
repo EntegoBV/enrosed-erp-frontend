@@ -28,7 +28,8 @@ test('the step confirmation and the Nacalculatie glance parse and only take inpu
   assert.match(sheet, /Je openstaande wijzigingen worden mee opgeslagen\./);
   assert.match(sheet, /id="mpo-step-tracking"/);
   const glance = templateOf(await read('app/features/purchasing/purchase-nacalc-glance.ts'));
-  for (const words of ['Afspraak', '{{ g.verschilTitle }}', '{{ g.verschilText }}', '{{ g.reviewText }}', 'Volledige nacalculatie', 'Nacalculatie laden…', 'De nacalculatie is nog niet beschikbaar.']) {
+  for (const words of ['Afspraak', '{{ g.verschilTitle }}', '{{ g.verschilText }}', '@if (g.verschilShown)', '<span class="ios-cell__title">Nakijken</span>', '{{ g.reviewText }}',
+    'Volledige nacalculatie', 'Nacalculatie laden…', 'De nacalculatie is nog niet beschikbaar.']) {
     assert.ok(glance.includes(words), words);
   }
   assert.doesNotMatch(glance, /Verschil met afspraak|verschilWords/, "2026-10-25: 'Verschil · 5,0 %' beside '€ x minder', one line");
@@ -60,6 +61,12 @@ test('the read view: one card over five panes, every section once, the Nacalcula
   assert.match(template, /@if \(data\.order\.status === 'CONCEPT'\) \{ <ng-container \[ngTemplateOutlet\]="calcBlock" \/> \}\s*<!-- Nacalculatie/);
   assert.match(template, /@if \(data\.order\.status !== 'CONCEPT'\) \{ <ng-container \[ngTemplateOutlet\]="calcBlock" \/> \}\s*<ng-template #calcBlock>\s*<div id="purchase-calc-section"/);
   assert.match(template, /<h2 id="mpo-costs-title">Calculatie<\/h2><p>Gelande kostprijs · intern<\/p>/);
+  // 2026-10-26: under the Nacalculatie the calculation gets the same plain heading, and the Nacalculatie's ways out close the tab after it.
+  assert.match(template, /<div class="ios-section__head ios-section__head--prominent mpo-calc-head"><h2 id="mpo-costs-title">Calculatie<\/h2><span class="wk-pill tone-grey">Intern<\/span><\/div>/);
+  assert.match(template, /<app-purchase-nacalc-overview mode="read" \[footer\]="false"/);
+  const foot = at('<app-purchase-nacalc-footer');
+  assert.ok(template.indexOf('</ng-template>', calc) < foot && foot < at('id="mpo-pane-betalingen"'), 'the footer closes the Kosten tab, after the calculation');
+  assert.equal(count(template, '<app-purchase-nacalc-footer'), 1);
   // The Totaal geland tile goes to the calculation, the Betalingen cell to the Nacalculatie at the top.
   assert.match(template, /\(click\)="scrollToCard\('purchase-calc-section', 'purchase-costs-section'\)"/);
   // A payee tapped in the Nacalculatie opens on top of Kosten; the tab stays.
@@ -307,38 +314,46 @@ test('Betalingen, the payee sheet and the Nacalculatie on the phone say one net 
   const card = overview.slice(overview.indexOf('<section class="ios-card pp-summary"'), overview.indexOf('@if (todos().length'));
   assert.doesNotMatch(card, /wk-equation__op/);
   for (const words of ['<div class="pp-summary__status wk-amount--in"><app-icon name="tick" [size]="14" /> Alles betaald</div>', '<dt>Afspraak</dt>', '<dt>Betaald</dt>',
-    '<div class="pp-summary__verschil"><dt>Verschil', '@for (line of byPayee(); track line.payee)', 'waarvan te veel betaald · nakijken', '<dt>Open</dt>',
+    '<div class="pp-summary__verschil"><dt>Verschil', '@for (line of byPayee(); track line.payee)', '<div class="pp-summary__verschil"><dt>Nakijken', '@let waiting = reviewBy();', '<dt>Open</dt>',
     '@for (row of bridgeRows(); track row.key)', '[class.is-sum]="row.sum"', 'meterOf(sum)']) {
     assert.ok(card.includes(words), words);
   }
   assert.doesNotMatch(overview, /Afgesproken, betaald en open per ontvanger|Nacalculatie en kostprijs/);
+  // 2026-10-26: a review is never a 'waarvan' of a net minder, on any of the three.
+  for (const [name, template] of [['overview', overview], ['sheet', sheet], ['nacalc', nacalc]] as const) assert.doesNotMatch(template, /waarvan te veel betaald/, name);
   // Ontvangers: one two-line row per payee; its terms, invoice files and credits are one tap away in its sheet.
   const payees = overview.slice(overview.indexOf('<h2>Ontvangers</h2>'), overview.indexOf('<h2>Alle betalingen'));
   assert.match(payees, /<span class="pp-payee__top"><span class="ios-cell__title">\{\{ item\.label \}\}<\/span><span class="ios-cell__meta" \[class\]="tone\(word\.tone\)">\{\{ word\.word \}\}<\/span><\/span>/);
   assert.match(payees, /<span class="ios-cell__sub">\{\{ figures\(item\) \}\}<\/span>/);
   assert.doesNotMatch(payees, /item\.terms|item\.credits|invoiceFiles|Nog geen factuur|pp-payee__trail/);
   // A payment: two lines, the bank as a mark with its words for a screen reader; Afrekening stays in its detail.
+  assert.match(overview, /\{\{ line\(row\) \}\}@if \(mark\(row\); as proof\)/);
+  // In its own sheet the payee is not repeated: line 2 only for a term or transfers, else the title takes two lines with the mark after it.
+  assert.match(sheet, /@let who = line\(row\);\s*@let proof = mark\(row\);\s*@if \(who \|\| proof\?\.text\)/);
+  assert.match(sheet, /<span class="ios-cell__title payee-sheet__ptitle">\{\{ row\.title \}\}@if \(proof\?\.icon; as icon\)/);
+  assert.match(sheetSource, /readonly line = sheetPaymentLine;/);
   for (const template of [overview, sheet]) {
     assert.match(template, /class="ios-cell pp-row pp-row2"/);
-    assert.match(template, /\{\{ line\(row\) \}\}@if \(mark\(row\); as proof\)/);
-    assert.match(template, /role="img" \[attr\.aria-label\]="proof\.label"/);
+    assert.match(template, /role="img" \[attr\.aria-label\]="proof!?\.label"/);
     assert.doesNotMatch(template.slice(template.indexOf('pp-row2'), template.indexOf('pp-row2') + 900), /settlesLabel/);
   }
   assert.match(overview, /<span class="ios-cell__body">Afrekening<\/span><span class="ios-cell__value">\{\{ row\.settlesLabel \|\| 'Niet afgerekend' \}\}<\/span>/);
-  assert.match(overview, /<span class="ios-cell__title">Nacalculatie<\/span><\/span>\s*@if \(nacalc\(\); as n\) \{ <span class="ios-cell__trail"><span class="ios-cell__meta" \[class\]="pillTone\(n\.pill\.tone\)">\{\{ n\.pill\.label \}\}/);
+  // The Nacalculatie cell says what the container cost (Eindkost € 61.983,23), its state beside it.
+  assert.match(overview, /<span class="ios-cell__title">Nacalculatie<\/span>@if \(nacalc\(\); as n\) \{ <span class="ios-cell__sub">\{\{ n\.label \}\} \{\{ n\.forecastEur \| eur \}\}<\/span> \}<\/span>\s*@if \(nacalc\(\); as n\) \{ <span class="ios-cell__trail"><span class="ios-cell__meta" \[class\]="pillTone\(n\.pill\.tone\)">\{\{ n\.pill\.label \}\}/);
 
   // The payee sheet: the status on the receipt, one Verschil, Termijnen before Factuur, a term in two lines with one word.
   const receipt = sheet.slice(sheet.indexOf('<div class="ios-card payee-sheet__receipt">'), sheet.indexOf('<h2>Termijnen</h2>'));
   assert.doesNotMatch(receipt, /wk-equation__op/);
   assert.match(receipt, /<div class="payee-sheet__status" \[class\]="tone\(word\.tone\)">/);
-  assert.match(receipt, /@if \(difference\(\); as verschil\) \{\s*<div><dt>Verschil/);
+  assert.match(receipt, /@if \(difference\(\); as split\) \{\s*@if \(split\.verschil; as verschil\) \{\s*<div><dt>Verschil/);
+  assert.match(receipt, /@if \(split\.review; as review\) \{ <div><dt>Nakijken<\/dt><dd class="wk-amount--warn">\{\{ review\.text \}\}<\/dd><\/div> \}/);
   assert.ok(sheet.indexOf('<h2>Termijnen</h2>') < sheet.indexOf('<h2>Factuur</h2>'), 'the terms explain the receipt\'s Verschil');
   assert.match(sheet, /<h2>Termijnen<\/h2><span class="ios-section__trail">\{\{ trail\(\) \}\}<\/span>/);
   assert.match(sheet, /<span class="pp-line2"><span class="ios-cell__sub">\{\{ term\.paidEur \| eur \}\} van \{\{ term\.fullEur \| eur \}\}<\/span>/);
-  assert.match(sheet, /@if \(term\.statusNote\) \{ <span class="ios-cell__sub">\{\{ term\.statusNote \}\}<\/span> \}/, 'a netted term keeps its note');
+  assert.match(sheet, /@if \(noteOf\(term\); as note\) \{ <span class="ios-cell__sub">\{\{ note \}\}<\/span> \}/, 'a netted term keeps its note, and what it was netted with');
   assert.match(sheet, /<h2>Opbouw van de afspraak<\/h2>@if \(item\.payee === 'LOGISTICS'\) \{ <span class="ios-section__trail">uit Kosten<\/span> \}/);
   assert.match(sheet, /<span class="pp-line2"><span class="ios-cell__title">\{\{ fw\.title \}\}<\/span>@if \(fw\.note\) \{ <span class="ios-cell__meta">\{\{ fw\.note \}\}<\/span> \}<\/span>/);
-  assert.match(sheet, /verlaagt \} @else \{ Verlaagt \} de eindkost, niet Betaald of Open\./);
+  assert.match(sheet, /@if \(item\.creditOpenEur > 0\) \{ Nog \{\{ item\.creditOpenEur \| eur \}\} te ontvangen\. \}Een tegoed verlaagt de eindkost, niet Betaald of Open\./);
   assert.match(sheetSource, /readonly lead = computed\(\(\) => sheetLead\(this\.payee\(\), this\.supplierName\(\)\)\);/);
   // Every edit action stays where it was.
   for (const words of ['Betaalplan wijzigen', 'Tegoed noteren…', 'Factuur toevoegen…', 'Inspectie via leverancier', 'Afrekening ongedaan maken', 'Afrekenen…',
@@ -351,10 +366,12 @@ test('Betalingen, the payee sheet and the Nacalculatie on the phone say one net 
   order.reduce((last, marker) => { const at = nacalc.indexOf(marker); assert.ok(at > last, marker); return at; }, -1);
   const story = nacalc.slice(nacalc.indexOf('<div class="ios-card np-story">'), nacalc.indexOf('<h2>Waar het verschil zit</h2>'));
   assert.doesNotMatch(story, /wk-equation__op/);
-  for (const words of ['{{ storySub(head) }}', 'meterOf(book.summary)', '<dt>Afspraak</dt>', '<div class="is-total"><dt>Verschil@if (pct(head); as p)', 'waarvan te veel betaald · nakijken',
-    'waarvan bijkomende kosten', 'waarvan koersverschil (bank)', 'head.sentence']) {
+  for (const words of ['{{ storySub(head) }}', 'meterOf(book.summary)', '<dt>Afspraak</dt>', '@let split = storyVerschil(head);',
+    '<div class="is-total"><dt>Verschil@if (split.pct)', '<dt>Nakijken</dt><dd class="wk-amount--warn">{{ review.text }}</dd>', 'head.sentence']) {
     assert.ok(story.includes(words), words);
   }
+  // Bijkomend and the koersverschil are in the Eindkost's line (storySub's 'incl.'), never a 'waarvan' under a net minder.
+  assert.doesNotMatch(story, /waarvan/);
   assert.match(nacalc, /<h2>Waar het verschil zit<\/h2><span class="ios-section__trail">afspraak → eindkost<\/span>/);
   assert.match(nacalc, /@for \(row of chain\(\); track row\.key\)/);
   assert.match(nacalc, /\(click\)="openPayee\.emit\(row\.payee\)"/);
@@ -373,6 +390,13 @@ test('Betalingen, the payee sheet and the Nacalculatie on the phone say one net 
     assert.ok(basis.includes(words), words);
   }
   assert.match(nacalcSource, /readonly bridge = computed\(\(\) => afspraakBridge\(this\.nacalc\(\)\?\.bridge\.rows \?\? \[\]\)\);/);
+  // The ways out: under the Nacalculatie in the editor, at the end of Kosten in the read view.
+  assert.match(nacalc, /@if \(footer\(\)\) \{ <app-purchase-nacalc-footer \[orderId\]="orderId\(\)" \[orderNumber\]="view\(\)\.order\.number" \[dirty\]="dirty\(\)" \(openPayments\)="openPayments\.emit\(\)" \/> \}/);
+  const footer = templateOf(await read('app/features/purchasing/purchase-nacalc-footer.ts'));
+  assert.equal(parseTemplate(footer, 'purchase-nacalc-footer.html').errors, null);
+  for (const words of ["'Betalingen & kostprijs (PDF)'", '<span class="ios-cell__title">Betalingen</span>', 'Kosten &amp; bank', 'Sla de container op om de kostprijs als PDF te exporteren.']) {
+    assert.ok(footer.includes(words), words);
+  }
 });
 
 test('the phone money styles stay on their hosts and their own classes; the retired list classes are gone', async () => {

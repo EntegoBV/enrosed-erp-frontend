@@ -13,6 +13,7 @@ import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
+import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
 import { purchaseNacalc } from './purchase-nacalc-metrics';
@@ -80,7 +81,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
             IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet],
   template: `
@@ -408,7 +409,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               @if (data.order.status === 'CONCEPT') { <ng-container [ngTemplateOutlet]="calcBlock" /> }
               <!-- Nacalculatie: what the container really cost, complete and never collapsed. Recording and settling happen in the editor. -->
               <section class="mpo-result mpo-host" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-                <app-purchase-nacalc-overview mode="read" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                <app-purchase-nacalc-overview mode="read" [footer]="false" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
                   [state]="paymentState()" [error]="paymentsError()" [orderId]="data.order.id"
                   (openPayee)="kostenPayee.set($event)" (pay)="recordPayment($event)" (settle)="settleInEditor()"
                   (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')"
@@ -420,11 +421,16 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               @if (data.order.status !== 'CONCEPT') { <ng-container [ngTemplateOutlet]="calcBlock" /> }
               <ng-template #calcBlock>
                 <div id="purchase-calc-section" tabindex="-1" aria-labelledby="mpo-costs-title">
-                  <div class="mpo-head">
-                    <span class="ios-tile ios-tile--lg ios-tile--soft tone-teal" aria-hidden="true"><app-icon name="tag" [size]="19" /></span>
-                    <div class="mpo-head__copy"><h2 id="mpo-costs-title">Calculatie</h2><p>Gelande kostprijs · intern</p></div>
-                    <span class="wk-pill tone-grey">Intern</span>
-                  </div>
+                  @if (data.order.status === 'CONCEPT') {
+                    <div class="mpo-head">
+                      <span class="ios-tile ios-tile--lg ios-tile--soft tone-teal" aria-hidden="true"><app-icon name="tag" [size]="19" /></span>
+                      <div class="mpo-head__copy"><h2 id="mpo-costs-title">Calculatie</h2><p>Gelande kostprijs · intern</p></div>
+                      <span class="wk-pill tone-grey">Intern</span>
+                    </div>
+                  } @else {
+                    <!-- Under the Nacalculatie the calculation is the second block: the same plain heading, never a heavier one. -->
+                    <div class="ios-section__head ios-section__head--prominent mpo-calc-head"><h2 id="mpo-costs-title">Calculatie</h2><span class="wk-pill tone-grey">Intern</span></div>
+                  }
                   @if (!isDdp()) {
                     <!-- What the road adds on top of the goods - the figure a buyer negotiates on; the total is the star. -->
                     <div class="ios-figures">
@@ -493,6 +499,11 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   </section>
                 </div>
               </ng-template>
+              <!-- The Nacalculatie's ways out close the tab, after the calculation, so they never split it in two. -->
+              @if (nacalc()) {
+                <app-purchase-nacalc-footer class="mpo-costs__foot" [orderId]="data.order.id" [orderNumber]="data.order.number"
+                  (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')" />
+              }
             </div>
           </section>
 

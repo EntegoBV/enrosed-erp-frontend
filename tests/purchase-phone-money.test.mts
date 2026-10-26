@@ -2,10 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { LedgerTerm, PayeeLedger, PayeeStatusKind } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import type { NacalcBridgeRow, NacalcPayeeRow, NacalcProductRow, NacalcTermRow } from '../src/app/features/purchasing/purchase-nacalc-metrics.ts';
-import { differenceWord } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
+import type { PurchaseInstalmentReconciliation, PurchaseOrderView, PurchasePayment, PurchaseReconciliationStream } from '../src/app/core/api/models.ts';
+import { PAYMENT_TERMS } from '../src/app/core/api/models.ts';
+import { instalmentsOf } from '../src/app/features/purchasing/payment-plan.ts';
+import { purchaseGroupSettled, purchaseInstalmentState } from '../src/app/features/purchasing/purchase-instalment-state.ts';
+import { differenceWord, ledgerDifferenceNote, purchasePaymentLedger, type PaymentLedger } from '../src/app/features/purchasing/purchase-payment-ledger.ts';
 import {
   afspraakBridge, differenceByPayee, fileWords, landedChain, nacalcChain, nacalcGrossLine, payeeFigures, payeeWord, paymentLine, pctText, planTrail,
-  productRows, productSheetRows, proofMark, settledMeter, sheetLead, storySub, termWord, verschilText,
+  productRows, productSheetRows, proofMark, reviewByPayee, settledMeter, sheetLead, sheetPaymentLine, storySub, storyVerschil, termNote, termWord,
+  verschilSplit, verschilText,
 } from '../src/app/features/purchasing/purchase-phone-money.ts';
 
 /*
@@ -39,8 +44,44 @@ test('the card says one Verschil and the two payees it comes from (PO-2026-005)'
     ['LOGISTICS', 'Douane & transport', '€ 1.974,17 minder', 'in'],
   ], 'in the ledger order, agreement payees only');
   assert.deepEqual(differenceByPayee([{ ...SUPPLIER, differenceEur: 0 }]), [], 'no line without a difference');
-  // A payee still to review says so, in the warn tone.
-  assert.deepEqual(differenceByPayee([{ ...SUPPLIER, differenceEur: 250, reviewEur: 250 }]).map(line => [plain(line.text), line.tone]), [['€ 250,00 meer · nakijken', 'warn']]);
+  // What waits for a review is never under the Verschil: it has its own Nakijken row (reviewByPayee).
+  assert.deepEqual(differenceByPayee([{ ...SUPPLIER, differenceEur: 250, reviewEur: 250 }]), []);
+  assert.deepEqual(reviewByPayee([{ ...SUPPLIER, differenceEur: 250, reviewEur: 250 }]).map(line => [line.label, plain(line.text), line.tone]),
+    [['Leverancier', '€ 250,00 meer', 'warn']]);
+  // PO-2026-005 has no review: the split is the plain Verschil with the card's note.
+  const split = verschilSplit(summary);
+  assert.deepEqual([plain(split.verschil?.text), split.verschil?.tone, split.note, split.review], ['€ 3.271,34 minder', 'in', 'na afrekening', null]);
+});
+
+test('an overpayment still to review keeps its own Nakijken row; the settled Verschil never disappears behind it (2026-10-26)', () => {
+  // Leverancier: one term settled € 300 lower, another € 300 too much and not settled yet. Net zero, but two things to say.
+  const supplier = { ...SUPPLIER, differenceEur: 0, reviewEur: 300 };
+  const one = verschilSplit({ differenceEur: 0, reviewEur: 300, fxEur: 0 });
+  assert.deepEqual([plain(one.verschil?.text), one.verschil?.tone, one.note, plain(one.review?.text), one.review?.tone],
+    ['€ 300,00 minder', 'in', 'na afrekening', '€ 300,00 meer', 'warn'], "never 'geen verschil' above a review");
+  assert.deepEqual(differenceByPayee([supplier]).map(line => [line.label, plain(line.text), line.tone]), [['Leverancier', '€ 300,00 minder', 'in']],
+    'the settled 300 stays on the card');
+  assert.deepEqual(reviewByPayee([supplier]).map(line => [line.label, plain(line.text)]), [['Leverancier', '€ 300,00 meer']]);
+  // Douane & transport settled € 1.974,17 lower, the supplier € 300 to review: the 300 is a meer, never part of that minder.
+  const payees = [{ ...LOGISTICS }, { ...SUPPLIER, differenceEur: 300, reviewEur: 300 }];
+  const card = verschilSplit({ differenceEur: -1974.17 + 300, reviewEur: 300, fxEur: 0 });
+  assert.deepEqual([plain(card.verschil?.text), card.note, plain(card.review?.text)], ['€ 1.974,17 minder', 'na afrekening', '€ 300,00 meer']);
+  assert.deepEqual(differenceByPayee(payees).map(line => [line.label, plain(line.text)]), [['Douane & transport', '€ 1.974,17 minder']]);
+  assert.deepEqual(reviewByPayee(payees).map(line => [line.label, plain(line.text)]), [['Leverancier', '€ 300,00 meer']]);
+  // Only a review left: no Verschil row at all.
+  const only = verschilSplit({ differenceEur: 30, reviewEur: 30, fxEur: 0 });
+  assert.deepEqual([only.verschil, plain(only.review?.text)], [null, '€ 30,00 meer']);
+  // The koersverschil inside the settled part keeps its words; 'na afrekening' only while a review stands beside it.
+  assert.equal(plain(verschilSplit({ differenceEur: 74.8, reviewEur: 30, fxEur: 44.8 }).verschil?.text), '€ 44,80 koersverschil (bank)');
+  assert.equal(plain(verschilSplit({ differenceEur: 120, reviewEur: 30, fxEur: 44.8 }).note), 'na afrekening · waarvan koersverschil € 44,80 (bank)');
+});
+
+test('without a review the split note is the ledger\'s note, word for word', () => {
+  for (const item of [{ differenceEur: -3271.34, reviewEur: 0, fxEur: 0 }, { differenceEur: 44.8, reviewEur: 0, fxEur: 44.8 },
+    { differenceEur: 120, reviewEur: 0, fxEur: 44.8 }, { differenceEur: 0.01, reviewEur: 0, fxEur: 0 }]) {
+    assert.equal(verschilSplit(item).note, ledgerDifferenceNote(item), JSON.stringify(item));
+    assert.deepEqual(verschilSplit(item).verschil, verschilText(item), JSON.stringify(item));
+  }
 });
 
 test('verschilText writes what differenceWord says, beside the amount, never a sign', () => {
@@ -170,19 +211,65 @@ test('Waar het verschil zit: the payees, the supplier\'s terms under it, a term 
   assert.deepEqual([plain(other.amount.text), other.amount.tone, plain(other.line), other.word?.word], ['€ 42,50 meer', 'none', '€ 42,50 · zonder afspraak', 'Bijkomend']);
   const none = nacalcChain([payeeRow({ verschilEur: 0, status: status('PAID'), reason: 'none', termsMixed: false, ddpNote: true })], () => [], false)[0];
   assert.deepEqual([none.amount.text, plain(none.line)], ['geen verschil', '€ 52.021,07 → € 50.723,90 · DDP']);
+  // 2026-10-26: what the old rows said beside the figures stays: the payee's koersverschil, a netted term's partner, a historic payment.
+  const koers = nacalcChain([payeeRow({ fxEur: 44.8, termsMixed: false })], () => [], false)[0];
+  assert.equal(plain(koers.line), '€ 52.021,07 → € 50.723,90 · koers + € 44,80');
+  assert.equal(plain(nacalcChain([payeeRow({ fxEur: 44.8, reason: 'fx', verschilEur: 44.8, termsMixed: false })], () => [], false)[0].line),
+    '€ 52.021,07 → € 50.723,90', 'the amount already says koersverschil');
+  const legacy = nacalcChain([payeeRow({ reason: 'legacy', status: status('PAID'), termsMixed: false })], () => [], false)[0];
+  assert.deepEqual(legacy.word, { word: 'Historisch', tone: 'neutral' });
+  const netted = [{ ...TERMS[0], settled: false, finalized: false, lowerEur: 0, offsetEur: 60.78, offsetWith: ['1/3 bij vertrek'], statusNote: null,
+    statusSplit: { pill: 'Betaald · verrekend', rest: 'met 1/3 bij vertrek' } }, TERMS[1], TERMS[2]];
+  const nettedChain = nacalcChain([payeeRow({})], () => netted, false);
+  assert.deepEqual([plain(nettedChain[1].line), nettedChain[1].word], ['€ 17.340,34 → € 15.217,17 · verrekend met 1/3 bij vertrek', null],
+    "the line names the term; 'Verrekend' is not said twice");
+  // A settled minder that cancels a meer still to review: the row names what to look at, never 'geen verschil' beside Nakijken.
+  const hidden = nacalcChain([payeeRow({ verschilEur: 0, reason: 'review', status: status('OVERPAID', 'warn'), termsMixed: false })], () => [], false,
+    () => 300)[0];
+  assert.deepEqual([plain(hidden.amount.text), hidden.amount.tone, hidden.word?.word, hidden.warn], ['€ 300,00 meer', 'warn', 'Nakijken', true]);
 });
 
-test('the gross pair Emre asked about reads as the sum of the rows above it', () => {
+test('a netted term keeps what it was netted with, and a payee\'s own sheet never repeats the payee', () => {
+  assert.equal(termNote({ statusNote: '€ 60,78 verrekend met 70% bij vertrek', statusSplit: null }), '€ 60,78 verrekend met 70% bij vertrek');
+  assert.equal(termNote({ statusNote: null, statusSplit: { pill: 'Betaald · verrekend', rest: 'met 30% bij bestelling' } }), 'verrekend met 30% bij bestelling');
+  assert.equal(termNote({ statusNote: null, statusSplit: null }), null);
+  assert.equal(sheetPaymentLine({ termLabel: '1/3 bij aankomst', parts: [{}] }), '1/3 bij aankomst');
+  assert.equal(sheetPaymentLine({ termLabel: null, parts: [{}] }), '', 'Douane & transport in its own sheet: no line 2');
+  assert.equal(sheetPaymentLine({ termLabel: null, parts: [{}, {}] }), '2 transacties');
+  assert.equal(sheetPaymentLine({ termLabel: '70% bij vertrek', parts: [{}, {}] }), '70% bij vertrek · 2 transacties');
+});
+
+test('the gross pair Emre asked about reads bruto and netto, zero parts left out (2026-10-26)', () => {
   const ex = { savingsEur: 6220.56, overrunsEur: 2949.22, additionalEur: 0 };
-  assert.equal(plain(nacalcGrossLine(ex, -3271.34, 0)), 'Opgeteld: € 6.220,56 minder, € 2.949,22 meer, € 0,00 bijkomend; samen € 3.271,34 minder.');
+  // 6.220,56 is the terms paid less plus Douane & transport: not the sum of the rows above it, so never 'Opgeteld'.
+  assert.equal(plain(nacalcGrossLine(ex, -3271.34, 0)), 'Bruto € 6.220,56 minder en € 2.949,22 meer; netto € 3.271,34 minder.');
   assert.equal(nacalcGrossLine({ savingsEur: 3271.34, overrunsEur: 0, additionalEur: 0 }, -3271.34, 0), null, 'savings only: the rows say it');
   assert.equal(nacalcGrossLine({ savingsEur: 0, overrunsEur: 120, additionalEur: 0 }, 120, 0), null);
-  assert.equal(plain(nacalcGrossLine(ex, -3771.34, 500)), 'Opgeteld: € 6.220,56 minder, € 2.949,22 meer, € 0,00 bijkomend, − € 500,00 tegoed; samen € 3.771,34 minder.');
-  assert.equal(plain(nacalcGrossLine({ savingsEur: 100, overrunsEur: 0, additionalEur: 42.5 }, -57.5, 0)), 'Opgeteld: € 100,00 minder, € 0,00 meer, € 42,50 bijkomend; samen € 57,50 minder.');
-  assert.equal(plain(nacalcGrossLine(ex, -3000, 0)), 'Opgeteld: € 6.220,56 minder, € 2.949,22 meer, € 0,00 bijkomend.', "no 'samen' when the parts miss the Verschil");
+  assert.equal(plain(nacalcGrossLine(ex, -3771.34, 500)), 'Bruto € 6.220,56 minder, € 2.949,22 meer en € 500,00 tegoed; netto € 3.771,34 minder.', 'a tegoed without a sign');
+  assert.equal(plain(nacalcGrossLine({ savingsEur: 100, overrunsEur: 0, additionalEur: 42.5 }, -57.5, 0)), 'Bruto € 100,00 minder en € 42,50 bijkomend; netto € 57,50 minder.');
+  assert.equal(plain(nacalcGrossLine(ex, -3000, 0)), 'Bruto € 6.220,56 minder en € 2.949,22 meer.', "no 'netto' when the parts miss the Verschil");
+  // A review is the story card's own Nakijken row: netto is the Verschil outside it.
+  assert.equal(plain(nacalcGrossLine({ ...ex, reviewEur: 300 }, -2971.34, 0)), 'Bruto € 6.220,56 minder en € 2.949,22 meer; netto € 3.271,34 minder.');
+  for (const line of [nacalcGrossLine(ex, -3271.34, 0), nacalcGrossLine(ex, -3771.34, 500)]) assert.doesNotMatch(plain(line), /€ 0,00|− €|Opgeteld/);
   assert.equal(plain(storySub({ kind: 'final', paidEur: 61983.23, openEur: 0, creditEur: 0 })), 'betaald € 61.983,23 · open € 0,00');
   assert.equal(plain(storySub({ kind: 'provisional', paidEur: 100, openEur: 50, creditEur: 500 })), 'betaald € 100,00 · open € 50,00 · tegoed − € 500,00');
   assert.equal(storySub({ kind: 'concept', paidEur: 0, openEur: 0, creditEur: 0 }), 'volgens de calculatie · nog niets betaald');
+  // Bijkomend and the koersverschil sit in the Eindkost, so they go under it, never as 'waarvan' of a minder.
+  assert.equal(plain(storySub({ kind: 'provisional', paidEur: 1000, openEur: 0, creditEur: 0, additionalEur: 42.5, fxEur: 44.8 })),
+    'betaald € 1.000,00 · open € 0,00 · incl. bijkomend € 42,50, koers + € 44,80');
+  assert.equal(plain(storySub({ kind: 'final', paidEur: 1000, openEur: 0, creditEur: 0, additionalEur: 0, fxEur: -12 })), 'betaald € 1.000,00 · open € 0,00 · incl. koers − € 12,00');
+});
+
+test('the story card splits like Betalingen: Afspraak + Verschil + Nakijken = Eindkost', () => {
+  const po5 = storyVerschil({ verschilEur: -3271.34, verschilPct: -5.01, reviewEur: 0, begrootEur: 65254.57 });
+  assert.deepEqual([plain(po5.verschil?.text), po5.verschil?.tone, po5.pct, po5.review], ['€ 3.271,34 minder', 'in', '5,0 %', null]);
+  // Eindkost 65.000 against an Afspraak of 66.000: 1.300 settled lower and 300 still to review. The Verschil row is the 1.300, its % of the Afspraak.
+  const review = storyVerschil({ verschilEur: -1000, verschilPct: -1.5, reviewEur: 300, begrootEur: 66000 });
+  assert.deepEqual([plain(review.verschil?.text), review.verschil?.tone, review.pct, plain(review.review?.text), review.review?.tone],
+    ['€ 1.300,00 minder', 'in', '2,0 %', '€ 300,00 meer', 'warn']);
+  assert.equal(Math.round((66000 + review.verschilEur + review.reviewEur) * 100), 6500000, 'Afspraak + Verschil + Nakijken = Eindkost');
+  const only = storyVerschil({ verschilEur: 300, verschilPct: 0.5, reviewEur: 300, begrootEur: 66000 });
+  assert.deepEqual([only.verschil, only.pct, plain(only.review?.text)], [null, '', '€ 300,00 meer']);
 });
 
 const product = (name: string, eindkostEur: number, verschilEur: number, unitEur: number, pricingUnitEur: number, extra: Partial<NacalcProductRow> = {}): NacalcProductRow => ({
@@ -273,6 +360,145 @@ test('a payment row: the term or the payee on line 2, the bank as a mark', () =>
   assert.deepEqual(proofMark('swift.pdf', { linked: 0, creditOffset: false }), { icon: 'clip', label: 'swift.pdf', text: 'swift.pdf' });
   assert.deepEqual(proofMark('verrekend tegoed', { linked: 0, creditOffset: true }), { icon: null, label: 'verrekend tegoed', text: 'verrekend tegoed' });
   assert.equal(proofMark(null, { linked: 0, creditOffset: false }), null);
+});
+
+/* ---- against the ledger itself ------------------------------------------ */
+
+/*
+ * The phone's words are read off real ledgers, so a change in the ledger's status rules shows here:
+ * termWord against each term's own status, the payees under the Verschil against the summary.
+ */
+function stream(payee: PurchaseReconciliationStream['payee'], values: Partial<PurchaseReconciliationStream> = {}): PurchaseReconciliationStream {
+  return { payee, label: 'server label', status: 'UNPAID', plannedEur: 0, paidEur: 0, remainingEur: 0, forecastEur: 0,
+    varianceEur: 0, overpaidEur: 0, settledSavingEur: 0, explicitlySettled: false, finalized: false, paymentCount: 0, ...values };
+}
+function instalment(due: PurchaseInstalmentReconciliation['due'], values: Partial<PurchaseInstalmentReconciliation> = {}): PurchaseInstalmentReconciliation {
+  return { due, label: { ORDERED: '30% bij bestelling', SHIPPED: '70% bij vertrek', FREIGHT: 'Zeevracht (CIF)', ARRIVED: '100% bij aankomst' }[due],
+    plannedEur: 0, paidEur: 0, remainingEur: 0, settledSavingEur: 0, overpaidEur: 0, explicitlySettled: false, finalized: false, ...values };
+}
+function purchase(status: PurchaseOrderView['order']['status'], streams: PurchaseReconciliationStream[], instalments?: PurchaseInstalmentReconciliation[],
+  lines: unknown[] = [{ productId: 1 }]): PurchaseOrderView {
+  return {
+    order: { id: 50, number: 'INK-2026-014', status, paymentTerms: 'DEPOSIT_30_70', lines, cnyToUsd: 0.14, usdToEurGoods: 0.86 },
+    costing: { totals: { goodsEur: 1000, goodsUsd: 1100, originEur: 100, freightEur: 200, dutyEur: 50, destinationEur: 50, extraRevenueEur: 150, totalEur: 1550,
+      separateCostsEur: 0, totalWithSeparateCostsEur: 1550, inspectionEur: 0, otherCosts: [], separateCostsInPiecePrice: false } },
+    costLabels: { originCostsLabel: 'Lokale kosten China', seaFreightLabel: 'Zeevracht', seaFreightRoute: 'Ningbo → Rotterdam', destinationCostsLabel: 'Rotterdam → magazijn' },
+    payable: { supplierEur: 1000, logisticsEur: 400, enrosedEur: 150, freightInSupplierPrice: false, ddp: false },
+    reconciliation: { streams, lines: [], notes: [], supplierInstalments: instalments, totals: { paidEur: streams.reduce((sum, item) => sum + item.paidEur, 0) } },
+  } as unknown as PurchaseOrderView;
+}
+function pay(id: number, values: Partial<PurchasePayment> = {}): PurchasePayment {
+  return { id, orderId: 50, paidOn: '2026-09-0' + (id % 9 + 1), amount: 100, currency: 'EUR', amountEur: 100, label: null, actor: 'emre',
+    recordedAt: '2026-09-10T10:00:00Z', payee: 'SUPPLIER', settles: false, instalmentDue: null, ...values };
+}
+function ledgerOf(view: PurchaseOrderView, payments: PurchasePayment[]): PaymentLedger {
+  return purchasePaymentLedger({
+    view, payments, documents: null, terms: purchaseInstalmentState(view, instalmentsOf(view.order, PAYMENT_TERMS), payments),
+    settled: payee => purchaseGroupSettled(view, payments, payee), toleranceEur: 10, totalLabel: 'Totaal geland', planLabel: '30% bij bestelling, 70% bij vertrek',
+  });
+}
+const usdLines = [{ productId: 301, quantity: 400, orderedQuantity: 400, exwPrice: 36, exwCurrency: 'USD' }];
+
+/** The ledgers: netted (PO 35), netted and settled, settled alone, a confirmed overrun beside a review, the koersverschil, open terms, PO-2026-005. */
+function ledgers(): [string, PaymentLedger][] {
+  const po35 = (supplier: Partial<PurchaseReconciliationStream> = {}, ordered: Partial<PurchaseInstalmentReconciliation> = {},
+    shipped: Partial<PurchaseInstalmentReconciliation> = {}) => purchase('ONTVANGEN', [
+    stream('SUPPLIER', { status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_048.54, forecastEur: 31_048.54, varianceEur: 0.5, overpaidEur: 0.5, paymentCount: 2, ...supplier }),
+    stream('LOGISTICS'), stream('SEPARATE'), stream('OTHER'),
+  ], [instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 0.5, offsetEur: -60.78, ...ordered }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_672.85, finalized: true, offsetEur: 60.78, ...shipped })]);
+  const po35Pay = [pay(1, { amount: 9_375.69, amountEur: 9_375.69, instalmentDue: 'ORDERED' }), pay(2, { amount: 21_672.85, amountEur: 21_672.85, instalmentDue: 'SHIPPED' })];
+  const overrun = purchase('ONTVANGEN', [stream('SUPPLIER', { status: 'OVERPAID', plannedEur: 31_048.04, paidEur: 31_119.32, forecastEur: 31_119.32, varianceEur: 71.28,
+    overpaidEur: 71.28, paymentCount: 2 }), stream('LOGISTICS', { status: 'SETTLED_LOWER', plannedEur: 400, paidEur: 380, settledSavingEur: 20, finalized: true,
+    explicitlySettled: true, paymentCount: 1 }), stream('SEPARATE'), stream('OTHER')],
+  [instalment('ORDERED', { plannedEur: 9_314.41, paidEur: 9_375.69, overpaidEur: 61.28, explicitlySettled: true, finalized: true }),
+    instalment('SHIPPED', { plannedEur: 21_733.63, paidEur: 21_743.63, overpaidEur: 10 })]);
+  const fx = purchase('BESTELD', [stream('SUPPLIER', { plannedEur: 12_384, paidEur: 3760, remainingEur: 8668.8, overpaidEur: 44.8, status: 'OVERPAID' }),
+    stream('LOGISTICS'), stream('SEPARATE'), stream('OTHER')],
+  [instalment('ORDERED', { plannedEur: 3715.2, paidEur: 3760, overpaidEur: 44.8 }), instalment('SHIPPED', { plannedEur: 8668.8, remainingEur: 8668.8 })], usdLines);
+  const open = purchase('ONDERWEG', [stream('SUPPLIER', { plannedEur: 1000, paidEur: 250, remainingEur: 700, settledSavingEur: 50, status: 'PARTIAL', paymentCount: 1 }),
+    stream('LOGISTICS', { plannedEur: 400, remainingEur: 400 })],
+  [instalment('ORDERED', { plannedEur: 300, paidEur: 250, settledSavingEur: 50, explicitlySettled: true, finalized: true }), instalment('SHIPPED', { plannedEur: 700, remainingEur: 700 })]);
+  const covered = (status: PurchaseOrderView['order']['status']) => purchase(status, [stream('SUPPLIER', { plannedEur: 1000, paidEur: 310, remainingEur: 690 }), stream('LOGISTICS')],
+    [instalment('ORDERED', { plannedEur: 300, paidEur: 310, finalized: true, offsetEur: -10 }), instalment('SHIPPED', { plannedEur: 700, remainingEur: 690, offsetEur: 10 })]);
+  const concept = purchase('CONCEPT', [stream('SUPPLIER', { plannedEur: 1000, remainingEur: 1000 }), stream('LOGISTICS', { plannedEur: 400, remainingEur: 400 })],
+    [instalment('ORDERED', { plannedEur: 300, remainingEur: 300 }), instalment('SHIPPED', { plannedEur: 700, remainingEur: 700 })]);
+  const po5 = purchase('ONTVANGEN', [
+    stream('SUPPLIER', { status: 'SETTLED_LOWER', plannedEur: 52021.07, paidEur: 50723.9, forecastEur: 50723.9, varianceEur: -1297.17, overpaidEur: 2949.22,
+      settledSavingEur: 4246.39, explicitlySettled: true, finalized: true, paymentCount: 3 }),
+    stream('LOGISTICS', { status: 'SETTLED_LOWER', plannedEur: 13233.5, paidEur: 11259.33, forecastEur: 11259.33, varianceEur: -1974.17, settledSavingEur: 1974.17,
+      explicitlySettled: true, finalized: true, paymentCount: 3 }),
+    stream('SEPARATE'), stream('OTHER'),
+  ], [instalment('ORDERED', { plannedEur: 17340.34, paidEur: 15217.17, settledSavingEur: 2123.17, explicitlySettled: true, finalized: true }),
+    instalment('SHIPPED', { plannedEur: 34680.73, paidEur: 35506.73, settledSavingEur: 2123.22, overpaidEur: 2949.22, explicitlySettled: true, finalized: true })]);
+  return [
+    ['PO 35 netted, € 0,50 to review', ledgerOf(po35(), po35Pay)],
+    ['PO 35 settled as a whole', ledgerOf(po35({ explicitlySettled: true, finalized: true }, { explicitlySettled: true, finalized: true },
+      { explicitlySettled: true, finalized: true }), [po35Pay[0], pay(2, { amount: 21_672.85, amountEur: 21_672.85, settles: true })])],
+    ['a confirmed overrun beside one to review, transport settled lower', ledgerOf(overrun, [pay(1, { amount: 9_375.69, amountEur: 9_375.69, instalmentDue: 'ORDERED', settles: true }),
+      pay(2, { amount: 21_743.63, amountEur: 21_743.63, instalmentDue: 'SHIPPED' }), pay(3, { payee: 'LOGISTICS', amount: 380, amountEur: 380, settles: true })])],
+    ['the koersverschil', ledgerOf(fx, [pay(301, { amount: 4320, currency: 'USD', amountEur: 3760, instalmentDue: 'ORDERED' })])],
+    ['settled lower, the next term due', ledgerOf(open, [pay(1, { amount: 250, amountEur: 250, instalmentDue: 'ORDERED', settles: true })])],
+    ['a later term covered in part', ledgerOf(covered('BESTELD'), [pay(1, { amount: 310, amountEur: 310, instalmentDue: 'ORDERED' })])],
+    ['the same term once sailed', ledgerOf(covered('ONDERWEG'), [pay(1, { amount: 310, amountEur: 310, instalmentDue: 'ORDERED' })])],
+    ['a concept', ledgerOf(concept, [])],
+    ['PO-2026-005', ledgerOf(po5, [pay(1, { amount: 15217.17, amountEur: 15217.17, instalmentDue: 'ORDERED', settles: true }),
+      pay(2, { amount: 35506.73, amountEur: 35506.73, instalmentDue: 'SHIPPED', settles: true }),
+      pay(3, { payee: 'LOGISTICS', amount: 11259.33, amountEur: 11259.33, settles: true })])],
+  ];
+}
+
+/** The phone's word for each family of the ledger's term status label. */
+function wordFor(label: string): string {
+  const text = plain(label);
+  if (text === 'Gepland') return 'Gepland';
+  if (text.startsWith('Afgerekend')) return 'Afgerekend';
+  if (text.startsWith('Betaald · verrekend')) return 'Verrekend';
+  if (/te veel/i.test(text)) return 'Nakijken';
+  if (text.startsWith('Koersverschil')) return 'Koersverschil';
+  if (text === 'Betaald' || text === 'Betaald · afgerekend') return 'Betaald';
+  if (text.startsWith('Later')) return 'Later';
+  return text;
+}
+
+test('termWord says what the ledger\'s own term status says, in one word and the same tone', () => {
+  let seen = 0;
+  const words = new Set<string>();
+  for (const [name, book] of ledgers()) {
+    const supplier = book.payees.find(item => item.payee === 'SUPPLIER')!;
+    for (const term of supplier.terms) {
+      const word = termWord(term, supplier.status.kind === 'PLANNED');
+      assert.deepEqual(word, { word: wordFor(term.status.label), tone: term.status.tone }, `${name}: ${term.label} (${plain(term.status.label)})`);
+      words.add(word.word);
+      seen++;
+    }
+  }
+  assert.ok(seen >= 14, `${seen} terms`);
+  for (const word of ['Afgerekend', 'Verrekend', 'Nakijken', 'Koersverschil', 'Later', 'Nu te betalen', 'Deels betaald', 'Gepland']) assert.ok(words.has(word), word);
+});
+
+test('under the card, the payees add up to the Verschil row and the Nakijken row, to the cent', () => {
+  for (const [name, book] of ledgers()) {
+    const sum = book.summary;
+    const split = verschilSplit(sum);
+    const byPayee = differenceByPayee(book.visible);
+    const review = reviewByPayee(book.visible);
+    const centsOf = (text: string) => { const value = Math.round(Number(plain(text).replace(/[^\d,]/g, '').replace(',', '.')) * 100); return / minder$/.test(text) ? -value : value; };
+    assert.equal(byPayee.reduce((total, line) => total + centsOf(line.text), 0), Math.round(split.verschilEur * 100), `${name}: Verschil row`);
+    assert.equal(review.reduce((total, line) => total + centsOf(line.text), 0), Math.round(split.reviewEur * 100), `${name}: Nakijken row`);
+    assert.equal(Math.round(split.verschilEur * 100) + Math.round(split.reviewEur * 100), Math.round(sum.differenceEur * 100), `${name}: together the ledger's Verschil`);
+    // Afspraak − Betaald + Verschil + Nakijken = Open.
+    assert.equal(Math.round(sum.agreedEur * 100) - Math.round(sum.paidOnAgreementEur * 100) + Math.round(split.verschilEur * 100) + Math.round(split.reviewEur * 100),
+      Math.round(sum.openEur * 100), `${name}: the card closes`);
+    if (split.review) assert.ok(review.length > 0, `${name}: a Nakijken row names its payee`);
+    else assert.equal(review.length, 0, name);
+  }
+  const po5 = ledgers().find(([name]) => name === 'PO-2026-005')![1];
+  assert.deepEqual([plain(verschilSplit(po5.summary).verschil?.text), differenceByPayee(po5.visible).map(line => plain(line.text))],
+    ['€ 3.271,34 minder', ['€ 1.297,17 minder', '€ 1.974,17 minder']]);
+  const overrun = ledgers()[2][1];
+  assert.deepEqual([plain(verschilSplit(overrun.summary).verschil?.text), plain(verschilSplit(overrun.summary).review?.text)], ['€ 41,28 meer', '€ 10,00 meer'],
+    'the confirmed + € 61,28 and transport − € 20 stay the Verschil; the € 10 is Nakijken');
 });
 
 /** Keeps the PayeeLedger import honest: the helpers take the ledger's own shapes. */

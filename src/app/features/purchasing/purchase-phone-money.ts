@@ -1,8 +1,9 @@
 /*
  * The phone's words for money out and the Nacalculatie (Betalingen, the payee
  * sheet and Kosten, 2026-10-25): one status word per payee or term, one
- * Verschil written as '€ x minder' or '€ x meer' (never a − / + pair), and the
- * rows the phone cards list. Phone only: the desk keeps PayeeStatus.label,
+ * Verschil written as '€ x minder' or '€ x meer' (never a − / + pair; an
+ * overpayment still to review keeps its own Nakijken row), and the rows the
+ * phone cards list. Phone only: the desk keeps PayeeStatus.label,
  * differenceLines and the reason labels. Pure and node-tested: type-only
  * imports, its own euro formatting (the same as the eur pipe).
  */
@@ -17,6 +18,10 @@ const eur = (value: number): string => EURO.format(Number.isFinite(value) ? valu
 const eur4 = (value: number): string => EURO4.format(value);
 const cents = (value: number | null | undefined): number => Number.isFinite(value as number) ? Math.round((value as number) * 100) : 0;
 const count = (value: number): string => value.toLocaleString('nl-BE');
+/** '+ € 44,80' or '− € 44,80' (the sign never wraps away from its figure): only where a koersverschil can go either way. */
+const signed = (value: number): string => `${cents(value) < 0 ? '−' : '+'}\u00a0${eur(Math.abs(cents(value)) / 100)}`;
+/** 'a', 'a en b', 'a, b en c'. */
+const listNl = (items: readonly string[]): string => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} en ${items[items.length - 1]}`;
 /** The payees in the ledger's order (PAYEE_ORDER); a runtime import would break the node test. */
 const ORDER: readonly Payee[] = ['SUPPLIER', 'LOGISTICS', 'SEPARATE', 'OTHER'];
 
@@ -71,6 +76,15 @@ export function termWord(term: Pick<LedgerTerm, 'state' | 'settled' | 'finalized
 }
 
 /**
+ * What a term's word leaves out: '€ 60,78 verrekend met 70% bij vertrek', or
+ * 'verrekend met 1/3 bij vertrek' for a term the ledger calls 'Betaald ·
+ * verrekend met …' (its statusNote is null then); null when nothing is left.
+ */
+export function termNote(term: Pick<LedgerTerm, 'statusNote' | 'statusSplit'>): string | null {
+  return term.statusNote ?? (term.statusSplit ? `verrekend ${term.statusSplit.rest}` : null);
+}
+
+/**
  * A Verschil in figures and one word: '€ 3.271,34 minder', '€ 2.949,22 meer',
  * '€ 44,80 koersverschil (bank)' when the bank's rate is all of it, or 'geen
  * verschil'. The word follows differenceWord. Minder is green, meer is warn
@@ -105,20 +119,64 @@ export function payeeFigures(item: Pick<PayeeLedger, 'payee' | 'agreedEur' | 'pa
 }
 
 /**
- * Under the card's Verschil, where it comes from: each agreement payee with
- * a difference, its own net figure and word, in the ledger's order. A payee
- * still to review says so.
+ * A Verschil while an overpayment may wait for a review (2026-10-26): the
+ * part that is settled (with any koersverschil) stays the Verschil row, the
+ * part still to review gets its own Nakijken row, '€ 300,00 meer', warn. A
+ * review is a to-do, so it is never folded into a net minder, and a settled
+ * figure never disappears behind it. Without a review this is verschilText.
  */
-export function differenceByPayee(payees: readonly Pick<PayeeLedger, 'payee' | 'label' | 'differenceEur' | 'reviewEur' | 'fxEur'>[]):
-  { payee: Payee; label: string; text: string; tone: PhoneAmount['tone'] }[] {
-  return [...payees]
-    .filter(item => item.payee !== 'OTHER' && cents(item.differenceEur) !== 0)
-    .sort((left, right) => ORDER.indexOf(left.payee) - ORDER.indexOf(right.payee))
-    .map(item => {
-      const amount = verschilText(item);
-      const review = cents(item.reviewEur) > 0;
-      return { payee: item.payee, label: item.label, text: review ? `${amount.text} · nakijken` : amount.text, tone: review ? 'warn' : amount.tone };
-    });
+export interface VerschilSplit {
+  /** The Verschil row: what does not wait for a review; null when only a review is left. */
+  verschil: PhoneAmount | null;
+  verschilEur: number;
+  /** 'na afrekening', the koersverschil, or both while a review waits beside it. */
+  note: string;
+  /** The Nakijken row: '€ 300,00 meer', warn; null without a review. */
+  review: PhoneAmount | null;
+  reviewEur: number;
+}
+
+export function verschilSplit(item: { differenceEur: number; reviewEur?: number | null; fxEur?: number | null }): VerschilSplit {
+  const review = Math.max(0, cents(item.reviewEur));
+  const rest = cents(item.differenceEur) - review;
+  const fx = cents(item.fxEur);
+  const note = fx > 0
+    ? fx === rest ? 'koersverschil (bank)' : `${review > 0 ? 'na afrekening · ' : ''}waarvan koersverschil ${eur(fx / 100)} (bank)`
+    : 'na afrekening';
+  return {
+    verschil: review > 0 && rest === 0 ? null : verschilText({ differenceEur: rest / 100, fxEur: fx / 100 }),
+    verschilEur: rest / 100,
+    note,
+    review: review > 0 ? { text: `${eur(review / 100)} meer`, tone: 'warn' } : null,
+    reviewEur: review / 100,
+  };
+}
+
+/** One payee's figure under the card's Verschil or Nakijken row. */
+export interface PayeeAmount { payee: Payee; label: string; text: string; tone: PhoneAmount['tone'] }
+
+type PayeeDifference = Pick<PayeeLedger, 'payee' | 'label' | 'differenceEur' | 'reviewEur' | 'fxEur'>;
+const agreementPayees = (payees: readonly PayeeDifference[]): PayeeDifference[] => [...payees]
+  .filter(item => item.payee !== 'OTHER')
+  .sort((left, right) => ORDER.indexOf(left.payee) - ORDER.indexOf(right.payee));
+
+/**
+ * Under the card's Verschil, where it comes from: each agreement payee's own
+ * part outside a review, in the ledger's order. They add up to the Verschil
+ * row to the cent; what waits for a review is under Nakijken (reviewByPayee).
+ */
+export function differenceByPayee(payees: readonly PayeeDifference[]): PayeeAmount[] {
+  return agreementPayees(payees)
+    .map(item => ({ item, split: verschilSplit(item) }))
+    .filter(({ split }) => cents(split.verschilEur) !== 0)
+    .map(({ item, split }) => ({ payee: item.payee, label: item.label, text: split.verschil!.text, tone: split.verschil!.tone }));
+}
+
+/** Beside Nakijken: the payees with an overpayment still to review, '€ 300,00 meer' each. */
+export function reviewByPayee(payees: readonly PayeeDifference[]): PayeeAmount[] {
+  return agreementPayees(payees)
+    .filter(item => cents(item.reviewEur) > 0)
+    .map(item => ({ payee: item.payee, label: item.label, text: `${eur(cents(item.reviewEur) / 100)} meer`, tone: 'warn' as const }));
 }
 
 /**
@@ -175,23 +233,30 @@ export interface ChainRow {
  * when they tell their own story (termsMixed). A term's word shows only when
  * it differs from the supplier's.
  */
-export function nacalcChain(rows: readonly NacalcPayeeRow[], terms: (payee: Payee) => readonly LedgerTerm[], concept: boolean): ChainRow[] {
+export function nacalcChain(rows: readonly NacalcPayeeRow[], terms: (payee: Payee) => readonly LedgerTerm[], concept: boolean,
+  reviewOf: (payee: Payee) => number = () => 0): ChainRow[] {
   const chain: ChainRow[] = [];
   for (const row of rows) {
     const word = payeeWord(row.status);
     const review = row.reason === 'review' || row.reason === 'unbudgeted';
+    const toReview = cents(reviewOf(row.payee));
     let amount: PhoneAmount;
     if (row.reason === 'incomplete') amount = { text: '—', tone: 'none' };
+    // A settled minder that cancels the meer still to review: the row names what to look at, never 'geen verschil' beside Nakijken.
+    else if (cents(row.verschilEur) === 0 && toReview > 0) amount = { text: `${eur(toReview / 100)} meer`, tone: 'warn' };
     else if (cents(row.verschilEur) !== 0) {
       amount = verschilText({ differenceEur: row.verschilEur, fxEur: row.reason === 'fx' ? row.verschilEur : 0, reviewEur: review ? 1 : 0 });
     } else if (cents(row.openEur) > 0) amount = { text: `${eur(row.openEur)} open`, tone: row.dueNowEur > 0 ? 'warn' : 'none' };
     else amount = { text: 'geen verschil', tone: 'none' };
-    const notes = (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · CIF' : '');
+    // The koersverschil inside a payee's figures, unless the bank's rate is all of its Verschil (the amount says so then).
+    const notes = (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · CIF' : '')
+      + (cents(row.fxEur) !== 0 && row.reason !== 'fx' ? ` · koers ${signed(row.fxEur)}` : '');
     const line = row.agreedEur === null || row.status.kind === 'UNBUDGETED'
       ? `${eur(row.paidEur)} · zonder afspraak`
       : `${eur(row.agreedEur)} → ${eur(row.eindkostEur)}${notes}`;
-    chain.push({ kind: 'payee', key: row.payee, payee: row.payee, name: row.label, amount, line, word,
-      warn: review || row.reason === 'incomplete' });
+    // Paid before the logbook: the one word says so instead of the status.
+    chain.push({ kind: 'payee', key: row.payee, payee: row.payee, name: row.label, amount, line,
+      word: row.reason === 'legacy' ? { word: 'Historisch', tone: 'neutral' } : word, warn: review || row.reason === 'incomplete' });
     if (!row.termsMixed) continue;
     const ledgerTerms = terms(row.payee);
     for (const term of row.terms) {
@@ -202,10 +267,12 @@ export function nacalcChain(rows: readonly NacalcPayeeRow[], terms: (payee: Paye
       if (cents(term.verschilEur) !== 0) termAmount = verschilText({ differenceEur: term.verschilEur, fxEur: source?.fxEur ?? 0, reviewEur: termReview ? 1 : 0 });
       else if (cents(term.openEur) > 0) termAmount = { text: `${eur(term.openEur)} open`, tone: source?.state === 'due' ? 'warn' : 'none' };
       else termAmount = { text: 'geen verschil', tone: 'none' };
+      // A netted term names the term it was netted with; 'Verrekend' then stands in the line, not twice.
+      const note = source ? termNote(source) : null;
       chain.push({
         kind: 'term', key: `${row.payee}:${term.due}`, payee: row.payee, name: term.label, amount: termAmount,
-        line: `${eur(term.agreedEur)} → ${eur((cents(term.paidEur) + cents(term.openEur)) / 100)}`,
-        word: own && own.word !== word.word ? own : null, warn: false,
+        line: `${eur(term.agreedEur)} → ${eur((cents(term.paidEur) + cents(term.openEur)) / 100)}` + (note ? ` · ${note}` : ''),
+        word: own && own.word !== word.word && !(note && own.word === 'Verrekend') ? own : null, warn: false,
       });
     }
   }
@@ -213,28 +280,55 @@ export function nacalcChain(rows: readonly NacalcPayeeRow[], terms: (payee: Paye
 }
 
 /**
- * The foot under Waar het verschil zit: the gross settled figures as the sum
- * of the rows above ('Opgeteld: € 6.220,56 minder, € 2.949,22 meer, € 0,00
- * bijkomend; samen € 3.271,34 minder.'). Only when there is a gross pair;
- * 'samen …' only when the parts meet the Verschil to the cent.
+ * The foot under Waar het verschil zit, the pair Emre asked about in its
+ * right words: 'Bruto € 6.220,56 minder en € 2.949,22 meer; netto € 3.271,34
+ * minder.' Zero parts stay out, a tegoed has no sign. Only when minder meets
+ * a meer or bijkomend; 'netto …' only when the parts meet the Verschil
+ * outside a review to the cent (the story card's Verschil row).
  */
-export function nacalcGrossLine(ex: Pick<NacalcExplained, 'savingsEur' | 'overrunsEur' | 'additionalEur'>, verschilEur: number, creditEur: number): string | null {
+export function nacalcGrossLine(ex: Pick<NacalcExplained, 'savingsEur' | 'overrunsEur' | 'additionalEur'> & { reviewEur?: number }, verschilEur: number,
+  creditEur: number): string | null {
   const savings = cents(ex.savingsEur);
   const overruns = cents(ex.overrunsEur);
   const additional = cents(ex.additionalEur);
   const credit = cents(creditEur);
   if (savings <= 0 || (overruns <= 0 && additional <= 0)) return null;
-  const parts = `${eur(savings / 100)} minder, ${eur(overruns / 100)} meer, ${eur(additional / 100)} bijkomend` + (credit > 0 ? `, − ${eur(credit / 100)} tegoed` : '');
+  const parts = [`${eur(savings / 100)} minder`];
+  if (overruns > 0) parts.push(`${eur(overruns / 100)} meer`);
+  if (additional > 0) parts.push(`${eur(additional / 100)} bijkomend`);
+  if (credit > 0) parts.push(`${eur(credit / 100)} tegoed`);
+  const rest = cents(verschilEur) - Math.max(0, cents(ex.reviewEur));
   const total = overruns + additional - savings - credit;
-  return total === cents(verschilEur)
-    ? `Opgeteld: ${parts}; samen ${verschilText({ differenceEur: verschilEur, fxEur: 0 }).text}.`
-    : `Opgeteld: ${parts}.`;
+  return total === rest && rest !== 0
+    ? `Bruto ${listNl(parts)}; netto ${verschilText({ differenceEur: rest / 100, fxEur: 0 }).text}.`
+    : `Bruto ${listNl(parts)}.`;
 }
 
-/** The Nacalculatie's line under the Eindkost: 'betaald € a · open € b', a tegoed after it. */
-export function storySub(head: Pick<NacalcHeadline, 'kind' | 'paidEur' | 'openEur' | 'creditEur'>): string {
+/**
+ * The Nacalculatie's line under the Eindkost: 'betaald € a · open € b', a
+ * tegoed after it, and what the Eindkost includes beside the agreements:
+ * '· incl. bijkomend € c, koers + € d'.
+ */
+export function storySub(head: Pick<NacalcHeadline, 'kind' | 'paidEur' | 'openEur' | 'creditEur'> & Partial<Pick<NacalcHeadline, 'additionalEur' | 'fxEur'>>): string {
   if (head.kind === 'concept') return 'volgens de calculatie · nog niets betaald';
-  return `betaald ${eur(head.paidEur)} · open ${eur(head.openEur)}` + (cents(head.creditEur) > 0 ? ` · tegoed − ${eur(head.creditEur)}` : '');
+  const incl = [cents(head.additionalEur) > 0 ? `bijkomend ${eur(cents(head.additionalEur) / 100)}` : '',
+    cents(head.fxEur) !== 0 ? `koers ${signed(head.fxEur ?? 0)}` : ''].filter(Boolean);
+  return `betaald ${eur(head.paidEur)} · open ${eur(head.openEur)}` + (cents(head.creditEur) > 0 ? ` · tegoed − ${eur(head.creditEur)}` : '')
+    + (incl.length ? ` · incl. ${incl.join(', ')}` : '');
+}
+
+/**
+ * The story card's Verschil (Eindkost − Afspraak) split like Betalingen: the
+ * part outside a review with its percentage of the Afspraak, and a Nakijken
+ * row beside it. Afspraak + Verschil + Nakijken = Eindkost.
+ */
+export function storyVerschil(head: Pick<NacalcHeadline, 'verschilEur' | 'verschilPct' | 'reviewEur' | 'begrootEur'>): VerschilSplit & { pct: string } {
+  const split = verschilSplit({ differenceEur: head.verschilEur, reviewEur: head.reviewEur, fxEur: 0 });
+  const begroot = cents(head.begrootEur);
+  const pct = cents(head.reviewEur) > 0
+    ? (begroot > 0 ? pctText(Math.round(cents(split.verschilEur) / begroot * 1000) / 10, split.verschilEur) : '')
+    : pctText(head.verschilPct, head.verschilEur);
+  return { ...split, pct };
 }
 
 /** One product of Per product: its unit cost and incl. Enrosed kost on line 2, the Verschil at the right. */
@@ -359,4 +453,9 @@ export function proofMark(text: string | null, row: { linked: number; creditOffs
 export function paymentLine(row: { termLabel: string | null; payee: Payee; payeeLabel: string; payeeShort: string; parts: readonly unknown[] }): string {
   const who = row.termLabel || (row.payee === 'LOGISTICS' ? row.payeeLabel : row.payeeShort);
   return who + (row.parts.length > 1 ? ` · ${row.parts.length} transacties` : '');
+}
+
+/** The same line inside the payee's own sheet: the term and the transfer count, never the payee again; '' when nothing is left. */
+export function sheetPaymentLine(row: { termLabel: string | null; parts: readonly unknown[] }): string {
+  return [row.termLabel ?? '', row.parts.length > 1 ? `${row.parts.length} transacties` : ''].filter(Boolean).join(' · ');
 }

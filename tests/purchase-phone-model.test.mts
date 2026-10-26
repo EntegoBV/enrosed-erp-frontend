@@ -210,10 +210,16 @@ test('the Nacalculatie glance: concept, zero, cheaper, dearer, a review and a mi
   assert.deepEqual([dearer.verschilTitle, plain(dearer.verschilText), dearer.verschilTone], ['Verschil · 1,2 %', '€ 120,00 meer', 'none'], 'a settled meer is plain');
   const large = nacalcGlance(head({ eindkostEur: 112_345.67, begrootEur: 100_000, verschilEur: 12_345.67, verschilPct: 12.345 }));
   assert.deepEqual([large.verschilTitle, plain(large.verschilText)], ['Verschil · 12,3 %', '€ 12.345,67 meer']);
+  // 2026-10-26: a meer still to review is its own Nakijken row, as on Kosten and Betalingen; the Verschil is the part outside it.
   const review = seen(nacalcGlance(head({ reviewEur: 30 })));
-  assert.deepEqual([review.verschilText, plain(review.reviewText), review.verschilTone], ['geen verschil', 'waarvan € 30,00 na te kijken', 'warn']);
+  assert.deepEqual([review.verschilShown, plain(review.verschilText), plain(review.reviewText), review.verschilTone], [true, '€ 30,00 minder', '€ 30,00 meer', 'in'],
+    "a settled minder hidden by the review shows; never 'geen verschil' above Nakijken");
   const dearerReview = nacalcGlance(head({ verschilEur: 120, verschilPct: 1.24, reviewEur: 30 }));
-  assert.deepEqual([plain(dearerReview.verschilText), plain(dearerReview.reviewText), dearerReview.verschilTone], ['€ 120,00 meer', 'waarvan € 30,00 na te kijken', 'warn']);
+  assert.deepEqual([dearerReview.verschilTitle, plain(dearerReview.verschilText), plain(dearerReview.reviewText), dearerReview.verschilTone],
+    ['Verschil · 0,2 %', '€ 90,00 meer', '€ 30,00 meer', 'none']);
+  const onlyReview = nacalcGlance(head({ verschilEur: 30, verschilPct: 0.06, reviewEur: 30 }));
+  assert.deepEqual([onlyReview.verschilShown, plain(onlyReview.reviewText)], [false, '€ 30,00 meer']);
+  assert.equal(po5.verschilShown, true);
   const noPct = seen(nacalcGlance(head({ verschilEur: 1_250.5, verschilPct: null })));
   assert.deepEqual([noPct.verschilTitle, plain(noPct.verschilText)], ['Verschil', '€ 1.250,50 meer']);
   for (const glance of [zero, po5, cheaper, dearer, large, review, noPct]) assert.doesNotMatch(glance.verschilText, /^[−+]/);

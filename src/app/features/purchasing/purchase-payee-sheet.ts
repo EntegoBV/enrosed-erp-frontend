@@ -8,7 +8,7 @@ import { MenuTrigger } from '../../shared/menu-trigger';
 import { CurPipe, DateNlPipe, EurPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
 import {
-  DUE_MOMENT, ledgerDifferenceNote, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
+  DUE_MOMENT, type Due, type LedgerCredit, type LedgerRow, type LedgerTerm, type PayeeLedger, type PurchasePaymentAction, type PurchaseSettleRequest,
   type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import {
@@ -16,7 +16,8 @@ import {
 } from './purchase-payment-menus';
 import { invoiceCoverage, invoiceSub, invoiceTermsLine, payeeInvoiceComparison } from './purchase-invoices';
 import {
-  fileWords, payeeWord, paymentLine, planTrail, proofMark, sheetLead, termWord, verschilText, type PhoneAmount, type PhoneWord,
+  fileWords, payeeWord, planTrail, proofMark, sheetLead, sheetPaymentLine, termNote, termWord, verschilSplit, verschilText,
+  type PhoneAmount, type PhoneWord, type VerschilSplit,
 } from './purchase-phone-money';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 
@@ -45,9 +46,12 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
             <dl class="wk-equation">
               <div><dt>Afspraak</dt><dd>{{ item.agreedEur | eur }}</dd></div>
               <div><dt>Betaald</dt><dd>{{ item.paidEur | eur }}</dd></div>
-              @if (difference(); as verschil) {
-                <div><dt>Verschil@if (differenceNote(); as note) { <small> · {{ note }}</small> }</dt><dd [class]="amountTone(item.reviewEur > 0 ? 'warn' : verschil.tone)">{{ verschil.text }}</dd></div>
-                @if (item.reviewEur > 0) { <div class="is-sub"><dt>waarvan te veel betaald · nakijken</dt><dd class="wk-amount--warn">{{ item.reviewEur | eur }}</dd></div> }
+              <!-- The settled Verschil, and apart what still waits for a review: Afspraak − Betaald + Verschil + Nakijken = Open. -->
+              @if (difference(); as split) {
+                @if (split.verschil; as verschil) {
+                  <div><dt>Verschil@if (differenceNote(); as note) { <small> · {{ note }}</small> }</dt><dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
+                }
+                @if (split.review; as review) { <div><dt>Nakijken</dt><dd class="wk-amount--warn">{{ review.text }}</dd></div> }
               }
               <div class="is-total"><dt>Open</dt><dd>{{ item.openEur | eur }}</dd></div>
             </dl>
@@ -71,7 +75,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                     <span class="pp-line2"><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}</span>
                       @if (termActionable(term) || tw.tone === 'warn') { <span class="ios-cell__meta" [class]="tone(tw.tone)">{{ tw.word }}</span> }
                       @else { <span class="ios-cell__meta wk-amount--in"><app-icon name="tick" [size]="12" /> {{ tw.word }}</span> }</span>
-                    @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
+                    @if (noteOf(term); as note) { <span class="ios-cell__sub">{{ note }}</span> }</span>
                   @if (termTappable(term)) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
                 </button>
               }
@@ -157,7 +161,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                 }
               }
             </div>
-            <p class="ios-section__foot">@if (item.creditOpenEur > 0) { Nog {{ item.creditOpenEur | eur }} te ontvangen · verlaagt } @else { Verlaagt } de eindkost, niet Betaald of Open.</p>
+            <p class="ios-section__foot">@if (item.creditOpenEur > 0) { Nog {{ item.creditOpenEur | eur }} te ontvangen. }Een tegoed verlaagt de eindkost, niet Betaald of Open.</p>
           </section>
         }
 
@@ -169,8 +173,15 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
                 <button class="ios-cell pp-row pp-row2" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
                         (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || act('edit', row.payment)">
                   <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                    <span class="ios-cell__sub">{{ line(row) }}@if (mark(row); as proof) { · @if (proof.icon) { <span class="pp-row__mark" [class.pp-row__mark--bank]="proof.icon === 'bank'" role="img" [attr.aria-label]="proof.label"><app-icon [name]="proof.icon" [size]="12" /></span> }@if (proof.text) { {{ proof.text }} } }</span></span>
+                  <!-- The sheet is the payee: line 2 only for a term, transfers or words beside the bank mark; else the title gets two lines and the mark follows it. -->
+                  @let who = line(row);
+                  @let proof = mark(row);
+                  @if (who || proof?.text) {
+                    <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
+                      <span class="ios-cell__sub">{{ who }}@if (proof) { @if (who) { · }@if (proof.icon) { <span class="pp-row__mark" [class.pp-row__mark--bank]="proof.icon === 'bank'" role="img" [attr.aria-label]="proof.label"><app-icon [name]="proof.icon" [size]="12" /></span> }@if (proof.text) { {{ proof.text }} } }</span></span>
+                  } @else {
+                    <span class="ios-cell__body"><span class="ios-cell__title payee-sheet__ptitle">{{ row.title }}@if (proof?.icon; as icon) { <span class="pp-row__mark" [class.pp-row__mark--bank]="icon === 'bank'" role="img" [attr.aria-label]="proof!.label"><app-icon [name]="icon" [size]="12" /></span> }</span></span>
+                  }
                   <span class="ios-cell__trail">
                     <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                     @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
@@ -266,7 +277,8 @@ export class PurchasePayeeSheet {
   readonly tone = toneClass;
   readonly day = dayOf;
   readonly month = monthOf;
-  readonly line = paymentLine;
+  /** The payee is the sheet: a row's line 2 holds its term and transfers only. */
+  readonly line = sheetPaymentLine;
   readonly fileWordsOf = fileWords;
   /** Leverancier, Transport and Inspectie always; Bijkomende kosten only once it has invoices or invoice files. */
   readonly showInvoices = computed(() => {
@@ -289,16 +301,19 @@ export class PurchasePayeeSheet {
   readonly lead = computed(() => sheetLead(this.payee(), this.supplierName()));
   /** The payee's one status word, on top of its receipt. */
   readonly status = computed(() => payeeWord(this.payee().status));
-  /** The receipt's Verschil: one net figure, or null when the payee paid its Afspraak and nothing waits for a review. */
-  readonly difference = computed<PhoneAmount | null>(() => {
+  /** The receipt's Verschil: the settled net figure and, apart, what waits for a review; null when the payee paid its Afspraak. */
+  readonly difference = computed<VerschilSplit | null>(() => {
     const item = this.payee();
-    return Math.round(item.differenceEur * 100) !== 0 || item.reviewEur > 0 ? verschilText(item) : null;
+    return Math.round(item.differenceEur * 100) !== 0 || item.reviewEur > 0 ? verschilSplit(item) : null;
   });
-  /** Only what the status word above does not say: still to review, or the koersverschil. */
+  /**
+   * Only what the status word above does not say: the koersverschil, and 'na afrekening' while a Nakijken
+   * row stands beside the Verschil (the word reads Nakijken then, not Afgerekend).
+   */
   readonly differenceNote = computed(() => {
-    const item = this.payee();
-    const note = ledgerDifferenceNote(item);
-    return note === 'na afrekening' || this.difference()?.text.endsWith(note) ? '' : note;
+    const split = this.difference();
+    if (!split?.verschil || split.verschil.text.endsWith(split.note)) return '';
+    return split.note === 'na afrekening' && !split.review ? '' : split.note;
   });
   /** '1/3 · 1/3 · 1/3': the plan beside Termijnen; the moments are in the term labels. */
   readonly trail = computed(() => planTrail(this.planLabel(), this.payee().terms.map(term => term.label)));
@@ -326,6 +341,8 @@ export class PurchasePayeeSheet {
   finite(value: number): boolean { return Number.isFinite(value); }
   termActionable(term: LedgerTerm): boolean { return termOpen(term); }
   termWordOf(term: LedgerTerm): PhoneWord { return termWord(term, this.payee().status.kind === 'PLANNED'); }
+  /** The third line of a netted term: what it was netted with. */
+  noteOf(term: LedgerTerm): string | null { return termNote(term); }
   /** A term's own Verschil, else what is open on it (warn when due), else nothing. */
   termAmount(term: LedgerTerm, word: PhoneWord): PhoneAmount | null {
     if (Math.round(term.differenceEur * 100) !== 0) return verschilText({ differenceEur: term.differenceEur, fxEur: term.fxEur, reviewEur: word.word === 'Nakijken' ? 1 : 0 });

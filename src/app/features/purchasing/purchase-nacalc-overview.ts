@@ -1,16 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { saveBlob } from '../../core/api/download';
-import { messageOf } from '../../core/api/errors';
 import type { PartnerFinancing, Payee, PurchaseOrderView } from '../../core/api/models';
-import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
-import { Sheet, Ui } from '../../shared/ui';
+import { Sheet } from '../../shared/ui';
+import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import {
   nacalcPartnerLine, nacalcPartnerShortage, pctLabel, nacalcPhoneNotes, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
-  type NacalcHeadline, type NacalcProductRow, type NacalcTone, type PurchaseNacalc,
+  type NacalcProductRow, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
   PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
@@ -18,7 +16,7 @@ import {
 import { formatEur, todoCopy } from './purchase-payment-menus';
 import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purchase-payment-result-metrics';
 import {
-  afspraakBridge, nacalcChain, nacalcGrossLine, pctText, productRows, productSheetRows, settledMeter, storySub, verschilText,
+  afspraakBridge, nacalcChain, nacalcGrossLine, productRows, productSheetRows, settledMeter, storySub, storyVerschil,
   type ChainRow, type PhoneAmount, type PhoneTone, type SheetRow,
 } from './purchase-phone-money';
 
@@ -29,14 +27,14 @@ import {
  * difference sits per payee and per term, with at most one action cell and
  * the gross figures as one sentence; the receipt; per product with the
  * list visible; the cost basis with the bridge to the Afspraak behind a
- * disclosure; the partner, the notes, and a footer with the PDF and the ways
- * to Betalingen and Kosten & bank. The payee sheet belongs to the host; the
+ * disclosure; the partner, the notes, and (unless the host places it) the
+ * footer with the PDF and the ways to Betalingen and Kosten & bank. The payee sheet belongs to the host; the
  * small product sheet opens here. Styles: styles/purchase-nacalc.scss (.np-*).
  */
 @Component({
   selector: 'app-purchase-nacalc-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, RouterLink, Sheet, Skeleton, EurPipe, NumPipe],
+  imports: [Icon, RouterLink, Sheet, Skeleton, EurPipe, NumPipe, PurchaseNacalcFooter],
   template: `
     <div class="np" id="purchase-payment-result" tabindex="-1" aria-label="Nacalculatie">
       <div class="ios-section__head ios-section__head--prominent np-head">
@@ -62,13 +60,14 @@ import {
               </span>
             }
             @if (!concept) {
-              @let verschil = storyVerschil(head);
+              <!-- Afspraak + Verschil (+ Nakijken) = the Eindkost above; bijkomend and the koersverschil are in its line ('incl.'). -->
+              @let split = storyVerschil(head);
               <dl class="wk-equation">
                 <div><dt>Afspraak</dt><dd>{{ head.begrootEur | eur }}</dd></div>
-                <div class="is-total"><dt>Verschil@if (pct(head); as p) { <small> · {{ p }}</small> }</dt><dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
-                @if (head.reviewEur > 0) { <div class="is-sub"><dt>waarvan te veel betaald · nakijken</dt><dd class="wk-amount--warn">{{ head.reviewEur | eur }}</dd></div> }
-                @if (head.additionalEur > 0) { <div class="is-sub"><dt>waarvan bijkomende kosten</dt><dd>{{ head.additionalEur | eur }}</dd></div> }
-                @if (head.fxEur !== 0) { <div class="is-sub"><dt>waarvan koersverschil (bank)</dt><dd>{{ signed(head.fxEur) }}</dd></div> }
+                @if (split.verschil; as verschil) {
+                  <div class="is-total"><dt>Verschil@if (split.pct) { <small> · {{ split.pct }}</small> }</dt><dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
+                }
+                @if (split.review; as review) { <div [class.is-total]="!split.verschil"><dt>Nakijken</dt><dd class="wk-amount--warn">{{ review.text }}</dd></div> }
               </dl>
             }
           </div>
@@ -103,7 +102,7 @@ import {
               @if (dirty() && mode() === 'edit') {
                 <p class="ios-section__foot">Sla de container op om af te rekenen of te exporteren.</p>
               } @else if (grossLine(); as gross) {
-                <!-- What Emre asked about ('minder en meer betaald'): the gross figures as the sum of the rows above. -->
+                <!-- What Emre asked about ('minder en meer betaald'): bruto both figures, netto the Verschil. -->
                 <p class="ios-section__foot">{{ gross }}</p>
               }
             }
@@ -258,12 +257,8 @@ import {
           </div>
         </section>
 
-        <div class="ios-group np-footer">
-          <button class="ios-cell ios-cell--action" type="button" [disabled]="dirty() || pdfBusy()" (click)="downloadPdf()">{{ pdfBusy() ? 'PDF maken…' : 'Betalingen & kostprijs (PDF)' }}</button>
-          <button class="ios-cell" type="button" (click)="openPayments.emit()"><span class="ios-cell__body"><span class="ios-cell__title">Betalingen</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
-          <a class="ios-cell" routerLink="/costs" [queryParams]="{ container: orderId() }"><span class="ios-cell__body"><span class="ios-cell__title">Kosten &amp; bank</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
-        </div>
-        @if (dirty()) { <p class="ios-caption np-caption">Sla de container op om de kostprijs als PDF te exporteren.</p> }
+        <!-- The read view puts these ways out at the end of the Kosten tab, after the Calculatie ([footer]="false"). -->
+        @if (footer()) { <app-purchase-nacalc-footer [orderId]="orderId()" [orderNumber]="view().order.number" [dirty]="dirty()" (openPayments)="openPayments.emit()" /> }
       } @else {
         <p class="ios-caption np-caption">De nacalculatie is nog niet beschikbaar. Vernieuw de order om de actuele betalingen op te halen.
           <button class="ios-capsule" type="button" (click)="refresh.emit()">Vernieuwen</button></p>
@@ -289,9 +284,6 @@ import {
   `,
 })
 export class PurchaseNacalcOverview {
-  private readonly sourcing = inject(SourcingApi);
-  private readonly ui = inject(Ui);
-
   readonly view = input.required<PurchaseOrderView>();
   readonly ledger = input<PaymentLedger | null>(null);
   readonly nacalc = input<PurchaseNacalc | null>(null);
@@ -314,7 +306,8 @@ export class PurchaseNacalcOverview {
   /** 'Tegoed noteren…': the editor opens the sheet, the read view opens the editor. */
   readonly credit = output<SupplierCreditAction>();
 
-  readonly pdfBusy = signal(false);
+  /** The PDF, Betalingen and Kosten & bank under the Nacalculatie; the read view places them itself, after the Calculatie. */
+  readonly footer = input(true);
   /** Per product shows the five biggest until asked for all. */
   readonly showAllProducts = signal(false);
   readonly productOpen = signal<NacalcProductRow | null>(null);
@@ -326,9 +319,10 @@ export class PurchaseNacalcOverview {
   readonly chain = computed<ChainRow[]>(() => {
     const n = this.nacalc();
     const book = this.ledger();
-    return n?.payees ? nacalcChain(n.payees, payee => book?.payees.find(item => item.payee === payee)?.terms ?? [], n.headline.kind === 'concept') : [];
+    const of = (payee: Payee) => book?.payees.find(item => item.payee === payee);
+    return n?.payees ? nacalcChain(n.payees, payee => of(payee)?.terms ?? [], n.headline.kind === 'concept', payee => of(payee)?.reviewEur ?? 0) : [];
   });
-  /** 'Opgeteld: € a minder, € b meer, € c bijkomend; samen € n minder.' or null. */
+  /** 'Bruto € a minder en € b meer; netto € n minder.' or null. */
   readonly grossLine = computed(() => {
     const n = this.nacalc();
     return n ? nacalcGrossLine(n.explained, n.headline.verschilEur, n.headline.creditEur) : null;
@@ -354,18 +348,8 @@ export class PurchaseNacalcOverview {
   amountTone(tone: PhoneAmount['tone']): string { return tone === 'in' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : ''; }
   pillClass(tone: NacalcTone): string { return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : ''; }
 
-  /** '+ € 120,00', '− € 50,00' or a plain '€ 0,00'; the sign never wraps away from its figure. */
-  signed(value: number): string {
-    if (!value) return formatEur(0);
-    return (value > 0 ? '+ ' : '− ') + formatEur(Math.abs(value));
-  }
-
-  /** The Verschil as one figure and word: '€ 3.271,34 minder'; warn while part of a meer is still to review. */
-  storyVerschil(head: NacalcHeadline): PhoneAmount {
-    return verschilText({ differenceEur: head.verschilEur, fxEur: 0, reviewEur: head.reviewEur });
-  }
-  /** '5,0 %' beside the Verschil. */
-  pct(head: NacalcHeadline): string { return pctText(head.verschilPct, head.verschilEur); }
+  /** The Verschil as one figure and word, '€ 3.271,34 minder' with its percentage; a meer still to review apart, as Nakijken. */
+  readonly storyVerschil = storyVerschil;
 
   /** What the unit figure rests on, per display or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
@@ -415,15 +399,5 @@ export class PurchaseNacalcOverview {
       case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
       case 'incomplete': case 'credit': this.openPayee.emit(todo.payee); break;
     }
-  }
-
-  async downloadPdf(): Promise<void> {
-    if (this.pdfBusy() || this.dirty() || !this.nacalc()) return;
-    this.pdfBusy.set(true);
-    try {
-      saveBlob(await this.sourcing.purchasePaymentsPdf(this.orderId()), `${this.view().order.number.replace(/[^\p{L}\p{N}._-]/gu, '-')}-betalingen-kostprijs.pdf`);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'De betalingsafrekening kon niet als PDF worden geëxporteerd'), 'err');
-    } finally { this.pdfBusy.set(false); }
   }
 }

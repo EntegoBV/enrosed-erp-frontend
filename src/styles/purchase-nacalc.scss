@@ -163,7 +163,7 @@ app-purchase-nacalc-overview{display:block;min-width:0}
 .np-chain__name{grid-area:name;min-width:0;overflow:hidden;font-size:15px;text-overflow:ellipsis;white-space:nowrap}
 .np-chain__amount{grid-area:amount;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
 .np-chain__line{grid-area:line;display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
-.np-chain__sub{min-width:0;overflow:hidden;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+.np-chain__sub{min-width:0;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .np-chain__word{flex:none;color:var(--muted);font-size:12.5px;white-space:nowrap}
 .np-chain__chev{grid-area:chev;align-self:center;color:var(--muted-2)}
 .np-chain__row--term .np-chain__name{color:var(--ink-2);font-size:13.5px}
@@ -183,7 +183,8 @@ app-purchase-nacalc-overview{display:block;min-width:0}
 /* Per product: the full name (names differ only at the end), then € per unit · incl. with the Verschil at the right */
 .np .np-product .ios-cell__title{font-size:15px}
 .np-product__line{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
-.np .np-product__line .ios-cell__sub{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the figures wrap rather than hide behind an ellipsis (a display's '€ 31,2000 /display · € 32,0000 incl.' beside its Verschil) */
+.np .np-product__line .ios-cell__sub{min-width:0;white-space:normal;overflow-wrap:anywhere}
 .np .np-product__line .ios-cell__meta{flex:none;white-space:nowrap}
 .np-product__line b{color:var(--ink);font-weight:600}
 .np .np-range .ios-cell__title,.np .np-range .ios-cell__sub{white-space:nowrap}

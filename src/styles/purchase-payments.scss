@@ -210,10 +210,13 @@ app-purchase-payment-overview .pp-summary .wk-equation dd.wk-amount--in,app-purc
 .pp-payee__top>.ios-cell__meta.wk-amount--warn,.payee-sheet__term .pp-line2>.ios-cell__meta.wk-amount--warn{color:var(--warn)}
 /* A payment in two lines: the title on one line, then the term or payee with the bank mark; the full Omschrijving is in its detail. */
 :is(app-purchase-payment-overview,app-purchase-payee-sheet) .pp-row2 :is(.ios-cell__title,.ios-cell__sub){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* In its payee's sheet a row without a term has no line 2: the title takes up to two lines, the bank mark after it */
+app-purchase-payee-sheet .pp-row2 .ios-cell__title.payee-sheet__ptitle{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
+.payee-sheet__ptitle>.pp-row__mark{margin-left:5px}
 .pp-row__mark{display:inline-flex;vertical-align:-2px;color:var(--muted)}
 .pp-row__mark--bank{color:var(--ok)}
 /* Payee sheet: a term in two lines, its Verschil beside its name and its word beside paid of the Afspraak; a netted term's note
-   is the one exception that takes a third line. */
+   is the one exception that takes a third line. Figures wrap rather than hide behind an ellipsis. */
 .payee-sheet__term{flex-wrap:wrap;row-gap:2px}
 .payee-sheet__term>.ios-cell__body{flex:1 1 auto;min-width:0}
 .pp-line2{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
@@ -222,7 +225,7 @@ app-purchase-payment-overview .pp-summary .wk-equation dd.wk-amount--in,app-purc
 .pp-line2>.ios-cell__value{font-size:15px}
 .pp-line2>.ios-cell__value.wk-amount--in{color:var(--ok)}.pp-line2>.ios-cell__value.wk-amount--warn{color:var(--warn)}
 .payee-sheet__term .ios-cell__sub{overflow-wrap:anywhere;white-space:normal}
-.payee-sheet__term .pp-line2>.ios-cell__sub{white-space:nowrap}
+.payee-sheet__term .pp-line2>:first-child{overflow:visible;white-space:normal;overflow-wrap:anywhere}
 /* the chevron stays centred on the right of an open term */
 .payee-sheet__term:not(.payee-sheet__term--done){padding-right:38px}
 .payee-sheet__term>.ios-cell__chev{position:absolute;top:50%;right:10px;margin:-8px 0 0}
