@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  distinctOrderCount, locationSplit, locationValues, locationStock, onderwegOrdersLabel, onderwegSummary, productMargin, stockValue, totalsByProduct,
+  distinctOrderCount, lacksCost, locationSplit, locationValues, locationStock, onderwegOrdersLabel, onderwegSummary, productMargin, stockValue, totalsByProduct,
 } from '../src/app/features/products/product-figures.ts';
 
 test('margin rounds as the desk always did', () => {
@@ -77,4 +77,16 @@ test('loose stems keep their proportional set value at every stock location', ()
     { products: 1, value: 22 });
   assert.equal(locationSplit([{ name: 'Tica Brussel', quantity: 7, loosePieces: 11, piecesPerUnit: 12 }]),
     'Tica Brussel 7 + 11 los');
+});
+
+test('lacksCost: stock on hand without a landed cost, the rule of the "Zonder kostprijs" tile and its filter', () => {
+  assert.equal(lacksCost({ quantity: 600, cost: null }), true);
+  assert.equal(lacksCost({ quantity: 600, cost: 0 }), true);
+  assert.equal(lacksCost({ quantity: 0, loosePieces: 3, piecesPerUnit: 12, cost: undefined }), true);
+  assert.equal(lacksCost({ quantity: 600, cost: 8.32 }), false);
+  assert.equal(lacksCost({ quantity: 0, cost: null }), false, 'no stock, nothing to value');
+  assert.equal(lacksCost({ quantity: -4, cost: null }), false);
+  /* The tile's count and the filter use the same rule. */
+  const rows = [{ quantity: 600, cost: null }, { quantity: 10, cost: 2 }, { quantity: 0, cost: null }];
+  assert.equal(stockValue(rows).withoutCost, rows.filter(lacksCost).length);
 });

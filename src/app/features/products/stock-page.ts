@@ -27,7 +27,7 @@ import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from 
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { StockMovementSource } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementDelta, stockMovementAfter } from './stock-quantity';
-import { distinctOrderCount, knownValueSum, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
+import { distinctOrderCount, knownValueSum, lacksCost, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
 import { checkLinkShown, statusBanner, type StockBatchSheetMode } from './stock-batch-start';
 import { StockBatchStartSheet } from './stock-batch-start-sheet';
 
@@ -137,7 +137,10 @@ function mediaSignal(query: string) {
             }
             <div><small>Onderweg</small><strong>{{ onwayProducts() }} product{{ onwayProducts() === 1 ? '' : 'en' }}</strong><span>op {{ onwayOrders() }} inkooporder{{ onwayOrders() === 1 ? '' : 's' }}</span></div>
             @if (totalValue().withoutCost; as missing) {
-              <div class="sk-sum__warn"><small>Zonder kostprijs</small><strong>{{ missing }} product{{ missing === 1 ? '' : 'en' }}</strong><span>met voorraad, niet in de waarde</span></div>
+              <!-- A click shows exactly these products in the list; again (or the chip) shows everything. -->
+              <div class="sk-sum__warn sk-sum__pick"><button type="button" [attr.aria-pressed]="noCostOnly()" (click)="noCostOnly.set(!noCostOnly())">
+                <small>Zonder kostprijs</small><strong>{{ missing }} product{{ missing === 1 ? '' : 'en' }}</strong>
+                <span>{{ noCostOnly() ? 'getoond in de lijst · alles tonen ›' : 'met voorraad, niet in de waarde · tonen ›' }}</span></button></div>
             }
           </div>
         }
@@ -149,6 +152,9 @@ function mediaSignal(query: string) {
           <button class="wk-chip" type="button" aria-haspopup="menu" [attr.aria-pressed]="categoryFilter() !== null" (click)="openMenu($event, null)">
             {{ categoryLabel() }} <app-icon name="chevron-down" [size]="13" /></button>
           <button class="wk-chip" type="button" [attr.aria-pressed]="hideEmpty()" (click)="hideEmpty.set(!hideEmpty())">Leeg verbergen</button>
+          @if (noCostOnly()) {
+            <button class="wk-chip" type="button" aria-pressed="true" aria-label="Filter zonder kostprijs wissen" (click)="noCostOnly.set(false)">Zonder kostprijs <app-icon name="close" [size]="12" /></button>
+          }
           <div class="wk-subbar__end sk-subbar__end">
             @if (hasFilters()) { <button class="wk-link" type="button" (click)="resetFilters()">Filters wissen</button> }
             @if (batchCheckLink()) { <button class="wk-link sk-batches-link" type="button" (click)="batchSheet.set('check')">Batches controleren</button> }
@@ -240,6 +246,9 @@ function mediaSignal(query: string) {
           <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="categoryFilter.set(null)">Alle</button>
           @for (category of usedCategories(); track category.key) {
             <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === category.id" (click)="categoryFilter.set(category.id)">{{ category.name }}</button>
+          }
+          @if (totalValue().withoutCost; as missing) {
+            <button class="ios-chip skp-nocost" type="button" [attr.aria-pressed]="noCostOnly()" (click)="noCostOnly.set(!noCostOnly())">Zonder kostprijs · {{ missing }}</button>
           }
         </div>
         @if (editing()) {
@@ -609,6 +618,8 @@ export class StockPage {
   readonly view = signal<number | null>(null);
   readonly categoryFilter = signal<number | 'none' | null>(null);
   readonly hideEmpty = signal(false);
+  /** "Zonder kostprijs" clicked: only products with stock and no landed cost. */
+  readonly noCostOnly = signal(false);
   readonly sortKey = signal<StockSort>('STOCK_SMART');
   readonly demoOpen = signal(false);
   readonly editing = signal(false);
@@ -817,9 +828,10 @@ export class StockPage {
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
     const category = this.categoryFilter();
-    return this.rows().filter(({ product, total, loosePieces }) =>
+    return this.rows().filter(({ product, total, loosePieces, piecesPerUnit }) =>
       (category === null || (category === 'none' ? product.categoryId == null : product.categoryId === category))
       && (!this.hideEmpty() || total !== 0 || loosePieces !== 0 || (this.expectedFor(product.id)?.quantity ?? 0) > 0)
+      && (!this.noCostOnly() || lacksCost({ quantity: total, loosePieces, piecesPerUnit, cost: product.landedCostEur }))
       && (!needle || [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle)));
   });
 
@@ -940,13 +952,15 @@ export class StockPage {
     this.openOverrides.update((map) => new Map(map).set(group.key, !open));
   }
 
-  readonly hasFilters = computed(() => this.query().trim().length > 0 || this.categoryFilter() !== null || this.view() !== null || this.hideEmpty());
+  readonly hasFilters = computed(() => this.query().trim().length > 0 || this.categoryFilter() !== null || this.view() !== null || this.hideEmpty()
+    || this.noCostOnly());
 
   resetFilters(): void {
     this.query.set('');
     this.categoryFilter.set(null);
     this.view.set(null);
     this.hideEmpty.set(false);
+    this.noCostOnly.set(false);
     this.sortKey.set('STOCK_SMART');
   }
 

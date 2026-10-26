@@ -91,15 +91,20 @@ export function stockUnitEquivalent(row: { quantity: number; loosePieces?: numbe
   return whole + (Number.isInteger(factor) && factor! > 0 ? loose / factor! : loose);
 }
 
+/** Stock on hand without a landed cost: what "Zonder kostprijs" counts and its filter shows. */
+export function lacksCost(row: ValueRow): boolean {
+  return stockUnitEquivalent(row) > 0 && !(row.cost != null && row.cost > 0);
+}
+
 /** Stock times landed cost; rows without a cost are counted apart, never valued at zero silently. */
 export function stockValue(rows: readonly ValueRow[]): StockValue {
   let cents = 0;
   let withoutCost = 0;
   for (const row of rows) {
+    if (lacksCost(row)) { withoutCost += 1; continue; }
     const quantity = stockUnitEquivalent(row);
     if (!(quantity > 0)) continue;
-    if (row.cost === null || row.cost === undefined || !(row.cost > 0)) { withoutCost += 1; continue; }
-    cents += Math.round(quantity * row.cost * 100);
+    cents += Math.round(quantity * row.cost! * 100);
   }
   return { value: cents / 100, withoutCost };
 }
