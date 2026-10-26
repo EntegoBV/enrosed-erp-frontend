@@ -17,7 +17,7 @@ import { observeLargeTitle } from './large-title';
 /**
  * The iOS 26 navigation bar of a workspace phone screen: a transparent bar
  * with glass buttons over a large title that scrolls away, after which the
- * bar turns to glass and shows the title small in its middle.
+ * bar covers scrolled content in the page colour and shows the title small in its middle.
  *
  * Slots: [lead] after the back button, [trail] for the glass buttons on the
  * right, [caption] under the large title, [below] for a sticky control such

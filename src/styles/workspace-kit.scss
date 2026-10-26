@@ -246,9 +246,10 @@ body:has(.ios-page){background:var(--ios-bg)}
 
 /* ================= PHONE (ios-*) ================= */
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
-/* nav bar with large title (IosNav renders these) */
+/* The status area, condensed title and sticky controls share the page canvas.
+   Keep glass on controls only: translucent bands change colour as cards pass underneath. */
 .ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px)}
-.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;border-bottom:.5px solid var(--ios-sep);background:var(--glass-bg-strong);opacity:0;backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter);transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
+.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg);opacity:0;transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed::before{opacity:1}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
 .ios-nav__title{max-width:52vw;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
@@ -257,7 +258,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-large__title{margin:0;color:var(--ink);font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.12;overflow-wrap:anywhere}
 .ios-large__sub{margin:3px 0 0;color:var(--muted);font-size:13px;line-height:1.35}.ios-large__sentinel{height:1px;margin-top:-1px}
 .ios-subbar{position:sticky;top:calc(var(--ios-nav-h) + var(--safe-t));z-index:29;padding:6px var(--ios-inset) 10px}
-.ios-subbar::before{content:'';position:absolute;inset:0;z-index:-1;background:color-mix(in srgb,var(--ios-bg) 86%,transparent);backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
+.ios-subbar::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg)}
 /* glass buttons: 44px hit area, 36px visual */
 .ios-circle{position:relative;isolation:isolate;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-circle::before{content:'';position:absolute;inset:4px;z-index:-1;border-radius:50%;background:var(--glass-bg);box-shadow:var(--glass-highlight),0 1px 3px rgb(26 22 20/12%);backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
@@ -275,6 +276,7 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-glass-group>.ios-circle::before,.ios-glass-group>.ios-capsule::before{display:none}
 /* segmented (host = app-segmented, variant ios) */
 .ios-seg{position:relative;isolation:isolate;display:grid;grid-auto-columns:minmax(0,1fr);grid-auto-flow:column;height:36px;padding:3px;border-radius:999px;background:color-mix(in srgb,var(--ink) 7%,transparent)}
+.ios-subbar .ios-seg{background:transparent}
 .ios-seg::before{content:'';position:absolute;top:3px;bottom:3px;left:3px;z-index:-1;width:calc((100% - 6px)/var(--seg-n,1));border-radius:999px;background:var(--surface);box-shadow:0 2px 6px rgb(26 22 20/14%),0 0 0 .5px rgb(26 22 20/5%);transform:translateX(calc(var(--seg-i,0)*100%));transition:transform var(--dur-2,.24s) var(--ease-snap,cubic-bezier(.3,.7,0,1))}
 .ios-seg__opt{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;padding:0 8px;border:0;border-radius:999px;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;font-weight:650;white-space:nowrap;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-seg__opt>span{overflow:hidden;text-overflow:ellipsis}.ios-seg__opt[aria-checked=true],.ios-seg__opt[aria-selected=true]{color:var(--ink)}
