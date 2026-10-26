@@ -406,6 +406,9 @@ test('products carrying an older cost of this container bring Kostprijzen back, 
     text: '3 producten dragen een oudere kostprijs dan deze container nu rekent.' });
   assert.equal(nextStepCard('KOSTPRIJZEN', 3, 1).text, '1 product draagt een oudere kostprijs dan deze container nu rekent.');
   assert.equal(nextStepCard('KOSTPRIJZEN', 3).title, 'Klaar voor de volgende stap?');
+  /* With batches started the card names them, as the desk's step tile does. */
+  assert.equal(nextStepCard('KOSTPRIJZEN', 3, 0, true).text, 'De voorraad is bijgeboekt. Zet nu de gelande kost op de batches en productkaarten.');
+  assert.equal(nextStepCard('KOSTPRIJZEN', 3, 0, false).text, 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.');
   assert.equal(nextStepCard(null, 3, 2).title, 'Container afgerond');
   /* Acties and the buttons name it again, with the count. */
   const apply = (extra: Partial<ActionsMenuState>) => actionsMenu(menuState({ status: 'ONTVANGEN', step: null, ...extra })).find((item) => item.id === 'apply')!.label;

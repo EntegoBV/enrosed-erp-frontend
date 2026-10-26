@@ -154,3 +154,54 @@ test('the stock page: status on load, banner on desk and phone, quiet check link
   assert.match(sheet, /'Batches gepauzeerd' : 'Batches hervat'/);
   assert.doesNotMatch(sheet, /reset\(/, 'no screen calls the reset');
 });
+
+test('Batches opbouwen asks once more before the real start: the start locks every product (plan §7.2 R1)', async () => {
+  const ts = (await import('typescript')).default;
+  const vm = await import('node:vm');
+  const { signal } = await import('@angular/core');
+  const text = await readFile(new URL('../src/app/features/products/stock-batch-start-sheet.ts', import.meta.url), 'utf8');
+  const parsed = ts.createSourceFile('stock-batch-start-sheet.ts', text, ts.ScriptTarget.Latest, true);
+  const original = parsed.statements.find((node): node is import('typescript').ClassDeclaration =>
+    ts.isClassDeclaration(node) && node.name?.text === 'StockBatchStartSheet');
+  assert.ok(original);
+  const names = new Set(['report', 'busy', 'start', 'startNow']);
+  const members = original.members.filter((member) => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
+  assert.equal(members.length, names.size);
+  const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter((modifier) => !ts.isDecorator(modifier)),
+    original.name, original.typeParameters, undefined, members);
+  const javascript = ts.transpileModule(ts.createPrinter().printFile(ts.factory.updateSourceFile(parsed, [isolated])), {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+  }).outputText;
+  const exports: Record<string, new () => any> = {};
+  vm.runInNewContext(javascript, { exports, signal, productsText,
+    messageOf: (failure: unknown, fallback: string) => failure instanceof Error ? failure.message : fallback });
+  const calls: boolean[] = [];
+  const asked: { options: { title: string; message: string; confirmLabel?: string }; yes: () => void }[] = [];
+  const toasts: [string, string | undefined][] = [];
+  let emitted = 0;
+  const sheet = new exports['StockBatchStartSheet']();
+  Object.assign(sheet, {
+    fmt,
+    api: { backfill: async (dryRun: boolean) => { calls.push(dryRun); return report({ dryRun, products: 3 }); } },
+    ui: { confirm: (options: { title: string; message: string }, yes: () => void) => asked.push({ options, yes }),
+      toast: (message: string, kind?: string) => toasts.push([message, kind]) },
+    changed: { emit: () => { emitted++; } },
+    closed: { emit: () => undefined },
+  });
+  /* Without the dry run read, nothing is asked. */
+  sheet.start();
+  assert.equal(asked.length, 0);
+  sheet.report.set(report());
+  sheet.start();
+  assert.equal(asked.length, 1, 'the click asks first');
+  assert.deepEqual(calls, [], 'nothing starts before the yes');
+  assert.equal(asked[0].options.title, 'Batches echt opbouwen?');
+  assert.match(asked[0].options.message, /alle producten liggen vast|liggen alle producten vast/);
+  assert.match(asked[0].options.message, /buiten de kantooruren/);
+  assert.equal(asked[0].options.confirmLabel, 'Ja, opbouwen');
+  asked[0].yes();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, [false], 'the yes starts it for real, once');
+  assert.equal(emitted, 1);
+  assert.equal(toasts.at(-1)?.[1], 'ok');
+});

@@ -188,8 +188,20 @@ export class StockBatchStartSheet implements OnInit {
     }
   }
 
-  /** "Batches opbouwen" for real, after the dry run was read. */
-  async start(): Promise<void> {
+  /**
+   * "Batches opbouwen" for real, after the dry run was read. It asks once more first: the start locks every
+   * product while it runs (up to 10 minutes), so it belongs outside business hours (plan §7.2 R1).
+   */
+  start(): void {
+    if (this.busy() || !this.report()) return;
+    this.ui.confirm({
+      title: 'Batches echt opbouwen?',
+      message: 'Tot 10 minuten liggen alle producten vast: verkopen, ontvangen en voorraad boeken wachten. Doe dit buiten de kantooruren.',
+      confirmLabel: 'Ja, opbouwen',
+    }, () => { void this.startNow(); });
+  }
+
+  private async startNow(): Promise<void> {
     if (this.busy() || !this.report()) return;
     this.busy.set(true);
     try {

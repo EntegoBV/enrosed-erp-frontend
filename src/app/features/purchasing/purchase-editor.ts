@@ -2599,6 +2599,8 @@ export class PurchaseEditor {
         this.payments.set(payments);
         this.view.set({ ...next, order });
         this.paymentStateError.set(null);
+        /* A container cost paid or moved here changes the calculation, so the batches' stale part may change too. */
+        void this.loadStockBatches(orderId, fresh);
         return true;
       }
       throw new Error('De order werd tijdens het vernieuwen gewijzigd. Laad het betalingsoverzicht opnieuw.');
@@ -4498,6 +4500,8 @@ export class PurchaseEditor {
       this.view.set(result);
       this.savedOrder.set(JSON.stringify(result.order));
       this.adjustments.set(result.adjustments ?? []);
+      /* A damage report or a changed cost moves this container's batches (pieces left, value, stale): fetch them again. */
+      void this.loadStockBatches(result.order.id, result);
       /* Loose purchasing quantities stay untouched. The quiet inline notice
          already explains the neighbouring full cartons while editing. */
       if (!options.stepBack) this.ui.toast('Opgeslagen');
@@ -5026,7 +5030,8 @@ export class PurchaseEditor {
   readonly applyPlan = computed(() => {
     const data = this.view();
     return data && data.order.id === this.applyFor()
-      ? applyCostsPlan(data.order, data.costing.lines, this.lineProducts(), batchPiecesByProduct(this.stockBatches())) : null;
+      ? applyCostsPlan(data.order, data.costing.lines, this.lineProducts(), batchPiecesByProduct(this.stockBatches()), new Set(), this.batchesStarted())
+      : null;
   });
 
   /**

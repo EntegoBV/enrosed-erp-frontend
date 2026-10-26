@@ -632,6 +632,32 @@ test('a newer row keeps its card unless ticked; the request names the ticked one
   assert.deepEqual([plan.rows[1].currentEur, plan.rows[1].newEur, plan.rows[1].state], [12.5, 11.2, 'down']);
 });
 
+test('before batches start a kept card writes nothing: the button and the toast leave it out of the products applied', () => {
+  /* Only 403, which carries a newer container's card, received something: unticked, nothing is written. */
+  const lines = [line(403, 24, 11.2), line(405, 0, 0)];
+  const before = apply.applyCostsPlan(ORDER, lines, NEWER_PRODUCTS);
+  assert.equal(before.started, false);
+  assert.deepEqual([before.written, before.changed, before.kept, before.skipped], [0, 0, 1, 1]);
+  assert.equal(apply.applyCostsButton(before), 'Toepassen (0 producten)');
+  assert.equal(apply.applyCostsToast(before), 'Geen kostprijs gewijzigd · 1 overgeslagen (niets ontvangen) · 1 productkaart behouden');
+  /* Ticked "Ook op de productkaart": the card is written after all. */
+  const ticked = apply.withOverwrite(before, new Set([403]));
+  assert.deepEqual([ticked.written, ticked.changed, ticked.kept], [1, 1, 0]);
+  assert.equal(apply.applyCostsButton(ticked), 'Toepassen (1 product)');
+  assert.equal(apply.applyCostsToast(ticked), 'Kostprijs van 1 product gewijzigd · 1 overgeslagen (niets ontvangen)');
+  /* Unticked again: back to kept only. */
+  assert.deepEqual([apply.withOverwrite(ticked, new Set()).written, apply.withOverwrite(ticked, new Set()).kept], [0, 1]);
+  /* Started: the batch of this container gets the cost, so the row still counts as applied. */
+  const started = apply.applyCostsPlan(ORDER, lines, NEWER_PRODUCTS, new Map([[403, { pieces: 100, unitPieces: 1 }]]), new Set(), true);
+  assert.deepEqual([started.started, started.written, started.changed, started.kept], [true, 1, 1, 1]);
+  assert.equal(apply.applyCostsButton(started), 'Toepassen (1 product)');
+  assert.equal(apply.withOverwrite(started, new Set()).written, 1, 'withOverwrite keeps the plan\'s start');
+  /* The full lines: 401 and 404 are written either way, 403 only once batches started or ticked. */
+  const full = apply.applyCostsPlan(ORDER, NEWER_LINES, NEWER_PRODUCTS);
+  assert.deepEqual([full.written, full.changed, full.kept], [2, 2, 1]);
+  assert.match(apply.applyCostsToast(full), /^Kostprijs van 2 producten gewijzigd · 1 overgeslagen \(niets ontvangen\) · 1 productkaart behouden$/);
+});
+
 test('the sheet\'s warn line and the toast count the cards kept; staleNotice keeps its suffix', () => {
   assert.equal(apply.newerNotice(1, true), '1 product draagt een nieuwere container: zijn productkaart blijft, alleen de batch krijgt deze kost.');
   assert.equal(apply.newerNotice(2, true), '2 producten dragen een nieuwere container: hun productkaart blijft, alleen de batch krijgt deze kost.');
@@ -713,4 +739,26 @@ test('the editor loads the batches of a booked container, merges their stale par
   await editor.loadStockBatches(14, start);
   assert.equal(batchCalls.at(-1), 15);
   assert.equal(editor.stockBatches(), before);
+});
+
+test('a save of a received, booked container fetches its batches again: a damage report or a cost change moves them', async () => {
+  const start = { ...view(), costing: { lines: NEWER_LINES } } as unknown as PurchaseOrderView;
+  const { editor, batchCalls, setBatches } = setup(start);
+  editor.products.set(NEWER_PRODUCTS);
+  setBatches(batchesOf([batchRow(404, { piecesLeft: 604, unitPieces: 12 })], { applied: 1 }));
+  await editor.loadStockBatches(14, start);
+  assert.equal(editor.stockBatches()?.rows[0].piecesLeft, 604);
+  /* 4 damaged reported and saved: the server took them from the batch and now calls it stale. */
+  setBatches(batchesOf([batchRow(404, { piecesLeft: 556, unitPieces: 12, stale: true, unitCostEur: 6.2, calcUnitEur: 6.4 })], { applied: 1, stale: 1 }));
+  editor.view.update((data: PurchaseOrderView) => ({ ...data, order: { ...data.order, notes: 'Schade gemeld' } }));
+  assert.ok(await editor.save());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(batchCalls, [14, 14]);
+  assert.equal(editor.stockBatches()?.rows[0].piecesLeft, 556, 'the card shows what is left now');
+  assert.deepEqual(plain(editor.costsStaleNow().productIds), [404], 'the stale part follows without a reload');
+  /* A concept container asks nothing on save. */
+  const concept = setup(view({ status: 'CONCEPT' }));
+  concept.editor.view.update((data: PurchaseOrderView) => ({ ...data, order: { ...data.order, notes: 'x' } }));
+  await concept.editor.save();
+  assert.deepEqual(concept.batchCalls, []);
 });

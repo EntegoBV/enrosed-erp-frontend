@@ -70,8 +70,13 @@ export interface ApplyCostRow {
 export interface ApplyCostsPlan {
   /** An earlier apply of this container landed on its products. */
   again: boolean;
+  /** Batches have started: a row that keeps its card still gets the cost on this container's batch. */
+  started: boolean;
   rows: ApplyCostRow[];
-  /** Products that get this container's cost: every row but the skipped ones. */
+  /**
+   * Products that get this container's cost: every row but the skipped ones. Before batches start, a row
+   * that keeps its card gets nothing, so it counts only under `kept`.
+   */
   written: number;
   /** Of those, the ones whose cost is known to change (or that get their first one). */
   changed: number;
@@ -250,27 +255,38 @@ export function missingProductIds(lines: readonly Pick<LandedCostLine, 'productI
   return [...new Set(lines.map((line) => line.productId).filter((id) => !known.has(id)))];
 }
 
+type PlanCounts = Pick<ApplyCostsPlan, 'written' | 'changed' | 'unchanged' | 'unknown' | 'skipped' | 'newer' | 'kept'>;
+
+/**
+ * The counts the button and the toast use. A row that keeps its card is written only when batches have
+ * started (its batch gets the cost); before that the server writes nothing for it, so it counts as kept only.
+ */
+function planCounts(rows: readonly ApplyCostRow[], started: boolean): PlanCounts {
+  const writes = rows.filter((row) => started || !row.keepsCard);
+  const count = (...states: ApplyCostState[]): number => writes.filter((row) => states.includes(row.state)).length;
+  const skipped = count('skipped');
+  return { written: writes.length - skipped, changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'),
+    unknown: count('unknown'), skipped, newer: rows.filter((row) => row.newer).length, kept: rows.filter((row) => row.keepsCard).length };
+}
+
 /**
  * The rows of the saved calculation against the products as they stand. `batches` is what each product
  * still has on the shelf from this container (batchPiecesByProduct); `overwrite` the newer products ticked
- * "Ook op de productkaart".
+ * "Ook op de productkaart"; `started` whether batches have started.
  */
 export function applyCostsPlan(order: OrderNaming, lines: readonly LandedCostLine[], products: readonly Product[],
-  batches?: ReadonlyMap<number, { pieces: number; unitPieces: number }> | null, overwrite: ReadonlySet<number> = new Set()): ApplyCostsPlan {
+  batches?: ReadonlyMap<number, { pieces: number; unitPieces: number }> | null, overwrite: ReadonlySet<number> = new Set(),
+  started = false): ApplyCostsPlan {
   const byId = new Map(products.map((product) => [product.id, product]));
   const rows = lines.map((line) => applyCostRow(order, line, byId.get(line.productId) ?? null,
     { leftPieces: batches?.get(line.productId) ?? null, overwrite }));
-  const count = (...states: ApplyCostState[]): number => rows.filter((row) => states.includes(row.state)).length;
-  const skipped = count('skipped');
-  return { again: costsAppliedBefore(order, lines, products), rows, written: rows.length - skipped,
-    changed: count('new', 'up', 'down'), unchanged: count('same', 'unchanged'), unknown: count('unknown'), skipped,
-    newer: rows.filter((row) => row.newer).length, kept: rows.filter((row) => row.keepsCard).length };
+  return { again: costsAppliedBefore(order, lines, products), started, rows, ...planCounts(rows, started) };
 }
 
 /** The same plan with these newer products ticked "Ook op de productkaart" (the sheet's checkboxes). */
 export function withOverwrite(plan: ApplyCostsPlan, overwrite: ReadonlySet<number>): ApplyCostsPlan {
   const rows = plan.rows.map((row) => ({ ...row, keepsCard: row.newer && !overwrite.has(row.productId) }));
-  return { ...plan, rows, kept: rows.filter((row) => row.keepsCard).length };
+  return { ...plan, rows, ...planCounts(rows, plan.started) };
 }
 
 /** The request's overwriteNewerProductIds: the newer rows whose card is written after all (ticked), each once. */
@@ -292,7 +308,7 @@ export function applyCostsButton(plan: Pick<ApplyCostsPlan, 'again' | 'written'>
  * The toast after applying, with the counts the sheet showed. Only a row known to change counts as
  * gewijzigd: a product the sheet could not load got the cost too, but whether it changed is not known
  * ("niet vergeleken", as its row said "huidige kostprijs onbekend"). Cards kept beside a newer
- * container are named last.
+ * container are named last; before batches start they are not counted as gewijzigd (planCounts).
  */
 export function applyCostsToast(plan: Pick<ApplyCostsPlan, 'changed' | 'unchanged' | 'unknown' | 'skipped'> & { kept?: number }): string {
   const number = (count: number): string => count.toLocaleString('nl-BE');

@@ -108,7 +108,9 @@ const source = await readFile(new URL('../src/app/features/purchasing/purchase-e
 const javascript = isolatedClass(source, 'purchase-editor.ts', 'PurchaseEditor', new Set(['stepBack', 'stepBackOptions',
   'stepBackBusy', 'stepBackPending', 'stepBackSheet', 'openStepBack', 'closeStepBack', 'confirmStepBack',
   'save', 'savedOrder', 'saving', 'deletingOrder', 'dirty', 'previewTimer', 'previewVersion', 'payments', 'paymentStateError',
-  'paymentPlanBusy', 'payingBusy', 'orderPlaced', 'statusCelebration', 'firstInstalmentPrompt', 'adjustments']));
+  'paymentPlanBusy', 'payingBusy', 'orderPlaced', 'statusCelebration', 'firstInstalmentPrompt', 'adjustments',
+  /* A save fetches the container's batches again (only a received, booked one asks the server). */
+  'loadStockBatches', 'stockBatches', 'stockBatchVersion']));
 const sheetSource = await readFile(new URL('../src/app/features/purchasing/purchase-status-back-sheet.ts', import.meta.url), 'utf8');
 const sheetJavascript = isolatedClass(sheetSource, 'purchase-status-back-sheet.ts', 'PurchaseStatusBackSheet');
 

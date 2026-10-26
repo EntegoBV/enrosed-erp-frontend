@@ -353,9 +353,10 @@ export function stepLabel(step: PhoneStep, costsApplied: boolean, dock = false):
  * The Overzicht card under 'Volgende stap', in words: it follows the dock's
  * readNextStep, so the card never says 'afgerond' while the dock still
  * offers a step (I-B6). Null means the road is done; `stale` counts the
- * products that carry an older cost of this container.
+ * products that carry an older cost of this container; `started` (batches
+ * have started) names the batches too, as the desk's step tile does.
  */
-export function nextStepCard(step: PhoneStep | null, lineCount: number, stale = 0): { title: string; text: string } {
+export function nextStepCard(step: PhoneStep | null, lineCount: number, stale = 0, started = false): { title: string; text: string } {
   if (lineCount <= 0) {
     return { title: 'Voeg eerst producten toe', text: 'Deze container is nog leeg. Voeg productregels toe voordat je de lading en kosten afrondt.' };
   }
@@ -372,7 +373,8 @@ export function nextStepCard(step: PhoneStep | null, lineCount: number, stale = 
       return stale > 0
         ? { title: 'Kostprijzen opnieuw toepassen?',
           text: `${stale === 1 ? '1 product draagt' : `${stale.toLocaleString('nl-BE')} producten dragen`} een oudere kostprijs dan deze container nu rekent.` }
-        : { title: 'Klaar voor de volgende stap?', text: 'De voorraad is bijgeboekt. Zet nu de gelande kost op de productkaarten.' };
+        : { title: 'Klaar voor de volgende stap?',
+          text: `De voorraad is bijgeboekt. Zet nu de gelande kost op de ${started ? 'batches en productkaarten' : 'productkaarten'}.` };
     default:
       return { title: 'Container afgerond', text: 'De voorraad is bijgeboekt. Je kunt de calculatie nog controleren of als PDF bewaren.' };
   }

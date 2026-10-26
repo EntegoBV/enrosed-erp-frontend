@@ -71,7 +71,9 @@ const parsed = ts.createSourceFile('purchase-editor.ts', source, ts.ScriptTarget
 const original = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'PurchaseEditor');
 assert.ok(original);
 const names = new Set(['payments', 'paymentStateError', 'paymentStateLoading', 'paymentRefreshVersion',
-  'previewVersion', 'previewTimer', 'savedOrder', 'payingBusy', 'refreshPaymentState', 'removePayment', 'plannedInstalments']);
+  'previewVersion', 'previewTimer', 'savedOrder', 'payingBusy', 'refreshPaymentState', 'removePayment', 'plannedInstalments',
+  /* A refresh fetches the container's batches again (only a received, booked one asks the server). */
+  'loadStockBatches', 'stockBatches', 'stockBatchVersion']);
 const members = original.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const isolated = ts.factory.updateClassDeclaration(original, original.modifiers?.filter(modifier => !ts.isDecorator(modifier)),

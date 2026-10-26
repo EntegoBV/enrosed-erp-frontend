@@ -222,7 +222,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               <div class="ios-section__head"><h2>Volgende stap</h2></div>
               <div class="ios-card mpo-next">
                 <!-- The dock's step in words (readNextStep): the card and the dock never name two different steps (I-B6). -->
-                @let card = nextStepCard(readStep(), data.costing.lines.length, costsStaleNow().count);
+                @let card = nextStepCard(readStep(), data.costing.lines.length, costsStaleNow().count, stockBatches()?.started === true);
                 <h3 id="mpo-actions-title">{{ card.title }}</h3>
                 <p>{{ card.text }}</p>
               </div>
