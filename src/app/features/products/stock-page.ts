@@ -3,6 +3,8 @@ import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { StockBatchApi } from '../../core/api/stock-batch-api';
+import type { StockBatchStatus } from '../../core/api/stock-batch-models';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, ExpectedStock, Product, ProductFamily, StockLevel, StockLocation, StockMovement } from '../../core/api/models';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
@@ -26,6 +28,8 @@ import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { StockMovementSource } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementDelta, stockMovementAfter } from './stock-quantity';
 import { distinctOrderCount, knownValueSum, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
+import { checkLinkShown, statusBanner, type StockBatchSheetMode } from './stock-batch-start';
+import { StockBatchStartSheet } from './stock-batch-start-sheet';
 
 interface StockRow {
   product: Product;
@@ -88,7 +92,7 @@ function mediaSignal(query: string) {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [NgTemplateOutlet, RouterLink, AuthImage, PageHeader, Skeleton, Icon, Segmented, ContextMenu, NumPipe, EurPipe, DateNlPipe, DateTimeNlPipe,
-    Sheet, LoadError, StockBookingSheet, StockMovementSource],
+    Sheet, LoadError, StockBookingSheet, StockMovementSource, StockBatchStartSheet],
   template: `
     <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : (desktop.active() ? subtitle() : phoneCaption())">
       @if (desktop.active()) {
@@ -110,6 +114,14 @@ function mediaSignal(query: string) {
 
     @if (desktop.active()) {
       <div class="content sk-content">
+        <!-- Batches (2026-10-25): not started, paused or differing; nothing when they run clean. -->
+        @if (batchBanner(); as banner) {
+          <div class="wk-banner wk-banner--inset sk-batches" [class.wk-banner--warn]="banner.warn" role="status">
+            <app-icon [name]="banner.warn ? 'alert' : 'layers'" [size]="16" />
+            <span class="wk-banner__text">{{ banner.text }}</span>
+            <button class="wk-link" type="button" (click)="batchSheet.set(banner.mode)">{{ banner.link }}</button>
+          </div>
+        }
         @if (!loading() && !loadError()) {
           <!-- What the stock is worth: the total at landed cost, per location, what is on the way and what has no cost. -->
           <div class="sk-sum" role="group" aria-label="Voorraadwaarde">
@@ -139,6 +151,7 @@ function mediaSignal(query: string) {
           <button class="wk-chip" type="button" [attr.aria-pressed]="hideEmpty()" (click)="hideEmpty.set(!hideEmpty())">Leeg verbergen</button>
           <div class="wk-subbar__end sk-subbar__end">
             @if (hasFilters()) { <button class="wk-link" type="button" (click)="resetFilters()">Filters wissen</button> }
+            @if (batchCheckLink()) { <button class="wk-link sk-batches-link" type="button" (click)="batchSheet.set('check')">Batches controleren</button> }
             <a class="wk-link" routerLink="/stock-locations">Locaties beheren ›</a>
           </div>
         </div>
@@ -211,6 +224,10 @@ function mediaSignal(query: string) {
       </div>
     } @else {
       <div class="content skp">
+        @if (batchBanner(); as banner) {
+          <div class="ios-banner skp-batches" [class.ios-banner--info]="!banner.warn" role="status"><span>{{ banner.text }}</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="batchSheet.set(banner.mode)">{{ banner.link }}</button></div>
+        }
         @if (activeLocations().length > 1 && activeLocations().length <= 3) {
           <div class="skp-seg"><app-segmented variant="ios" label="Locatie" [options]="phoneLocationOptions()" [value]="view() === null ? 'all' : '' + view()" (changed)="setView($event)" /></div>
         } @else if (activeLocations().length > 3) {
@@ -268,6 +285,9 @@ function mediaSignal(query: string) {
                 </div>
               }
             </section>
+          }
+          @if (batchCheckLink()) {
+            <p class="skp-batches-link"><button class="linklike" type="button" (click)="batchSheet.set('check')">Batches controleren</button></p>
           }
         }
       </div>
@@ -543,6 +563,12 @@ function mediaSignal(query: string) {
       <app-context-menu [title]="open.title" [anchor]="open.at" [items]="open.items" [variant]="desktop.active() ? 'default' : 'ios'"
                         cancelLabel="Annuleren" (pick)="pickMenu($event)" (closed)="menu.set(null)" />
     }
+    <!-- Batches opbouwen (dry run, then start) and Batches controleren (Herstellen, Pauzeren / Hervatten). -->
+    @if (batchSheet(); as mode) {
+      @if (batchStatus(); as status) {
+        <app-stock-batch-start-sheet [mode]="mode" [status]="status" (changed)="loadBatchStatus()" (closed)="batchSheet.set(null)" />
+      }
+    }
   `,
   /* The area partial arrives with this screen's lazy chunk; its rules are scoped under app-stock-page. */
   styleUrl: '../../../styles/products/_stock.scss',
@@ -551,6 +577,7 @@ function mediaSignal(query: string) {
 export class StockPage {
   private readonly catalog = inject(CatalogApi);
   private readonly sourcing = inject(SourcingApi);
+  private readonly stockBatches = inject(StockBatchApi);
   private readonly ui = inject(Ui);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -613,6 +640,22 @@ export class StockPage {
       });
     });
     void this.load();
+    void this.loadBatchStatus();
+  }
+
+  /* ---- batches (2026-10-25): the state of the start, its banner and its sheet ---- */
+  /** null until it answers, and when it never did (an older backend): nothing about batches is shown. */
+  readonly batchStatus = signal<StockBatchStatus | null>(null);
+  readonly batchBanner = computed(() => statusBanner(this.batchStatus()));
+  /** Running clean: no banner, so a small "Batches controleren" keeps the pause one click away. */
+  readonly batchCheckLink = computed(() => checkLinkShown(this.batchStatus()));
+  readonly batchSheet = signal<StockBatchSheetMode | null>(null);
+
+  /** On load and after the sheet changed the start; a failed reload keeps what the page already showed. */
+  async loadBatchStatus(): Promise<void> {
+    try {
+      this.batchStatus.set(await this.stockBatches.status());
+    } catch { /* no batch status: the page shows nothing about batches */ }
   }
 
   reload(): void {
