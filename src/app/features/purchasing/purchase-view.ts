@@ -1,4 +1,5 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
+import { PurchaseTracking } from './purchase-tracking';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -87,7 +88,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
+  imports: [PurchaseTracking, PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
             IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard],
   template: `
@@ -177,6 +178,11 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               </div>
             }
 
+            @if (data.order.trackingReference) {
+              <app-purchase-tracking class="mpo-tracking" [orderId]="data.order.id" [trackingReference]="data.order.trackingReference"
+                [active]="activeTab() === 'overzicht'" />
+            }
+
             @if (receiptSummary(); as receipt) {
               <section class="ios-section" id="purchase-receipt-section" tabindex="-1" aria-labelledby="mpo-receipt-title">
                 <div class="ios-section__head"><h2 id="mpo-receipt-title">Ontvangstcontrole</h2></div>
@@ -257,10 +263,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalplan</span>
                   <span class="ios-cell__sub mpo-wrap">{{ planLabel() }}</span></span></div>
                 @if (data.order.trackingReference) {
-                  <a class="ios-cell" routerLink="/purchasing/tracking" [queryParams]="{ order: data.order.id }">
+                  <button class="ios-cell" type="button" (click)="trackingPanel()?.showDetails()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span></span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                  </a>
+                  </button>
                 }
                 @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) {
                   <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Ontvangen op</span></span>
@@ -783,6 +789,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   `,
   styles: `
     :host{display:block;min-width:0}
+    .mpo-tracking{margin:0 16px 18px}
     .mpo-stale{margin:0 16px 14px}.mpo-stale__link{color:inherit;font-weight:700;white-space:nowrap}
   `,
 })
@@ -790,6 +797,7 @@ export class PurchaseView {
   /** One name for the container in sales texts: alias, else number. */
   readonly containerName = containerName;
   readonly pdfOpen = signal(false);
+  readonly trackingPanel = viewChild(PurchaseTracking);
   readonly quoteOpen = signal(false);
   readonly quoteLinesOf = quoteLinesOf;
   /** The section the screen shows: a tab's root, or a deep link's card (the screen sets it for ?section=). */
