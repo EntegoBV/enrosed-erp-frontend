@@ -54,6 +54,30 @@ app-supplier-list .sup-notes{margin:0;font-size:13px;line-height:1.45;white-spac
    The money columns keep room for their heads ('NU TE BETALEN' 97 px, 'LAATSTE ORDER' 102 px): at 1024 they lost their first letters. */
 @media (max-width:1100px){app-supplier-list .sup-table{--wk-cols:minmax(200px,2.2fr) 64px minmax(0,1.3fr) minmax(104px,1fr) minmax(64px,1fr) minmax(108px,1fr)}}
 
+/* ---- Producten (several suppliers, 2026-10-25): what the supplier makes, one row per product, at most two lines
+   (name · kleur · maat with its pills, then versie · ref · laatste order), both ending in an ellipsis; prices on one line.
+   More than 8 rows scroll inside the table, as the supplier table does, so Inkoopafspraken stays near. */
+app-supplier-list .sup-sec__count{margin-left:6px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+app-supplier-list .sup-ptable{--wk-cols:minmax(0,1fr) 112px 116px;margin:0 -20px}
+app-supplier-list .sup-pbody{max-height:calc(8 * 57px);overflow-y:auto;overscroll-behavior:contain}
+app-supplier-list .sup-prow{min-height:57px;color:var(--ink);text-decoration:none}
+app-supplier-list .sup-prod{display:flex;align-items:center;gap:10px;padding-block:8px}
+app-supplier-list .sup-prod__photo{display:block;flex:none;width:40px;height:40px;border-radius:8px;background:var(--surface-2);object-fit:cover}
+app-supplier-list .sup-prod__photo--none,app-supplier-list .sup-thumb--none{display:grid;place-items:center;color:var(--muted-2);font-size:15px}
+app-supplier-list .sup-prod__body{display:grid;flex:1;gap:2px;min-width:0}
+app-supplier-list .sup-prod__line{display:flex;align-items:center;gap:6px;min-width:0}
+app-supplier-list .sup-prod__line>.wk-pill{flex:none}
+app-supplier-list .sup-prod__name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:650;line-height:1.3}
+app-supplier-list .sup-prod__sub{overflow:hidden;color:var(--muted);font-size:12px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+app-supplier-list .sup-prod__price{white-space:nowrap;font-weight:650}
+/* An inactive row, or a row of a product that is itself inactive: the same row, quieter. */
+app-supplier-list .sup-prow--off :is(.sup-prod__name,.sup-prod__photo,.ios-cell__title,.ios-thumb){opacity:.55}
+app-supplier-list .wk-tr.sup-pfold{min-height:40px}
+app-supplier-list .wk-tr.sup-pfold>.wk-td{grid-column:1/-1}
+app-supplier-list .sup-fold__chev{display:inline-block;transition:transform var(--dur-1,.18s) var(--ease-out,ease)}
+app-supplier-list [aria-expanded=true]>.sup-fold__chev{transform:rotate(90deg)}
+app-supplier-list .sup-pref{color:var(--rose-dark);font-weight:650}
+
 /* ---- phone */
 app-supplier-list .sup--phone{--ios-inset:4px}
 app-supplier-list .sup-isearch{margin:0 var(--ios-inset) 14px}
