@@ -13,7 +13,7 @@ const source = await readFile(new URL('../src/app/features/products/product-view
 const parsed = ts.createSourceFile('product-view.ts', source, ts.ScriptTarget.Latest, true);
 const viewClass = parsed.statements.find((node): node is ts.ClassDeclaration => ts.isClassDeclaration(node) && node.name?.text === 'ProductView');
 assert.ok(viewClass);
-const names = new Set(['galleryPhotos', 'photoOverview', 'currentSlideBadges', 'photoColour', 'placeLine', 'family', 'lightbox', 'galleryIndex', 'galleryPointer', 'gallerySuppressClickUntil', 'selectGalleryPhoto', 'stepGallery', 'openCurrentGalleryPhoto', 'startGallerySwipe', 'finishGallerySwipe', 'cancelGallerySwipe', 'scrollToDetailSection', 'revealSelectedVariant', 'supplierAgreement', 'agreementPhotos', 'agreementLoading', 'agreementLoadError', 'supplierNoteBlocks', 'loadSupplierAgreement']);
+const names = new Set(['galleryPhotos', 'photoOverview', 'currentSlideBadges', 'photoColour', 'placeLine', 'family', 'lightbox', 'galleryIndex', 'galleryPointer', 'gallerySuppressClickUntil', 'selectGalleryPhoto', 'stepGallery', 'openCurrentGalleryPhoto', 'startGallerySwipe', 'finishGallerySwipe', 'cancelGallerySwipe', 'scrollToDetailSection', 'revealSelectedVariant', 'supplierAgreement', 'agreementPhotos', 'agreementLoading', 'agreementLoadError', 'supplierNoteBlocks', 'loadSupplierAgreement', 'agreementSupplierId']);
 const members = viewClass.members.filter(member => member.name && ts.isIdentifier(member.name) && names.has(member.name.text));
 assert.equal(members.length, names.size);
 const selectedClass = ts.factory.updateClassDeclaration(viewClass, viewClass.modifiers?.filter(modifier => !ts.isDecorator(modifier)), viewClass.name, viewClass.typeParameters, undefined, members);
@@ -288,4 +288,23 @@ test('supplier read failure is explicit; a late previous-product response cannot
   await pending;
   assert.equal(view.supplierAgreement().productId, 46);
   assert.equal(view.supplierNoteBlocks()[0].text, 'Current variant');
+});
+
+test('the Afspraken choice asks for that supplier; a late answer for an earlier choice is dropped', async () => {
+  const { view } = harness();
+  const asked: unknown[] = [];
+  let finish!: (value: unknown) => void;
+  view.supplierAgreementApi = { get: (productId: number, supplierId: unknown) => { asked.push(supplierId); return new Promise(resolve => { finish = resolve; }); } };
+  view.agreementSupplierId.set(7);
+  const earlier = view.loadSupplierAgreement(45, 1, 7);
+  const first = finish;
+  view.agreementSupplierId.set(null);
+  const preferred = view.loadSupplierAgreement(45, 1, null);
+  finish({ productId: 45, available: true, note: 'Voorkeur note', photos: [] });
+  await preferred;
+  first({ productId: 45, available: true, note: 'Rosegift note', photos: [] });
+  await earlier;
+  assert.deepEqual(asked, [7, null]);
+  assert.equal(view.supplierNoteBlocks()[0].text, 'Voorkeur note');
+  assert.equal(view.agreementLoading(), false);
 });

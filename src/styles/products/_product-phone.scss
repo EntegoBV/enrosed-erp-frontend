@@ -136,3 +136,26 @@ app-product-view .pph-nw { display: inline-block; }
 app-product-view #stock-card .ios-section__head { flex-wrap: wrap; }
 app-product-view #stock-card .ios-cell__value { max-width: 45%; white-space: normal; text-align: right; font-size: 14px; line-height: 1.35; }
 app-product-view .pph-delta { max-width: 35%; text-align: right; }
+
+/* ---- several suppliers and batches (2026-10-25): two-line cells, names end in an ellipsis, pills and figures never wrap ---- */
+app-product-view .pph-supplier-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; justify-self: start; margin-top: 2px; }
+app-product-view .pph-supplier-line .pph-supplier { margin-top: 0; }
+app-product-view .pph-supplier-more { padding: 0; color: var(--rose-dark); font-size: 13px; font-weight: 650; }
+app-product-view .pph-sup__title, app-product-view .pph-batch__title { display: flex; align-items: center; gap: 5px; min-width: 0; }
+app-product-view .pph-sup__name, app-product-view .pph-batch__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+app-product-view .pph-sup__title .wk-pill { flex: none; }
+app-product-view .pph-sup--off { opacity: .72; }
+app-product-view .pph-batch-tag {
+  flex: none; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--rose) 13%, var(--surface)); color: var(--rose-dark);
+  font-size: 10.5px; font-style: normal; font-weight: 700; line-height: 17px; white-space: nowrap;
+}
+app-product-view .pph-batch .ios-cell__value { font-size: 15px; }
+app-product-view .ios-cell__value.is-warn, app-product-view .ios-cell__meta.is-warn { color: var(--warn); font-weight: 600; }
+app-product-view .ios-section__foot.is-warn { color: var(--warn); font-weight: 600; }
+app-product-view .pph-fold { transition: transform var(--dur-1, .18s) var(--ease-out, ease); }
+app-product-view .pph-fold.open { transform: rotate(90deg); }
+app-product-view .pph-agree-pick { cursor: default; }
+app-product-view .pph-agree-select {
+  flex: 0 1 auto; min-width: 0; max-width: 62%; padding: 4px 0; border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 16px; text-align: right; text-overflow: ellipsis;
+}

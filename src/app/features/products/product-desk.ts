@@ -20,6 +20,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet } from './stock-booking-sheet';
 import { ProductChannelPrice } from './product-channel-price';
 import { StockMovementSource } from './stock-movement-source';
+import { ProductBatchSheet } from './product-batch-sheet';
 import type { PriceRow } from './product-price-build';
 
 /** A media query as a signal, for the component that asks (removes its listener on destroy). */
@@ -54,7 +55,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [Icon, ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton, StockBookingSheet,
-    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, StockMovementSource,
+    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, StockMovementSource, ProductBatchSheet,
   ],
   template: `
     @if (product(); as product) {
@@ -93,6 +94,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <p class="pdk-line">
                 @if (supplierName(); as name) {
                   <a [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
+                  @if (otherSuppliers(); as more) { <button class="linklike pdk-line__more" type="button" (click)="scrollToDetailSection('pd-suppliers')" [title]="more + ' andere leverancier' + (more === 1 ? '' : 's')">+{{ more }}</button> }
                 } @else { <span>Geen leverancier</span> }
                 @if (packagingLabel(product); as packaging) { <span class="sep">·</span><span>{{ packaging }}</span> }
                 @if (product.carton.piecesPerCarton) { <span class="sep">·</span><span>{{ product.carton.piecesPerCarton | num }} per omdoos</span> }
@@ -210,6 +212,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
           <div class="pdk-cols">
             <div class="pdk-col">
               <ng-container *ngTemplateOutlet="priceCard" />
+              <ng-container *ngTemplateOutlet="suppliersCard" />
               <ng-container *ngTemplateOutlet="productCard" />
               <ng-container *ngTemplateOutlet="agreementsCard" />
               <ng-container *ngTemplateOutlet="mediaCard" />
@@ -217,6 +220,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             </div>
             <div class="pdk-col">
               <ng-container *ngTemplateOutlet="stockCard" />
+              <ng-container *ngTemplateOutlet="batchesCard" />
               <ng-container *ngTemplateOutlet="cartonCard" />
               <ng-container *ngTemplateOutlet="webCard" />
             </div>
@@ -224,10 +228,12 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
         } @else {
           <div class="pdk-col">
             <ng-container *ngTemplateOutlet="priceCard" />
+            <ng-container *ngTemplateOutlet="suppliersCard" />
             <div class="pdk-duo">
               <ng-container *ngTemplateOutlet="stockCard" />
               <ng-container *ngTemplateOutlet="webCard" />
             </div>
+            <ng-container *ngTemplateOutlet="batchesCard" />
             <ng-container *ngTemplateOutlet="productCard" />
             <ng-container *ngTemplateOutlet="cartonCard" />
             <ng-container *ngTemplateOutlet="agreementsCard" />
@@ -349,7 +355,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                 </dl>
                 <div class="desk-actions pd-links">
                   <a class="desk-action" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'purchasing' }">
-                    <span><b>Inkoop bewerken</b><small>EXW-prijs, extra kost en HS-code</small></span><i aria-hidden="true">›</i>
+                    <span><b>Inkoop bewerken</b><small>leveranciers, EXW-prijs en HS-code</small></span><i aria-hidden="true">›</i>
                   </a>
                   <a class="desk-action" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'sales' }">
                     <span><b>Verkoopprijs bewerken</b><small>opslag of vaste prijs</small></span><i aria-hidden="true">›</i>
@@ -360,6 +366,48 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             }
           }
         </section>
+      </ng-template>
+
+      <!-- ============================ Leveranciers: one product, each supplier with its own EXW price (2026-10-25) -->
+      <ng-template #suppliersCard>
+        @if (productSuppliers() === null || supplierRows().length) {
+          <section class="pdk-card" id="pd-suppliers" aria-labelledby="pd-suppliers-title">
+            <div class="pdk-card__head">
+              <div><h2 id="pd-suppliers-title">Leveranciers</h2><p>Wie dit product maakt · prijs per {{ salesUnit(product).singular }}</p></div>
+              <a class="linklike" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'purchasing' }">Bewerken ›</a>
+            </div>
+            @if (productSuppliers() === null) {
+              <app-skeleton kind="lines" [rows]="2" />
+            } @else {
+              <div class="pdk-suppliers">
+                @for (row of activeSupplierRows(); track row.id) {
+                  <ng-container *ngTemplateOutlet="supplierRow; context: { $implicit: row }" />
+                }
+              </div>
+              @if (inactiveSupplierRows().length; as off) {
+                <button class="linklike pdk-more" type="button" [attr.aria-expanded]="inactiveSuppliersOpen()" (click)="inactiveSuppliersOpen.set(!inactiveSuppliersOpen())">{{ off + ' inactief' + (inactiveSuppliersOpen() ? ' · inklappen' : ' ›') }}</button>
+                @if (inactiveSuppliersOpen()) {
+                  <div class="pdk-suppliers pdk-suppliers--off">
+                    @for (row of inactiveSupplierRows(); track row.id) {
+                      <ng-container *ngTemplateOutlet="supplierRow; context: { $implicit: row }" />
+                    }
+                  </div>
+                }
+              }
+            }
+          </section>
+        }
+      </ng-template>
+
+      <!-- one supplier: name, pill and price on line 1; version, reference, MOQ, lead time and history on line 2 -->
+      <ng-template #supplierRow let-row>
+        <div class="pdk-supplier" [class.is-off]="!row.active">
+          <span class="pdk-supplier__main">
+            <span class="pdk-supplier__line"><b class="pdk-supplier__name" [title]="row.supplierName">{{ row.supplierName }}</b>@if (row.preferred) {<i class="wk-pill tone-accent">Voorkeur</i>} @else if (!row.active) {<i class="wk-pill">Inactief</i>}</span>
+            <small class="pdk-supplier__sub" [title]="supplierLine(row)">{{ supplierLine(row) }}</small>
+          </span>
+          <span class="pdk-supplier__price">{{ supplierPrice(row) }}@if (row.supplierIncoterm) {<small>{{ row.supplierIncoterm }}</small>}</span>
+        </div>
       </ng-template>
 
       <!-- ============================ Product: gallery and identification -->
@@ -527,6 +575,45 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
         </section>
       </ng-template>
 
+      <!-- ============================ Batches: the stock per received container, the oldest goes out first (2026-10-25) -->
+      <ng-template #batchesCard>
+        @if (shownBatches(); as data) {
+          <section class="pdk-card" id="pd-batches" aria-labelledby="pd-batches-title">
+            <div class="pdk-card__head">
+              <div><h2 id="pd-batches-title">Batches</h2><p>{{ batchesHelperText() }}</p></div>
+              <b class="pdk-total">{{ data.summary.valueEur | eur: 0 }}</b>
+            </div>
+            <div class="pdk-batches">
+              @for (b of batchLists().active; track b.id) {
+                <ng-container *ngTemplateOutlet="deskBatch; context: { $implicit: b }" />
+              }
+            </div>
+            @if (batchLists().empty.length; as sold) {
+              <button class="linklike pdk-more" type="button" [attr.aria-expanded]="emptyBatchesOpen()" (click)="emptyBatchesOpen.set(!emptyBatchesOpen())">{{ 'Uitverkochte batches (' + sold + ')' + (emptyBatchesOpen() ? ' · inklappen' : ' ›') }}</button>
+              @if (emptyBatchesOpen()) {
+                <div class="pdk-batches pdk-batches--empty">
+                  @for (b of batchLists().empty; track b.id) {
+                    <ng-container *ngTemplateOutlet="deskBatch; context: { $implicit: b }" />
+                  }
+                </div>
+              }
+            }
+            @if (batchNote(); as note) { <p class="pd-empty pd-empty--gap pdk-batch-note">{{ note }}</p> }
+          </section>
+        }
+      </ng-template>
+
+      <!-- one batch: title and tags over date and what is left; the cost per unit (stale: "→ today") over the value left -->
+      <ng-template #deskBatch let-b>
+        <button class="pdk-batch" type="button" [title]="batchRowText(b)" (click)="batchSheet.set(b)">
+          <span class="pdk-batch__main">
+            <span class="pdk-batch__top"><b>{{ batchName(b) }}</b>@for (tag of batchTagsOf(b); track tag) {<i class="pdk-batch__tag">{{ tag }}</i>}</span>
+            <small>{{ batchSubOf(b) }}</small>
+          </span>
+          <span class="pdk-batch__num"><strong [class.is-warn]="b.stale">{{ batchCostOf(b) }}</strong><small>{{ b.valueLeftEur === null ? '—' : (b.valueLeftEur | eur: 0) }}</small></span>
+        </button>
+      </ng-template>
+
       <!-- ============================ Website & publicatie (today's card) -->
       <ng-template #webCard>
         <section class="pdk-card" id="pd-web" aria-labelledby="pd-web-title">
@@ -590,7 +677,15 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
       <ng-template #agreementsCard>
         <section class="pdk-card" id="pd-agreements" aria-labelledby="pd-agreements-title">
           <div class="pdk-card__head">
-            <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s voor leveranciersdocumenten en inspectie-export · {{ supplierName() || 'de leverancier' }}</p></div>
+            <div><h2 id="pd-agreements-title">Afspraken leverancier</h2><p>Engelse instructies en referentiefoto’s voor leveranciersdocumenten en inspectie-export · {{ agreementSupplierName() || 'de leverancier' }}</p>
+              @if (agreementChoices().length) {
+                <label class="pdk-agree-pick"><span>Leverancier</span>
+                  <select class="input input--sm select" id="pd-agreement-supplier" (change)="selectAgreementSupplier($any($event.target).value)">
+                    @for (choice of agreementChoices(); track choice.id) {
+                      <option [value]="choice.id" [selected]="choice.id === shownAgreementSupplierId()">{{ choice.label }}</option>
+                    }
+                  </select></label>
+              }</div>
             <span class="pdk-card__trail">
               @if (agreementPhotos().length) { <small>{{ agreementPhotos().length }} referentiefoto’s</small> }
               <a class="linklike" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'agreements' }">Bewerken ›</a>
@@ -656,14 +751,14 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
         @if (receiptIssues().length) {
           <section class="pdk-card pd-issues" id="pd-issues" aria-labelledby="pd-issues-title">
             <div class="pdk-card__head">
-              <div><h2 id="pd-issues-title">Eerdere leveringen met schade of tekort</h2><p>Staat als waarschuwing op de volgende leveranciersorder van dit product, met wat we noteerden</p></div>
+              <div><h2 id="pd-issues-title">Eerdere leveringen met schade of tekort</h2><p>Waarschuwing op de volgende order bij dezelfde leverancier</p></div>
               <a class="linklike" [routerLink]="['/analyses', 'purchasing']" [queryParams]="{ deel: 'afwijkingen' }">Ontvangstanalyse ›</a>
             </div>
             <ul class="pd-issues__list">
               @for (issue of receiptIssues(); track issue.orderId) {
                 <li>
                   <a class="pd-issues__order" [routerLink]="['/purchasing', issue.orderId]">{{ issue.orderNumber }}</a>
-                  <span class="pd-issues__when">{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }}</span>
+                  <span class="pd-issues__when">@if (issueSupplier(issue); as supplier) {<span class="pd-issues__supplier" [title]="supplier">{{ supplier }}</span> · }{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }}</span>
                   <span class="pd-issues__facts">{{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · <b>{{ issue.damaged | num }} beschadigd</b> }@if (issue.missing) { · <b>{{ issue.missing | num }} te weinig</b> }@if (issue.laterDamaged || issue.laterMissing) { · <i>na uitpakken gemeld: @if (issue.laterDamaged) {{{ issue.laterDamaged | num }} beschadigd}@if (issue.laterDamaged && issue.laterMissing) { en }@if (issue.laterMissing) {{{ issue.laterMissing | num }} te weinig}</i> }</span>
                   @if (issue.note) { <span class="pd-issues__note">{{ issue.note }}</span> }
                   @else if (!issue.laterNote) { <span class="pd-issues__note pd-issues__note--empty">Geen reden genoteerd. Zet ze bij de regel op de inkooporder.</span> }
@@ -695,6 +790,9 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
         <app-stock-booking-sheet [product]="product" [levels]="bookingLevels()" [containers]="receivedOrders()"
                                  [kind]="booking.kind" [locationId]="booking.locationId"
                                  (booked)="onBooked($event)" (closed)="bookingSheet.set(null)" />
+      }
+      @if (batchSheet(); as batch) {
+        <app-product-batch-sheet [batch]="batch" [product]="product" (closed)="batchSheet.set(null)" />
       }
     } @else if (loadError(); as error) {
       <app-page-header title="Product" [showBell]="false" />

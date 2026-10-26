@@ -50,6 +50,23 @@ import { receivedContainersFor, type ReceivedContainer } from './received-contai
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { containerOptionLabel, type BookingKind, type BookingLevel } from './stock-booking';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
+import type { ProductSupplierRow } from '../../core/api/product-supplier-models';
+import { StockBatchApi } from '../../core/api/stock-batch-api';
+import type { ProductStockBatches, StockBatch } from '../../core/api/stock-batch-models';
+import { batchFormat, eurText } from '../../core/api/stock-batch-units';
+import {
+  agreementSupplierChoices, issueSupplierName, otherActiveCount, sortSupplierRows, supplierRowHistory, supplierRowMeta,
+} from './product-suppliers';
+import {
+  batchCostParts, batchCostText, batchesHelper, batchesNote, batchRowTitle, batchSub, batchTags, batchTitle, partnerFoot, showBatches, splitBatches,
+} from './product-batches';
+import { ProductBatchSheet } from './product-batch-sheet';
+
+/** Desk and phone name the same section differently; a link for one screen still lands on the other. */
+const SECTION_ALIASES: Record<string, string> = {
+  'pd-batches': 'product-batches', 'product-batches': 'pd-batches',
+  'pd-suppliers': 'product-suppliers', 'product-suppliers': 'pd-suppliers',
+};
 
 /**
  * Read-first product master. The page deliberately separates the customer
@@ -63,7 +80,7 @@ export type { ReceivedContainer } from './received-containers';
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
-    ProductPlacesLine, IosNav, ContextMenu, Icon, Sheet, LoadError, StockBookingSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
+    ProductPlacesLine, IosNav, ContextMenu, Icon, Sheet, LoadError, StockBookingSheet, ProductBatchSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
     @if (product(); as product) {
@@ -108,7 +125,10 @@ export type { ReceivedContainer } from './received-containers';
                   <p class="pph-opt">@if (dotColour(product.colourHex, product.colour); as hex) { <i [style.background]="hex" aria-hidden="true"></i> }{{ product.colour }}@if (product.colour && product.variantSize) { · }{{ product.variantSize }}</p>
                 }
                 @if (product.sku) { <p class="pph-sku">{{ product.sku }}</p> }
-                @if (supplierName(); as name) { <a class="pph-supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a> }
+                @if (supplierName(); as name) {
+                  <span class="pph-supplier-line"><a class="pph-supplier" [routerLink]="['/suppliers']" [queryParams]="{ q: name }">{{ name }} ›</a>
+                    @if (otherSuppliers(); as more) { <button class="linklike pph-supplier-more" type="button" (click)="scrollToDetailSection('product-suppliers')" [attr.aria-label]="more + ' andere leverancier' + (more === 1 ? '' : 's')">+{{ more }}</button> }</span>
+                }
                 @if (publicName(); as name) { <p class="pph-pub">Op de website: {{ name }}</p> }
               </div>
             </div>
@@ -198,6 +218,40 @@ export type { ReceivedContainer } from './received-containers';
           </div>
         </section>
 
+        <!-- 2b · Batches: only after the start; the oldest goes out first -->
+        @if (shownBatches(); as data) {
+          <section class="ios-section" id="product-batches" aria-labelledby="pph-batches-title">
+            <div class="ios-section__head"><h2 id="pph-batches-title">Batches</h2><span class="ios-section__trail">{{ data.summary.valueEur | eur: 0 }}</span></div>
+            <div class="ios-group">
+              @for (b of batchLists().active; track b.id) {
+                <ng-container *ngTemplateOutlet="phoneBatch; context: { $implicit: b }" />
+              }
+              @if (batchLists().empty.length; as sold) {
+                <button class="ios-cell ios-cell--action" type="button" [attr.aria-expanded]="emptyBatchesOpen()" (click)="emptyBatchesOpen.set(!emptyBatchesOpen())">Uitverkochte batches ({{ sold }})</button>
+                @if (emptyBatchesOpen()) {
+                  @for (b of batchLists().empty; track b.id) {
+                    <ng-container *ngTemplateOutlet="phoneBatch; context: { $implicit: b }" />
+                  }
+                }
+              }
+            </div>
+            @if (batchNote(); as note) { <p class="ios-section__foot is-warn">{{ note }}</p> }
+            @else if (batchFoot(); as foot) { <p class="ios-section__foot">{{ foot }}</p> }
+          </section>
+        }
+        <ng-template #phoneBatch let-b>
+          <button class="ios-cell pph-batch" type="button" [title]="batchRowText(b)" (click)="batchSheet.set(b)">
+            <span class="ios-cell__body">
+              <span class="ios-cell__title pph-batch__title"><span class="pph-batch__name">{{ batchName(b) }}</span>@for (tag of batchTagsOf(b); track tag) {<i class="pph-batch-tag">{{ tag }}</i>}</span>
+              <span class="ios-cell__sub">{{ batchSubOf(b) }}</span>
+            </span>
+            @let cost = batchCostPartsOf(b);
+            <span class="ios-cell__trail"><span class="ios-cell__value num" [class.is-warn]="b.stale">{{ cost.cost }}</span>
+              @if (cost.now) { <span class="ios-cell__meta num is-warn">{{ cost.now }}</span> }</span>
+            <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+          </button>
+        </ng-template>
+
         <!-- 3 · Laatste bewegingen -->
         @if (recentMoves(); as moves) {
           <section class="ios-section" aria-labelledby="pph-moves-title">
@@ -221,7 +275,7 @@ export type { ReceivedContainer } from './received-containers';
         <section class="ios-section" id="product-core" aria-labelledby="pph-price-title">
           <div class="ios-section__head"><h2 id="pph-price-title">Prijs &amp; marge</h2><button class="ios-section__link" type="button" (click)="openPriceInfo(product)">Opbouw</button></div>
           <div class="ios-group">
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">EXW-prijs</span><span class="ios-cell__sub">fabrieksprijs</span></span>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">EXW-prijs</span><span class="ios-cell__sub">{{ otherSuppliers() && supplierName() ? 'voorkeur · ' + supplierName() : 'fabrieksprijs' }}</span></span>
               <span class="ios-cell__value num">@if (product.exwPrice; as price) { {{ price | cur: product.exwCurrency }} } @else { — }</span></div>
             @if (product.extraUnitCost; as extra) {
               <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Extra kost</span><span class="ios-cell__sub">per {{ salesUnit(product).singular }}, bv. display of giftbox</span></span>
@@ -245,6 +299,40 @@ export type { ReceivedContainer } from './received-containers';
           <p class="ios-section__foot">Prijzen excl. btw</p>
           <app-product-channel-price [product]="product" />
         </section>
+
+        <!-- 4b · Leveranciers: the Voorkeur first, each supplier with its own EXW price -->
+        @if (supplierRows().length) {
+          <section class="ios-section" id="product-suppliers" aria-labelledby="pph-suppliers-title">
+            <div class="ios-section__head"><h2 id="pph-suppliers-title">Leveranciers</h2>
+              <a class="ios-section__link" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'purchasing' }">Bewerk</a></div>
+            <div class="ios-group">
+              @for (row of activeSupplierRows(); track row.id) {
+                <ng-container *ngTemplateOutlet="phoneSupplier; context: { $implicit: row }" />
+              }
+              @if (inactiveSupplierRows().length; as off) {
+                <button class="ios-cell ios-cell--action" type="button" [attr.aria-expanded]="inactiveSuppliersOpen()" (click)="inactiveSuppliersOpen.set(!inactiveSuppliersOpen())">
+                  <span class="ios-cell__body">{{ off }} inactief</span><app-icon class="ios-cell__chev pph-fold" [class.open]="inactiveSuppliersOpen()" name="chevron-right" [size]="16" /></button>
+                @if (inactiveSuppliersOpen()) {
+                  @for (row of inactiveSupplierRows(); track row.id) {
+                    <ng-container *ngTemplateOutlet="phoneSupplier; context: { $implicit: row }" />
+                  }
+                }
+              }
+            </div>
+          </section>
+        }
+        <ng-template #phoneSupplier let-row>
+          <div class="ios-cell pph-sup" [class.pph-sup--off]="!row.active">
+            <span class="ios-cell__body">
+              <span class="ios-cell__title pph-sup__title"><span class="pph-sup__name">{{ row.supplierName }}</span>@if (row.preferred) {<i class="wk-pill tone-accent">Voorkeur</i>} @else if (!row.active) {<i class="wk-pill">Inactief</i>}</span>
+              @if (supplierPhoneSub(row); as sub) { <span class="ios-cell__sub">{{ sub }}</span> }
+            </span>
+            <span class="ios-cell__trail">
+              <span class="ios-cell__value num">{{ supplierExw(row) }}</span>
+              @if (supplierTrail(row); as trail) { <span class="ios-cell__meta num">{{ trail }}</span> }
+            </span>
+          </div>
+        </ng-template>
 
         <!-- 5 · Website & publicatie, read-only (B14) -->
         <section class="ios-section" id="product-publication" aria-labelledby="pph-web-title">
@@ -357,6 +445,14 @@ export type { ReceivedContainer } from './received-containers';
           <div class="ios-section__head"><h2 id="pph-agreements-title">Afspraken leverancier</h2>
             @if (product.id !== null) { <a class="ios-section__link" [routerLink]="['/products', product.id, 'edit']" [queryParams]="{ tab: 'agreements' }">Bewerk</a> }</div>
           <div class="ios-group">
+            @if (agreementChoices().length) {
+              <label class="ios-cell pph-agree-pick"><span class="ios-cell__body"><span class="ios-cell__title">Leverancier</span></span>
+                <select class="pph-agree-select" id="pph-agreement-supplier" (change)="selectAgreementSupplier($any($event.target).value)">
+                  @for (choice of agreementChoices(); track choice.id) {
+                    <option [value]="choice.id" [selected]="choice.id === shownAgreementSupplierId()">{{ choice.label }}</option>
+                  }
+                </select></label>
+            }
             <details class="ios-disclosure" id="product-agreements" [open]="agreementsOpenAtStart">
               <summary><span class="pph-wrap">Engelse instructies · {{ agreementPhotos().length }} referentiefoto’s</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
               <div class="ios-disclosure__body pph-agreement">
@@ -413,7 +509,7 @@ export type { ReceivedContainer } from './received-containers';
             <div class="ios-group">
               @for (issue of receiptIssues(); track issue.orderId) {
                 <a class="ios-cell ios-cell--tall" [routerLink]="['/purchasing', issue.orderId]">
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ issue.orderNumber }}</span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ issue.orderNumber }}@if (issueSupplier(issue); as supplier) { · {{ supplier }}}</span>
                     <span class="ios-cell__sub pph-wrap">{{ issue.receivedOn ? (issue.receivedOn | dateNl) : '—' }} · {{ issue.ordered | num }} besteld · {{ issue.received | num }} ontvangen@if (issue.damaged) { · {{ issue.damaged | num }} beschadigd }@if (issue.missing) { · {{ issue.missing | num }} te weinig }@if (issue.laterDamaged || issue.laterMissing) { · na uitpakken gemeld: @if (issue.laterDamaged) { {{ issue.laterDamaged | num }} beschadigd }@if (issue.laterDamaged && issue.laterMissing) { en }@if (issue.laterMissing) { {{ issue.laterMissing | num }} te weinig } }</span>
                     @if (issue.note) { <span class="ios-cell__sub pph-wrap pph-note-line">{{ issue.note }}</span> }
                     @if (issue.laterNote) { <span class="ios-cell__sub pph-wrap pph-note-line">{{ issue.laterNote }}</span> }</span>
@@ -489,6 +585,9 @@ export type { ReceivedContainer } from './received-containers';
           <app-stock-booking-sheet [product]="product" [levels]="bookingLevels()" [containers]="receivedOrders()"
                                    [kind]="booking.kind" [locationId]="booking.locationId"
                                    (booked)="onBooked($event)" (closed)="bookingSheet.set(null)" />
+        }
+        @if (batchSheet(); as batch) {
+          <app-product-batch-sheet [batch]="batch" [product]="product" (closed)="batchSheet.set(null)" />
         }
         @if (moreMenu()) {
           <app-context-menu title="Product" variant="ios" cancelLabel="Annuleren" [items]="moreItems" (pick)="pickMore($event, product)" (closed)="moreMenu.set(false)" />
@@ -617,6 +716,102 @@ export class ProductView {
   readonly supplierNoteBlocks = computed(() => parseSupplierNote(this.supplierAgreement()?.available ? this.supplierAgreement()?.note : null));
   readonly agreementLoading = signal(false);
   readonly agreementLoadError = signal<string | null>(null);
+
+  /* ---- several suppliers (2026-10-25): the product's rows, the Voorkeur first ---- */
+  /** Null while loading; a failed request leaves [] and the hero keeps today's supplier name. */
+  readonly productSuppliers = signal<ProductSupplierRow[] | null>(null);
+  readonly supplierRows = computed(() => sortSupplierRows(this.productSuppliers() ?? []));
+  readonly activeSupplierRows = computed(() => this.supplierRows().filter((row) => row.active));
+  readonly inactiveSupplierRows = computed(() => this.supplierRows().filter((row) => !row.active));
+  readonly inactiveSuppliersOpen = signal(false);
+  /** The "+{n}" beside the Voorkeur's name: the other active suppliers. */
+  readonly otherSuppliers = computed(() => otherActiveCount(this.supplierRows()));
+  /** The agreements of which supplier the page reads; null = the Voorkeur (today's agreement). */
+  readonly agreementSupplierId = signal<number | null>(null);
+  /** The choice above the agreements, only with two or more suppliers. */
+  readonly agreementChoices = computed(() => this.supplierRows().length >= 2 ? agreementSupplierChoices(this.supplierRows()) : []);
+  readonly shownAgreementSupplierId = computed(() =>
+    this.agreementSupplierId() ?? this.supplierRows().find((row) => row.preferred)?.supplierId ?? this.product()?.supplierId ?? null);
+  /** The supplier the agreements belong to, as the card head names it. */
+  readonly agreementSupplierName = computed(() => {
+    const id = this.agreementSupplierId();
+    return (id === null ? null : this.supplierRows().find((row) => row.supplierId === id)?.supplierName) ?? this.supplierName();
+  });
+  private readonly money = new CurPipe();
+
+  /** "$ 9,10 + $ 0,15", "—" without a price; never wraps. */
+  supplierPrice(row: ProductSupplierRow): string {
+    if (row.exwPrice === null || row.exwPrice === undefined) return '—';
+    const currency = row.exwCurrency ?? row.supplierCurrency ?? 'USD';
+    const extra = row.extraUnitCost && row.extraUnitCost > 0 ? ` + ${this.money.transform(row.extraUnitCost, currency)}` : '';
+    return `${this.money.transform(row.exwPrice, currency)}${extra}`;
+  }
+
+  /** Line 2 of a row: "Versie B · ref PB-1530 · MOQ 600 · laatst PO-2026-005 · kostprijs € 8,32". */
+  supplierLine(row: ProductSupplierRow): string {
+    return [supplierRowMeta(row), supplierRowHistory(row, (value) => eurText(value, 2))].filter(Boolean).join(' · ');
+  }
+
+  /** Phone: the EXW price alone ("$ 9,10"), "—" without one; the extra cost goes under it. */
+  supplierExw(row: ProductSupplierRow): string {
+    if (row.exwPrice === null || row.exwPrice === undefined) return '—';
+    return this.money.transform(row.exwPrice, row.exwCurrency ?? row.supplierCurrency ?? 'USD');
+  }
+
+  /** Phone, under the price: the extra cost and the incoterm ("+ $ 0,15 · FOB"). */
+  supplierTrail(row: ProductSupplierRow): string {
+    const currency = row.exwCurrency ?? row.supplierCurrency ?? 'USD';
+    const extra = row.exwPrice !== null && row.extraUnitCost && row.extraUnitCost > 0 ? `+ ${this.money.transform(row.extraUnitCost, currency)}` : null;
+    return [extra, row.supplierIncoterm].filter(Boolean).join(' · ');
+  }
+
+  /** Phone, under the name: version, reference, MOQ, lead time and the last order ("… · laatst PO-2026-005"). */
+  supplierPhoneSub(row: ProductSupplierRow): string {
+    return [supplierRowMeta(row), row.lastOrder ? `laatst ${row.lastOrder.number}` : null].filter(Boolean).join(' · ');
+  }
+
+  /** The supplier of an earlier receipt issue, only when the product has two or more suppliers. */
+  issueSupplier(issue: ReceiptIssue): string | null {
+    return issueSupplierName(issue, this.supplierRows());
+  }
+
+  /** The Afspraken choice: another supplier's note and photos, read-only; the Voorkeur is today's agreement. */
+  selectAgreementSupplier(value: string): void {
+    const product = this.product();
+    const id = Number(value);
+    if (!product || product.id === null || !Number.isInteger(id)) return;
+    const preferred = this.supplierRows().find((row) => row.preferred)?.supplierId ?? product.supplierId;
+    const next = id === preferred ? null : id;
+    if (next === this.agreementSupplierId()) return;
+    this.agreementSupplierId.set(next);
+    this.agreementLightbox.set(-1);
+    void this.loadSupplierAgreement(product.id, this.loadVersion, next);
+  }
+
+  /* ---- stock batches (2026-10-25): shown only after the start ---- */
+  private readonly stockBatchApi = inject(StockBatchApi);
+  readonly batches = signal<ProductStockBatches | null>(null);
+  readonly batchSheet = signal<StockBatch | null>(null);
+  readonly emptyBatchesOpen = signal(false);
+  protected readonly batchFmt = computed(() => batchFormat(productSalesUnit(this.product())));
+  /** The batches to show, or null: not started, failed, or nothing to show. */
+  readonly shownBatches = computed(() => showBatches(this.batches()) ? this.batches() : null);
+  readonly batchLists = computed(() => splitBatches(this.batches()?.batches ?? []));
+  readonly batchNote = computed(() => { const data = this.shownBatches(); return data ? batchesNote(data, this.batchFmt()) : null; });
+  readonly batchFoot = computed(() => { const data = this.shownBatches(); return data ? partnerFoot(data, this.batchFmt()) : null; });
+  readonly batchesHelperText = computed(() => { const data = this.shownBatches(); return data ? batchesHelper(data, this.batchFmt()) : ''; });
+  readonly batchName = batchTitle;
+  readonly batchTagsOf = batchTags;
+  batchSubOf(batch: StockBatch): string { return batchSub(batch, this.batchFmt()); }
+  batchCostOf(batch: StockBatch): string { return batchCostText(batch, this.batchFmt()); }
+  batchCostPartsOf(batch: StockBatch): { cost: string; now: string | null } { return batchCostParts(batch, this.batchFmt()); }
+  batchRowText(batch: StockBatch): string { return batchRowTitle(batch, this.batchFmt()); }
+
+  private loadBatches(productId: number, version: number): void {
+    this.stockBatchApi.forProduct(productId)
+      .then((data) => { if (version === this.loadVersion) this.batches.set(data); })
+      .catch(() => { if (version === this.loadVersion) this.batches.set(null); });
+  }
 
   /* The stock book, fetched the first time the tile is opened. */
   /** Pieces on the water for this product, from ordered and shipped containers. */
@@ -959,6 +1154,7 @@ export class ProductView {
       ]);
     }).catch(() => {});
     this.loadStockHistory(productId);
+    this.loadBatches(productId, this.loadVersion);
     this.catalog.product(productId).then((product) => this.product.set(product)).catch(() => {});
   }
 
@@ -1068,7 +1264,7 @@ export class ProductView {
   retrySupplierAgreement(): void {
     const productId = this.product()?.id;
     if (productId !== null && productId !== undefined && !this.agreementLoading()) {
-      void this.loadSupplierAgreement(productId, this.loadVersion);
+      void this.loadSupplierAgreement(productId, this.loadVersion, this.agreementSupplierId());
     }
   }
 
@@ -1124,6 +1320,17 @@ export class ProductView {
     this.receiptIssues.set([]);
     this.receivedOrders.set([]);
     this.agreementLoadError.set(null);
+    this.agreementSupplierId.set(null);
+    this.productSuppliers.set(null);
+    this.inactiveSuppliersOpen.set(false);
+    this.batches.set(null);
+    this.batchSheet.set(null);
+    this.emptyBatchesOpen.set(false);
+    /* One loader for both topics: the supplier rows (cards, hero "+n", the Afspraken choice) and the batches. */
+    void this.catalog.productSuppliers(id)
+      .then((rows) => { if (version === this.loadVersion) this.productSuppliers.set(rows); })
+      .catch(() => { if (version === this.loadVersion) this.productSuppliers.set([]); });
+    this.loadBatches(id, version);
     void this.sourcing.receiptIssues(id)
       .then((issues) => { if (version === this.loadVersion) this.receiptIssues.set(issues); })
       .catch(() => { /* the history is a bonus on the page */ });
@@ -1168,9 +1375,24 @@ export class ProductView {
     this.sourceOrderId.set(null);
     /* The build-up also finds the cost's source order and whether it now calculates another cost. */
     void this.loadPriceBuild(product);
-    const requestedSection = ['product-overview', 'product-core', 'product-packaging', 'stock-card', 'product-media', 'product-agreements', 'product-publication', 'pd-agreements']
+    const requestedSection = ['product-overview', 'product-core', 'product-packaging', 'stock-card', 'product-media', 'product-agreements', 'product-publication', 'pd-agreements',
+      'pd-suppliers', 'product-suppliers', 'pd-batches', 'product-batches']
       .find((id) => `#${id}` === window.location.hash);
-    if (requestedSection) setTimeout(() => { if (version === this.loadVersion) this.scrollToDetailSection(requestedSection); }, 0);
+    if (requestedSection) this.scrollWhenShown(requestedSection, version);
+  }
+
+  /**
+   * The suppliers and batches arrive after the product: a link to them
+   * (from a purchase order) waits until the section stands, up to 3 s,
+   * and lands on the other screen's name of the same section.
+   */
+  private scrollWhenShown(id: string, version: number, tries = 30): void {
+    setTimeout(() => {
+      if (version !== this.loadVersion) return;
+      const target = [id, SECTION_ALIASES[id]].find((name) => name && document.getElementById(name));
+      if (target) this.scrollToDetailSection(target);
+      else if (tries > 1) this.scrollWhenShown(id, version, tries - 1);
+    }, tries === 30 ? 0 : 100);
   }
 
   private loadCatalogueNavigation(): Promise<void> {
@@ -1192,22 +1414,24 @@ export class ProductView {
     return this.catalogueNavigationRequest;
   }
 
-  private async loadSupplierAgreement(productId: number, version: number): Promise<void> {
+  /** Today's agreement (supplierId null = the Voorkeur) or another supplier's; a late answer of another product or choice is dropped. */
+  private async loadSupplierAgreement(productId: number, version: number, supplierId: number | null = null): Promise<void> {
+    const current = () => version === this.loadVersion && supplierId === this.agreementSupplierId();
     this.agreementLoading.set(true);
     this.agreementLoadError.set(null);
     try {
-      const agreement = await this.supplierAgreementApi.get(productId);
-      if (version !== this.loadVersion) return;
+      const agreement = await this.supplierAgreementApi.get(productId, supplierId);
+      if (!current()) return;
       this.supplierAgreement.set(agreement);
       this.agreementPhotos.set(agreement.available ? orderedSupplierAgreementPhotos(agreement.photos) : []);
     } catch (failure: unknown) {
-      if (version !== this.loadVersion) return;
+      if (!current()) return;
       this.agreementPhotos.set([]);
       this.supplierAgreement.set(null);
       this.agreementLoadError.set(messageOf(
         failure, 'De leveranciersafspraak kon niet worden geladen.'));
     } finally {
-      if (version === this.loadVersion) this.agreementLoading.set(false);
+      if (current()) this.agreementLoading.set(false);
     }
   }
 
