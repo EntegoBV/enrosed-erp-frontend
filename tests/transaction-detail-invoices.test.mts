@@ -207,12 +207,18 @@ test("the PI is an upload choice wherever a container document goes up; the desk
   const workbench = await read('../src/app/features/purchasing/purchase-payment-workbench.ts');
   assert.match(workbench, /@if \(item\.payee === 'SUPPLIER' && roundOnServer\(\) && !item\.invoiceFiles\.length\) \{/);
   assert.match(workbench, /<span class="pw-invoice__text">\{\{ fileText\(file\) \}\}<\/span>/);
-  assert.match(await read('../src/app/features/purchasing/purchase-payee-sheet.ts'), /<span class="ios-cell__sub">\{\{ fileKind\(file\) \}\}<\/span>/);
-  // Review 2026-10-20: the phone's payment overview agrees with the desk.
+  // 2026-10-25: the phone's payee sheet names an invoice file in two parts, its kind ('Factuurbestand' · 'zonder gegevens', or
+  // 'Proforma (PI)') over its name, which opens it.
+  const sheet = await read('../src/app/features/purchasing/purchase-payee-sheet.ts');
+  assert.match(sheet, /@let fw = fileWordsOf\(file\);/);
+  assert.match(sheet, /<span class="pp-line2"><span class="ios-cell__title">\{\{ fw\.title \}\}<\/span>@if \(fw\.note\) \{ <span class="ios-cell__meta">\{\{ fw\.note \}\}<\/span> \}<\/span>/);
+  assert.match(sheet, /<span class="ios-cell__sub payee-sheet__filename">\{\{ file\.originalFilename \}\}<\/span><\/button>/);
+  assert.match(sheet, /\(click\)="invoiceFile\.emit\(\{ documentId: file\.documentId, name: file\.originalFilename \}\)"/);
+  // Review 2026-10-20: the phone agrees with the desk. Since 2026-10-25 the Ontvangers list carries no invoice rows at all
+  // (no 'Nog geen factuur' beside a file on hand): the payee's sheet holds them, and the payment detail names a file in one line.
   const phone = await read('../src/app/features/purchasing/purchase-payment-overview.ts');
-  const supplier = phone.slice(phone.indexOf('@if (supplierInvoice(item); as invoice) {'), phone.indexOf('<span class="ios-cell__title">Nog geen factuur</span>'));
-  assert.match(supplier, /\} @else if \(item\.invoiceFiles\[0\]; as file\) \{/, "a file on hand comes before 'Nog geen factuur'");
-  assert.match(supplier, /<span class="ios-cell__title">\{\{ fileKind\(file\) \}\}<\/span>/);
+  assert.equal(phone.includes('Nog geen factuur'), false);
+  assert.equal(phone.includes('supplierInvoice(item)'), false);
   assert.match(phone, /<span class="ios-cell__title">\{\{ fileText\(document\) \}\}<\/span>/);
   assert.equal(phone.includes('}} · zonder gegevens'), false);
 });

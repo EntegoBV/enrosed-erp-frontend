@@ -190,29 +190,46 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .pp-filter{margin:0 0 10px}
 .pp-costs{margin:0 var(--ios-inset) 12px}
 .pp-late{margin-top:10px}
-.pp-payee :is(.ios-cell__title,.ios-cell__sub),.pp-term .ios-cell__sub,.pp-row :is(.ios-cell__title,.ios-cell__sub){overflow-wrap:anywhere;white-space:normal}
+.pp-payee :is(.ios-cell__title,.ios-cell__sub),.pp-row :is(.ios-cell__title,.ios-cell__sub){overflow-wrap:anywhere;white-space:normal}
 .pp-fx .ios-cell__sub{white-space:normal}
-.pp-payee__trail{min-width:96px}
 .pp-row__date{display:grid;flex:none;justify-items:center;width:34px;line-height:1.1}
 .pp-row__date b{font-size:17px;font-weight:700}.pp-row__date small{color:var(--muted);font-size:11px}
-.pp-row .ios-cell__meta app-icon,.pp-row__proof app-icon,.pp-row__bank app-icon{vertical-align:-2px}
-.pp-row__bank{color:var(--ok)}
-.pp-row__proof{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pp-term{--ios-sep-inset:58px}.pp-term .ios-cell__lead{width:30px}
-/* A term's status stays beside its amounts while both fit; a long one ('Betaald · verrekend met 30% bij
-   bestelling') takes its own line under them and wraps there. Only these term cells: the kit keeps its
-   one-line meta everywhere else. */
-:is(.pp-term,.payee-sheet__term){flex-wrap:wrap;row-gap:2px}
-:is(.pp-term,.payee-sheet__term)>.ios-cell__body{flex:1 1 auto}
-:is(.pp-term,.payee-sheet__term)>.ios-cell__trail{flex:1 1 auto;min-width:0;max-width:100%}
-:is(.pp-term,.payee-sheet__term) .ios-cell__meta{white-space:normal;line-height:1.3}
-/* the supplier's invoice cell has no status but a chevron: one line, its sub wraps beside the indented lead */
-.pp-term.pp-invoice{flex-wrap:nowrap}
-.pp-term.pp-invoice>.ios-cell__body{flex:1 1 0;min-width:0}
+.pp-row .ios-cell__meta app-icon{vertical-align:-2px}
+/* The card (2026-10-25): a status line instead of a headline once all is paid, one net Verschil and the payees under it,
+   and the Afspraak as a subtotal in Hoe is dit opgebouwd?. Minder reads green, as on the desk strip. */
+.pp-summary__status{display:flex;align-items:center;gap:5px;margin:0 0 10px;font-size:13px;font-weight:650}
+app-purchase-payment-overview .pp-summary .wk-equation dd.wk-amount--in,app-purchase-payee-sheet .wk-equation dd.wk-amount--in{color:var(--ok)}
+.pp-summary__verschil small,.payee-sheet__receipt small{color:var(--muted);font-size:12px;font-weight:500}
+.pp-bridge .wk-equation>.is-sum{padding-top:8px;border-top:1px solid var(--line)}
+.pp-bridge .wk-equation>.is-sum dt{color:var(--ink);font-weight:650}
+/* Ontvangers: line 1 the payee and one status word, line 2 its figures over the whole width */
+.pp-payee__top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.pp-payee__top>.ios-cell__title{min-width:0}
+.pp-payee__top>.ios-cell__meta{flex:none}
+/* a word that asks for action (Nakijken, Nu te betalen) keeps its warn tone over the kit's muted meta */
+.pp-payee__top>.ios-cell__meta.wk-amount--warn,.payee-sheet__term .pp-line2>.ios-cell__meta.wk-amount--warn{color:var(--warn)}
+/* A payment in two lines: the title on one line, then the term or payee with the bank mark; the full Omschrijving is in its detail. */
+:is(app-purchase-payment-overview,app-purchase-payee-sheet) .pp-row2 :is(.ios-cell__title,.ios-cell__sub){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* In its payee's sheet a row without a term has no line 2: the title takes up to two lines, the bank mark after it */
+app-purchase-payee-sheet .pp-row2 .ios-cell__title.payee-sheet__ptitle{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
+.payee-sheet__ptitle>.pp-row__mark{margin-left:5px}
+.pp-row__mark{display:inline-flex;vertical-align:-2px;color:var(--muted)}
+.pp-row__mark--bank{color:var(--ok)}
+/* Payee sheet: a term in two lines, its Verschil beside its name and its word beside paid of the Afspraak; a netted term's note
+   is the one exception that takes a third line. Figures wrap rather than hide behind an ellipsis. */
+.payee-sheet__term{flex-wrap:wrap;row-gap:2px}
+.payee-sheet__term>.ios-cell__body{flex:1 1 auto;min-width:0}
+.pp-line2{display:flex;align-items:baseline;justify-content:space-between;gap:8px;min-width:0}
+.pp-line2>:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-line2>:last-child:not(:first-child){flex:none;white-space:nowrap}
+.pp-line2>.ios-cell__value{font-size:15px}
+.pp-line2>.ios-cell__value.wk-amount--in{color:var(--ok)}.pp-line2>.ios-cell__value.wk-amount--warn{color:var(--warn)}
 .payee-sheet__term .ios-cell__sub{overflow-wrap:anywhere;white-space:normal}
-/* the chevron stays centred on the right when the status drops to its own line */
+.payee-sheet__term .pp-line2>:first-child{overflow:visible;white-space:normal;overflow-wrap:anywhere}
+/* the chevron stays centred on the right of an open term */
 .payee-sheet__term:not(.payee-sheet__term--done){padding-right:38px}
 .payee-sheet__term>.ios-cell__chev{position:absolute;top:50%;right:10px;margin:-8px 0 0}
+.payee-sheet__status{display:flex;align-items:center;gap:5px;margin:0 0 8px;font-size:13px;font-weight:650}
 .pp-detail .ios-cell__value{white-space:normal}
 .payee-sheet__lead{margin:0 16px 14px;color:var(--muted);font-size:14px;text-align:center}
 .payee-sheet__split{margin:10px 0 0;color:var(--muted);font-size:13px}
@@ -222,6 +239,8 @@ app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16p
 .payee-sheet__file{display:grid;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .payee-sheet__file .ios-cell__title{overflow-wrap:anywhere;white-space:normal}
 .payee-sheet__file .ios-cell__sub{white-space:normal}
+/* the file's name on one line under its kind ('Factuurbestand · zonder gegevens'); the whole name opens the file */
+.payee-sheet__file .payee-sheet__filename{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* an invoice file without data: its name and words over the whole width, 'Gegevens invullen' on its own line */
 .payee-sheet__filecell{flex-wrap:wrap;row-gap:8px}
 .payee-sheet__filecell>.payee-sheet__file{flex:1 1 100%}

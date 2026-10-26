@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
-import type { PurchaseDocument, PurchaseInvoice, PurchaseInvoiceFile, PurchasePayment } from '../../core/api/models';
+import type { PurchaseDocument, PurchaseInvoice, PurchasePayment } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -9,12 +9,16 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import {
-  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, differenceLines, type Due, type LedgerRow, type LedgerTodo, type PayeeLedger, type PaymentLedger,
+  PAYEE_ICON, PAYEE_LABEL, PAYEE_TONE, type Due, type LedgerRow, type LedgerSummary, type LedgerTodo, type PayeeLedger, type PaymentLedger,
   type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { bankProofSub, dayOf, formatEur, monthOf, payeeMenuItems, paymentMenuItems, settleWith, todoCopy, toneClass } from './purchase-payment-menus';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
-import { invoiceCoverage, invoiceFileKind, invoiceFileText, invoiceSub, payeeInvoiceComparison, primaryInvoice } from './purchase-invoices';
+import { invoiceFileText } from './purchase-invoices';
+import {
+  differenceByPayee, landedChain, payeeFigures, payeeWord, paymentLine, proofMark, reviewByPayee, settledMeter, verschilSplit,
+  type PhoneAmount, type PhoneTone, type VerschilSplit,
+} from './purchase-phone-money';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 
@@ -33,7 +37,6 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
     <header class="pp-head">
       <div>
         <h2 class="ios-title2" id="purchase-payments-title">{{ state() === 'loading' ? 'Betalingen laden…' : state() === 'error' ? 'Betalingen niet actueel' : 'Betalingen' }}</h2>
-        <p class="ios-caption">Afgesproken, betaald en open per ontvanger</p>
       </div>
       <button class="ios-circle" type="button" aria-label="Betaling noteren" [disabled]="!ready() || busy()" (click)="payeeMenu.set(true)"><app-icon name="plus" [size]="20" /></button>
     </header>
@@ -61,43 +64,68 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
             @let sum = book.summary;
             <section class="ios-card pp-summary" aria-label="Samenvatting">
-              <div class="ios-headline">
-                @switch (sum.headline.kind) {
-                  @case ('due') {
-                    <div class="ios-headline__label">Nu te betalen</div><div class="ios-headline__value">{{ sum.dueNowEur | eur }}</div>
-                    @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }}@if (next.due) { · {{ label(next.payee) }} }</div> }
-                  }
-                  @case ('later') {
-                    <div class="ios-headline__label">Niets nu te betalen</div><div class="ios-headline__value">{{ sum.openEur | eur }}</div>
-                    @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }} · {{ next.when }}</div> }
-                  }
-                  @case ('review') {
-                    <div class="ios-headline__label">Nakijken</div>
-                    @if (review(); as check) {
-                      @if (check.amountEur !== null) { <div class="ios-headline__value">{{ check.amountEur | eur }}</div> }
-                      <div class="ios-headline__sub wk-amount--warn">{{ check.text }}</div>
+              @if (sum.headline.kind === 'done') {
+                <!-- Paid, or settled for less: the figures are in the rows below, so the status stands alone. -->
+                <div class="pp-summary__status wk-amount--in"><app-icon name="tick" [size]="14" /> Alles betaald</div>
+              } @else {
+                <div class="ios-headline">
+                  @switch (sum.headline.kind) {
+                    @case ('due') {
+                      <div class="ios-headline__label">Nu te betalen</div><div class="ios-headline__value">{{ sum.dueNowEur | eur }}</div>
+                      @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }}@if (next.due) { · {{ label(next.payee) }} }</div> }
                     }
+                    @case ('later') {
+                      <div class="ios-headline__label">Niets nu te betalen</div><div class="ios-headline__value">{{ sum.openEur | eur }}</div>
+                      @if (sum.next; as next) { <div class="ios-headline__sub">Volgende: {{ next.label }} · {{ next.when }}</div> }
+                    }
+                    @case ('review') {
+                      <div class="ios-headline__label">Nakijken</div>
+                      @if (review(); as check) {
+                        @if (check.amountEur !== null) { <div class="ios-headline__value">{{ check.amountEur | eur }}</div> }
+                        <div class="ios-headline__sub wk-amount--warn">{{ check.text }}</div>
+                      }
+                    }
+                    @case ('concept') {
+                      <div class="ios-headline__label">Nog niet besteld</div><div class="ios-headline__value">{{ sum.agreedEur | eur }}</div>
+                      <div class="ios-headline__sub">{{ planLabel() }}</div>
+                    }
+                    @case ('empty') { <div class="ios-headline__label">Nog geen bedragen</div><div class="ios-headline__sub">Voeg producten en kosten toe.</div> }
                   }
-                  @case ('done') { <div class="ios-headline__label">Alles betaald</div><div class="ios-headline__value">{{ sum.paidTotalEur | eur }}</div> }
-                  @case ('concept') {
-                    <div class="ios-headline__label">Nog niet besteld</div><div class="ios-headline__value">{{ sum.agreedEur | eur }}</div>
-                    <div class="ios-headline__sub">{{ planLabel() }}</div>
-                  }
-                  @case ('empty') { <div class="ios-headline__label">Nog geen bedragen</div><div class="ios-headline__sub">Voeg producten en kosten toe.</div> }
-                }
-              </div>
+                </div>
+              }
               @if (sum.headline.kind === 'due' && sum.next; as next) {
                 <button class="ios-capsule ios-capsule--accent ios-capsule--block" type="button" [disabled]="busy()"
                         (click)="add.emit({ payee: next.payee, amount: next.amountEur, label: next.label, due: next.due })">Noteer {{ next.label }}</button>
               }
               @if (sum.agreedEur > 0) {
-                <div class="wk-meter pp-summary__meter" role="meter" aria-label="Betaald op de afspraak" aria-valuemin="0" aria-valuemax="100"
-                     [attr.aria-valuenow]="round(sum.progress * 100)"><i class="tone-ok" [style.width.%]="sum.progress * 100"></i></div>
+                @let meter = meterOf(sum);
+                <!-- A settled difference counts as done: the bar is paid over paid plus open. -->
+                <div class="wk-meter pp-summary__meter" role="meter" aria-label="Betaald of afgerekend" aria-valuemin="0" aria-valuemax="100"
+                     [attr.aria-valuenow]="round(meter.paidPct)"><i class="tone-ok" [style.width.%]="meter.paidPct"></i><i class="tone-warn" [style.width.%]="meter.duePct"></i><i class="is-rest" [style.width.%]="meter.laterPct"></i></div>
+                <!-- As the desk strip reads: Afspraak · Betaald · Verschil x minder · Open; one net settled Verschil, never a gross − and + pair.
+                     An overpayment still to review is a to-do: its own Nakijken row, never folded into the Verschil. -->
                 <dl class="wk-equation">
                   <div><dt>Afspraak</dt><dd>{{ sum.agreedEur | eur }}</dd></div>
-                  <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
-                  @for (line of differenceLines(sum); track line.label) { <div><dt><span class="wk-equation__op" aria-hidden="true">{{ line.op }}</span>{{ line.label }}</dt><dd>{{ line.eur | eur }}</dd></div> }
-                  <div class="is-total"><dt><span class="wk-equation__op" aria-hidden="true">=</span>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
+                  <div><dt>Betaald</dt><dd>{{ sum.paidOnAgreementEur | eur }}</dd></div>
+                  @if (hasVerschil(sum)) {
+                    @let split = splitOf(sum);
+                    @if (split.verschil; as verschil) {
+                      <div class="pp-summary__verschil"><dt>Verschil@if (verschilNote(split); as note) { <small> · {{ note }}</small> }</dt>
+                        <dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
+                      @for (line of byPayee(); track line.payee) {
+                        <div class="is-sub"><dt>{{ line.label }}</dt><dd>{{ line.text }}</dd></div>
+                      }
+                    }
+                    @if (split.review; as review) {
+                      @let waiting = reviewBy();
+                      <div class="pp-summary__verschil"><dt>Nakijken@if (waiting.length === 1) { <small> · {{ waiting[0].label }}</small> }</dt>
+                        <dd class="wk-amount--warn">{{ review.text }}</dd></div>
+                      @if (waiting.length > 1) {
+                        @for (line of waiting; track line.payee) { <div class="is-sub"><dt>{{ line.label }}</dt><dd>{{ line.text }}</dd></div> }
+                      }
+                    }
+                  }
+                  <div class="is-total"><dt>Open</dt><dd>{{ sum.openEur | eur }}</dd></div>
                   @if (sum.dueNowEur > 0 && sum.laterEur > 0) { <div class="is-sub"><dt>waarvan nu te betalen</dt><dd>{{ sum.dueNowEur | eur }}</dd></div> }
                   @if (sum.laterEur > 0) { <div class="is-sub"><dt>waarvan later</dt><dd>{{ sum.laterEur | eur }}</dd></div> }
                 </dl>
@@ -112,9 +140,10 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               @if (!sum.balanced) { <p class="ios-caption wk-amount--warn">Bedragen sluiten niet: een betaling mist de eurowaarde. Controleer de betalingen.</p> }
               <details class="ios-disclosure pp-bridge">
                 <summary>Hoe is dit opgebouwd?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
+                <!-- The payees add up to the Afspraak; with the Enrosed kost that is the Totaal geland of the header. -->
                 <dl class="wk-equation">
-                  @for (row of book.bridge.rows; track row.key) {
-                    <div><dt>{{ row.label }}@if (row.note) { <small> · {{ row.note }}</small> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
+                  @for (row of bridgeRows(); track row.key) {
+                    <div [class.is-sum]="row.sum"><dt>{{ row.label }}@if (row.note) { <small> · {{ row.note }}</small> }</dt><dd>{{ row.amountEur | eur }}</dd></div>
                   }
                   <div class="is-total"><dt>{{ book.bridge.totalLabel }}</dt><dd>{{ book.bridge.totalEur | eur }}</dd></div>
                 </dl>
@@ -148,57 +177,14 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               <div class="ios-section__head"><h2>Ontvangers</h2></div>
               <div class="ios-group ios-group--icons">
                 @for (item of book.visible; track item.payee) {
+                  <!-- Two lines: the payee and one status word, then its figures. Terms, invoices and credits are in its sheet. -->
+                  @let word = wordOf(item);
                   <button class="ios-cell ios-cell--tall pp-payee" type="button" [attr.aria-label]="payeeName(item)" (click)="openPayee.set(item.payee)">
                     <span class="ios-cell__lead"><span class="ios-tile" [class]="item.tone"><app-icon [name]="item.icon" [size]="17" /></span></span>
-                    <span class="ios-cell__body"><span class="ios-cell__title">{{ item.label }}</span><span class="ios-cell__sub">{{ payeeSub(item) }}</span></span>
-                    <span class="ios-cell__trail pp-payee__trail">
-                      @if (item.payee !== 'OTHER' && item.openEur === 0) {
-                        <span class="ios-cell__value">{{ item.paidEur | eur }}</span>
-                      } @else {
-                        <span class="ios-cell__value ios-cell__value--strong">{{ (item.payee === 'OTHER' ? item.paidEur : item.openEur) | eur }}</span>
-                      }
-                      <span class="ios-cell__meta" [class]="tone(item.status.tone)">{{ item.status.label }}</span>
-                    </span>
+                    <span class="ios-cell__body"><span class="pp-payee__top"><span class="ios-cell__title">{{ item.label }}</span><span class="ios-cell__meta" [class]="tone(word.tone)">{{ word.word }}</span></span>
+                      <span class="ios-cell__sub">{{ figures(item) }}</span></span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
-                  @if (item.payee === 'SUPPLIER') {
-                    @if (supplierInvoice(item); as invoice) {
-                      <button class="ios-cell pp-term pp-invoice" type="button" (click)="openPayee.set('SUPPLIER')">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">Factuur {{ invoice.number }}</span><span class="ios-cell__sub">{{ invoiceSubText(item, invoice) }}</span>
-                          <span class="ios-cell__sub">{{ coverageText(item, invoice) }}</span></span>
-                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                      </button>
-                    } @else if (item.invoiceFiles[0]; as file) {
-                      <!-- A PI or invoice file without data is on file: no 'Nog geen factuur' (as the desk); its data goes in from Leverancier. -->
-                      <button class="ios-cell pp-term pp-invoice" type="button" (click)="openPayee.set('SUPPLIER')">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ fileKind(file) }}</span><span class="ios-cell__sub">{{ file.originalFilename }}</span></span>
-                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                      </button>
-                    } @else if (mode() === 'edit' && roundOnServer()) {
-                      <button class="ios-cell pp-term pp-invoice" type="button" [disabled]="busy()" (click)="invoice.emit({ payee: 'SUPPLIER' })">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">Nog geen factuur</span><span class="ios-cell__sub">Factuur toevoegen</span></span>
-                        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
-                      </button>
-                    }
-                    @for (term of item.terms; track term.due) {
-                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.fullEur | eur }}@if (term.differenceEur) { · {{ abs(term.differenceEur) | eur }} {{ term.differenceEur < 0 ? 'minder' : 'meer' }} }</span>
-                          @if (term.statusNote) { <span class="ios-cell__sub">{{ term.statusNote }}</span> }</span>
-                        <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
-                      </button>
-                    }
-                    @for (credit of item.credits; track credit.id) {
-                      <button class="ios-cell pp-term" type="button" (click)="openPayee.set('SUPPLIER')">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">Tegoed leverancier · {{ credit.reasonLabel }}</span><span class="ios-cell__sub">genoteerd {{ credit.notedOn | dateNl }}</span></span>
-                        <span class="ios-cell__trail"><span class="ios-cell__value wk-amount--in">− {{ credit.amountEur | eur }}</span><span class="ios-cell__meta" [class]="tone(credit.tone)">{{ credit.statusLabel }}</span></span>
-                      </button>
-                    }
-                  }
                 }
               </div>
             </section>
@@ -220,12 +206,12 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               } @else {
                 <div class="ios-group">
                   @for (row of shownRows(); track row.id) {
-                    <button class="ios-cell pp-row" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
+                    <!-- Two lines: the title, then the term or payee with the bank mark; Afrekening and the first transfer are in its detail. -->
+                    <button class="ios-cell pp-row pp-row2" type="button" appMenuTrigger [appMenuTriggerDisabled]="mode() !== 'edit'"
                             (menuTrigger)="rowMenu.set({ row, point: $event })" (click)="$event.defaultPrevented || tapRow(row)">
                       <span class="pp-row__date" aria-hidden="true"><b>{{ day(row.paidOn) }}</b><small>{{ month(row.paidOn) }}</small></span>
                       <span class="ios-cell__body"><span class="ios-cell__title">{{ row.title }}</span>
-                        <span class="ios-cell__sub">{{ row.termLabel || row.payeeShort }}@if (row.parts.length > 1) { · {{ row.parts.length }} transacties · eerste {{ dayShort(row.firstPaidOn) }} }@if (row.settlesLabel) { · {{ row.settlesLabel }} }</span>
-                        @if (proofText(row); as text) { <span class="ios-cell__sub" [class.pp-row__bank]="row.bank.linked > 0" [class.pp-row__proof]="!row.bank.linked">@if (!row.creditOffset) { <app-icon [name]="row.bank.linked ? 'bank' : 'clip'" [size]="12" /> } {{ text }}</span> }</span>
+                        <span class="ios-cell__sub">{{ line(row) }}@if (mark(row); as proof) { · @if (proof.icon) { <span class="pp-row__mark" [class.pp-row__mark--bank]="proof.icon === 'bank'" role="img" [attr.aria-label]="proof.label"><app-icon [name]="proof.icon" [size]="12" /></span> }@if (proof.text) { {{ proof.text }} } }</span></span>
                       <span class="ios-cell__trail">
                         <span class="ios-cell__value ios-cell__value--strong">@if (finite(row.amountEur)) { {{ row.amountEur | eur }} } @else { — }</span>
                         @if (row.foreign) { <span class="ios-cell__meta">{{ row.amount | cur: row.currency }}</span> }
@@ -241,8 +227,10 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
             </section>
 
             <div class="ios-group pp-costs">
+              <!-- What the container cost, in two lines; its Verschil and where it sits are on Kosten, where the Nacalculatie opens. -->
               <button class="ios-cell" type="button" (click)="openCosts.emit()">
-                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie en kostprijs</span><span class="ios-cell__sub">{{ nacalcSub() }}</span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title">Nacalculatie</span>@if (nacalc(); as n) { <span class="ios-cell__sub">{{ n.label }} {{ n.forecastEur | eur }}</span> }</span>
+                @if (nacalc(); as n) { <span class="ios-cell__trail"><span class="ios-cell__meta" [class]="pillTone(n.pill.tone)">{{ n.pill.label }}</span></span> }
                 <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
               </button>
             </div>
@@ -391,9 +379,9 @@ export class PurchasePaymentOverview {
   readonly day = dayOf;
   readonly month = monthOf;
   readonly round = Math.round;
-  readonly abs = Math.abs;
-  readonly differenceLines = differenceLines;
-  readonly proofText = bankProofSub;
+  readonly meterOf = settledMeter;
+  readonly figures = payeeFigures;
+  readonly line = paymentLine;
 
   readonly ready = computed(() => !!this.ledger() && this.state() === 'ready');
   readonly payeeOpen = computed(() => this.ledger()?.payees.find(item => item.payee === this.openPayee()) ?? null);
@@ -411,12 +399,14 @@ export class PurchasePaymentOverview {
       text: `${payee.label}: ${kind === 'UNBUDGETED' ? 'betaald zonder afspraak' : kind === 'INCOMPLETE' ? 'bedragen onvolledig' : 'te veel betaald'}`,
     };
   });
-  /** 'Verwachte eindkost € 70.204,31 · geen verschil', or where the Nacalculatie lives while it is not loaded. */
-  readonly nacalcSub = computed(() => {
-    const n = this.nacalc();
-    if (!n) return 'Bij Kosten';
-    const variance = n.varianceEur === 0 ? 'geen verschil' : (n.varianceEur > 0 ? '+ ' : '− ') + formatEur(Math.abs(n.varianceEur));
-    return `${n.label} ${formatEur(n.forecastEur)} · ${n.kind === 'concept' ? 'nog niet besteld' : variance}`;
+  /** Under the card's Verschil: the payees it comes from, each with its own net figure outside a review; they add up to it. */
+  readonly byPayee = computed(() => differenceByPayee(this.ledger()?.visible ?? []));
+  /** Beside Nakijken: the payees whose overpayment still waits for a review. */
+  readonly reviewBy = computed(() => reviewByPayee(this.ledger()?.visible ?? []));
+  /** Hoe is dit opgebouwd?: the payees, the Afspraak they add up to, then the Enrosed kost. */
+  readonly bridgeRows = computed(() => {
+    const book = this.ledger();
+    return book ? landedChain(book.bridge, book.summary.agreedEur) : [];
   });
   readonly filterOptions = computed<SegmentOption[]>(() => [
     { id: 'ALL', label: 'Alle' }, { id: 'NO_PROOF', label: `Zonder betaalbewijs (${this.ledger()?.summary.missingProofCount ?? 0})` },
@@ -436,21 +426,24 @@ export class PurchasePaymentOverview {
 
   label(payee: PayeeLedger['payee']): string { return PAYEE_LABEL[payee]; }
 
-  /** The supplier's primary invoice, shown under its card. */
-  supplierInvoice(item: PayeeLedger): PurchaseInvoice | null { return primaryInvoice(item.invoices, 'SUPPLIER'); }
-  /** 'Proforma (PI)', else 'Factuurbestand zonder gegevens'. */
-  fileKind(file: PurchaseInvoiceFile): string { return invoiceFileKind(file); }
   /** 'Proforma (PI) · PI CULINAN.xlsx', else '{file} · zonder gegevens'. */
   fileText(file: Pick<PurchaseDocument, 'kind' | 'originalFilename'>): string { return invoiceFileText(file); }
-
-  /** '20/08/2026 · € 31.048,04 · gelijk aan de afspraak'. */
-  invoiceSubText(item: PayeeLedger, invoice: PurchaseInvoice): string {
-    return invoiceSub(invoice, payeeInvoiceComparison(item)?.text ?? null);
-  }
-
-  /** 'Geldt voor alle betalingen van Leverancier (3)'. */
-  coverageText(item: PayeeLedger, invoice: PurchaseInvoice): string { return invoiceCoverage(invoice, item.rows, item.label).text; }
   dayShort(iso: string): string { return iso.slice(8, 10) + '/' + iso.slice(5, 7); }
+
+  /** The one status word of a payee row; the desk keeps the ledger's longer label. */
+  wordOf(item: PayeeLedger): { word: string; tone: PhoneTone } { return payeeWord(item.status); }
+  /** The bank mark of a payment row, with the words a mark alone does not say. */
+  mark(row: LedgerRow): ReturnType<typeof proofMark> { return proofMark(bankProofSub(row), { linked: row.bank.linked, creditOffset: !!row.creditOffset }); }
+  /** A Verschil row only once the payees differ from the Afspraak, or an overpayment waits for a review. */
+  hasVerschil(sum: LedgerSummary): boolean { return Math.round(sum.differenceEur * 100) !== 0 || sum.reviewEur > 0; }
+  /** The settled Verschil and, apart, what still waits for a review. */
+  splitOf(sum: LedgerSummary): VerschilSplit { return verschilSplit(sum); }
+  /** 'na afrekening' or the koersverschil, unless the amount's own word already says it. */
+  verschilNote(split: VerschilSplit): string {
+    return split.verschil?.text.endsWith(split.note) ? '' : split.note;
+  }
+  amountTone(tone: PhoneAmount['tone']): string { return tone === 'in' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : ''; }
+  pillTone(tone: string): string { return tone === 'ok' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : 'wk-amount--muted'; }
 
   /** '10/09 · € 10.000,00' of one transfer. */
   partTitle(part: LedgerRow['parts'][number]): string {
@@ -466,17 +459,9 @@ export class PurchasePaymentOverview {
   finite(value: number): boolean { return Number.isFinite(value); }
   actor(value: string): string { return value.replace(/^.*[\\/]/, '').split('@')[0]; }
 
-  /** 'Alles betaald' only when the agreement was paid to the cent; a settled difference keeps its two figures under the pill. */
-  payeeSub(item: PayeeLedger): string {
-    if (item.payee === 'OTHER') return `${formatEur(item.paidEur)} betaald · zonder afspraak`;
-    if (item.openEur === 0 && item.paidEur > 0 && item.differenceEur === 0) return 'Alles betaald';
-    return item.paidEur > 0 ? `${formatEur(item.paidEur)} van ${formatEur(item.agreedEur ?? 0)} betaald` : 'Nog niets betaald';
-  }
-
+  /** 'Leverancier, Afgerekend, € 50.723,90 van € 52.021,07 betaald': the row as it reads. */
   payeeName(item: PayeeLedger): string {
-    return item.payee === 'OTHER'
-      ? `${item.label}, ${formatEur(item.paidEur)} betaald, ${item.status.label}`
-      : `${item.label}, ${formatEur(item.paidEur)} van ${formatEur(item.agreedEur ?? 0)} betaald, ${formatEur(item.openEur)} open, ${item.status.label}`;
+    return `${item.label}, ${payeeWord(item.status).word}, ${payeeFigures(item)}`;
   }
 
   setFilter(value: string): void {

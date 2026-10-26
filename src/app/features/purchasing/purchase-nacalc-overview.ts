@@ -1,36 +1,40 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { saveBlob } from '../../core/api/download';
-import { messageOf } from '../../core/api/errors';
 import type { PartnerFinancing, Payee, PurchaseOrderView } from '../../core/api/models';
-import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { EurPipe, NumPipe } from '../../shared/pipes';
 import { Skeleton } from '../../shared/skeleton';
-import { Ui } from '../../shared/ui';
+import { Sheet } from '../../shared/ui';
+import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import {
-  nacalcPartnerLine, nacalcPartnerShortage, pctLabel, nacalcPhoneNotes, nacalcProductSub, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
-  type NacalcPayeeRow, type NacalcSetBasis, type NacalcTone, type PurchaseNacalc,
+  nacalcPartnerLine, nacalcPartnerShortage, pctLabel, nacalcPhoneNotes, nacalcReceiptUnitLine, nacalcMixBasis, nacalcUnitBasis,
+  type NacalcProductRow, type NacalcTone, type PurchaseNacalc,
 } from './purchase-nacalc-metrics';
 import {
   PAYEE_LABEL, type LedgerTodo, type LedgerTone, type PaymentLedger, type PurchasePaymentAction, type PurchaseSettleRequest, type SupplierCreditAction,
 } from './purchase-payment-ledger';
 import { formatEur, todoCopy } from './purchase-payment-menus';
 import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purchase-payment-result-metrics';
+import {
+  afspraakBridge, nacalcChain, nacalcGrossLine, productRows, productSheetRows, settledMeter, storySub, storyVerschil,
+  type ChainRow, type PhoneAmount, type PhoneTone, type SheetRow,
+} from './purchase-phone-money';
 
 /**
- * The nacalculatie on the phone: the Kosten stop of the read view and step 3
- * of the editor. A hero group with the meter, the payees as tappable cells
- * with one reason word each and at most one action cell, the receipt, the
- * cost per piece with the bridge to Kosten behind a disclosure, the products
- * collapsed, the partner, the notes, and a footer with the PDF and the ways
- * to Betalingen and Kosten & bank. Sheets belong to the host; nothing opens
- * here. Styles: styles/purchase-nacalc.scss (.np-*).
+ * The nacalculatie on the phone, as one story (2026-10-25): the top of the
+ * Kosten tab of an ordered container and step 3 of the editor. One card with
+ * the Eindkost, the Afspraak and the Verschil in one net figure; where the
+ * difference sits per payee and per term, with at most one action cell and
+ * the gross figures as one sentence; the receipt; per product with the
+ * list visible; the cost basis with the bridge to the Afspraak behind a
+ * disclosure; the partner, the notes, and (unless the host places it) the
+ * footer with the PDF and the ways to Betalingen and Kosten & bank. The payee sheet belongs to the host; the
+ * small product sheet opens here. Styles: styles/purchase-nacalc.scss (.np-*).
  */
 @Component({
   selector: 'app-purchase-nacalc-overview',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, RouterLink, Skeleton, EurPipe, NumPipe],
+  imports: [Icon, RouterLink, Sheet, Skeleton, EurPipe, NumPipe, PurchaseNacalcFooter],
   template: `
     <div class="np" id="purchase-payment-result" tabindex="-1" aria-label="Nacalculatie">
       <div class="ios-section__head ios-section__head--prominent np-head">
@@ -41,36 +45,30 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
       @if (nacalc(); as n) {
         @let head = n.headline;
         @let concept = head.kind === 'concept';
+        <!-- The story in one card: the Eindkost and how it is made, the Afspraak, the Verschil in one net figure. -->
         <section class="ios-section">
-          <div class="ios-group np-hero">
-            <div class="ios-cell ios-cell--tall np-hero__main">
-              <span class="ios-cell__body">
-                <span class="ios-cell__sub">{{ head.label }}</span>
-                <span class="np-hero__value">{{ head.eindkostEur | eur }}</span>
-                <span class="ios-cell__sub np-hero__sub" [class.wk-amount--in]="head.verschilEur < 0" [class.wk-amount--warn]="head.verschilEur > 0 || head.reviewEur > 0">{{ heroSub(n) }}</span>
-                @if (!concept && ledger(); as book) {
-                  <span class="wk-meter np-hero__meter" role="img" [attr.aria-label]="'Betaald ' + round(book.summary.meter.paidPct) + '%, nu te betalen ' + round(book.summary.meter.duePct) + '%, later ' + round(book.summary.meter.laterPct) + '%'" title="betaald · nu te betalen · later">
-                    <i class="tone-ok" [style.width.%]="book.summary.meter.paidPct"></i><i class="tone-warn" [style.width.%]="book.summary.meter.duePct"></i><i class="is-rest" [style.width.%]="book.summary.meter.laterPct"></i>
-                  </span>
-                }
-              </span>
+          <div class="ios-card np-story">
+            <div class="ios-headline">
+              <div class="ios-headline__label">{{ head.label }}</div>
+              <div class="ios-headline__value">{{ head.eindkostEur | eur }}</div>
+              <div class="ios-headline__sub">{{ storySub(head) }}</div>
             </div>
-            @if (!concept) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaald + open@if (head.creditEur > 0) { − tegoed }</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.paidEur | eur }} + {{ head.openEur | eur }}@if (head.creditEur > 0) { − {{ head.creditEur | eur }} }</span></span></div>
+            @if (!concept && ledger(); as book) {
+              @let meter = meterOf(book.summary);
+              <span class="wk-meter np-story__meter" role="img" [attr.aria-label]="'Betaald of afgerekend ' + round(meter.paidPct) + '%, nu te betalen ' + round(meter.duePct) + '%, later ' + round(meter.laterPct) + '%'" title="betaald · nu te betalen · later">
+                <i class="tone-ok" [style.width.%]="meter.paidPct"></i><i class="tone-warn" [style.width.%]="meter.duePct"></i><i class="is-rest" [style.width.%]="meter.laterPct"></i>
+              </span>
             }
-            @if (n.mix.uniform) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.unitLabel }}</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
-                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span></span></div>
-            } @else {
-              <!-- Several products: their range and the three most valuable, never an average over them. -->
-              <div class="ios-cell np-mix"><span class="ios-cell__body"><span class="ios-cell__title">{{ n.mix.count }} producten · per {{ n.mix.unit }}</span>
-                <span class="ios-cell__sub">@if (quantity(n); as line) { {{ line }} }{{ mixBasis(n) }}</span></span>
-                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ range(n) }}</span></span></div>
-              @for (row of n.mix.rows.slice(0, 3); track row.name) {
-                <div class="ios-cell np-mix__row"><span class="ios-cell__body"><span class="ios-cell__title">{{ row.name }}</span></span>
-                  <span class="ios-cell__trail">@if (row.unitEur !== null) { <span class="ios-cell__value">{{ row.unitEur | eur: 4 }} /{{ row.unit }}</span> } @else { <span class="ios-cell__value">—</span> }
-                    @if (row.set && row.pieceEur !== null) { <span class="ios-cell__meta">{{ row.pieceEur | eur: 4 }} /stuk</span> }</span></div>
-              }
+            @if (!concept) {
+              <!-- Afspraak + Verschil (+ Nakijken) = the Eindkost above; bijkomend and the koersverschil are in its line ('incl.'). -->
+              @let split = storyVerschil(head);
+              <dl class="wk-equation">
+                <div><dt>Afspraak</dt><dd>{{ head.begrootEur | eur }}</dd></div>
+                @if (split.verschil; as verschil) {
+                  <div class="is-total"><dt>Verschil@if (split.pct) { <small> · {{ split.pct }}</small> }</dt><dd [class]="amountTone(verschil.tone)">{{ verschil.text }}</dd></div>
+                }
+                @if (split.review; as review) { <div [class.is-total]="!split.verschil"><dt>Nakijken</dt><dd class="wk-amount--warn">{{ review.text }}</dd></div> }
+              </dl>
             }
           </div>
           <p class="ios-section__foot">{{ concept ? 'De nacalculatie begint bij de bestelling: zodra betalingen genoteerd zijn, zie je hier wat de container echt kost.' : head.sentence }}</p>
@@ -78,39 +76,35 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
 
         @if (!concept) {
           <section class="ios-section" aria-label="Waar het verschil zit">
-            <div class="ios-section__head"><h2>Waar het verschil zit</h2></div>
+            <div class="ios-section__head"><h2>Waar het verschil zit</h2><span class="ios-section__trail">afspraak → eindkost</span></div>
             @if (state() === 'error') {
               <p class="ios-caption np-caption">Betalingen niet actueel <button class="ios-capsule" type="button" (click)="refresh.emit()">Opnieuw laden</button></p>
             } @else if (!n.payees || state() === 'loading') {
               <div class="ios-group np-skeleton"><app-skeleton kind="list" [rows]="3" /></div>
             } @else {
-              <div class="ios-group ios-group--icons">
-                @for (row of n.payees; track row.payee) {
-                  <button class="ios-cell ios-cell--tall np-payee" type="button" [class.np-payee--warn]="row.reason === 'review' || row.reason === 'unbudgeted' || row.reason === 'incomplete'" (click)="openPayee.emit(row.payee)">
-                    <span class="ios-cell__lead"><span class="ios-tile" [class]="row.tone"><app-icon [name]="row.icon" [size]="17" /></span></span>
-                    <!-- The reason reads under the agreement, on the wide side of the cell; the trail carries only the verschil. -->
-                    <span class="ios-cell__body"><span class="ios-cell__title">{{ row.label }}</span><span class="ios-cell__sub">{{ payeeSub(row) }}</span>
-                      <span class="ios-cell__meta np-payee__reason" [class]="tone(row.status.tone)">{{ row.reasonLabel }}@if (row.fxEur !== 0 && row.reason !== 'fx') { · waarvan koersverschil {{ signed(row.fxEur) }} }</span></span>
-                    <span class="ios-cell__trail">
-                      <span class="ios-cell__value" [class.ios-cell__value--strong]="row.verschilEur !== 0" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">@if (row.reason === 'incomplete') { — } @else { {{ signed(row.verschilEur) }} }</span>
-                    </span>
-                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+              <!-- A card, not an icon list: name and Verschil fit on line 1 at 375 px, afspraak → eindkost and one word on line 2. -->
+              <div class="ios-card np-chain">
+                @for (row of chain(); track row.key) {
+                  <button class="np-chain__row" type="button" [class.np-chain__row--term]="row.kind === 'term'" [class.np-chain__row--warn]="row.warn"
+                          [attr.aria-label]="chainLabel(row)" (click)="openPayee.emit(row.payee)">
+                    <span class="np-chain__name">{{ row.name }}</span>
+                    <span class="np-chain__amount" [class]="amountTone(row.amount.tone)">{{ row.amount.text }}</span>
+                    @if (row.kind === 'payee') { <app-icon class="np-chain__chev" name="chevron-right" [size]="14" /> }
+                    <span class="np-chain__line"><span class="np-chain__sub">{{ row.line }}</span>@if (row.word; as word) { <span class="np-chain__word" [class]="tone(word.tone)">{{ word.word }}</span> }</span>
                   </button>
-                  @if (row.termsMixed) {
-                    @for (term of row.terms; track term.due) {
-                      <button class="ios-cell np-term" type="button" (click)="openPayee.emit('SUPPLIER')">
-                        <span class="ios-cell__lead"></span>
-                        <span class="ios-cell__body"><span class="ios-cell__title">{{ term.label }}</span><span class="ios-cell__sub">{{ term.paidEur | eur }} van {{ term.agreedEur | eur }}@if (term.reason === 'offset') { · {{ term.reasonLabel }} }</span></span>
-                        <span class="ios-cell__trail"><span class="ios-cell__value" [class.wk-amount--in]="term.verschilEur < 0" [class.wk-amount--warn]="term.verschilEur > 0">{{ signed(term.verschilEur) }}</span><span class="ios-cell__meta" [class]="tone(term.status.tone)">{{ term.status.label }}</span></span>
-                      </button>
-                    }
-                  }
-                }
-                @if (todo(); as todo) {
-                  <button class="ios-cell ios-cell--action np-action" type="button" [disabled]="busy() || (dirty() && todo.kind !== 'incomplete')" (click)="runTodo(todo)">{{ todoLabel(todo) }}</button>
                 }
               </div>
-              <p class="ios-section__foot">{{ dirty() && mode() === 'edit' ? 'Sla de container op om af te rekenen of te exporteren.' : 'Tik op een ontvanger voor termijnen, betalingen en afrekenen.' }}</p>
+              @if (todo(); as todo) {
+                <div class="ios-group np-chain__todo">
+                  <button class="ios-cell ios-cell--action np-action" type="button" [disabled]="busy() || (dirty() && todo.kind !== 'incomplete')" (click)="runTodo(todo)">{{ todoLabel(todo) }}</button>
+                </div>
+              }
+              @if (dirty() && mode() === 'edit') {
+                <p class="ios-section__foot">Sla de container op om af te rekenen of te exporteren.</p>
+              } @else if (grossLine(); as gross) {
+                <!-- What Emre asked about ('minder en meer betaald'): bruto both figures, netto the Verschil. -->
+                <p class="ios-section__foot">{{ gross }}</p>
+              }
             }
           </section>
         }
@@ -165,69 +159,60 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
           </section>
         }
 
-        <section class="ios-section" [attr.aria-label]="n.mix.uniform ? head.unitLabel : 'Kostbasis'">
-          <div class="ios-section__head"><h2>{{ n.mix.uniform ? head.unitLabel : 'Kostbasis' }}</h2></div>
+        <!-- Per product, the list visible: what each costs per unit, incl. Enrosed kost, and its Verschil; a tap shows the rest. -->
+        <section class="ios-section" aria-label="Per product">
+          <div class="ios-section__head"><h2>Per product</h2><span class="ios-section__trail">{{ n.products.length }} {{ n.products.length === 1 ? 'product' : 'producten' }}</span></div>
+          <div class="ios-group">
+            @if (n.mix.uniform) {
+              <div class="ios-cell np-range"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.unitLabel }}</span><span class="ios-cell__sub">{{ unitBasis(n) }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripUnitEur !== null) { {{ head.stripUnitEur | eur: 4 }} } @else { — }</span></span></div>
+              <div class="ios-cell np-range"><span class="ios-cell__body"><span class="ios-cell__title">Incl. Enrosed kost</span><span class="ios-cell__sub">per {{ head.setBasis === 'DISPLAY' ? 'display' : 'stuk' }}@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { · {{ head.pricingPieceEur | eur: 4 }} per stuk }</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</span></span></div>
+            } @else {
+              <!-- Several products: their range, never an average over them. -->
+              <div class="ios-cell np-range"><span class="ios-cell__body"><span class="ios-cell__title">Per {{ n.mix.unit }}</span><span class="ios-cell__sub">@if (quantity(n); as line) { {{ line }} }{{ mixBasis(n) }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ range(n) }}</span></span></div>
+              <div class="ios-cell np-range"><span class="ios-cell__body"><span class="ios-cell__title">Incl. Enrosed kost</span><span class="ios-cell__sub">per {{ n.mix.unit }}</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value">{{ pricingRange(n) ?? '—' }}</span></span></div>
+            }
+            @for (line of productLines(); track line.row.productId ?? line.row.name) {
+              <button class="ios-cell np-product" type="button" (click)="productOpen.set(line.row)">
+                <span class="ios-cell__body"><span class="ios-cell__title">{{ line.row.name }}</span>
+                  <span class="np-product__line"><span class="ios-cell__sub"><b>{{ line.unitText }}</b>@if (line.inclText) { · {{ line.inclText }} }</span>
+                    <span class="ios-cell__meta" [class]="amountTone(line.verschil.tone)">{{ line.verschil.text }}</span></span></span>
+                <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+              </button>
+            } @empty {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen productregels</span></span></div>
+            }
+            @if (n.products.length > 5 && !showAllProducts()) {
+              <button class="ios-cell ios-cell--action" type="button" (click)="showAllProducts.set(true)">Toon alle {{ n.products.length }} producten</button>
+            }
+          </div>
+        </section>
+
+        <section class="ios-section" aria-label="Kostbasis">
+          <div class="ios-section__head"><h2>Kostbasis</h2></div>
           <div class="ios-group">
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span><span class="ios-cell__sub">intern, geen betaling</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.markupEur | eur }}</span></span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Kostbasis voor prijzen</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ head.pricingEur | eur }}</span></span></div>
-            @if (n.mix.uniform) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ head.pricingUnitLabel }}</span>@if (head.setBasis === 'DISPLAY' && head.pricingPieceEur !== null) { <span class="ios-cell__sub">{{ head.pricingPieceEur | eur: 4 }} per stuk</span> }</span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">@if (head.stripPricingEur !== null) { {{ head.stripPricingEur | eur: 4 }} } @else { — }</span></span></div>
-            } @else {
-              <!-- Several products: their range incl. Enrosed kost, never an average over them. -->
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Incl. Enrosed kost · {{ n.mix.count }} producten</span><span class="ios-cell__sub">per {{ n.mix.unit }} · per product: zie Per product</span></span><span class="ios-cell__trail"><span class="ios-cell__value">{{ pricingRange(n) ?? '—' }}</span></span></div>
-            }
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Kostbasis voor prijzen</span><span class="ios-cell__sub">{{ concept ? 'verwachte eindkost' : 'eindkost' }} + Enrosed kost</span></span><span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ head.pricingEur | eur }}</span></span></div>
             <details class="ios-disclosure np-disclosure">
-              <summary>Hoe verhoudt dit zich tot Kosten?<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
+              <summary>Van calculatie naar afspraak<app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
+              <!-- Up to the Afspraak only: paid, open, the eindkost and the Verschil stand in the card at the top. -->
               <div class="np-disclosure__body">
                 <dl class="wk-equation">
-                  @for (row of n.bridge.rows; track row.key) {
-                    <div [class.is-total]="row.op === '='" [class.is-sub]="row.key === 'REVIEW' || row.key === 'ADDITIONAL'">
+                  @for (row of bridge(); track row.key) {
+                    <div [class.is-total]="row.op === '='">
                       <dt>@if (row.op && row.op !== '→') { <span class="wk-equation__op" aria-hidden="true">{{ row.op }}</span> }{{ row.label }}@if (row.note) { <small> · {{ row.note }}</small> }</dt>
-                      <dd [class.wk-amount--in]="row.key === 'VARIANCE' && row.amountEur < 0" [class.wk-amount--warn]="row.key === 'VARIANCE' && row.amountEur > 0">{{ row.key === 'VARIANCE' ? signed(row.amountEur) : (row.amountEur | eur) }}</dd>
+                      <dd>{{ row.amountEur | eur }}</dd>
                     </div>
                   }
                 </dl>
                 @if (!n.bridge.consistent) { <p class="ios-caption">De onderdelen sluiten niet exact aan; controleer de kosten.</p> }
-                @if (!concept) {
-                  @let ex = n.explained;
-                  <p class="np-disclosure__sub">Afgerekende verschillen</p>
-                  <dl class="wk-equation">
-                    <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>minder betaald · afgerekend</dt><dd>{{ ex.savingsEur | eur }}</dd></div>
-                    <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>meer betaald · afgerekend</dt><dd>{{ ex.overrunsEur | eur }}</dd></div>
-                    <div><dt><span class="wk-equation__op" aria-hidden="true">+</span>bijkomend</dt><dd>{{ ex.additionalEur | eur }}</dd></div>
-                    @if (head.creditEur > 0) { <div><dt><span class="wk-equation__op" aria-hidden="true">−</span>tegoed leverancier</dt><dd>{{ head.creditEur | eur }}</dd></div> }
-                    @if (ex.fxEur !== 0) { <div class="is-sub"><dt>koersverschil · zit al in betaald</dt><dd>{{ signed(ex.fxEur) }}</dd></div> }
-                    @if (ex.openEur > 0) { <div class="is-sub"><dt>nog open · blijft in de eindkost tot afrekening</dt><dd>{{ ex.openEur | eur }}</dd></div> }
-                  </dl>
-                  <p class="ios-caption">{{ head.kind === 'final' ? 'Alle ontvangers zijn afgerekend.' : 'Minder betalen telt pas na afrekening; te veel betaald blijft voorlopig tot het is nagekeken.' }}</p>
-                }
               </div>
             </details>
             <!-- The phone has no Afronden tab: the read view hands the step to the editor, which opens the apply sheet as the dock does. -->
             @if (n.receipt && head.kind === 'final') { <button class="ios-cell ios-cell--action" type="button" (click)="applyCosts.emit()">Kostprijzen toepassen ›</button> }
-          </div>
-        </section>
-
-        <section class="ios-section" aria-label="Per product">
-          <div class="ios-section__head"><h2>Per product</h2></div>
-          <div class="ios-group">
-            <details class="ios-disclosure np-disclosure">
-              <summary>Kostprijs per product <span class="np-disclosure__count">{{ n.products.length }} {{ n.products.length === 1 ? 'product' : 'producten' }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></summary>
-              @for (row of n.products; track row.productId ?? row.name) {
-                <!-- The whole cell is the link (44 px target); without a product id the link is disabled. -->
-                <a class="ios-cell ios-cell--tall np-product" [class.np-product--plain]="!row.productId" [routerLink]="row.productId ? ['/products', row.productId] : null">
-                  <span class="ios-cell__body">
-                    <span class="ios-cell__title">{{ row.name }}</span>
-                    <span class="ios-cell__sub">{{ productSub(row, !!n.receipt, n.headline.setBasis) }}</span>
-                  </span>
-                  <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ row.eindkostEur | eur }}</span>
-                    <span class="ios-cell__meta" [class.wk-amount--in]="row.verschilEur < 0" [class.wk-amount--warn]="row.verschilEur > 0">{{ row.unitQuantity === 0 ? (row.set ? 'geen bruikbare displays' : 'geen bruikbare stuks') : row.verschilEur === 0 ? 'afspraak ' + eur(row.begrootEur) : signed(row.verschilEur) + ' t.o.v. de afspraak' }}</span></span>
-                  @if (row.productId) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /> }
-                </a>
-              } @empty {
-                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen productregels</span></span></div>
-              }
-            </details>
           </div>
         </section>
 
@@ -272,23 +257,33 @@ import { mixPricingRange, mixQuantity, mixRange, mixReceiptLine } from './purcha
           </div>
         </section>
 
-        <div class="ios-group np-footer">
-          <button class="ios-cell ios-cell--action" type="button" [disabled]="dirty() || pdfBusy()" (click)="downloadPdf()">{{ pdfBusy() ? 'PDF maken…' : 'Betalingen & kostprijs (PDF)' }}</button>
-          <button class="ios-cell" type="button" (click)="openPayments.emit()"><span class="ios-cell__body"><span class="ios-cell__title">Betalingen</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
-          <a class="ios-cell" routerLink="/costs" [queryParams]="{ container: orderId() }"><span class="ios-cell__body"><span class="ios-cell__title">Kosten &amp; bank</span></span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></a>
-        </div>
-        @if (dirty()) { <p class="ios-caption np-caption">Sla de container op om de kostprijs als PDF te exporteren.</p> }
+        <!-- The read view puts these ways out at the end of the Kosten tab, after the Calculatie ([footer]="false"). -->
+        @if (footer()) { <app-purchase-nacalc-footer [orderId]="orderId()" [orderNumber]="view().order.number" [dirty]="dirty()" (openPayments)="openPayments.emit()" /> }
       } @else {
         <p class="ios-caption np-caption">De nacalculatie is nog niet beschikbaar. Vernieuw de order om de actuele betalingen op te halen.
           <button class="ios-capsule" type="button" (click)="refresh.emit()">Vernieuwen</button></p>
       }
     </div>
+    @if (productOpen(); as row) {
+      <!-- One product: its quantity, Afspraak, Eindkost and Verschil, then per unit; the product page one tap further. -->
+      <app-sheet [title]="row.name" variant="ios" (closed)="productOpen.set(null)">
+        <div body class="np-product-sheet">
+          <div class="ios-group">
+            @for (cell of productSheet(row); track cell.label) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ cell.label }}</span>@if (cell.sub) { <span class="ios-cell__sub">{{ cell.sub }}</span> }</span>
+                <span class="ios-cell__trail"><span class="ios-cell__value" [class.ios-cell__value--strong]="cell.strong" [class]="amountTone(cell.tone ?? 'none')">{{ cell.value }}</span></span></div>
+            }
+          </div>
+        </div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="productOpen.set(null)">Sluiten</button>
+          @if (row.productId) { <a class="btn btn--primary" [routerLink]="['/products', row.productId]">Naar product</a> }
+        </div>
+      </app-sheet>
+    }
   `,
 })
 export class PurchaseNacalcOverview {
-  private readonly sourcing = inject(SourcingApi);
-  private readonly ui = inject(Ui);
-
   readonly view = input.required<PurchaseOrderView>();
   readonly ledger = input<PaymentLedger | null>(null);
   readonly nacalc = input<PurchaseNacalc | null>(null);
@@ -311,9 +306,33 @@ export class PurchaseNacalcOverview {
   /** 'Tegoed noteren…': the editor opens the sheet, the read view opens the editor. */
   readonly credit = output<SupplierCreditAction>();
 
-  readonly pdfBusy = signal(false);
+  /** The PDF, Betalingen and Kosten & bank under the Nacalculatie; the read view places them itself, after the Calculatie. */
+  readonly footer = input(true);
+  /** Per product shows the five biggest until asked for all. */
+  readonly showAllProducts = signal(false);
+  readonly productOpen = signal<NacalcProductRow | null>(null);
   readonly round = Math.round;
   readonly eur = formatEur;
+  readonly meterOf = settledMeter;
+  readonly storySub = storySub;
+  /** Waar het verschil zit: the payees and, when they tell their own story, the supplier's terms. */
+  readonly chain = computed<ChainRow[]>(() => {
+    const n = this.nacalc();
+    const book = this.ledger();
+    const of = (payee: Payee) => book?.payees.find(item => item.payee === payee);
+    return n?.payees ? nacalcChain(n.payees, payee => of(payee)?.terms ?? [], n.headline.kind === 'concept', payee => of(payee)?.reviewEur ?? 0) : [];
+  });
+  /** 'Bruto € a minder en € b meer; netto € n minder.' or null. */
+  readonly grossLine = computed(() => {
+    const n = this.nacalc();
+    return n ? nacalcGrossLine(n.explained, n.headline.verschilEur, n.headline.creditEur) : null;
+  });
+  readonly productLines = computed(() => {
+    const n = this.nacalc();
+    return n ? productRows(n.products, n.headline.setBasis, this.showAllProducts()) : [];
+  });
+  /** Van calculatie naar afspraak: the bridge up to the Afspraak. */
+  readonly bridge = computed(() => afspraakBridge(this.nacalc()?.bridge.rows ?? []));
   /** Hoe is dit berekend?: the notes without the desk's Afronden tab, which the phone does not have. */
   readonly notes = computed(() => nacalcPhoneNotes(this.nacalc()?.notes ?? []));
   readonly partnerState = computed(() => { const partner = this.partner(); return partner === 'loading' || partner === 'error' ? partner : 'ready'; });
@@ -325,23 +344,12 @@ export class PurchaseNacalcOverview {
     return todos.find(todo => todo.kind === 'incomplete') ?? todos.find(todo => todo.kind !== 'proof') ?? null;
   });
 
-  tone(tone: LedgerTone): string { return tone === 'warn' ? 'wk-amount--warn' : tone === 'ok' ? 'wk-amount--in' : ''; }
+  tone(tone: LedgerTone | PhoneTone): string { return tone === 'warn' ? 'wk-amount--warn' : tone === 'ok' ? 'wk-amount--in' : ''; }
+  amountTone(tone: PhoneAmount['tone']): string { return tone === 'in' ? 'wk-amount--in' : tone === 'warn' ? 'wk-amount--warn' : ''; }
   pillClass(tone: NacalcTone): string { return tone === 'ok' ? 'tone-ok' : tone === 'warn' ? 'tone-warn' : tone === 'outline' ? 'wk-pill--outline' : ''; }
 
-  /** '+ € 120,00', '− € 50,00' or a plain '€ 0,00'; the sign never wraps away from its figure. */
-  signed(value: number): string {
-    if (!value) return formatEur(0);
-    return (value > 0 ? '+ ' : '− ') + formatEur(Math.abs(value));
-  }
-
-  heroSub(n: PurchaseNacalc): string {
-    const head = n.headline;
-    if (head.kind === 'concept') return 'volgens de calculatie · nog niets betaald';
-    const pct = head.verschilPct === null ? '' : ` (${Math.abs(head.verschilPct).toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %)`;
-    const review = head.reviewEur > 0 ? ` · waarvan ${formatEur(head.reviewEur)} na te kijken` : '';
-    if (head.verschilEur === 0) return `afspraak ${formatEur(head.begrootEur)} · geen verschil${review}`;
-    return `${formatEur(Math.abs(head.verschilEur))}${pct} ${head.verschilEur < 0 ? 'goedkoper' : 'duurder'} dan afgesproken${review}`;
-  }
+  /** The Verschil as one figure and word, '€ 3.271,34 minder' with its percentage; a meer still to review apart, as Nakijken. */
+  readonly storyVerschil = storyVerschil;
 
   /** What the unit figure rests on, per display or per stuk (purchase-nacalc-metrics). */
   unitBasis(n: PurchaseNacalc): string { return nacalcUnitBasis(n.headline); }
@@ -360,20 +368,15 @@ export class PurchaseNacalcOverview {
   readonly partnerShortage = nacalcPartnerShortage;
   readonly pctLabel = pctLabel;
 
-  /**
-   * The agreement in one line; the eindkost only when it differs from it (the
-   * trail already carries the verschil). A payee paid without an agreement
-   * reads like Bijkomende kosten, never 'afgesproken € 0,00'. DDP is one word
-   * here: the per-stuk basis in the hero says it and the desk row spells it out.
-   */
-  payeeSub(row: NacalcPayeeRow): string {
-    if (row.agreedEur === null || row.status.kind === 'UNBUDGETED') return `${formatEur(row.paidEur)} · zonder afspraak`;
-    const agreed = `afgesproken ${formatEur(row.agreedEur)}`;
-    const eindkost = row.eindkostEur === row.agreedEur ? '' : ` → eindkost ${formatEur(row.eindkostEur)}`;
-    return agreed + eindkost + (row.ddpNote ? ' · DDP' : '') + (row.cifNote ? ' · zeevracht via de leverancier (CIF)' : '');
+  /** A chain row for a screen reader: 'Leverancier, € 1.297,17 minder, € 52.021,07 → € 50.723,90, Afgerekend'. */
+  chainLabel(row: ChainRow): string {
+    return [row.name, row.amount.text, row.line, row.word?.word].filter(Boolean).join(', ');
   }
 
-  productSub(row: PurchaseNacalc['products'][number], received: boolean, basis: NacalcSetBasis): string { return nacalcProductSub(row, received, basis); }
+  productSheet(row: NacalcProductRow): SheetRow[] {
+    const n = this.nacalc();
+    return productSheetRows(row, !!n?.receipt, n?.headline.setBasis ?? 'PIECE');
+  }
 
   /** The action cell in words: the Te doen verb, the payee or term, the amount; the read view settles in the editor. */
   todoLabel(todo: LedgerTodo): string {
@@ -396,15 +399,5 @@ export class PurchaseNacalcOverview {
       case 'settle': case 'review': case 'budget': this.settle.emit(todo.request); break;
       case 'incomplete': case 'credit': this.openPayee.emit(todo.payee); break;
     }
-  }
-
-  async downloadPdf(): Promise<void> {
-    if (this.pdfBusy() || this.dirty() || !this.nacalc()) return;
-    this.pdfBusy.set(true);
-    try {
-      saveBlob(await this.sourcing.purchasePaymentsPdf(this.orderId()), `${this.view().order.number.replace(/[^\p{L}\p{N}._-]/gu, '-')}-betalingen-kostprijs.pdf`);
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'De betalingsafrekening kon niet als PDF worden geëxporteerd'), 'err');
-    } finally { this.pdfBusy.set(false); }
   }
 }

@@ -34,7 +34,7 @@ test('every section lands on its tab, and a tab root maps back to the same tab',
   const table: Record<PhoneTab, string[]> = {
     overzicht: ['purchase-overview', 'purchase-order-section', 'purchase-receipt-section', 'purchase-actions-section'],
     producten: ['purchase-products-section', 'purchase-capacity-section'],
-    kosten: ['purchase-costs-section', 'purchase-summary-section', 'purchase-result-section', 'purchase-payment-result'],
+    kosten: ['purchase-costs-section', 'purchase-calc-section', 'purchase-summary-section', 'purchase-result-section', 'purchase-payment-result'],
     betalingen: ['purchase-payments-section', 'purchase-partner-section', 'purchase-partner-payments', 'purchase-advance-invoices'],
     dossier: ['purchase-files-section', 'purchase-notes-section', 'purchase-reports-section'],
   };
@@ -199,22 +199,30 @@ test('the Nacalculatie glance: concept, zero, cheaper, dearer, a review and a mi
   assert.equal(concept.sub, 'volgens de calculatie · nog niets betaald');
   assert.equal(concept.foot, 'De nacalculatie begint bij de bestelling: zodra betalingen genoteerd zijn, zie je hier wat de container echt kost.');
   const zero = seen(nacalcGlance(head()));
-  assert.deepEqual([zero.concept, zero.label, zero.pill, zero.pillTone, zero.afspraakEur, plain(zero.verschilText), zero.verschilWords, zero.verschilTone, zero.sub, zero.foot],
-    [false, 'Verwachte eindkost', 'Voorlopig', 'tone-warn', 49_433, '€ 0,00', 'geen verschil', 'none', '', 'Voorlopig · 3 ontvangers nog open']);
-  // The trail holds the signed amount only; the percentage leads the words below it, so 390px never cuts it.
-  const cheaper = seen(nacalcGlance(head({ eindkostEur: 49_383, verschilEur: -50, verschilPct: -0.5, pill: { label: 'Afgerond', tone: 'ok' } as NacalcHeadline['pill'] })));
-  assert.deepEqual([plain(cheaper.verschilText), cheaper.verschilWords, cheaper.verschilTone, cheaper.pillTone], ['− € 50,00', '0,5 % goedkoper dan afgesproken', 'in', 'tone-ok']);
+  assert.deepEqual([zero.concept, zero.label, zero.pill, zero.pillTone, zero.afspraakEur, zero.verschilTitle, zero.verschilText, zero.reviewText, zero.verschilTone, zero.sub, zero.foot],
+    [false, 'Verwachte eindkost', 'Voorlopig', 'tone-warn', 49_433, 'Verschil', 'geen verschil', '', 'none', '', 'Voorlopig · 3 ontvangers nog open']);
+  // 2026-10-25: one line at 375 px, as on the Nacalculatie: 'Verschil · 5,0 %' beside '€ x minder', never a sign.
+  const po5 = seen(nacalcGlance(head({ eindkostEur: 61_983.23, begrootEur: 65_254.57, verschilEur: -3_271.34, verschilPct: -5.01, pill: { label: 'Definitief', tone: 'ok' } as NacalcHeadline['pill'] })));
+  assert.deepEqual([po5.verschilTitle, plain(po5.verschilText), po5.reviewText, po5.verschilTone, po5.pillTone], ['Verschil · 5,0 %', '€ 3.271,34 minder', '', 'in', 'tone-ok']);
+  const cheaper = seen(nacalcGlance(head({ eindkostEur: 49_383, verschilEur: -50, verschilPct: -0.5 })));
+  assert.deepEqual([cheaper.verschilTitle, plain(cheaper.verschilText), cheaper.verschilTone], ['Verschil · 0,5 %', '€ 50,00 minder', 'in']);
   const dearer = seen(nacalcGlance(head({ verschilEur: 120, verschilPct: 1.24 })));
-  assert.deepEqual([plain(dearer.verschilText), dearer.verschilWords, dearer.verschilTone], ['+ € 120,00', '1,2 % duurder dan afgesproken', 'warn']);
+  assert.deepEqual([dearer.verschilTitle, plain(dearer.verschilText), dearer.verschilTone], ['Verschil · 1,2 %', '€ 120,00 meer', 'none'], 'a settled meer is plain');
   const large = nacalcGlance(head({ eindkostEur: 112_345.67, begrootEur: 100_000, verschilEur: 12_345.67, verschilPct: 12.345 }));
-  assert.deepEqual([plain(large.verschilText), large.verschilWords], ['+ € 12.345,67', '12,3 % duurder dan afgesproken']);
+  assert.deepEqual([large.verschilTitle, plain(large.verschilText)], ['Verschil · 12,3 %', '€ 12.345,67 meer']);
+  // 2026-10-26: a meer still to review is its own Nakijken row, as on Kosten and Betalingen; the Verschil is the part outside it.
   const review = seen(nacalcGlance(head({ reviewEur: 30 })));
-  assert.deepEqual([plain(review.verschilWords), review.verschilTone], ['geen verschil · waarvan € 30,00 na te kijken', 'warn']);
+  assert.deepEqual([review.verschilShown, plain(review.verschilText), plain(review.reviewText), review.verschilTone], [true, '€ 30,00 minder', '€ 30,00 meer', 'in'],
+    "a settled minder hidden by the review shows; never 'geen verschil' above Nakijken");
   const dearerReview = nacalcGlance(head({ verschilEur: 120, verschilPct: 1.24, reviewEur: 30 }));
-  assert.equal(plain(dearerReview.verschilWords), '1,2 % duurder dan afgesproken · waarvan € 30,00 na te kijken');
+  assert.deepEqual([dearerReview.verschilTitle, plain(dearerReview.verschilText), plain(dearerReview.reviewText), dearerReview.verschilTone],
+    ['Verschil · 0,2 %', '€ 90,00 meer', '€ 30,00 meer', 'none']);
+  const onlyReview = nacalcGlance(head({ verschilEur: 30, verschilPct: 0.06, reviewEur: 30 }));
+  assert.deepEqual([onlyReview.verschilShown, plain(onlyReview.reviewText)], [false, '€ 30,00 meer']);
+  assert.equal(po5.verschilShown, true);
   const noPct = seen(nacalcGlance(head({ verschilEur: 1_250.5, verschilPct: null })));
-  assert.equal(plain(noPct.verschilText), '+ € 1.250,50');
-  assert.equal(noPct.verschilWords, 'duurder dan afgesproken');
+  assert.deepEqual([noPct.verschilTitle, plain(noPct.verschilText)], ['Verschil', '€ 1.250,50 meer']);
+  for (const glance of [zero, po5, cheaper, dearer, large, review, noPct]) assert.doesNotMatch(glance.verschilText, /^[−+]/);
   assert.equal(nacalcGlance(head({ pill: { label: 'Open', tone: 'neutral' } as unknown as NacalcHeadline['pill'] })).pillTone, '');
 });
 

@@ -81,6 +81,11 @@ app-purchase-editor .mpo-address,app-purchase-editor .mpo-address .supplier-addr
 .mpo-head__copy h2{margin:0;font-size:20px;font-weight:750;letter-spacing:-.01em}
 .mpo-head__copy p{margin:1px 0 0;color:var(--muted);font-size:13px;line-height:1.35}
 .mpo-head>.wk-pill,.mpo-head>.ios-capsule{flex:none}
+/* Kosten of an ordered container: the calculation follows the Nacalculatie, a clear gap above its head */
+app-purchase-view #purchase-result-section+#purchase-calc-section{margin-top:28px}
+app-purchase-view .mpo-calc-head{align-items:center}
+/* the Nacalculatie's ways out close the Kosten tab, after the calculation */
+app-purchase-view .mpo-costs__foot{display:block;margin-top:24px}
 .mpo-attention{align-items:flex-start}
 .mpo-attention>.mpo-attention__count{display:inline-grid;flex:none;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--warn);color:#fff;font-size:12px;font-weight:800;line-height:1}
 .mpo-attention__body{display:grid;gap:2px}
@@ -121,6 +126,8 @@ app-purchase-editor .mpo-address,app-purchase-editor .mpo-address .supplier-addr
 .mpo-glance .ios-section__head{align-items:center}
 .mpo-glance__value{display:block;color:var(--ink);font-size:22px;font-weight:750;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.25;white-space:nowrap}
 .mpo-glance__words{white-space:normal}
+/* the Verschil reads in the same tone as on Kosten and Betalingen: minder in the ok colour, a meer to review in warn */
+.mpo-glance .ios-cell__value.wk-amount--in{color:var(--ok)}.mpo-glance .ios-cell__value.wk-amount--warn{color:var(--warn)}
 .mpo-glance__empty{margin:0 32px}
 
 /* ---- unchanged components, re-hosted: they draw their own cards without a gutter */

@@ -1,6 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { Location } from '@angular/common';
+import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { SalesApi } from '../../core/api/sales-api';
@@ -13,7 +13,9 @@ import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
+import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
+import { PurchasePayeeSheet } from './purchase-payee-sheet';
 import { purchaseNacalc } from './purchase-nacalc-metrics';
 import { purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { Diary } from './diary';
@@ -85,9 +87,9 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 @Component({
   selector: 'app-purchase-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
+  imports: [PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
-            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchaseBatchesCard],
+            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard],
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
@@ -119,7 +121,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               @let landed = landedTileOf(data);
               @let landedText = landed.valueEur | eur;
               <button class="mpo-tile mpo-tile--landed" type="button" [attr.aria-label]="'Totaal geland ' + landedText + ', ' + landed.sub + ', naar Kosten'"
-                      (click)="scrollToCard('purchase-costs-section', 'purchase-costs-section')">
+                      (click)="scrollToCard('purchase-calc-section', 'purchase-costs-section')">
                 <span class="mpo-tile__label">Totaal geland</span>
                 <span class="mpo-tile__value" [class.mpo-tile__value--long]="landedText.length > 10">{{ landedText }}</span>
                 <span class="mpo-tile__sub">{{ landed.sub }}</span>
@@ -416,91 +418,107 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 
           <!-- ===== Kosten ===== -->
           <section class="mpo-pane" id="mpo-pane-kosten" role="tabpanel" aria-label="Kosten" [hidden]="activeTab() !== 'kosten'">
-            <div id="purchase-costs-section" tabindex="-1" aria-labelledby="mpo-costs-title">
-              <div class="mpo-head">
-                <span class="ios-tile ios-tile--lg ios-tile--soft tone-teal" aria-hidden="true"><app-icon name="tag" [size]="19" /></span>
-                <div class="mpo-head__copy"><h2 id="mpo-costs-title">Kosten</h2><p>Gelande kostprijs · interne calculatie</p></div>
-                <span class="wk-pill tone-grey">Intern</span>
-              </div>
-              @if (!isDdp()) {
-                <!-- What the road adds on top of the goods - the figure a buyer negotiates on; the total is the star. -->
-                <div class="ios-figures">
-                  <div><small>Bovenop de goederen</small><strong>+ {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}</strong>
-                    <small>@if (data.costing.totals.goodsEur > 0) { {{ overheadPct(data.costing.totals) | num }} % van de inkoop } @else { nog geen goederen geladen }</small></div>
-                  <div><small>Totaal geland</small><strong class="mpo-accent">{{ data.costing.totals.totalEur | eur }}</strong></div>
+            <!-- Once ordered, the Nacalculatie opens the tab and the calculation follows it; a concept keeps the calculation first. -->
+            <div id="purchase-costs-section" class="mpo-costs" tabindex="-1" aria-label="Kosten">
+              @if (data.order.status === 'CONCEPT') { <ng-container [ngTemplateOutlet]="calcBlock" /> }
+              <!-- Nacalculatie: what the container really cost, complete and never collapsed. Recording and settling happen in the editor. -->
+              <section class="mpo-result mpo-host" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
+                <app-purchase-nacalc-overview mode="read" [footer]="false" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
+                  [state]="paymentState()" [error]="paymentsError()" [orderId]="data.order.id"
+                  (openPayee)="kostenPayee.set($event)" (pay)="recordPayment($event)" (settle)="settleInEditor()"
+                  (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')"
+                  (openPartner)="scrollToCard('purchase-partner-section', 'purchase-payments-section')"
+                  (openReports)="scrollToCard('purchase-reports-section', 'purchase-files-section')"
+                  (applyCosts)="openStep('KOSTPRIJZEN')"
+                  (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" (credit)="noteCreditInEditor()" />
+              </section>
+              @if (data.order.status !== 'CONCEPT') { <ng-container [ngTemplateOutlet]="calcBlock" /> }
+              <ng-template #calcBlock>
+                <div id="purchase-calc-section" tabindex="-1" aria-labelledby="mpo-costs-title">
+                  @if (data.order.status === 'CONCEPT') {
+                    <div class="mpo-head">
+                      <span class="ios-tile ios-tile--lg ios-tile--soft tone-teal" aria-hidden="true"><app-icon name="tag" [size]="19" /></span>
+                      <div class="mpo-head__copy"><h2 id="mpo-costs-title">Calculatie</h2><p>Gelande kostprijs · intern</p></div>
+                      <span class="wk-pill tone-grey">Intern</span>
+                    </div>
+                  } @else {
+                    <!-- Under the Nacalculatie the calculation is the second block: the same plain heading, never a heavier one. -->
+                    <div class="ios-section__head ios-section__head--prominent mpo-calc-head"><h2 id="mpo-costs-title">Calculatie</h2><span class="wk-pill tone-grey">Intern</span></div>
+                  }
+                  @if (!isDdp()) {
+                    <!-- What the road adds on top of the goods - the figure a buyer negotiates on; the total is the star. -->
+                    <div class="ios-figures">
+                      <div><small>Bovenop de goederen</small><strong>+ {{ data.costing.totals.totalEur - data.costing.totals.goodsEur | eur }}</strong>
+                        <small>@if (data.costing.totals.goodsEur > 0) { {{ overheadPct(data.costing.totals) | num }} % van de inkoop } @else { nog geen goederen geladen }</small></div>
+                      <div><small>Totaal geland</small><strong class="mpo-accent">{{ data.costing.totals.totalEur | eur }}</strong></div>
+                    </div>
+                  }
+                  <section class="ios-section">
+                    <div class="ios-section__head"><h2>{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</h2></div>
+                    <div class="ios-group">
+                      <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}</span>
+                        <span class="ios-cell__sub mpo-wrap">{{ data.costing.totals.goodsUsd | num: 2 }} USD{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</span></span>
+                        <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.goodsEur | eur }}</span></span></div>
+                      @if (!isDdp()) {
+                        @if (data.costing.totals.originEur) {
+                          <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().originCostsLabel }}</span>
+                            <span class="ios-cell__sub mpo-wrap">{{ costLabels().originRoute }}</span></span>
+                            <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.originEur | eur }}</span></span></div>
+                        }
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().seaFreightLabel }}</span>
+                          <span class="ios-cell__sub mpo-wrap">{{ costLabels().seaFreightRoute }}</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.freightEur | eur }}</span></span></div>
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Douanewaarde</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.customsValueEur | eur }}</span></span></div>
+                      }
+                    </div>
+                  </section>
+                  <section class="ios-section">
+                    <div class="ios-section__head"><h2>{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</h2></div>
+                    <div class="ios-group">
+                      @if (!isDdp()) {
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Invoerrechten</span>
+                          <span class="ios-cell__sub">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.dutyEur | eur }}</span></span></div>
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.destinationEur | eur }}</span></span></div>
+                      }
+                      @if (data.costing.totals.extraRevenueEur) {
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.extraRevenueEur | eur }}</span></span></div>
+                      }
+                      @if (data.costing.totals.separateCostsEur) {
+                        @if (data.costing.totals.inspectionEur) {
+                          <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Inspectie</span>
+                            <span class="ios-cell__sub">{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</span></span>
+                            <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.inspectionEur | eur }}</span></span></div>
+                        }
+                        @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
+                          <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ cost.label }}</span>
+                            <span class="ios-cell__sub">{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</span></span>
+                            <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ cost.amountEur | eur }}</span></span></div>
+                        }
+                        <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong mpo-wrap">{{ separateCostsTotalLabel(data.costing.totals) }}</span></span>
+                          <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span></span></div>
+                      }
+                    </div>
+                  </section>
+                  <section class="ios-section">
+                    <div class="ios-section__head"><h2>3 · Totaal</h2></div>
+                    <div class="ios-group">
+                      <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Totaal geland</span></span>
+                        <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ data.costing.totals.totalEur | eur }}</span></span></div>
+                    </div>
+                    <p class="ios-section__foot">Koers 1 USD = {{ usdToEurRate() | num: 4 }} EUR</p>
+                  </section>
                 </div>
+              </ng-template>
+              <!-- The Nacalculatie's ways out close the tab, after the calculation, so they never split it in two. -->
+              @if (nacalc()) {
+                <app-purchase-nacalc-footer class="mpo-costs__foot" [orderId]="data.order.id" [orderNumber]="data.order.number"
+                  (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')" />
               }
-              <section class="ios-section">
-                <div class="ios-section__head"><h2>{{ isDdp() ? '1 · Goederen, geleverd incl. rechten' : '1 · Tot de EU-grens' }}</h2></div>
-                <div class="ios-group">
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ isDdp() ? 'Goederen (DDP)' : 'Goederen' }}</span>
-                    <span class="ios-cell__sub mpo-wrap">{{ data.costing.totals.goodsUsd | num: 2 }} USD{{ isDdp() ? ' · transport en rechten inbegrepen' : '' }}</span></span>
-                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.goodsEur | eur }}</span></span></div>
-                  @if (!isDdp()) {
-                    @if (data.costing.totals.originEur) {
-                      <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().originCostsLabel }}</span>
-                        <span class="ios-cell__sub mpo-wrap">{{ costLabels().originRoute }}</span></span>
-                        <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.originEur | eur }}</span></span></div>
-                    }
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().seaFreightLabel }}</span>
-                      <span class="ios-cell__sub mpo-wrap">{{ costLabels().seaFreightRoute }}</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.freightEur | eur }}</span></span></div>
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Douanewaarde</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.customsValueEur | eur }}</span></span></div>
-                  }
-                </div>
-              </section>
-              <section class="ios-section">
-                <div class="ios-section__head"><h2>{{ isDdp() ? '2 · Eigen kosten' : '2 · Invoer & aankomst' }}</h2></div>
-                <div class="ios-group">
-                  @if (!isDdp()) {
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Invoerrechten</span>
-                      <span class="ios-cell__sub">gem. {{ data.costing.totals.effectiveDutyPct | pct: 1 }}</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.dutyEur | eur }}</span></span></div>
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ costLabels().destinationCostsLabel }}</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.destinationEur | eur }}</span></span></div>
-                  }
-                  @if (data.costing.totals.extraRevenueEur) {
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed kost</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.extraRevenueEur | eur }}</span></span></div>
-                  }
-                  @if (data.costing.totals.separateCostsEur) {
-                    @if (data.costing.totals.inspectionEur) {
-                      <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Inspectie</span>
-                        <span class="ios-cell__sub">{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</span></span>
-                        <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ data.costing.totals.inspectionEur | eur }}</span></span></div>
-                    }
-                    @for (cost of data.costing.totals.otherCosts ?? []; track $index) {
-                      <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title mpo-wrap">{{ cost.label }}</span>
-                        <span class="ios-cell__sub">{{ separateInPiece() ? 'in de stukprijs verdeeld' : 'apart' }}</span></span>
-                        <span class="ios-cell__trail"><span class="ios-cell__value mpo-amount">{{ cost.amountEur | eur }}</span></span></div>
-                    }
-                    <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong mpo-wrap">{{ separateCostsTotalLabel(data.costing.totals) }}</span></span>
-                      <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ data.costing.totals.totalWithSeparateCostsEur | eur }}</span></span></div>
-                  }
-                </div>
-              </section>
-              <section class="ios-section">
-                <div class="ios-section__head"><h2>3 · Totaal</h2></div>
-                <div class="ios-group">
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--strong">Totaal geland</span></span>
-                    <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong mpo-accent">{{ data.costing.totals.totalEur | eur }}</span></span></div>
-                </div>
-                <p class="ios-section__foot">Koers 1 USD = {{ usdToEurRate() | num: 4 }} EUR</p>
-              </section>
             </div>
-
-            <!-- Nacalculatie: what the container really cost, complete and never collapsed. Recording and settling happen in the editor. -->
-            <section class="mpo-result mpo-host" id="purchase-result-section" tabindex="-1" aria-label="Nacalculatie">
-              <app-purchase-nacalc-overview mode="read" [view]="data" [ledger]="paymentLedger()" [nacalc]="nacalc()" [partner]="partnerFinancing()"
-                [state]="paymentState()" [error]="paymentsError()" [orderId]="data.order.id"
-                (openPayee)="openPayee($event)" (pay)="recordPayment($event)" (settle)="settleInEditor()"
-                (openPayments)="scrollToCard('purchase-payments-section', 'purchase-payments-section')"
-                (openPartner)="scrollToCard('purchase-partner-section', 'purchase-payments-section')"
-                (openReports)="scrollToCard('purchase-reports-section', 'purchase-files-section')"
-                (applyCosts)="openStep('KOSTPRIJZEN')"
-                (refresh)="reloadPayments()" (refreshPartner)="loadPartnerFinancing()" (credit)="noteCreditInEditor()" />
-            </section>
           </section>
 
           <!-- ===== Betalingen ===== -->
@@ -596,6 +614,12 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
       </div>
 
       <!-- Sheets and menus at host level: never inside the sticky nav, the tabs or a pane. -->
+      @if (kostenPayeeOpen(); as item) {
+        <!-- A payee tapped in the Nacalculatie opens on top of Kosten, read-only; a payment row goes to its detail on Betalingen. -->
+        <app-purchase-payee-sheet [payee]="item" mode="read" [supplierName]="supplierName()" [planLabel]="planLabel()" [supplier]="kostenSupplier()"
+          (closed)="kostenPayee.set(null)" (add)="afterKostenSheet(recordPayment, $event)" (edit)="afterKostenSheet(showPayment, $event)"
+          (download)="downloadDocument($event)" (invoiceFile)="openDocumentFile($event)" />
+      }
       @if (moreMenu()) {
         <app-context-menu title="Container" variant="ios" cancelLabel="Annuleren" [items]="moreItems()" (pick)="pickMore($event)" (closed)="moreMenu.set(false)" />
       }
@@ -1111,10 +1135,24 @@ export class PurchaseView {
 
   private readonly paymentOverview = viewChild(PurchasePaymentOverview);
 
-  /** From the Nacalculatie: the payee's sheet on top of the payments card. */
-  openPayee(payee: Payee): void {
+  /** A payee tapped in the Nacalculatie: its sheet opens on top of Kosten, the tab stays. */
+  readonly kostenPayee = signal<Payee | null>(null);
+  readonly kostenPayeeOpen = computed(() => this.paymentLedger()?.payees.find(item => item.payee === this.kostenPayee()) ?? null);
+  readonly kostenSupplier = computed(() => this.paymentLedger()?.payees.find(item => item.payee === 'SUPPLIER') ?? null);
+
+  /** A payment row of that sheet: its detail lives on Betalingen, so the tab follows the tap there. */
+  readonly showPayment = (payment: PurchasePayment): void => {
     this.scrollToCard('purchase-payments-section', 'purchase-payments-section');
-    this.paymentOverview()?.openPayee.set(payee);
+    this.paymentOverview()?.tapPayment(payment);
+  };
+
+  /**
+   * The payee sheet closes before it reports an action; acting a task later
+   * lets it hand focus back first, so the next screen or sheet takes it last
+   * (as PurchasePaymentOverview.afterPayeeSheet).
+   */
+  afterKostenSheet<T>(act: (value: T) => void, value: T): void {
+    setTimeout(() => act.call(this, value));
   }
 
   /** Opens the tab a card lives on, then scrolls to it: a tab's root lands at the top under the stuck bar. */
