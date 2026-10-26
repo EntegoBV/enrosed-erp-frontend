@@ -16,4 +16,8 @@ export class ContainerTrackingApi {
   refresh(orderId: number): Promise<ContainerTracking> {
     return firstValueFrom(this.http.post<ContainerTracking>(api(`/api/container-tracking/${orderId}/refresh`), {}));
   }
+
+  setVessel(orderId: number, imo: string | null, trackingReference: string): Promise<ContainerTracking> {
+    return firstValueFrom(this.http.put<ContainerTracking>(api(`/api/container-tracking/${orderId}/vessel`), { imo, trackingReference }));
+  }
 }

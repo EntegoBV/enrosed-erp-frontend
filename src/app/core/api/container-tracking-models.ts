@@ -12,6 +12,8 @@ export interface TrackingEvent {
   location: string | null;
   occurredAt: string | null;
   actual: boolean;
+  source?: string | null;
+  sourceUrl?: string | null;
 }
 
 export interface ContainerTracking {
@@ -38,11 +40,16 @@ export interface ContainerTracking {
   providerUpdatedAt?: string | null;
   error: string | null;
   trackingUrl: string | null;
+  source: 'VOYDAR' | 'SHIPSGO' | null;
+  vesselImo: string | null;
+  automatic: boolean;
 }
 
 export interface ContainerTrackingFeed {
   provider: string;
+  /** Global provider polling switch; availability of an individual source is row.automatic. */
   configured: boolean;
+  shipsGoConfigured: boolean;
   intervalHours: number;
   containers: ContainerTracking[];
 }
