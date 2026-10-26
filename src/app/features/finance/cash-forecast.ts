@@ -1142,7 +1142,7 @@ function scenarioOf(input: CashForecastInput, options: ForecastOptions): Scenari
     const arrival = arrivalOf(order, own).date;
     const sub = order.status === 'CONCEPT' ? `Bestellen ${dMon(orderDayOf(order, own))}`
       : `${order.status === 'ONDERWEG' ? 'Onderweg' : 'Besteld'} · aankomst ${dMon(arrival)}`;
-    sources.push({ id: order.orderId, label, sub: plan.partnerScenario ? `Partner · ${grouped(plan.partnerScenario.financingPct)}% financiering · ${grouped(plan.partnerScenario.profitSharePct)}% resultaat voor ENROSED` : sub,
+    sources.push({ id: order.orderId, label, sub: plan.partnerScenario ? `${sub} · ${grouped(plan.partnerScenario.financingPct)}% partnerfinanciering` : sub,
       status, included: choice.included, locked: false, lockedText: null, choice, units: plan.units || units,
       costEur: toEur(plan.costCents), backEur: toEur(plan.backCents), cashInHorizonEur: choice.included ? inHorizon(plan.items) : 0, partnerScenario: plan.partnerScenario });
   }

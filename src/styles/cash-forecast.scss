@@ -354,10 +354,13 @@ a.cf-flow,a.cf-product{color:inherit;text-decoration:none}a.cf-flow:hover b,a.cf
 /* phone texts wrap instead of ending in "…": names, the partner line, the movements' titles and subs */
 .cf-src-cell :is(.ios-cell__title,.ios-cell__sub),.cf-move :is(.ios-cell__title,.ios-cell__sub),.cf-phone__more .ios-cell__sub{white-space:normal;overflow-wrap:anywhere}
 .cf-phone__sources{margin-bottom:12px}
-.cf-phone__choices .ios-cell__value{max-width:60%;text-align:right;white-space:normal}
+.cf-phone__choices .ios-cell{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 16px;column-gap:10px}
+.cf-phone__choices .ios-cell__title{overflow:visible;text-overflow:clip;white-space:normal}
+.cf-phone__choices .ios-cell__value{min-width:0;max-width:none;text-align:right;white-space:normal;line-height:1.35}
 .cf-phone__result{display:grid;gap:8px;padding:16px 18px}
 .cf-phone__result>:is(div,button){display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:16px;font-variant-numeric:tabular-nums}
 .cf-phone__result>:first-child b{margin-left:auto;font-size:18px}
+.cf-phone__result b{flex:none;white-space:nowrap}
 .cf-phone__result>button{width:100%;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:16px;text-align:left;cursor:pointer}
 .cf-phone__result-chev{flex:none;color:var(--muted-2)}
 .cf-phone__result .is-sub{color:var(--muted);font-size:15px}.cf-phone__result .is-sub b{color:var(--ink-2);font-weight:600}
