@@ -31,6 +31,7 @@ export function isWorkspaceUrl(url: string): boolean {
 /** The name of the screen behind a URL, as it reads after "Terug naar". */
 export function returnLabel(url: string): string {
   const path = pathOf(url);
+  if (path === '/purchasing/tracking') return 'Track & trace';
   if (/^\/purchasing\/\d+(?:[/]|$)/.test(path)) return 'inkooporder';
   if (under(path, '/purchasing')) return 'Inkoop';
   if (/^\/sales\/\d+(?:[/]|$)/.test(path)) return 'verkooporder';
@@ -98,6 +99,7 @@ export function screenLabel(url: string): string {
   if (under(path, '/sales')) return 'Verkoop';
   if (under(path, '/tica')) return 'TICA';
   if (under(path, '/revisions')) return 'Wijzigingen';
+  if (path === '/purchasing/tracking') return 'Track & trace';
   if (/^\/purchasing\/[^/]+(?:[/]|$)/.test(path)) return 'Inkooporder';
   if (under(path, '/purchasing')) return 'Inkoop';
   if (/^\/products\/[^/]+(?:[/]|$)/.test(path)) return 'Product';

@@ -79,6 +79,14 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
       }
     </app-page-header>
 
+    <div class="content pl-tracking-entry">
+      <a class="pl-tracking-link" routerLink="/purchasing/tracking">
+        <span class="pl-tracking-link__icon"><app-icon name="globe" [size]="21" /></span>
+        <span><strong>Track &amp; trace</strong><small>Containerstatus, aankomst en locatie op de kaart</small></span>
+        <app-icon name="chevron-right" [size]="17" />
+      </a>
+    </div>
+
     @if (desktop.active()) {
       <div class="content pl">
         <!-- Status chips with their counts (they follow the search), and what the shown containers still ask. -->
