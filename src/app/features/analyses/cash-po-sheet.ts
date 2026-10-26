@@ -15,7 +15,7 @@ import { likelyPaidText, lineLink, marginOfMarkup, pct, peakMonth, signedWhole }
 import type { CashLink } from './cash-view';
 
 const PRICE_OPTIONS: SegmentOption[] = [
-  { id: 'MARKUP_PCT', label: 'Opslag %' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijst' }, { id: 'HISTORIC', label: 'Historisch' },
+  { id: 'MARKUP_PCT', label: 'Percentage' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijst' }, { id: 'HISTORIC', label: 'Historisch' },
 ];
 
 /**
