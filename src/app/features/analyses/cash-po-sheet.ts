@@ -71,7 +71,7 @@ const PRICE_OPTIONS: SegmentOption[] = [
         <div class="cf-po__figs">
           <div><small>Betaald</small><b>{{ whole(s.paidEur) }}</b></div>
           <div><small>Nog uit</small><b>{{ whole(s.outstandingEur) }}</b></div>
-          <div><small>Terug</small><b class="is-back">{{ whole(s.backEur) }}</b></div>
+          <div><small>{{ s.partnerScenario ? 'Totaal terug' : 'Terug' }}</small><b class="is-back">{{ whole(s.backEur) }}</b></div>
         </div>
 
         <!-- While the stored choices are unknown every control here waits: a write would replace them. -->
@@ -171,13 +171,14 @@ const PRICE_OPTIONS: SegmentOption[] = [
             } @else if (state.choiceStatus(s.orderId) === 'error') {
               <span class="cf-po__failed">Nog niet bewaard</span>
               <button class="wk-link" type="button" (click)="state.retryChoice(s.orderId)">Opnieuw bewaren</button>
-            } @else { <span>Bewaard bij de container.</span> }
+            } @else { <span>{{ storedRow() ? 'Bewaard bij de container.' : 'Volgt het standaardscenario.' }}</span> }
             @if (storedRow()) { <button class="wk-link" type="button" (click)="state.resetChoice(s.orderId)">Terug naar standaard</button> }
           } @else {
             <span>Bewaren bij de container kan zodra de server bijgewerkt is.</span>
           }
         </div>
 
+        @if (s.partnerScenario) { <p class="cf-po__note cf-po__receipt-note">Totaal terug = voorschotten + verwachte afrekening, excl. btw.</p> }
         <section class="cf-po__sec" aria-label="Geldstroom">
           <h4 class="cf-po__sec-title">Geldstroom <small>excl. btw</small></h4>
           <div class="cf-flows">

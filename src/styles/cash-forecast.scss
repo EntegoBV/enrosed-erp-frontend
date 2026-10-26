@@ -503,3 +503,5 @@ button.cf-rule-cell__eur{color:var(--rose-dark);font-weight:650;cursor:pointer}
 .cf-partner-summary summary>app-icon:last-child{margin-left:auto;flex:none}
 .cf-partner-summary[open] summary>app-icon:last-child{transform:rotate(180deg)}
 .cf-po--ios .cf-partner-summary summary{min-height:44px}
+
+.cf-po__receipt-note{padding:0 16px 12px;text-align:left}
