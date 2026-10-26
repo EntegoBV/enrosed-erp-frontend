@@ -248,11 +248,11 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
 /* The status area, condensed title and sticky controls share the page canvas.
    Keep glass on controls only: translucent bands change colour as cards pass underneath. */
-.ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px)}
+.ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px)}
 .ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg);opacity:0;transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed::before{opacity:1}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
-.ios-nav__title{max-width:52vw;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
+.ios-nav__title{min-width:0;max-width:100%;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed .ios-nav__title{opacity:1;transform:none}
 .ios-large{padding:2px calc(var(--safe-r) + 20px) 10px calc(var(--safe-l) + 20px)}
 .ios-large__title{margin:0;color:var(--ink);font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.12;overflow-wrap:anywhere}
