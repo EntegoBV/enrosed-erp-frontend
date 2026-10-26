@@ -1,0 +1,107 @@
+/* ==========================================================================
+   Kosten & bank › Facturen (invoice finder, 2026-10-25). Scoped under the
+   page host; the table, pills, chips, inspector and iOS cells are the kit's.
+   This file sets the finder's column tracks, its preview pane and the bits
+   of its sheets. Kept small: it is part of the initial bundle.
+   ========================================================================== */
+
+#finance-workspace {
+  /* ---- the list: Van/Aan · nummer, Datum, Bedrag, Status, Gekoppeld */
+  .fin-table--invoices { --wk-cols: minmax(260px, 1fr) 88px 120px 116px minmax(0, 200px); }
+  .fin-inv-row { min-height: 52px; }
+  .fin-inv__main { display: grid; gap: 1px; }
+  .fin-inv__title { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-inv__no { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .fin-inv__amount { white-space: nowrap; }
+  .fin-inv__links { display: flex; align-items: center; gap: 4px; }
+  /* line 2: the facts end in "…" before the chips (shown below a 720 px pane, when Gekoppeld is hidden) */
+  .fin-inv__sub { display: flex; align-items: center; gap: 6px; }
+  .fin-inv__facts { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-inv__chips { display: none; flex: none; align-items: center; gap: 4px; }
+  .fin-inv__chips .fin-inv-chip { max-width: 104px; }
+  .fin-inv__more { flex: none; color: var(--muted); font-size: 11.5px; font-weight: 650; }
+  /* inline-block, not the kit's inline-flex: text-overflow only works on a block; bank chips are short and keep their size */
+  .fin-inv-chip { display: inline-block; flex: 0 1 auto; min-width: 0; max-width: 140px; height: 24px; padding: 0 9px; overflow: hidden; line-height: 22px; text-overflow: ellipsis; }
+  .fin-inv-chip--fixed { flex: none; }
+  .fin-inv-banner { margin: 12px 12px 0; }
+
+  .fin-inv__more--narrow { display: none; }
+  @container wk-pane (max-width: 1023.98px) {
+    .fin-table--invoices { --wk-cols: minmax(220px, 1fr) 84px 116px 116px minmax(0, 170px); }
+    /* two chips do not fit in 170 px: the first one, the rest as "+n" */
+    .fin-table--invoices .fin-inv-chip--second { display: none; }
+    .fin-table--invoices .fin-inv__more--wide { display: none; }
+    .fin-table--invoices .fin-inv__more--narrow { display: inline; }
+  }
+  @container wk-pane (max-width: 859.98px) {
+    .fin-table--invoices { --wk-cols: minmax(200px, 1fr) 76px 112px 116px minmax(0, 140px); }
+  }
+  @container wk-pane (max-width: 719.98px) {
+    /* 1250 px with the preview docked: 160 + 72 + 108 + 116 + 3 × 12 + 2 × 16 + 2 × 24 = 572 px of 582 ("Zonder gegevens" is 114 px) */
+    .fin-table--invoices { --wk-cols: minmax(160px, 1fr) 72px 108px 116px; }
+    .fin-table--invoices .fin-inv__chips { display: inline-flex; }
+  }
+
+  /* ---- the preview beside the list (docked) or over it (drawer) */
+  .wk-body--split.fin-body--invoice { --wk-inspector-w: 420px; }
+  .fin-insp-invoice.wk-inspector--drawer { width: min(440px, calc(100vw - 120px)); }
+  .fin-insp-invoice { overflow-y: auto; }
+  .fin-inv-head { align-items: center; }
+  .fin-inv-head__text { display: grid; flex: 1; gap: 2px; min-width: 0; margin: 0; }
+  .fin-inv-head__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
+  .fin-inv-head__no { overflow: hidden; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+  .fin-inv-gone { color: var(--muted); font-size: 13.5px; }
+  .fin-inv-top { display: grid; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .fin-inv-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; margin: 0;
+    div { min-width: 0; }
+    dt { color: var(--muted); font-size: 11.5px; }
+    dd { margin: 0; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; } }
+  .fin-inv-links, .fin-inv-files { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fin-inv-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .fin-inv-blocked { margin: -4px 0 0; }
+  .fin-inv-view { display: flex; flex: 1; flex-direction: column; min-height: 420px; background: var(--surface-2); }
+  .fin-inv-frame { flex: 1; width: 100%; min-height: 420px; border: 0; background: #fff; }
+  .fin-inv-image { display: block; max-width: 100%; height: auto; margin: 16px auto; border-radius: 8px; }
+  .fin-inv-empty { display: grid; flex: 1; place-content: center; justify-items: center; gap: 10px; margin: 0; padding: 24px; color: var(--muted); font-size: 13px; text-align: center;
+    p { margin: 0; } }
+
+  /* ---- register and mark sheets (desk and phone) */
+  .fin-inv-register__doc { margin: 0 0 4px; overflow-wrap: anywhere; font-size: 14px; }
+  .fin-inv-register__sum { margin: 12px 0; }
+  .fin-inv-register__costs { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; border: 0;
+    legend { margin-bottom: 4px; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; } }
+  .fin-inv-register__cost, .fin-inv-mark__option { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer;
+    input { flex: none; margin-top: 3px; }
+    > span { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+    small { color: var(--muted); font-size: 12px; } }
+  .fin-inv-mark__list { display: grid; max-height: 320px; margin: 8px 0 12px; overflow-y: auto; overscroll-behavior: contain; }
+  .fin-inv-mark__option > .fin-inv-mark__text { display: block; font-size: 14px; }
+}
+
+/* ---- phone */
+@media (max-width: 679.98px) {
+  #finance-workspace {
+    .fin-inv-entry { margin-bottom: 12px; }
+    .fin-inv-entry .ios-cell__lead { color: var(--rose); }
+    .fin-inv-cell > .ios-cell__trail { align-self: start; }
+    .fin-inv-cell .ios-cell__value { font-size: 15px; }
+    .fin-inv-sub { display: flex; gap: 4px; }
+    .fin-inv-sub__lead { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .fin-inv-sub__status { flex: none; }
+    .fin-inv-more { margin-top: -8px; margin-bottom: 22px; }
+  }
+  /* the sheet is rendered at page level, still inside the host */
+  #finance-workspace .fin-inv-sheet {
+    .fin-inv-sheet__no { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 14px; padding: 0 calc(var(--ios-inset) + 16px);
+      font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .fin-inv-fact { min-height: 44px; }
+    .fin-inv-fact .ios-cell__title { color: var(--muted); font-size: 15px; }
+    .fin-inv-fact__trail { max-width: 68%; }
+    .fin-inv-fact__value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; }
+    .fin-inv-file .ios-cell__title { white-space: normal; overflow-wrap: anywhere; }
+    .fin-inv-image--sheet { margin: 0 0 16px; }
+    .fin-inv-sheet__foot { display: flex; align-items: center; gap: 10px; width: 100%; }
+    .fin-inv-sheet__foot .btn--primary { flex: 1; }
+    .fin-inv-sheet__more { flex: none; }
+  }
+}

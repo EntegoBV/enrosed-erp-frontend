@@ -15,6 +15,7 @@ import type { FinanceCommand } from './finance-shortcuts';
 import { FinanceState, formatEuro } from './finance-state';
 import { FinanceTable } from './finance-table';
 import { FinancePeriod } from './finance-url';
+import { InvoiceFinderState } from './invoice-finder-state';
 import { COST_MONEY, cashTotalOf, returnVatOf, reverseChargeOf } from './finance-metrics';
 
 type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
@@ -88,6 +89,11 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
         </div>
       }
     } @else {
+      <!-- Facturen: every invoice (containers, costs, Odoo, sales) in one finder; on a phone it opens from here and from ⋯. -->
+      <div class="ios-group fin-inv-entry"><button class="ios-cell" type="button" (click)="finder.open()">
+        <span class="ios-cell__lead"><app-icon name="document" [size]="20" /></span>
+        <span class="ios-cell__body"><span class="ios-cell__title">Facturen zoeken</span></span>
+        <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button></div>
       <div class="ios-search fin-ios-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
         <input type="search" placeholder="Leverancier, factuurnummer, omschrijving" aria-label="Zoeken in facturen en kosten" [value]="state.location().q" (input)="search($any($event.target).value)" />
         <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="search('')"><app-icon name="close" [size]="14" /></button></label></div>
@@ -150,6 +156,7 @@ type SortKey = 'date' | 'description' | 'category' | 'excl' | 'incl';
 })
 export class CostList implements FinanceSectionApi {
   readonly state = inject(FinanceState);
+  readonly finder = inject(InvoiceFinderState);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly sort = signal<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' });
   readonly filtersOpen = signal(false);

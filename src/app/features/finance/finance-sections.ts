@@ -8,7 +8,7 @@ import type { BankBalance, CompanyCost, CostParty, Fair, RecurringCost } from '.
  */
 
 /** The sections; the address bar carries the one on screen as `view` (see finance-url.ts). */
-export type FinanceView = 'bank' | 'open' | 'incoming' | 'costs' | 'analysis';
+export type FinanceView = 'bank' | 'open' | 'incoming' | 'invoices' | 'costs' | 'analysis';
 export type FinanceGroup = 'Bank' | 'Geld' | 'Boekhouding';
 
 export interface FinanceSection {
@@ -29,22 +29,26 @@ export const FINANCE_SECTIONS: readonly FinanceSection[] = [
   { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true },
   { id: 'open', label: 'Te betalen', short: 'Betalen', group: 'Geld', icon: 'arrow-out', hint: 'Wat moet er nog betaald worden?', phoneTab: true },
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true },
-  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true },
+  /* Facturen (2026-10-25): every invoice in one finder; on a phone it is reached from the Kosten tab and ⋯. */
+  { id: 'invoices', label: 'Facturen', short: 'Facturen', group: 'Boekhouding', icon: 'document', hint: 'Elke factuur: opgeladen, Odoo en verkoop', phoneTab: false },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Uitgaven, inkooporders en vaste kosten', phoneTab: true },
   { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false },
 ];
 
-export type FinanceNavId = 'bank' | 'transactions' | 'open' | 'incoming' | 'costs' | 'analysis';
-/** One place of the sidebar, the phone tab bar and the keys 1-6: a section, or Bank's Transacties. */
+export type FinanceNavId = 'bank' | 'transactions' | 'open' | 'incoming' | 'invoices' | 'costs' | 'analysis';
+/** One place of the sidebar, the phone tab bar and the keys 1-7: a section, or Bank's Transacties. */
 export interface FinanceNavItem {
   id: FinanceNavId; label: string; short: string; group: FinanceGroup; icon: string; hint: string;
-  phoneTab: boolean; target: { view: FinanceView; tab: string }; key: '1' | '2' | '3' | '4' | '5' | '6';
+  phoneTab: boolean; target: { view: FinanceView; tab: string }; key: '1' | '2' | '3' | '4' | '5' | '6' | '7';
 }
 export const FINANCE_NAV: readonly FinanceNavItem[] = [
   { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true, target: { view: 'bank', tab: 'accounts' }, key: '1' },
   { id: 'transactions', label: 'Transacties', short: 'Transacties', group: 'Bank', icon: 'exchange', hint: 'Alle banktransacties: koppelen, splitsen en boeken', phoneTab: true, target: { view: 'bank', tab: 'movements' }, key: '2' },
   { id: 'open', label: 'Te betalen', short: 'Betalen', group: 'Geld', icon: 'arrow-out', hint: 'Wat moet er nog betaald worden?', phoneTab: true, target: { view: 'open', tab: 'all' }, key: '3' },
   { id: 'incoming', label: 'Te ontvangen', short: 'Ontvangen', group: 'Geld', icon: 'arrow-in', hint: 'Wie moet ons nog betalen en wat kwam binnen?', phoneTab: true, target: { view: 'incoming', tab: 'open' }, key: '4' },
-  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Facturen, uitgaven, inkooporders en vaste kosten', phoneTab: true, target: { view: 'costs', tab: 'company' }, key: '5' },
+  /* First of Boekhouding in the sidebar, but key 7: the keys 1-6 keep the places they had. */
+  { id: 'invoices', label: 'Facturen', short: 'Facturen', group: 'Boekhouding', icon: 'document', hint: 'Elke factuur: opgeladen, Odoo en verkoop', phoneTab: false, target: { view: 'invoices', tab: 'in' }, key: '7' },
+  { id: 'costs', label: 'Inkoop & kosten', short: 'Kosten', group: 'Boekhouding', icon: 'receipt', hint: 'Uitgaven, inkooporders en vaste kosten', phoneTab: true, target: { view: 'costs', tab: 'company' }, key: '5' },
   { id: 'analysis', label: 'Rapportage', short: 'Rapporten', group: 'Boekhouding', icon: 'analytics', hint: 'Per categorie, per maand, de btw-aangifte', phoneTab: false, target: { view: 'analysis', tab: 'costs' }, key: '6' },
 ];
 
@@ -55,6 +59,11 @@ export const FINANCE_NAV: readonly FinanceNavItem[] = [
 export function financeNavOf(location: { view: FinanceView; tab: string }): FinanceNavItem {
   const id: FinanceNavId = location.view === 'bank' ? (location.tab === 'movements' ? 'transactions' : 'bank') : location.view;
   return FINANCE_NAV.find((item) => item.id === id) ?? FINANCE_NAV[0];
+}
+
+/** The phone tab an address lights: Facturen has no tab of its own and is reached from Kosten ("menu pages light their tab"). */
+export function phoneTabOf(location: { view: FinanceView; tab: string }): FinanceNavId {
+  return location.view === 'invoices' ? 'costs' : financeNavOf(location).id;
 }
 
 export const FINANCE_GROUPS: readonly FinanceGroup[] = ['Bank', 'Geld', 'Boekhouding'];
@@ -84,8 +93,14 @@ export const FINANCE_TABS: Readonly<Record<FinanceView, readonly FinanceTab[]>> 
     { id: 'accounts', label: 'Bank', short: 'Bank' },
     { id: 'movements', label: 'Transacties', short: 'Transacties' },
   ],
+  /* Facturen: what came in (container invoices, costs, Odoo bills) and what went out (sales documents, Odoo). */
+  invoices: [
+    { id: 'in', label: 'Inkomend', short: 'In' },
+    { id: 'out', label: 'Uitgaand', short: 'Uit' },
+  ],
   costs: [
-    { id: 'company', label: 'Facturen & kosten', short: 'Kosten' },
+    /* 'Facturen & kosten' until 2026-10-25: Facturen is its own place now (the rename is one revertible commit). */
+    { id: 'company', label: 'Kosten', short: 'Kosten' },
     { id: 'containers', label: 'Containers', short: 'Containers' },
     { id: 'recurring', label: 'Vaste kosten', short: 'Vast' },
     { id: 'lists', label: 'Aan wie & beurzen', short: 'Aan wie' },

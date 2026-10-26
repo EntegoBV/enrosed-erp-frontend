@@ -9,8 +9,8 @@ export type FinanceCommand = 'search' | 'new-cost' | 'new-movement' | 'up' | 'do
   | 'toggle' | 'select-all' | 'open' | 'edit' | 'pay' | 'link' | 'delete' | 'escape' | 'refresh' | 'help'
   | 'split' | 'book-as' | 'unlink' | 'open-linked';
 
-/** `section` n is the n-th place of FINANCE_NAV (1 Bank, 2 Transacties, … 6 Rapportage). */
-export type FinanceShortcut = FinanceCommand | { section: 1 | 2 | 3 | 4 | 5 | 6 } | null;
+/** `section` n is the place of FINANCE_NAV whose key is n (1 Bank, 2 Transacties, … 6 Rapportage, 7 Facturen). */
+export type FinanceShortcut = FinanceCommand | { section: 1 | 2 | 3 | 4 | 5 | 6 | 7 } | null;
 
 export interface ShortcutKey {
   key: string;
@@ -33,8 +33,8 @@ export function financeShortcut(press: ShortcutKey, context: ShortcutContext): F
   if (context.typing || context.overlayOpen || !context.inWorkspace || press.alt) return null;
   const key = press.key.length === 1 ? press.key.toLowerCase() : press.key;
   if (press.meta || press.ctrl) return key === 'a' && !press.shift ? 'select-all' : null;
-  const digit = /^Digit([1-6])$/.exec(press.code);
-  if (digit && !press.shift) return { section: Number(digit[1]) as 1 | 2 | 3 | 4 | 5 | 6 };
+  const digit = /^Digit([1-7])$/.exec(press.code);
+  if (digit && !press.shift) return { section: Number(digit[1]) as 1 | 2 | 3 | 4 | 5 | 6 | 7 };
   switch (key) {
     /* By the character, not the key: on a Belgian AZERTY keyboard '/' is Shift+':'. */
     case '/': return 'search';
@@ -61,7 +61,7 @@ export function financeShortcut(press: ShortcutKey, context: ShortcutContext): F
 
 /** The Sneltoetsen sheet; rows with a `group` are listed under that heading. */
 export const FINANCE_SHORTCUT_HELP: readonly { keys: readonly string[]; label: string; group?: string }[] = [
-  { keys: ['1–6'], label: 'Onderdelen' },
+  { keys: ['1–7'], label: 'Onderdelen' },
   { keys: ['/'], label: 'Zoeken' },
   { keys: ['N'], label: 'Kost boeken' },
   { keys: ['B'], label: 'Transactie noteren' },

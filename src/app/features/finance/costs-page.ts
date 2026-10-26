@@ -43,6 +43,11 @@ import { FinanceState } from './finance-state';
 import { FinanceStatusBar } from './finance-status-bar';
 import { FinanceTabbar } from './finance-tabbar';
 import { FinanceToolbar } from './finance-toolbar';
+import { InvoiceFinderState } from './invoice-finder-state';
+import { InvoiceMarkSheet } from './invoice-mark-sheet';
+import { InvoicePreview } from './invoice-preview';
+import { InvoiceRegisterSheet } from './invoice-register-sheet';
+import { InvoicesPanel } from './invoices-panel';
 import { OdooSyncState } from './odoo-sync-state';
 import { PayablesPanel } from './payables-panel';
 import { PaySheet } from './pay-sheet';
@@ -70,13 +75,13 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
 @Component({
   selector: 'app-costs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [FinanceState, OdooSyncState],
+  providers: [FinanceState, OdooSyncState, InvoiceFinderState],
   host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
     FinanceCreateMenu, FinanceInspector, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
     RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankAccountSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,
     AccountHistorySheet, AccountantPackageSheet, FinanceHelpSheet, CostPartySheet, FairSheet, TransactionDetail, BookAsSheet, ExactLinksSheet, UnbankedSheet,
-    ArchivedAccountsSheet, OdooSheet, BufferSheet],
+    ArchivedAccountsSheet, OdooSheet, BufferSheet, InvoicesPanel, InvoicePreview, InvoiceRegisterSheet, InvoiceMarkSheet],
   template: `
     @if (state.desk()) {
       <div class="wk-page fin-desk">
@@ -104,7 +109,8 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
             <div class="wk-strip fin-strip"><app-finance-filters class="fin-strip__tools" /></div>
           }
         </div>
-        <div class="wk-body" [class.wk-body--split]="docked() && !!state.inspect()" [class.fin-body--line]="state.inspect()?.kind === 'line'"
+        <div class="wk-body" [class.wk-body--split]="docked() && (!!state.inspect() || finderPreview())" [class.fin-body--line]="state.inspect()?.kind === 'line'"
+             [class.fin-body--invoice]="finderPreview() && !state.inspect()"
              (dragenter)="dragOver($event)" (dragover)="dragOver($event)" (dragleave)="dragLeave($event)" (drop)="drop($event)">
           <div class="wk-pane" id="finance-pane">
             <div class="wk-pane__inner" [class.wk-pane__inner--read]="readView()">
@@ -117,6 +123,9 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
             } @else {
               <aside class="wk-inspector" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
             }
+          } @else if (docked() && finderPreview()) {
+            <!-- Facturen: the row of doc= beside the list; a transaction opened from one of its chips takes the aside first. -->
+            <aside class="wk-inspector fin-insp-invoice" aria-label="Factuur"><app-invoice-preview layout="pane" /></aside>
           }
           @if (dropping()) { <div class="wk-drop">Laat los om een kost met dit document te boeken</div> }
         </div>
@@ -128,6 +137,8 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
         } @else {
           <aside class="wk-inspector wk-inspector--drawer fin-drawer" aria-label="Details"><app-finance-inspector [target]="target" /></aside>
         }
+      } @else if (!docked() && finderPreview()) {
+        <aside class="wk-inspector wk-inspector--drawer fin-drawer fin-insp-invoice" aria-label="Factuur"><app-invoice-preview layout="pane" /></aside>
       }
     } @else {
       <div class="ios-page fin-ios">
@@ -159,7 +170,10 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
     }
 
     <ng-template #content>
-      @if (!state.loadedAt()) {
+      <!-- Facturen loads on its own: its first page never waits for the sixteen finance sources. -->
+      @if (state.location().view === 'invoices') {
+        <app-invoices-panel />
+      } @else if (!state.loadedAt()) {
         <!-- A skeleton per place: Bank its figures and list, Rapportage its figures and lines, the lists only rows. -->
         <div class="fin-loading" aria-busy="true">
           @switch (skeletonPlace()) {
@@ -203,6 +217,9 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
         <div foot class="fin-inspector-actions"><app-finance-inspector [target]="target" layout="foot" /></div>
       </app-sheet>
     }
+    @if (!state.desk() && finderPreview() && !state.inspect() && !finder.registering() && !finder.marking()) { <app-invoice-preview layout="sheet" /> }
+    @if (finder.registering(); as row) { <app-invoice-register-sheet [row]="row" /> }
+    @if (finder.marking(); as row) { <app-invoice-mark-sheet [row]="row" /> }
     @if (state.costDraft()) { <app-cost-sheet /> }
     @if (state.recurringDraft()) { <app-recurring-sheet /> }
     @if (state.costPartyDraft()) { <app-cost-party-sheet /> }
@@ -230,6 +247,7 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
 export class CostsPage {
   readonly state = inject(FinanceState);
   readonly sync = inject(OdooSyncState);
+  readonly finder = inject(InvoiceFinderState);
   readonly ret = inject(WorkspaceReturn);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
@@ -249,10 +267,12 @@ export class CostsPage {
   private readonly width = elementWidth(() => this.host.nativeElement);
   /** A transaction docks from an 840 px host (1100 wide), so its amounts stay beside the list while linking; the rest from the kit's 1000. */
   readonly docked = computed(() => this.width() >= (this.state.inspect()?.kind === 'line' ? LINE_DOCK_MIN_PX : WK_DOCK_MIN_PX));
+  /** Facturen with a row on the address: the preview docks beside the list (desk) or opens as a sheet (phone). */
+  readonly finderPreview = computed(() => this.state.location().view === 'invoices' && !!this.state.location().doc);
   readonly readView = computed(() => this.state.location().view === 'analysis' || (this.state.location().view === 'bank' && this.state.location().tab !== 'movements'));
   readonly hasFilters = computed(() => {
     const { view, tab } = this.state.location();
-    return view === 'incoming' || view === 'analysis' || (view === 'costs' && tab !== 'recurring');
+    return view === 'incoming' || view === 'analysis' || view === 'invoices' || (view === 'costs' && tab !== 'recurring');
   });
   readonly createMenu = viewChild(FinanceCreateMenu);
   readonly dropping = signal(false);
@@ -267,8 +287,9 @@ export class CostsPage {
       return active.length === 1 ? active[0].label : 'Alle rekeningen';
     }
     if (location.view === 'bank') return this.bankSub();
+    if (location.view === 'invoices') return this.finder?.odooNote() ?? null;
     return ({ open: 'Openstaande uitgaven en betaaltermijnen', incoming: 'Klantfacturen en ontvangen betalingen',
-      costs: 'Facturen, uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
+      costs: 'Uitgaven en inkooporders', analysis: 'Kosten en btw per periode' } as Record<string, string>)[location.view] ?? null;
   });
   /** Bank's sub line: "{label} opgehaald {hh:mm}" (an older import: "{d mmm}") per Odoo account, "{label} handmatig" per manual one (fits 360 px). */
   private readonly bankSub = computed(() => {
@@ -295,10 +316,11 @@ export class CostsPage {
     const { view, tab } = this.state.location();
     return view === 'bank' && tab !== 'movements' ? 'bank' : view === 'analysis' ? 'analysis' : 'list';
   });
-  /** Transacties is a tab on the phone, no sub-screen; Rapportage still is one. */
-  readonly subScreen = computed(() => this.state.location().view === 'analysis');
+  /** Transacties is a tab on the phone, no sub-screen; Rapportage still is one, and Facturen when it was pushed (Kosten cell, ⋯). */
+  readonly subScreen = computed(() => this.state.location().view === 'analysis' || (this.state.location().view === 'invoices' && !!this.finder?.pushed()));
   backFromSection(): void {
-    this.state.leaveAnalysis();
+    if (this.state.location().view === 'invoices' && this.finder?.pushed()) this.finder.back();
+    else this.state.leaveAnalysis();
   }
 
   /** The phone's sticky segmented control: the section's segments (Analyse: Kosten · Btw; its year is a chip row in the panel). */
@@ -409,7 +431,9 @@ export class CostsPage {
         ...(this.state.hasOdooAccounts() ? [{ id: 'sync', label: this.sync.syncing() ? 'Ophalen…' : 'Transacties ophalen', iconName: 'exchange', disabled: this.sync.busy() || !this.sync.ready() }] : []),
         { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
         { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
-        { id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download' },
+        { id: 'invoices', label: 'Facturen', iconName: 'document' },
+        /* No CSV on Facturen: it would export costs. */
+        ...(this.state.location().view === 'invoices' ? [] : [{ id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download' }]),
         { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
         { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
         { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
@@ -421,6 +445,7 @@ export class CostsPage {
         if (id === 'sync') void this.sync.syncBank();
         else if (id === 'refresh') void this.state.load();
         else if (id === 'analysis') this.state.openAnalysis();
+        else if (id === 'invoices') this.finder.open();
         else if (id === 'csv') this.exportCurrent();
         else if (id === 'package') this.state.openPackage();
         else if (id === 'help') this.state.helpOpen.set(true);
@@ -502,8 +527,9 @@ export class CostsPage {
     if (!command) return;
     if (typeof command === 'object') {
       event.preventDefault();
-      const target = FINANCE_NAV[command.section - 1].target;
-      this.state.go({ view: target.view, tab: target.tab });
+      /* The place whose key it is (Facturen is first of Boekhouding but key 7). */
+      const target = FINANCE_NAV.find((item) => item.key === String(command.section))?.target;
+      if (target) this.state.go({ view: target.view, tab: target.tab });
       return;
     }
     const section = this.section();

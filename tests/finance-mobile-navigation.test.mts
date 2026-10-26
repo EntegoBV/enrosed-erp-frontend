@@ -68,7 +68,7 @@ test('related detail has a back trail and returns to the original bank list afte
 test('closing deep-linked cost details removes only cost identity and preserves local list filters', () => {
   const { state } = setup({ view: 'costs', tab: 'company', cost: '26', cat: 'DRUKWERK', status: 'paid', period: 'all', q: 'Hello' });
   state.inspect.set({ kind: 'cost', id: 26 });
-  assert.equal(state.inspectorBackLabel(), 'Terug naar facturen & kosten');
+  assert.equal(state.inspectorBackLabel(), 'Terug naar kosten');
   state.closeInspector();
   assert.equal(state.location().cost, null); assert.equal(state.location().q, 'Hello');
   assert.equal(state.location().cat, 'DRUKWERK'); assert.equal(state.location().status, 'paid'); assert.equal(state.location().period, 'all');
@@ -88,7 +88,7 @@ test('the phone segmented reads the short words with four segments, the full nam
   // 2026-10-17 (critique N12): the kit's segmented replaces the native select; shorts only where there are more than two segments.
   const { state, page } = setup({ view: 'costs', tab: 'company' });
   assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Kosten', 'Containers', 'Vast', 'Aan wie']);
-  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Facturen & kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.ariaLabel), ['Kosten', 'Containers', 'Vaste kosten', 'Aan wie & beurzen']);
   state.go({ view: 'incoming', tab: 'open' });
   assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Openstaand', 'Ontvangen'], 'two segments keep their words');
   state.go({ view: 'costs', tab: 'company' });
@@ -170,4 +170,32 @@ test('supplier credit stays open until refunded, and partial/over-refund status 
   cost.update(c => ({ ...c, paidEur: -100 })); assert.equal(row.overpaid(), 4.42);
   cost.set({ amountExclEur: 100, amountInclEur: 121, vatPct: 21, openEur: 21, paidEur: 100 });
   assert.equal(row.credit(), false); assert.equal(row.status(), 'partial'); assert.equal(row.overpaid(), 0);
+});
+
+test('Facturen on the phone: Inkomend · Uitgaand, the Odoo state as sub line, a sub-screen only when pushed (Kosten cell, ⋯)', () => {
+  const { state, page } = setup({ view: 'invoices' });
+  const pushed = signal(false);
+  const note = signal<string | null>('Odoo: voorbeeld');
+  let back = 0;
+  page.finder = { pushed, odooNote: note, back: () => { back++; } };
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Inkomend', 'Uitgaand'], 'two segments keep their words');
+  assert.equal(page.pageTitle(), 'Facturen');
+  assert.equal(page.phoneSubtitle(), 'Odoo: voorbeeld');
+  note.set(null);
+  assert.equal(page.phoneSubtitle(), null, 'a connected Odoo needs no sub line');
+  assert.equal(page.subScreen(), false, 'from the sidebar or Meer: the page keeps its own way back');
+  pushed.set(true);
+  assert.equal(page.subScreen(), true);
+  page.backFromSection();
+  assert.deepEqual([back, state.leftAnalysis], [1, undefined], 'back goes back in history');
+  state.go({ tab: 'out' });
+  assert.equal(state.location().tab, 'out');
+  assert.equal(page.subScreen(), true, 'Uitgaand is the same sub-screen');
+  pushed.set(false);
+  state.go({ view: 'analysis' });
+  page.backFromSection();
+  assert.equal(state.leftAnalysis, true, 'Rapportage keeps its own back');
+  const bare = setup({ view: 'invoices' }).page;
+  assert.equal(bare.phoneSubtitle(), null, 'without the finder (a test harness) nothing breaks');
+  assert.equal(bare.subScreen(), false);
 });

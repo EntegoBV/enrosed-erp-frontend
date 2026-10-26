@@ -65,7 +65,7 @@ type CreateKind = 'cost' | 'cost-file' | 'movement' | 'balance' | 'recurring' | 
           @if (searchable()) {
             <label class="wk-search wk-search--collapsible">
               <app-icon name="search" [size]="16" />
-              <input id="fin-search" type="search" [placeholder]="transactions() ? 'Bedrag, naam of mededeling' : 'Zoeken'" aria-label="Zoeken" autocomplete="off" [value]="query()"
+              <input id="fin-search" type="search" [placeholder]="placeholder()" [attr.aria-label]="invoices() ? 'Zoeken in facturen' : 'Zoeken'" autocomplete="off" [value]="query()"
                      (input)="typed($any($event.target).value)" (keydown.escape)="clearSearch($event)" />
               <button class="wk-search__clear" type="button" aria-label="Zoekterm wissen" (click)="typed('')"><app-icon name="close" [size]="14" /></button>
             </label>
@@ -171,9 +171,12 @@ export class FinanceToolbar {
       containers: rows.filter((row) => row.kind === 'container').length, recurring: rows.filter((row) => row.kind === 'recurring').length };
   });
 
+  readonly invoices = computed(() => this.state.location().view === 'invoices');
+  readonly placeholder = computed(() => (this.transactions() ? 'Bedrag, naam of mededeling' : this.invoices() ? 'Nummer, naam, bedrag of container' : 'Zoeken'));
+
   readonly searchable = computed(() => {
     const { view, tab } = this.state.location();
-    return view === 'open' || view === 'incoming' || this.transactions() || (view === 'costs' && tab !== 'recurring');
+    return view === 'open' || view === 'incoming' || view === 'invoices' || this.transactions() || (view === 'costs' && tab !== 'recurring');
   });
 
   /** What 'Nieuw' does without opening its menu, per section. */
@@ -267,7 +270,8 @@ export class FinanceToolbar {
           ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : [])] : []),
         ...(this.transactions() && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
           label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
-        { id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download', divider: bank },
+        /* No CSV on Facturen: it would export costs. */
+        ...(this.invoices() ? [] : [{ id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download', divider: bank }]),
         { id: 'package', label: 'Boekhouderspakket…', iconName: 'archive' },
         { id: 'keys', label: 'Sneltoetsen', hint: '?', iconName: 'list' },
       ],

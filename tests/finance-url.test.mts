@@ -172,3 +172,43 @@ test('the segment ids match the labelled segments', () => {
     assert.deepEqual(FINANCE_TABS[view].map((tab) => tab.id), [...TAB_IDS[view]], view);
   }
 });
+
+test('Facturen: Inkomend and Uitgaand, every date by default, the chip per direction, a container and a row key', () => {
+  const plain = parse({ view: 'invoices' });
+  assert.deepEqual([plain.view, plain.tab, plain.period, plain.only, plain.po, plain.doc], ['invoices', 'in', 'all', '', null, '']);
+  assert.deepEqual(financeQueryParams(plain), { view: 'invoices' }, 'the defaults stay out of the address');
+  const out = parse({ view: 'invoices', tab: 'out', only: 'credit-notes', q: 'De Smet', po: '41', doc: 'so:9', period: 'year' });
+  assert.deepEqual([out.tab, out.only, out.q, out.po, out.doc, out.period], ['out', 'credit-notes', 'De Smet', 41, 'so:9', 'year']);
+  assert.deepEqual(financeQueryParams(out), { view: 'invoices', tab: 'out', only: 'credit-notes', q: 'De Smet', po: '41', doc: 'so:9', period: 'year' });
+  for (const only of ['containers', 'costs', 'odoo-new', 'no-file']) assert.equal(parse({ view: 'invoices', only }).only, only, only);
+  for (const only of ['invoices', 'credit-notes', 'odoo']) assert.equal(parse({ view: 'invoices', tab: 'out', only }).only, only, only);
+  assert.equal(parse({ view: 'invoices', only: 'credit-notes' }).only, '', 'a chip of the other direction');
+  assert.equal(parse({ view: 'invoices', tab: 'out', only: 'odoo-new' }).only, '');
+  assert.equal(parse({ view: 'invoices', only: 'bogus' }).only, '');
+  assert.equal(parse({ view: 'invoices', po: '0' }).po, null);
+  assert.equal(parse({ view: 'invoices', po: 'abc' }).po, null);
+  assert.equal(parse({ view: 'invoices', doc: `pi:${'9'.repeat(18)}` }).doc, `pi:${'9'.repeat(18)}`, '18 digits');
+  assert.equal(parse({ view: 'invoices', doc: `pi:${'9'.repeat(19)}` }).doc, '', '19 digits never reach the server');
+  for (const doc of ['pi:0', 'x:1', 'odoo:', 'cost:01', 'PI:1']) assert.equal(parse({ view: 'invoices', doc }).doc, '', doc);
+  const custom = parse({ view: 'invoices', from: '2026-10-01', to: '2026-10-31' });
+  assert.deepEqual([custom.period, custom.from, custom.to], ['custom', '2026-10-01', '2026-10-31']);
+  assert.deepEqual(parse({ view: 'costs', only: 'costs', po: '41', doc: 'pi:1' }).only, '', 'other sections never take the finder filters');
+  assert.equal(parse({ view: 'costs', po: '41' }).po, null);
+  assert.equal(parse({ view: 'costs', doc: 'pi:1' }).doc, '');
+});
+
+test('Facturen: a direction switch keeps q, the period and the container, and resets the chip and the preview', () => {
+  const inbound = parse({ view: 'invoices', q: 'Verhoeven', period: 'quarter', po: '41', only: 'odoo-new', doc: 'odoo:900001', line: '7' });
+  const out = patchLocation(inbound, { tab: 'out' });
+  assert.deepEqual([out.tab, out.q, out.period, out.po, out.only, out.doc, out.line], ['out', 'Verhoeven', 'quarter', 41, '', '', null]);
+  const ranged = patchLocation(parse({ view: 'invoices', from: '2026-01-01', to: '2026-03-31' }), { tab: 'out' });
+  assert.deepEqual([ranged.period, ranged.from, ranged.to], ['custom', '2026-01-01', '2026-03-31']);
+  const back = patchLocation(out, { tab: 'in' });
+  assert.deepEqual([back.tab, back.q, back.period, back.po], ['in', 'Verhoeven', 'quarter', 41]);
+  const chip = patchLocation(inbound, { only: 'costs' });
+  assert.deepEqual([chip.q, chip.po, chip.doc], ['Verhoeven', 41, 'odoo:900001'], 'a chip keeps the rest');
+  const entered = patchLocation(parse({ view: 'costs', q: 'huur', period: 'month' }), { view: 'invoices', po: 41 });
+  assert.deepEqual([entered.tab, entered.q, entered.period, entered.po], ['in', '', 'all', 41], 'entering Facturen starts from its defaults');
+  const left = patchLocation(inbound, { view: 'costs' });
+  assert.deepEqual([left.q, left.po, left.only, left.doc, left.period], ['', null, '', '', 'year'], 'leaving it drops the finder filters');
+});
