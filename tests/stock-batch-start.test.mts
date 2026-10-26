@@ -6,8 +6,8 @@ import type {
   StockBatchBackfillReport, StockBatchBackfillRow, StockBatchCheckRow, StockBatchStatus,
 } from '../src/app/core/api/stock-batch-models.ts';
 import {
-  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, backfillRowValueTitle, checkLinkShown, checkRowText, flaggedRows,
-  notBookedText, partnerValue, productsText, repairedCount, signedCount, statusBanner,
+  FLAGGED_LIMIT, backfillFigures, backfillRowPartner, backfillRowText, backfillRowValue, backfillRowValueTitle, checkLinkShown, checkRowText,
+  flaggedRows, notBookedText, partnerValue, productsText, repairedCount, signedCount, statusBanner,
 } from '../src/app/features/products/stock-batch-start.ts';
 
 /* Intl writes a no-break space between € and the figure; compare with a plain space. */
@@ -96,6 +96,17 @@ test('backfillRowValue: whole euros of own and partner batches, "—" when nothi
   assert.equal(partnerValue(mixed), 90);
   assert.equal(plain(backfillRowValue(mixed, fmt)), '€ 963');
   assert.equal(plain(backfillRowValueTitle(mixed, fmt) ?? ''), '€ 963,39 · waarvan partner € 90,00');
+  /* The phone shows no tooltip: beside own stock the partner part stands under the value; all partner needs no line. */
+  assert.equal(plain(backfillRowPartner(mixed, fmt) ?? ''), 'partner € 90');
+  assert.equal(backfillRowPartner(partnerOnly, fmt), null);
+  assert.equal(backfillRowPartner(row(), fmt), null, 'no partner stock');
+  /* A Beginvoorraad without a cost beside partner stock: the whole value is partner, and it says so. */
+  const openingUnknown = row({ unitPieces: 1, flags: ['OPENING', 'NO_COST', 'PARTNER'], valueEur: 0, batches: [
+    { purchaseOrderId: null, orderNumber: null, kind: 'OPENING', owner: 'OWN', piecesIn: 40, piecesLeft: 40, unitCostEur: null, costState: 'NONE' },
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 10, piecesLeft: 10, unitCostEur: 3.1, costState: 'APPLIED' },
+  ] });
+  assert.equal(plain(backfillRowValue(openingUnknown, fmt)), '€ 31');
+  assert.equal(plain(backfillRowPartner(openingUnknown, fmt) ?? ''), 'partner € 31');
   /* Partner stock without a cost: "kost onbekend" in the sub, "—" as value; with a cost on part of it, that part shows. */
   const unknown = row({ unitPieces: 1, flags: ['NO_COST', 'PARTNER'], valueEur: 0, batches: [
     { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 50, piecesLeft: 50, unitCostEur: null, costState: 'NONE' },
@@ -142,6 +153,7 @@ test('the start sheet shows the partner line under Waarde and the row tooltip', 
   const sheet = await readFile(new URL('../src/app/features/products/stock-batch-start-sheet.ts', import.meta.url), 'utf8');
   assert.match(sheet, /@if \(figure\.sub\) \{ <small class="sbs-figs__sub">\{\{ figure\.sub \}\}<\/small> \}/);
   assert.match(sheet, /\[attr\.title\]="backfillValueTitle\(row\)"/);
+  assert.match(sheet, /@if \(backfillPartner\(row\); as partner\) \{ <small class="sbs-row__part">\{\{ partner \}\}<\/small> \}/);
 });
 
 test('notBookedText names every received container that was never booked', () => {

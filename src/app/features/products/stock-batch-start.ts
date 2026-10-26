@@ -115,6 +115,17 @@ export function backfillRowValue(row: StockBatchBackfillRow, fmt: StartFormat): 
   return fmt.eur(total, total > 0 && total < 1 ? 2 : 0);
 }
 
+/**
+ * The partner part under a row's value, "partner € 90", when the row also holds own stock (on production a Beginvoorraad
+ * beside partner containers): the phone shows no tooltip and the sub line is cut there. Null when the row is all partner
+ * ("partner N st" says it) or has no partner value.
+ */
+export function backfillRowPartner(row: StockBatchBackfillRow, fmt: StartFormat): string | null {
+  const partner = partnerValue(row);
+  const own = row.batches.some((batch) => batch.owner !== 'PARTNER' && batch.piecesLeft > 0);
+  return partner && own ? `partner ${fmt.eur(partner, partner < 1 ? 2 : 0)}` : null;
+}
+
 /** The tooltip of a row's value with partner stock: "€ 1.234,50 · waarvan partner € 1.000,00"; null without partner value. */
 export function backfillRowValueTitle(row: StockBatchBackfillRow, fmt: StartFormat): string | null {
   const partner = partnerValue(row);

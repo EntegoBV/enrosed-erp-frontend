@@ -46,16 +46,12 @@ const credit = (row: InvoiceRow): boolean => row.kind === 'CREDIT_NOTE';
  * every action of a new bill, so it can be booked or marked again (Emre,
  * 2026-10-26: "ik moet altijd kunnen wijzigen"). The fixed server answers
  * NEW and registrable; an older one answers HANDLED with blockedBy
- * COST_REMOVED, which reads the same here.
+ * COST_REMOVED, which also reads "Nieuw" here but, as that server still
+ * refuses to book it, offers Afgehandeld first: Registreren stays where the
+ * server says registrable.
  */
 export function costRemoved(row: InvoiceRow): boolean {
   return row.source === 'ODOO' && row.direction === 'IN' && row.statusReason === 'COST_REMOVED' && !row.odoo?.mark;
-}
-
-/** An incoming Odoo bill can be registered as a cost: the server says so, or (older server) its only block is the removed cost. */
-export function canRegister(row: InvoiceRow): boolean {
-  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo) return false;
-  return row.odoo.registrable || row.odoo.blockedBy === 'COST_REMOVED';
 }
 
 /** The one-word status pill. */
@@ -277,7 +273,7 @@ export function monthGroups(rows: readonly InvoiceRow[]): { label: string; rows:
   return groups.map(({ label, rows: list }) => ({ label, rows: list }));
 }
 
-/* COST_REMOVED is no block (an older server still sends it): such a bill can be booked again, see costRemoved. */
+/* COST_REMOVED is no block: an older server still sends it, the preview then says "Kost eerder verwijderd" instead (previewNote). */
 const BLOCKED: Readonly<Record<string, string>> = {
   CANCELLED: 'Geannuleerd in Odoo', NO_DATE: 'Nog geen factuurdatum in Odoo', ZERO: 'Bedrag is nul', NOT_EUR: 'Niet in euro',
   TICA: 'Via TICA-afrekeningen', MARKED: 'Eerst markering wissen', DEMO: 'Voorbeeldgegevens',
@@ -285,13 +281,18 @@ const BLOCKED: Readonly<Record<string, string>> = {
 
 /** Why an incoming Odoo row cannot be registered; null when it can, or for anything else. */
 export function blockedText(row: InvoiceRow): string | null {
-  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo || canRegister(row)) return null;
+  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo || row.odoo.registrable) return null;
   return row.odoo.blockedBy ? BLOCKED[row.odoo.blockedBy] ?? null : null;
 }
 
-/** The preview's one muted line: why it cannot be registered, and that its earlier cost was removed; null when neither. */
+/**
+ * The preview's one muted line: why it cannot be registered, and that its earlier cost was removed; null when neither.
+ * A mark says nothing here: its primary is Markering wissen and ⋯ changes it in place, so "Eerst markering wissen"
+ * would only read as if it could not be changed.
+ */
 export function previewNote(row: InvoiceRow): string | null {
-  const parts = [blockedText(row), costRemoved(row) ? 'Kost eerder verwijderd in ENROSED' : null].filter((part): part is string => !!part);
+  const blocked = row.odoo?.blockedBy === 'MARKED' ? null : blockedText(row);
+  const parts = [blocked, costRemoved(row) ? 'Kost eerder verwijderd in ENROSED' : null].filter((part): part is string => !!part);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -323,7 +324,7 @@ export function rowActions(row: InvoiceRow): { primary: InvoiceAction | null; mo
   if (row.status === 'CANCELLED') return pick('download');
   if (row.direction === 'OUT') return pick('download');
   const unhandled = row.status === 'NEW' || (row.status === 'HANDLED' && row.statusReason === 'BEFORE_START') || costRemoved(row);
-  if (unhandled && canRegister(row)) return pick('register', ['handled', 'container', 'download']);
+  if (unhandled && row.odoo?.registrable) return pick('register', ['handled', 'container', 'download']);
   if (unhandled) return pick('handled', ['container', 'download']);
   return pick('download');
 }

@@ -315,7 +315,9 @@ export class InvoiceFinderState {
     const moveId = this.moveIdOf(row);
     if (!moveId) return;
     try {
-      this.replaceRow(await this.api.mark(moveId, { resolution: 'HANDLED', purchaseOrderId: null, note: null }), row.key);
+      /* A container mark changed to Afgehandeld keeps its note (the server replaces the whole mark); none on a new bill. */
+      const note = row.odoo?.mark?.note ?? null;
+      this.replaceRow(await this.api.mark(moveId, { resolution: 'HANDLED', purchaseOrderId: null, note }), row.key);
       this.ui.toast('Gemarkeerd als afgehandeld');
     } catch (failure) {
       await this.refused(row, failure, 'Markeren mislukt.');

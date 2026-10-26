@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import {
-  ACTION_LABELS, amountText, blockedText, bronWord, canRegister, containerLabel, costRemoved, deskDate, deskFacts, downloadName, eurApprox,
+  ACTION_LABELS, amountText, blockedText, bronWord, containerLabel, costRemoved, deskDate, deskFacts, downloadName, eurApprox,
   linkChips, monthGroups, odooFact, onlyOptions, phoneSub, phoneSubParts, previewFacts, previewKind, previewNote, receivedLinkReady, rowActions,
   rowKeyValid, scopeOf, soortWord, statusWord, titleLine,
 } from '../src/app/features/finance/invoice-finder.ts';
@@ -222,7 +222,7 @@ test('blockedText: every reason of an incoming Odoo row; nothing when registrabl
   const words: [string, string][] = [['CANCELLED', 'Geannuleerd in Odoo'], ['NO_DATE', 'Nog geen factuurdatum in Odoo'], ['ZERO', 'Bedrag is nul'],
     ['NOT_EUR', 'Niet in euro'], ['TICA', 'Via TICA-afrekeningen'], ['MARKED', 'Eerst markering wissen'], ['DEMO', 'Voorbeeldgegevens']];
   for (const [code, text] of words) assert.equal(blockedText(odoo({}, { registrable: false, blockedBy: code as never })), text, code);
-  /* An older server still blocks a removed cost; it can be booked again (2026-10-26). */
+  /* An older server still blocks a removed cost: no block text, the preview names it as information (previewNote, 2026-10-26). */
   assert.equal(blockedText(odoo({ status: 'HANDLED', statusReason: 'COST_REMOVED' }, { registrable: false, blockedBy: 'COST_REMOVED' })), null);
   assert.equal(blockedText(odoo()), null);
   assert.equal(blockedText(odoo({ direction: 'OUT' }, { registrable: false, blockedBy: 'OUTGOING', moveType: 'out_invoice' })), null);
@@ -243,8 +243,8 @@ test('rowActions: every line of the table, first match wins; no download without
     ['cancelled', odoo({ status: 'CANCELLED' }, { state: 'cancel', registrable: false, blockedBy: 'CANCELLED' }), 'download', []],
     ['marked to a container', odoo({ status: 'CONTAINER' }, { mark: { ...mark, resolution: 'CONTAINER', purchaseOrderId: 41 }, registrable: false, blockedBy: 'MARKED' }),
       'clear-mark', ['handled', 'container', 'download']],
-    ['cost removed (older server)', odoo({ status: 'HANDLED', statusReason: 'COST_REMOVED' }, { registrable: false, blockedBy: 'COST_REMOVED' }),
-      'register', ['handled', 'container', 'download']],
+    ['cost removed (older server, refuses to book it)', odoo({ status: 'HANDLED', statusReason: 'COST_REMOVED' }, { registrable: false, blockedBy: 'COST_REMOVED' }),
+      'handled', ['container', 'download']],
     ['cost removed', odoo({ status: 'NEW', statusReason: 'COST_REMOVED' }), 'register', ['handled', 'container', 'download']],
     ['cost removed, not in euro', odoo({ status: 'HANDLED', statusReason: 'COST_REMOVED', currency: 'USD' }, { registrable: false, blockedBy: 'NOT_EUR' }),
       'handled', ['container', 'download']],
@@ -306,17 +306,18 @@ const helloprint = (extra: Partial<InvoiceRow> = {}, facts: Partial<NonNullable<
 }, { moveId: 327510, name: 'RBILL/2026/09/0004', moveType: 'in_refund', ...facts });
 
 test('C327510: a bill whose cost was removed reads as not booked and offers every action of a new bill', () => {
-  for (const [server, sample] of [
-    ['fixed server', helloprint({ status: 'NEW' })],
-    ['older server', helloprint({ status: 'HANDLED' }, { registrable: false, blockedBy: 'COST_REMOVED' })],
+  /* The production server before its fix still answers HANDLED and refuses to book it (the binding points at the deleted
+     cost): the row reads the same, only with Afgehandeld first instead of a Registreren that the server would refuse. */
+  for (const [server, sample, actions] of [
+    ['fixed server', helloprint({ status: 'NEW' }), { primary: 'register', more: ['handled', 'container', 'download'] }],
+    ['older server', helloprint({ status: 'HANDLED' }, { registrable: false, blockedBy: 'COST_REMOVED' }), { primary: 'handled', more: ['container', 'download'] }],
   ] as const) {
     assert.equal(costRemoved(sample), true, server);
-    assert.equal(canRegister(sample), true, server);
     assert.deepEqual(statusWord(sample), { label: 'Nieuw', tone: 'accent' }, server);
     assert.deepEqual(deskFacts(sample), ['Creditnota', 'Odoo · Peppol', 'kost eerder verwijderd'], server);
     assert.equal(phoneSub(sample, '2026-10-26'), '24 sep · Creditnota · Nieuw', server);
     assert.equal(plain(amountText(sample)), '− € 95,58', server);
-    assert.deepEqual(rowActions(sample), { primary: 'register', more: ['handled', 'container', 'download'] }, server);
+    assert.deepEqual(rowActions(sample), actions, server);
     assert.equal(blockedText(sample), null, server);
     assert.equal(previewNote(sample), 'Kost eerder verwijderd in ENROSED', server);
     assert.deepEqual(previewFacts(sample).map((fact) => [fact.label, plain(fact.value)]), [
@@ -330,17 +331,17 @@ test('C327510: a bill whose cost was removed reads as not booked and offers ever
   assert.equal(costRemoved(marked), false);
   assert.deepEqual(statusWord(marked), { label: 'Afgehandeld', tone: 'grey' });
   assert.deepEqual(rowActions(marked), { primary: 'clear-mark', more: ['container', 'download'] });
+  /* No "Eerst markering wissen" under it: the mark is cleared or changed right there. */
+  assert.equal(blockedText(marked), 'Eerst markering wissen');
+  assert.equal(previewNote(marked), null);
   /* A mark sent with the reason still set (defensive): the mark wins, as on the server. */
   assert.equal(costRemoved(helloprint({ status: 'HANDLED' }, { mark, registrable: false, blockedBy: 'MARKED' })), false);
   /* Another block besides the removed cost still says why, with the info beside it. */
   const undated = helloprint({ status: 'HANDLED' }, { state: 'draft', registrable: false, blockedBy: 'NO_DATE' });
-  assert.equal(canRegister(undated), false);
   assert.deepEqual(rowActions(undated), { primary: 'handled', more: ['container', 'download'] });
   assert.equal(previewNote(undated), 'Nog geen factuurdatum in Odoo · Kost eerder verwijderd in ENROSED');
-  /* Only incoming Odoo rows: a cost row or an outgoing move never counts as removed or registrable. */
+  /* Only incoming Odoo rows: a cost row never counts as removed. */
   assert.equal(costRemoved(cost({ statusReason: 'COST_REMOVED' })), false);
-  assert.equal(canRegister(cost()), false);
-  assert.equal(canRegister(odoo({ direction: 'OUT' }, { registrable: false, blockedBy: 'OUTGOING', moveType: 'out_invoice' })), false);
   assert.equal(previewNote(odoo()), null);
 });
 
@@ -359,4 +360,7 @@ test('every mark can be cleared and, while it sets the status, changed; the pane
   assert.doesNotMatch(panel, /odoo\?\.registrable/);
   const preview = await readFile(new URL('../src/app/features/finance/invoice-preview.ts', import.meta.url), 'utf8');
   assert.match(preview, /previewNote\(this\.row\(\)!\)/);
+  /* Changing a container mark to Afgehandeld keeps the note Emre wrote; a new bill has none. */
+  const state = await readFile(new URL('../src/app/features/finance/invoice-finder-state.ts', import.meta.url), 'utf8');
+  assert.match(state, /const note = row\.odoo\?\.mark\?\.note \?\? null;\n\s+this\.replaceRow\(await this\.api\.mark\(moveId, \{ resolution: 'HANDLED', purchaseOrderId: null, note \}\)/);
 });

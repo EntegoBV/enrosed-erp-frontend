@@ -7,8 +7,8 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import {
-  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, backfillRowValueTitle, checkRowText, flaggedRows, notBookedText,
-  productsText, repairedCount, type StockBatchSheetMode,
+  FLAGGED_LIMIT, backfillFigures, backfillRowPartner, backfillRowText, backfillRowValue, backfillRowValueTitle, checkRowText, flaggedRows,
+  notBookedText, productsText, repairedCount, type StockBatchSheetMode,
 } from './stock-batch-start';
 
 /**
@@ -43,7 +43,8 @@ import {
                   <li class="sbs-row">
                     <span class="sbs-row__main"><b class="sbs-row__title" [title]="text.title">{{ text.title }}</b>
                       <span class="sbs-row__sub" [title]="text.sub">{{ text.sub }}</span></span>
-                    <span class="sbs-row__num" [attr.title]="backfillValueTitle(row)">{{ backfillValue(row) }}</span>
+                    <span class="sbs-row__num" [attr.title]="backfillValueTitle(row)">{{ backfillValue(row) }}
+                      @if (backfillPartner(row); as partner) { <small class="sbs-row__part">{{ partner }}</small> }</span>
                   </li>
                 }
               </ul>
@@ -116,7 +117,9 @@ import {
     .sbs-row__title, .sbs-row__sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sbs-row__title { font-size: 13.5px; font-weight: 650; line-height: 1.35; }
     .sbs-row__sub { color: var(--muted); font-size: 12px; line-height: 1.35; }
-    .sbs-row__num { font-size: 13.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .sbs-row__num { display: grid; justify-items: end; font-size: 13.5px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    /* "partner € x" under a row value that mixes own and partner stock */
+    .sbs-row__part { color: var(--muted); font-size: 11.5px; font-weight: 500; }
     .sbs-row__num--warn { color: var(--warn); }
     .sbs-more { justify-self: start; }
     @media (max-width: 679.98px) {
@@ -171,6 +174,7 @@ export class StockBatchStartSheet implements OnInit {
   protected backfillText = (row: StockBatchBackfillReport['rows'][number]) => backfillRowText(row, this.fmt);
   protected backfillValue = (row: StockBatchBackfillReport['rows'][number]) => backfillRowValue(row, this.fmt);
   protected backfillValueTitle = (row: StockBatchBackfillReport['rows'][number]) => backfillRowValueTitle(row, this.fmt);
+  protected backfillPartner = (row: StockBatchBackfillReport['rows'][number]) => backfillRowPartner(row, this.fmt);
   protected checkText = (row: StockBatchCheckRow) => checkRowText(row, this.fmt);
 
   ngOnInit(): void {
