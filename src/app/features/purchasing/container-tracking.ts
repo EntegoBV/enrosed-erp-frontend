@@ -13,7 +13,7 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import {
   trackingArrived, trackingMapLink, trackingMapUrl, trackingRows, trackingStale,
-  trackingTime, trackingWebUrl, normalizedVesselImo, vesselMapFrameUrl, trackingRefreshNotice, type TrackingFilter,
+  trackingTime, trackingWebUrl, normalizedVesselImo, vesselMapFrameUrl, trackingRefreshNotice, carrierLookup, type TrackingFilter,
 } from './container-tracking-model';
 
 @Component({
@@ -156,7 +156,7 @@ import {
 
                 @if (vesselMapUrl(); as map) {
                   <div class="ct-map ct-vessel-map">
-                    <iframe [src]="map" [title]="'Scheepskaart voor IMO ' + row.vesselImo" loading="lazy" referrerpolicy="no-referrer"></iframe>
+                    <iframe [src]="map" [title]="'Scheepskaart voor IMO ' + row.vesselImo" loading="eager" referrerpolicy="no-referrer"></iframe>
                     <div class="ct-map__caption"><span>Scheepskaart · <a href="https://www.vesselfinder.com" target="_blank" rel="noopener noreferrer">VesselFinder</a></span>
                       <a [href]="vesselMapHref()" target="_blank" rel="noopener noreferrer">Grotere kaart <app-icon name="external" [size]="13" /></a>
                     </div>
@@ -167,7 +167,7 @@ import {
                 } @else if (mapUrl(); as map) {
                   <div class="ct-map">
                     <iframe [src]="map" [title]="'Laatst gemelde locatie van ' + (row.containerName || row.orderNumber)"
-                            loading="lazy" referrerpolicy="no-referrer"></iframe>
+                            loading="eager" referrerpolicy="no-referrer"></iframe>
                     <div class="ct-map__caption"><span>{{ row.position?.kind === 'VESSEL' ? 'Scheepspositie volgens ' + sourceLabel(row) : 'Laatst gemelde locatie' }}</span>
                       <a [href]="mapLink(row.position)" target="_blank" rel="noopener noreferrer" aria-label="Locatie op een grotere kaart openen">Grotere kaart <app-icon name="external" [size]="13" /></a>
                     </div>
@@ -203,8 +203,19 @@ import {
                   <button class="btn btn--primary" type="button" [disabled]="!canRefresh(row)" [attr.aria-busy]="refreshing() === row.orderId" (click)="refresh(row)">
                     <app-icon name="refresh" [size]="16" />{{ refreshing() === row.orderId ? 'Controleren…' : 'Nu controleren' }}
                   </button>
-                  @if (trackingLink(row); as url) { <a class="btn" [href]="url" target="_blank" rel="noopener noreferrer">{{ row.source === 'VOYDAR' ? 'Voydar' : 'Trackingwebsite' }} <app-icon name="external" [size]="15" /></a> }
+                  @if (trackingLink(row); as url) { <a class="btn" [href]="url" target="_blank" rel="noopener noreferrer">{{ row.source === 'VOYDAR' ? 'Voydar' : row.source ? 'Trackingwebsite' : 'Handmatig zoeken' }} <app-icon name="external" [size]="15" /></a> }
                 </div>
+                @if (carrierPortal(row); as carrier) {
+                  <section class="ct-carrier" aria-label="Container handmatig bij de rederij volgen">
+                    <div class="ct-carrier__head"><strong>Container bij rederij</strong><span>{{ carrier.carrier }}</span></div>
+                    <p>Handmatig op de officiële website. Deze gegevens worden niet automatisch in het ERP overgenomen.</p>
+                    <div class="ct-carrier__reference"><span>{{ carrier.referenceLabel }} <code>{{ carrier.reference }}</code></span>
+                      <button class="ct-text-button" type="button" (click)="copyCarrierReference(row.orderId, carrier.reference)" [attr.aria-label]="carrier.referenceLabel + ' kopiëren'"><app-icon name="copy" [size]="14" />Kopieer</button>
+                    </div>
+                    <a class="btn btn--sm" [href]="carrier.url" target="_blank" rel="noopener noreferrer">Open {{ carrier.carrier }} <app-icon name="external" [size]="14" /></a>
+                    @if (carrierCopyResult()?.orderId === row.orderId) { <p class="ct-carrier__copy-result" role="status">{{ carrierCopyResult()?.message }}</p> }
+                  </section>
+                }
                 @if (actionOrderId() === row.orderId) {
                   @if (actionError(); as error) { <p class="ct-action-error" role="alert">{{ error }}</p> }
                   @if (actionMessage(); as message) { <p class="ct-action-message" role="status">{{ message }}</p> }
@@ -246,6 +257,7 @@ import {
     </div>
   `,
   styles: [`
+    .ct-carrier{margin:0 24px 20px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}.ct-carrier__head{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px}.ct-carrier__head>span{font-size:11px;color:var(--muted)}.ct-carrier p{font-size:11px;line-height:1.6;color:var(--muted);margin:7px 0}.ct-carrier__reference{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11px;margin:5px 0 8px}.ct-carrier__reference>span{min-width:0;overflow-wrap:anywhere}.ct-carrier code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;user-select:all}.ct-carrier__reference>button{display:inline-flex;gap:4px;align-items:center;flex:none}.ct-carrier .btn{font-size:12px;min-height:40px}.ct-carrier .ct-carrier__copy-result{margin:8px 0 0}@media(max-width:679px){.ct-carrier{margin-inline:18px;padding:12px}}
     .ct-vessel{margin:0 24px 20px;padding:16px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}.ct-vessel__head{display:flex;align-items:center;justify-content:space-between;gap:10px}.ct-vessel h3{font-size:13px;margin:0}.ct-vessel p{font-size:11px;line-height:1.6;color:var(--muted);margin:9px 0 0}.ct-vessel__identity{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.ct-vessel__identity strong{color:var(--ink);font-size:13px}.ct-vessel__identity span{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px}.ct-vessel label{display:block;font-size:12px;font-weight:650;margin:14px 0 7px}.ct-vessel label>span{color:var(--muted);font-size:10px;font-weight:400;margin-left:5px}.ct-vessel__input-row{display:flex;gap:8px}.ct-vessel input{width:100%;min-width:0;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface);padding:10px 12px;font-size:16px;min-height:44px}.ct-vessel input:focus{outline:2px solid var(--rose);outline-offset:1px}.ct-vessel input[aria-invalid=true]{border-color:var(--danger)}.ct-vessel__input-row>.btn{flex:none;font-size:12px;min-height:44px}.ct-vessel a{display:inline;white-space:normal}.ct-vessel a app-icon{display:inline-flex;vertical-align:-2px}.ct-text-button{border:0;background:none;padding:8px 0;min-height:40px;color:var(--rose);font-size:12px;font-weight:650;cursor:pointer}.ct-text-button--danger{color:var(--danger)}.ct-vessel__edit-actions{display:flex;gap:15px;justify-content:space-between;flex-wrap:wrap;margin-top:5px}.ct-vessel .ct-vessel__error{color:var(--danger)}.ct-timeline .ct-event-source{font-size:10px;color:var(--muted)}.ct-event-source a{display:inline-flex;align-items:center;gap:3px}.ct-source-note.ct-vessel-map-note{margin-bottom:20px}.ct-map.ct-vessel-map iframe{height:400px}
     @media(max-width:679px){.ct-vessel{margin:0 12px 18px;padding:14px}.ct-map.ct-vessel-map iframe{height:400px}}
     .ct-reference-help{font-size:11px;line-height:1.6;color:var(--muted);margin:0 24px 20px}.ct-reference-help p{margin:0 0 6px}.ct-reference-help a{font-weight:650}
@@ -274,6 +286,7 @@ export class ContainerTrackingPage {
   readonly actionError = signal<string | null>(null);
   readonly actionMessage = signal<string | null>(null);
   readonly actionOrderId = signal<number | null>(null);
+  readonly carrierCopyResult = signal<{ orderId: number; message: string } | null>(null);
   readonly vesselSaving = signal<number | null>(null);
   readonly vesselEditing = signal<number | null>(null);
   private readonly vesselDraft = signal<{ orderId: number; value: string } | null>(null);
@@ -309,6 +322,7 @@ export class ContainerTrackingPage {
   readonly arrived = trackingArrived;
   readonly webUrl = trackingWebUrl;
   readonly mapLink = trackingMapLink;
+  readonly carrierPortal = carrierLookup;
 
   constructor() {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
@@ -387,7 +401,17 @@ export class ContainerTrackingPage {
   }
 
   trackingLink(row: ContainerTracking): string | null {
-    return trackingWebUrl(row.source ? row.trackingUrl : row.trackingReference);
+    if (row.source) return trackingWebUrl(row.trackingUrl);
+    return trackingWebUrl(row.trackingReference) ?? (carrierLookup(row) ? null : trackingWebUrl(row.trackingUrl));
+  }
+
+  async copyCarrierReference(orderId: number, reference: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(reference);
+      if (!this.destroyRef.destroyed) this.carrierCopyResult.set({ orderId, message: 'Referentie gekopieerd.' });
+    } catch {
+      if (!this.destroyRef.destroyed) this.carrierCopyResult.set({ orderId, message: 'Selecteer de referentie hierboven om die te kopiëren.' });
+    }
   }
 
   vesselValue(row: ContainerTracking): string {

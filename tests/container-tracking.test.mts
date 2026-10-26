@@ -6,6 +6,7 @@ import {
   trackingArrived, trackingMapLink, trackingMapUrl, trackingRows, trackingStale, trackingTime,
   trackingWebUrl, validTrackingPosition,
   normalizedVesselImo, vesselMapFrameUrl, trackingRefreshNotice,
+  carrierLookup, validatedContainerReference,
 } from '../src/app/features/purchasing/container-tracking-model.ts';
 import { phoneTabForUrl } from '../src/app/core/platform/phone-tabs.ts';
 import { parentOf } from '../src/app/core/platform/page-parent.ts';
@@ -69,6 +70,51 @@ test('public ship events never imply that a container has arrived', () => {
   assert.equal(trackingArrived(tracked), false);
   assert.equal(trackingArrived({ ...tracked, orderStatus: 'ONTVANGEN' }), true);
   assert.equal(trackingRows([tracked], 'active', '9722716').length, 1);
+});
+
+test('Evergreen lookup uses its explicit B/L prefix and copies the twelve-digit portal reference', () => {
+  assert.deepEqual(carrierLookup(row({ carrier: null, source: null,
+    trackingReference: 'EGSU0162841 · B/L EGLV143650155115' })), {
+    carrier: 'Evergreen', url: 'https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do',
+    reference: '143650155115', referenceLabel: 'B/L',
+  });
+  assert.equal(carrierLookup(row({ carrier: null, trackingReference: 'EGLV1234' })), null);
+});
+
+test('ONE lookup is available without a linked ship and prefills only a validated unambiguous container', () => {
+  const lookup = carrierLookup(row({ carrier: null, source: null, vesselImo: null, automatic: false,
+    trackingReference: 'CAIU9141871 · B/L ONEYNB6B11270700 · interne ref. SZ260703903' }))!;
+  assert.equal(lookup.carrier, 'ONE');
+  const url = new URL(lookup.url);
+  assert.equal(url.origin, 'https://www.one-line.com');
+  assert.equal(url.searchParams.get('trakNoParam'), 'CAIU9141871');
+  assert.equal(url.searchParams.get('trakNoTpCdParam'), 'C');
+  assert.equal(lookup.referenceLabel, 'Container');
+  const noBox = carrierLookup(row({ carrier: null, trackingReference: 'B/L ONEYNB6B11270700' }))!;
+  assert.equal(noBox.reference, 'ONEYNB6B11270700');
+  assert.equal(new URL(noBox.url).search, '', 'Do not invent the carrier\'s B/L URL parameters');
+});
+
+test('carrier portals never infer a line from a container owner or vessel name, or from a bare house reference', () => {
+  for (const trackingReference of ['EGSU0162841', 'CAIU9141871', 'SHZ1234567890', 'HOUSE B/L SHZ1234567890',
+    'CMA CGM JACQUES JUNIOR · CAIU9141871']) {
+    assert.equal(carrierLookup(row({ carrier: null, trackingReference, vessel: 'CMA CGM JACQUES JUNIOR' })), null, trackingReference);
+  }
+  assert.equal(carrierLookup(row({ carrier: null, trackingReference: 'B/L SHZ1234567890' }))?.carrier, 'CMA CGM');
+  assert.equal(carrierLookup(row({ carrier: 'CMA CGM', trackingReference: 'CAIU9141871' }))?.url,
+    'https://www.cma-cgm.com/ebusiness/tracking');
+  assert.equal(carrierLookup(row({ carrier: null, trackingReference: 'Rederij: CMA CGM · CAIU9141871' }))?.carrier, 'CMA CGM');
+  assert.equal(carrierLookup(row({ carrier: null, trackingReference: 'EGLV143650155115 · ONEYNB6B11270700' })), null,
+    'Conflicting contractual carrier references require the user to choose externally');
+});
+
+test('ISO container validation rejects wrong check digits and ambiguous boxes before carrier prefill', () => {
+  assert.equal(validatedContainerReference('EGSU0162841'), 'EGSU0162841');
+  assert.equal(validatedContainerReference('caiu 9141871'), 'CAIU9141871');
+  assert.equal(validatedContainerReference('EGSU0162840'), null);
+  assert.equal(validatedContainerReference('EGSU0162841 · CAIU9141871'), null);
+  assert.equal(validatedContainerReference('EGSU0162841 · EGSU0162841'), 'EGSU0162841');
+  assert.equal(validatedContainerReference('EGSU01628411'), null);
 });
 
 test('a map requires finite geographic coordinates; zero is a valid coordinate, not a missing value', () => {
