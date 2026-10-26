@@ -7,7 +7,7 @@ import { CashPriceEditor } from './cash-price-editor';
 import { parseCashAmount } from './cash-price-input';
 
 const PRICE_OPTIONS: SegmentOption[] = [
-  { id: 'MARKUP_PCT', label: 'Marge %' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijstprijs' }, { id: 'HISTORIC', label: 'Historisch' },
+  { id: 'MARKUP_PCT', label: 'Percentage' }, { id: 'EUR_PER_UNIT', label: '€ / stuk' }, { id: 'LIST', label: 'Lijstprijs' }, { id: 'HISTORIC', label: 'Historisch' },
 ];
 const BASIS_OPTIONS: SegmentOption[] = [{ id: 'EXTERNAL', label: 'Externe kost' }, { id: 'PRICING', label: '+ Enrosed-kost' }];
 const WEEK_CHOICES = [8, 12, 16, 26];

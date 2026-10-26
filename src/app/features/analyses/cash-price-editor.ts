@@ -18,7 +18,8 @@ let nextPriceEditor = 0;
       <span class="cash-price__entry">
         <input [id]="id" type="text" inputmode="decimal" autocomplete="off" [value]="entry()"
                [attr.aria-invalid]="error() ? 'true' : null" [attr.aria-describedby]="id + '-help' + (error() ? ' ' + id + '-error' : '')"
-               (input)="draft.set($any($event.target).value); error.set(null)" (change)="commit($any($event.target).value)" />
+               (input)="draft.set($any($event.target).value); error.set(null)" (blur)="commitDraft($any($event.target).value)"
+               (keydown.enter)="$event.preventDefault(); commitDraft($any($event.target).value)" />
         <span aria-hidden="true">%</span>
       </span>
     </label>
@@ -82,11 +83,23 @@ export class CashPriceEditor {
 
   choose(value: number): void { this.commit(String(value)); }
 
+  /** Blur also runs after Enter; only a new input draft can produce another write. */
+  commitDraft(raw: string): void {
+    if (this.draft() === null) return;
+    const displayed = String(Math.round(this.current() * 10) / 10);
+    if (raw.trim().replace(',', '.') === displayed) {
+      this.draft.set(null);
+      this.error.set(null);
+      return;
+    }
+    this.commit(raw);
+  }
+
   commit(raw: string): void {
     const parsed = markupFromPriceInput(raw, this.basis());
     this.error.set(parsed.error);
     if (parsed.error !== null) { this.draft.set(raw); return; }
     this.draft.set(null);
-    this.markupPctChange.emit(parsed.value);
+    if (parsed.value !== this.markupPct()) this.markupPctChange.emit(parsed.value);
   }
 }
