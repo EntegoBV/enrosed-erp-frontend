@@ -110,7 +110,7 @@ type PhoneSheet = 'menu' | 'horizon' | 'buffer' | 'how' | 'price' | 'pace' | 'pa
             <button class="ios-section__link" type="button" (click)="state.clearDefaults()">Standaard herstellen</button>
           </div>
           <div class="ios-group cf-phone__choices">
-            <button class="ios-cell" type="button" (click)="sheet.set('price')"><span class="ios-cell__body"><span class="ios-cell__title">Standaardprijs &amp; marge</span></span>
+            <button class="ios-cell" type="button" (click)="sheet.set('price')"><span class="ios-cell__body"><span class="ios-cell__title">Prijs en marge</span></span>
               <span class="ios-cell__value">{{ priceText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
             <button class="ios-cell" type="button" (click)="sheet.set('pace')"><span class="ios-cell__body"><span class="ios-cell__title">Verkocht in</span></span>
               <span class="ios-cell__value">{{ weeksText() }}</span><app-icon class="ios-cell__chev" name="chevron-right" [size]="16" /></button>
