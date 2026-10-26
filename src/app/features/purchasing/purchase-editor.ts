@@ -3879,7 +3879,7 @@ export class PurchaseEditor {
     const current = this.view()!;
     this.receiving.set({
       lines: current.order.lines.map((line) => {
-        const product = this.products().find((p) => p.id === line.productId);
+        const product = this.lineProducts().find((p) => p.id === line.productId);
         const costing = current.costing.lines.find((candidate) => candidate.productId === line.productId);
         const currency = line.exwCurrency ?? product?.exwCurrency;
         const priceKnown = (line.exwPrice ?? product?.exwPrice) != null;
@@ -4257,10 +4257,11 @@ export class PurchaseEditor {
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly families = signal<ProductFamily[]>([]);
-  private readonly productById = computed(() => new Map(this.products().flatMap((product) =>
+  /* Lines look their product up in lineProducts: a product that moved to another supplier keeps its photo, colour and series on older containers. */
+  private readonly productById = computed(() => new Map(this.lineProducts().flatMap((product) =>
     product.id === null ? [] : [[product.id, product] as const])));
   readonly lineSections = computed(() => purchaseLineSections(
-    this.view()?.costing.lines ?? [], this.products(), this.categories(),
+    this.view()?.costing.lines ?? [], this.lineProducts(), this.categories(),
     this.families(), null));
   private readonly unfilteredPurchaseLines = computed(() => this.lineSections()
     .flatMap((section) => section.lines));
@@ -4536,22 +4537,22 @@ export class PurchaseEditor {
   }
 
   piecesPerCarton(productId: number): number {
-    return this.products().find((product) => product.id === productId)?.carton.piecesPerCarton ?? 1;
+    return this.lineProducts().find((product) => product.id === productId)?.carton.piecesPerCarton ?? 1;
   }
 
   cartonNotice(quantity: number, productId: number): string | null {
-    const product = this.products().find((candidate) => candidate.id === productId);
+    const product = this.lineProducts().find((candidate) => candidate.id === productId);
     return cartonQuantityNotice(quantity, product?.carton.piecesPerCarton, productSalesUnit(product));
   }
 
   /** A product sold per display: its pieces, so a per-unit cost reads '/display' with the price per piece beside it; null per piece. */
   setPiecesOf(productId: number): number | null {
-    const unit = productSalesUnit(this.products().find((candidate) => candidate.id === productId));
+    const unit = productSalesUnit(this.lineProducts().find((candidate) => candidate.id === productId));
     return unit.isDisplay ? unit.piecesPerDisplay : null;
   }
 
   stockOf(productId: number): number {
-    return this.products().find((product) => product.id === productId)?.stockQuantity ?? 0;
+    return this.lineProducts().find((product) => product.id === productId)?.stockQuantity ?? 0;
   }
 
   /** Transport, duty, handling and Enrosed kost as a share of the goods. */
@@ -4687,7 +4688,7 @@ export class PurchaseEditor {
 
   effectiveExwCurrency(productId: number): Currency {
     return this.orderLine(productId)?.exwCurrency
-      ?? this.products().find((product) => product.id === productId)?.exwCurrency
+      ?? this.lineProducts().find((product) => product.id === productId)?.exwCurrency
       ?? 'USD';
   }
 
@@ -4726,7 +4727,7 @@ export class PurchaseEditor {
 
   /** Current product-card price; this is a master-data reference, not payment history. */
   productCardPrice(productId: number): { amount: number; currency: Currency } | null {
-    const product = this.products().find((candidate) => candidate.id === productId);
+    const product = this.lineProducts().find((candidate) => candidate.id === productId);
     return product?.exwPrice == null
       ? null
       : { amount: product.exwPrice, currency: product.exwCurrency ?? 'USD' };
