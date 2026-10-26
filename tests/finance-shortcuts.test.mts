@@ -18,7 +18,9 @@ test('nothing fires while typing, behind an overlay or outside the workspace', (
 test('the digits choose a section by their physical key', () => {
   assert.deepEqual(financeShortcut(press('1', { code: 'Digit1' }), free), { section: 1 });
   assert.deepEqual(financeShortcut(press('&', { code: 'Digit6' }), free), { section: 6 }, 'an AZERTY 6 is still Digit6');
-  assert.equal(financeShortcut(press('7', { code: 'Digit7' }), free), null);
+  assert.deepEqual(financeShortcut(press('7', { code: 'Digit7' }), free), { section: 7 }, '7 is Facturen');
+  assert.deepEqual(financeShortcut(press('è', { code: 'Digit7' }), free), { section: 7 }, 'an AZERTY 7 is still Digit7');
+  assert.equal(financeShortcut(press('8', { code: 'Digit8' }), free), null);
   assert.equal(financeShortcut(press('!', { code: 'Digit1', shift: true }), free), null);
 });
 
@@ -61,6 +63,7 @@ test('only ⌘/Ctrl+A passes with a modifier', () => {
 
 test('the help sheet lists every command', () => {
   assert.equal(FINANCE_SHORTCUT_HELP[0].label, 'Onderdelen');
+  assert.deepEqual(FINANCE_SHORTCUT_HELP[0].keys, ['1–7'], 'seven places since Facturen');
   assert.ok(FINANCE_SHORTCUT_HELP.some((row) => row.label === 'Betaald zetten'));
   assert.ok(FINANCE_SHORTCUT_HELP.some((row) => row.label === 'Deze lijst'));
   assert.equal(FINANCE_SHORTCUT_HELP.find((row) => row.keys[0] === 'B')?.label, 'Transactie noteren');

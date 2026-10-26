@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
-import { FINANCE_NAV, financeNavOf } from './finance-sections';
+import { FINANCE_NAV, phoneTabOf } from './finance-sections';
 import { FinanceShell } from './finance-shell';
 import { FinanceState } from './finance-state';
 import { DEFAULT_LOCATION, financeQueryParams, patchLocation } from './finance-url';
@@ -19,7 +19,8 @@ export class FinanceTabbar {
   private readonly shell = inject(FinanceShell);
 
   readonly tabs = computed<IosTab[]>(() => {
-    const active = financeNavOf(this.state.location()).id;
+    /* Facturen lights Kosten, where its phone entry is. */
+    const active = phoneTabOf(this.state.location());
     const counts = this.shell.counts();
     const badges: Record<string, number | null> = { bank: counts?.bank ?? null, transactions: counts?.transactions ?? null, open: counts?.open ?? null,
       incoming: counts?.incoming ?? null, costs: counts?.costs ?? null };

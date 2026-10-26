@@ -9,6 +9,8 @@ import { dayMonthYear } from './finance-format';
 import { containerName as nameOfContainer } from '../purchasing/container-name';
 import { FinanceState } from './finance-state';
 import { FinancePeriod } from './finance-url';
+import { containerLabel, onlyOptions } from './invoice-finder';
+import { InvoiceFinderState } from './invoice-finder-state';
 
 /**
  * The filters of the section on screen, on the right of the desk strip:
@@ -54,12 +56,29 @@ import { FinancePeriod } from './finance-url';
           <button class="wk-chip" type="button" [attr.aria-pressed]="location.scope === 'all'" (click)="state.go({ scope: 'all' })">Alles</button>
         </div>
       }
+      @case ('invoices/in') { <ng-container *ngTemplateOutlet="finderTools" /> }
+      @case ('invoices/out') { <ng-container *ngTemplateOutlet="finderTools" /> }
       @case ('analysis/costs') {
         <app-segmented label="Jaar" [options]="yearOptions()" [value]="location.year" (changed)="state.go({ year: $event })" />
         @if (otherYears().length) { <button class="wk-btn wk-btn--sm" type="button" (click)="yearMenu($event)">Ander jaar <app-icon name="chevron-down" [size]="14" /></button> }
       }
     }
 
+    <!-- Facturen: the container of its "Facturen ›" link, the chips, the period and where Odoo stands. -->
+    <ng-template #finderTools>
+      @if (location.po) {
+        <span class="wk-chip is-on fin-inv-po">{{ poName() }}<button class="wk-chip__x" type="button" aria-label="Filter op container wissen" (click)="state.go({ po: null })"><app-icon name="close" [size]="11" /></button></span>
+      }
+      <div class="wk-chips" role="group" aria-label="Soort">
+        @for (option of finderOptions(); track option.id) {
+          <button class="wk-chip" type="button" [attr.aria-pressed]="location.only === option.id" (click)="state.go({ only: option.id })">{{ option.label }}</button>
+        }
+      </div>
+      <ng-container *ngTemplateOutlet="range" />
+      @if (finder.odoo()?.state === 'NOT_CONNECTED') { <span class="wk-pill tone-grey" title="Odoo is alleen op productie gekoppeld">Odoo niet verbonden</span> }
+      @else if (finder.odoo()?.state === 'DEMO') { <span class="wk-pill tone-plum">Odoo: voorbeeld</span> }
+      @if (finderChanged()) { <button class="wk-link" type="button" (click)="resetFinder()">Filters wissen</button> }
+    </ng-template>
     <ng-template #range let-custom="custom">
       <span class="wk-popover-anchor">
         @if (custom) {
@@ -91,6 +110,7 @@ import { FinancePeriod } from './finance-url';
 })
 export class FinanceFilters {
   readonly state = inject(FinanceState);
+  readonly finder = inject(InvoiceFinderState);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly popover = signal<'filter' | 'range' | null>(null);
   readonly rangeFrom = signal('');
@@ -138,6 +158,24 @@ export class FinanceFilters {
 
   readonly containerName = computed(() => {
     const id = this.state.location().container;
+    const view = this.state.purchaseViews().find((row) => row.order.id === id);
+    if (view) return nameOfContainer(view.order);
+    const payment = this.state.payments().find((row) => row.orderId === id);
+    return nameOfContainer({ id, number: payment?.orderNumber, alias: payment?.orderAlias });
+  });
+
+  /** Facturen's chips for the direction on screen. */
+  readonly finderOptions = computed(() => onlyOptions(this.state.location().tab === 'out' ? 'out' : 'in'));
+  /** Facturen differs from how it opens (all dates, every kind, no container, no search). */
+  readonly finderChanged = computed(() => {
+    const location = this.state.location();
+    return !!location.only || !!location.po || !!location.q || (!!location.period && location.period !== 'all');
+  });
+  /** The container of po=: from the finder's rows before FinanceState lands, then the purchase orders and payments; 'Inkoop #id' until then. */
+  readonly poName = computed(() => {
+    const id = this.state.location().po;
+    const container = this.finder.rows().find((row) => row.container?.id === id)?.container;
+    if (container) return containerLabel(container);
     const view = this.state.purchaseViews().find((row) => row.order.id === id);
     if (view) return nameOfContainer(view.order);
     const payment = this.state.payments().find((row) => row.orderId === id);
@@ -205,6 +243,11 @@ export class FinanceFilters {
   }
 
 
+
+  /** "Filters wissen" on Facturen: chip, container, period and search. */
+  resetFinder(): void {
+    this.state.go({ only: '', po: null, period: 'all', from: '', to: '', q: '' });
+  }
 
   resetCosts(): void {
     this.state.go({ period: 'year', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '', cost: null });

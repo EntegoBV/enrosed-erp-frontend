@@ -171,3 +171,31 @@ test('supplier credit stays open until refunded, and partial/over-refund status 
   cost.set({ amountExclEur: 100, amountInclEur: 121, vatPct: 21, openEur: 21, paidEur: 100 });
   assert.equal(row.credit(), false); assert.equal(row.status(), 'partial'); assert.equal(row.overpaid(), 0);
 });
+
+test('Facturen on the phone: Inkomend · Uitgaand, the Odoo state as sub line, a sub-screen only when pushed (Kosten cell, ⋯)', () => {
+  const { state, page } = setup({ view: 'invoices' });
+  const pushed = signal(false);
+  const note = signal<string | null>('Odoo: voorbeeld');
+  let back = 0;
+  page.finder = { pushed, odooNote: note, back: () => { back++; } };
+  assert.deepEqual(Array.from(page.phoneSegments(), (row: any) => row.label), ['Inkomend', 'Uitgaand'], 'two segments keep their words');
+  assert.equal(page.pageTitle(), 'Facturen');
+  assert.equal(page.phoneSubtitle(), 'Odoo: voorbeeld');
+  note.set(null);
+  assert.equal(page.phoneSubtitle(), null, 'a connected Odoo needs no sub line');
+  assert.equal(page.subScreen(), false, 'from the sidebar or Meer: the page keeps its own way back');
+  pushed.set(true);
+  assert.equal(page.subScreen(), true);
+  page.backFromSection();
+  assert.deepEqual([back, state.leftAnalysis], [1, undefined], 'back goes back in history');
+  state.go({ tab: 'out' });
+  assert.equal(state.location().tab, 'out');
+  assert.equal(page.subScreen(), true, 'Uitgaand is the same sub-screen');
+  pushed.set(false);
+  state.go({ view: 'analysis' });
+  page.backFromSection();
+  assert.equal(state.leftAnalysis, true, 'Rapportage keeps its own back');
+  const bare = setup({ view: 'invoices' }).page;
+  assert.equal(bare.phoneSubtitle(), null, 'without the finder (a test harness) nothing breaks');
+  assert.equal(bare.subScreen(), false);
+});

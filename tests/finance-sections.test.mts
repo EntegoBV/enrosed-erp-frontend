@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   FINANCE_GROUPS, FINANCE_NAV, FINANCE_SECTIONS, FINANCE_TABS, blankBalance, blankCost, blankCostParty, blankRecurring, financeNavOf, financeSection, localIsoDay, periodRange,
+  phoneTabOf,
 } from '../src/app/features/finance/finance-sections.ts';
 
 test('today follows the local calendar, also a minute either side of midnight', () => {
@@ -36,8 +37,11 @@ test('blank forms use the day they are given, not a day fixed at start-up', () =
   assert.equal(blankBalance('2026-10-02').account, '', 'a new account starts empty');
 });
 
-test('five sections in groups; Bank leads and the Overzicht is gone', () => {
-  assert.deepEqual(FINANCE_SECTIONS.map((section) => section.id), ['bank', 'open', 'incoming', 'costs', 'analysis']);
+test('six sections in groups; Bank leads and the Overzicht is gone; Facturen opens Boekhouding', () => {
+  assert.deepEqual(FINANCE_SECTIONS.map((section) => section.id), ['bank', 'open', 'incoming', 'invoices', 'costs', 'analysis']);
+  assert.deepEqual(financeSection('invoices'), { id: 'invoices', label: 'Facturen', short: 'Facturen', group: 'Boekhouding', icon: 'document',
+    hint: 'Elke factuur: opgeladen, Odoo en verkoop', phoneTab: false });
+  assert.deepEqual(FINANCE_TABS.invoices.map((tab) => [tab.id, tab.label, tab.short]), [['in', 'Inkomend', 'In'], ['out', 'Uitgaand', 'Uit']]);
   assert.deepEqual([...new Set(FINANCE_SECTIONS.map((section) => section.group))], ['Bank', 'Geld', 'Boekhouding']);
   assert.deepEqual(FINANCE_GROUPS, ['Bank', 'Geld', 'Boekhouding']);
   assert.deepEqual(financeSection('bank'), { id: 'bank', label: 'Bank', short: 'Bank', group: 'Bank', icon: 'bank', hint: 'Saldi, kaslijn en wat vandaag bewoog', phoneTab: true });
@@ -49,15 +53,23 @@ test('five sections in groups; Bank leads and the Overzicht is gone', () => {
   assert.equal(blankCost('2026-10-02').amountInclEur, null, 'a new cost is entered excl. btw until the form says otherwise');
 });
 
-test('FINANCE_NAV: six places on the keys 1-6, five phone tabs Bank · Transacties · Betalen · Ontvangen · Kosten', () => {
+test('FINANCE_NAV: seven places on the keys 1-7 (Facturen first of Boekhouding on 7), five phone tabs Bank · Transacties · Betalen · Ontvangen · Kosten', () => {
   assert.deepEqual(FINANCE_NAV.map((item) => [item.id, item.label, item.key]), [
     ['bank', 'Bank', '1'], ['transactions', 'Transacties', '2'], ['open', 'Te betalen', '3'], ['incoming', 'Te ontvangen', '4'],
-    ['costs', 'Inkoop & kosten', '5'], ['analysis', 'Rapportage', '6'],
+    ['invoices', 'Facturen', '7'], ['costs', 'Inkoop & kosten', '5'], ['analysis', 'Rapportage', '6'],
   ]);
+  assert.deepEqual([...FINANCE_NAV.map((item) => item.key)].sort(), ['1', '2', '3', '4', '5', '6', '7'], 'every key once');
   assert.deepEqual(FINANCE_NAV.filter((item) => item.phoneTab).map((item) => item.short), ['Bank', 'Transacties', 'Betalen', 'Ontvangen', 'Kosten']);
-  assert.deepEqual(FINANCE_NAV.map((item) => item.group), ['Bank', 'Bank', 'Geld', 'Geld', 'Boekhouding', 'Boekhouding']);
+  assert.deepEqual(FINANCE_NAV.map((item) => item.group), ['Bank', 'Bank', 'Geld', 'Geld', 'Boekhouding', 'Boekhouding', 'Boekhouding']);
+  assert.deepEqual(FINANCE_NAV.filter((item) => item.group === 'Boekhouding').map((item) => item.label), ['Facturen', 'Inkoop & kosten', 'Rapportage']);
   assert.deepEqual(FINANCE_NAV.map((item) => `${item.target.view}/${item.target.tab}`),
-    ['bank/accounts', 'bank/movements', 'open/all', 'incoming/open', 'costs/company', 'analysis/costs']);
+    ['bank/accounts', 'bank/movements', 'open/all', 'incoming/open', 'invoices/in', 'costs/company', 'analysis/costs']);
+  assert.equal(financeNavOf({ view: 'invoices', tab: 'out' }).id, 'invoices');
+  assert.equal(phoneTabOf({ view: 'invoices', tab: 'in' }), 'costs', 'the phone lights Kosten on Facturen');
+  assert.equal(phoneTabOf({ view: 'invoices', tab: 'out' }), 'costs');
+  assert.equal(phoneTabOf({ view: 'bank', tab: 'movements' }), 'transactions');
+  assert.equal(phoneTabOf({ view: 'costs', tab: 'recurring' }), 'costs');
+  assert.equal(phoneTabOf({ view: 'analysis', tab: 'costs' }), 'analysis');
   assert.equal(FINANCE_NAV[0].hint, financeSection('bank').hint, 'one Bank hint');
   assert.equal(FINANCE_NAV[1].hint, 'Alle banktransacties: koppelen, splitsen en boeken');
   assert.equal(financeNavOf({ view: 'bank', tab: 'accounts' }).id, 'bank');

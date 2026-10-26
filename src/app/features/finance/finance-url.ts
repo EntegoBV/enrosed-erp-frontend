@@ -44,15 +44,22 @@ export interface FinanceLocation {
   line: number | null;
   /** The Kaslijn's span on Bank; null is the default, 8 weeks. */
   weeks: 4 | 8 | 13 | null;
+  /** Facturen: the chip ('' is Alles; in: containers · costs · odoo-new · no-file, out: invoices · credit-notes · odoo). */
+  only: string;
+  /** Facturen: one container's invoices (its "Facturen ›" link); kept across Inkomend and Uitgaand. */
+  po: number | null;
+  /** Facturen: the row in the preview, by its key (pi:12, cost:9, odoo:900001, …). */
+  doc: string;
 }
 
 export const NO_ACCOUNT = '__none__';
 
-const VIEWS: readonly FinanceView[] = ['bank', 'open', 'incoming', 'costs', 'analysis'];
+const VIEWS: readonly FinanceView[] = ['bank', 'open', 'incoming', 'invoices', 'costs', 'analysis'];
 /** Kept in step with FINANCE_TABS in finance-sections.ts (a node test checks both). */
 export const TAB_IDS: Readonly<Record<FinanceView, readonly string[]>> = {
   open: ['all', 'costs', 'containers', 'recurring'],
   incoming: ['open', 'received'],
+  invoices: ['in', 'out'],
   bank: ['accounts', 'movements'],
   costs: ['company', 'containers', 'recurring', 'lists'],
   analysis: ['costs', 'vat'],
@@ -60,6 +67,10 @@ export const TAB_IDS: Readonly<Record<FinanceView, readonly string[]>> = {
 const PERIODS: readonly FinancePeriod[] = ['month', 'quarter', 'year', 'lastYear', 'all'];
 const PURPOSES: readonly FinancePurpose[] = ['STANDARD', 'PARTNER_ADVANCE', 'PARTNER_SETTLEMENT'];
 /** The regime codes of finance-metrics VAT_REGIMES, as the address accepts them. */
+/** Facturen's chips per direction. */
+const ONLY: Readonly<Record<string, readonly string[]>> = { in: ['containers', 'costs', 'odoo-new', 'no-file'], out: ['invoices', 'credit-notes', 'odoo'] };
+/** A finder row key, as the server accepts it. */
+const DOC_KEY = /^(pi|pd|cost|odoo|so):[1-9]\d{0,17}$/;
 const REGIMES = new Set(['BE', 'EU_GOODS', 'EU_SERVICES', 'NON_EU_SERVICES', 'FOREIGN_VAT', 'EXEMPT', 'OUT_OF_SCOPE', 'NO_INVOICE', 'IMPORT_VAT_PAID', 'unconfirmed']);
 
 type Field = Exclude<keyof FinanceLocation, 'view' | 'tab'>;
@@ -77,6 +88,7 @@ export function honoured(view: FinanceView, tab: string): readonly Field[] {
     case 'costs/lists': return ['q', 'line'];
     case 'analysis/costs': return ['year', 'line'];
     case 'analysis/vat': return ['year', 'quarter', 'line'];
+    case 'invoices/in': case 'invoices/out': return ['q', 'period', 'from', 'to', 'only', 'po', 'doc', 'line'];
     default: return ['line'];
   }
 }
@@ -86,6 +98,7 @@ export function defaultPeriod(view: FinanceView, tab: string): FinancePeriod | '
   if (view === 'costs' && tab === 'company') return 'year';
   if (view === 'incoming' && tab === 'received') return 'month';
   if (view === 'bank' && tab === 'movements') return 'all';
+  if (view === 'invoices') return 'all';
   return '';
 }
 
@@ -96,7 +109,7 @@ export function defaultTab(view: FinanceView): string {
 export const DEFAULT_LOCATION: FinanceLocation = {
   view: 'bank', tab: '', period: '', from: '', to: '', q: '', cat: '', status: '', channel: '', docs: '',
   container: null, cost: null, scope: '', account: '', dir: '', link: '', kind: '', purpose: '', year: '', quarter: '', regime: '',
-  line: null, weeks: null,
+  line: null, weeks: null, only: '', po: null, doc: '',
 };
 
 /** A positive safe integer id, or null ('0', '-1', '1e3', 'abc' are all refused). */
@@ -157,6 +170,11 @@ export function parseFinanceLocation(get: (key: string) => string | null): Finan
   location.line = allowed.has('line') ? positiveId(get('line')) : null;
   const weeks = text('weeks');
   location.weeks = weeks === '4' ? 4 : weeks === '13' ? 13 : null;
+  const only = text('only');
+  location.only = (ONLY[tab] ?? []).includes(only) ? only : '';
+  location.po = allowed.has('po') ? positiveId(get('po')) : null;
+  const doc = text('doc');
+  location.doc = DOC_KEY.test(doc) ? doc : '';
 
   if (allowed.has('period')) {
     const from = get('from'), to = get('to');
@@ -200,10 +218,14 @@ export function financeQueryParams(location: FinanceLocation): Record<string, st
 export function patchLocation(current: FinanceLocation, patch: Partial<FinanceLocation>): FinanceLocation {
   const view = patch.view ?? current.view;
   const sectionChanged = view !== current.view || (patch.tab !== undefined && patch.tab !== current.tab);
-  const base: FinanceLocation = sectionChanged ? { ...DEFAULT_LOCATION, view, tab: current.view === view ? current.tab : '' } : current;
+  /* Facturen: Inkomend ↔ Uitgaand keeps the search, the period and the container (it filters both); the chip and the preview reset. */
+  const finderTab = sectionChanged && view === 'invoices' && current.view === 'invoices';
+  const base: FinanceLocation = !sectionChanged ? current
+    : finderTab ? { ...DEFAULT_LOCATION, view, tab: current.tab, q: current.q, period: current.period, from: current.from, to: current.to, po: current.po }
+    : { ...DEFAULT_LOCATION, view, tab: current.view === view ? current.tab : '' };
   const merged: FinanceLocation = { ...base, ...patch, view };
   if (!TAB_IDS[view].includes(merged.tab)) merged.tab = defaultTab(view);
-  if (sectionChanged && patch.period === undefined && !patch.from && !patch.to) merged.period = defaultPeriod(view, merged.tab);
+  if (sectionChanged && !finderTab && patch.period === undefined && !patch.from && !patch.to) merged.period = defaultPeriod(view, merged.tab);
   if ((patch.from !== undefined || patch.to !== undefined) && patch.period === undefined) {
     merged.period = merged.from || merged.to ? 'custom' : defaultPeriod(view, merged.tab) || 'all';
   }
