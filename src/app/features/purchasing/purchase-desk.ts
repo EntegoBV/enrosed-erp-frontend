@@ -560,7 +560,7 @@ export class PurchaseDeskStyles {}
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                         @else { <div><dt>Verwacht op</dt><dd>{{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : '—' }}</dd></div> }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>{{ data.order.trackingReference || '—' }}@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <a routerLink="/purchasing/tracking" [queryParams]="{ order: data.order.id }">{{ data.order.trackingReference }} ›</a> } @else { — }@if (data.order.shippedOn) { <small>vertrokken {{ data.order.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
                     </section>
                     <section class="pdk-sec" aria-labelledby="pdk-sec-route">

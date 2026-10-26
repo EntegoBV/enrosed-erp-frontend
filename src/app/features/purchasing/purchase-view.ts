@@ -257,8 +257,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalplan</span>
                   <span class="ios-cell__sub mpo-wrap">{{ planLabel() }}</span></span></div>
                 @if (data.order.trackingReference) {
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span></span>
-                    <span class="ios-cell__trail"><span class="ios-cell__value mpo-value mono">{{ data.order.trackingReference }}</span></span></div>
+                  <a class="ios-cell" routerLink="/purchasing/tracking" [queryParams]="{ order: data.order.id }">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </a>
                 }
                 @if (data.order.status === 'ONTVANGEN' && data.order.receivedOn) {
                   <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Ontvangen op</span></span>

@@ -133,6 +133,13 @@ export const routes: Routes = [
       import('./features/purchasing/purchase-list').then((m) => m.PurchaseList),
   },
   {
+    path: 'purchasing/tracking',
+    title: 'Track & trace',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/purchasing/container-tracking').then((m) => m.ContainerTrackingPage),
+  },
+  {
     path: 'purchasing/:id/edit',
     title: 'Inkooporder',
     canActivate: [authGuard],
