@@ -11,7 +11,7 @@ import { FinanceTable } from './finance-table';
 import { InvoiceFinderState } from './invoice-finder-state';
 import {
   amountText, containerLabel, dateTitle, deskDate, deskFacts, eurApprox, linkChips, monthGroups, numberText, onlyOptions, partyName,
-  phoneSubParts, statusWord, titleLine,
+  phoneSubParts, rowActions, statusWord, titleLine,
 } from './invoice-finder';
 
 /**
@@ -260,7 +260,8 @@ export class InvoicesPanel implements FinanceSectionApi {
         return true;
       case 'link': {
         const row = this.finder.selected() ?? this.focusRow();
-        if (!row || row.source !== 'ODOO' || !row.odoo?.registrable || !this.finder.financeReady()) return false;
+        /* Exactly when the preview offers "Registreren bij transactie…" (a removed cost can be booked again). */
+        if (!row || rowActions(row).primary !== 'register' || !this.finder.financeReady()) return false;
         this.finder.registering.set(row);
         return true;
       }

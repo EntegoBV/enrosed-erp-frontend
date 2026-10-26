@@ -6,8 +6,8 @@ import type {
   StockBatchBackfillReport, StockBatchBackfillRow, StockBatchCheckRow, StockBatchStatus,
 } from '../src/app/core/api/stock-batch-models.ts';
 import {
-  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, checkLinkShown, checkRowText, flaggedRows, notBookedText, productsText,
-  repairedCount, signedCount, statusBanner,
+  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, backfillRowValueTitle, checkLinkShown, checkRowText, flaggedRows,
+  notBookedText, partnerValue, productsText, repairedCount, signedCount, statusBanner,
 } from '../src/app/features/products/stock-batch-start.ts';
 
 /* Intl writes a no-break space between € and the figure; compare with a plain space. */
@@ -40,8 +40,9 @@ test('backfillFigures: Producten, Batches, Beginvoorraad and Zonder batch in pie
   const figures = backfillFigures(report(), fmt);
   assert.deepEqual(figures.map((figure) => figure.label), ['Producten', 'Batches', 'Beginvoorraad', 'Zonder batch', 'Waarde']);
   assert.deepEqual(figures.map((figure) => plain(figure.value)), ['212', '431', '1.840 st', '6 st', '€ 184.220']);
-  /* The cents stay one hover away; the value is own batches only. */
-  assert.equal(plain(figures[4].title ?? ''), '€ 184.220,10 · eigen batches, partner niet');
+  /* The cents stay one hover away; without partner batches there is no partner line. */
+  assert.equal(plain(figures[4].title ?? ''), '€ 184.220,10');
+  assert.equal(figures[4].sub, undefined);
   assert.deepEqual(backfillFigures(report({ products: 0, batches: 0, openingPieces: 0, unassignedPieces: 0, valueEur: 0 }), fmt)
     .map((figure) => plain(figure.value)), ['0', '0', '0 st', '0 st', '€ 0']);
 });
@@ -75,11 +76,72 @@ test('backfillRowText: Beginvoorraad at the card cost, negative notes, kost onbe
   assert.equal(backfillRowText(row({ sku: '', flags: ['NO_COST'] }), fmt).title, 'Dome 15x30 blauw', 'no SKU, no leading dot');
 });
 
-test('backfillRowValue: whole euros of own batches, "—" when nothing in the row has a cost', () => {
+test('backfillRowValue: whole euros of own and partner batches, "—" when nothing in the row has a cost', () => {
   assert.equal(plain(backfillRowValue(row(), fmt)), '€ 873');
+  assert.equal(backfillRowValueTitle(row(), fmt), null, 'no partner stock, no tooltip');
   assert.equal(backfillRowValue(row({ flags: ['OPENING', 'NO_COST'], valueEur: 0 }), fmt), '—');
   assert.equal(plain(backfillRowValue(row({ flags: ['NO_COST'], valueEur: 120.4 }), fmt)), '€ 120', 'a partly known value still shows');
-  assert.equal(plain(backfillRowValue(row({ flags: ['PARTNER'], valueEur: 0 }), fmt)), '€ 0', 'only partner pieces: own value is 0');
+  /* Only partner pieces (every container on production, 2026-10-26): the row shows their value, never "€ 0". */
+  const partnerOnly = row({ flags: ['PARTNER'], valueEur: 0, batches: [
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 6000, piecesLeft: 1260, unitCostEur: 8.318, costState: 'APPLIED' },
+  ] });
+  assert.equal(partnerValue(partnerOnly), 873.39, 'unit cost per sales unit × pieces left ÷ 12, as the server values own batches');
+  assert.equal(plain(backfillRowValue(partnerOnly, fmt)), '€ 873');
+  assert.equal(plain(backfillRowValueTitle(partnerOnly, fmt) ?? ''), '€ 873,39 · waarvan partner € 873,39');
+  /* Own and partner together; a partner batch without stock adds nothing. */
+  const mixed = row({ flags: ['PARTNER'], valueEur: 873.39, batches: [...row().batches,
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 120, piecesLeft: 120, unitCostEur: 9, costState: 'CALCULATED' },
+    { purchaseOrderId: 46, orderNumber: 'PO-2026-013', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 60, piecesLeft: 0, unitCostEur: 9, costState: 'APPLIED' },
+  ] });
+  assert.equal(partnerValue(mixed), 90);
+  assert.equal(plain(backfillRowValue(mixed, fmt)), '€ 963');
+  assert.equal(plain(backfillRowValueTitle(mixed, fmt) ?? ''), '€ 963,39 · waarvan partner € 90,00');
+  /* Partner stock without a cost: "kost onbekend" in the sub, "—" as value; with a cost on part of it, that part shows. */
+  const unknown = row({ unitPieces: 1, flags: ['NO_COST', 'PARTNER'], valueEur: 0, batches: [
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 50, piecesLeft: 50, unitCostEur: null, costState: 'NONE' },
+  ] });
+  assert.equal(backfillRowValue(unknown, fmt), '—');
+  assert.match(backfillRowText(unknown, fmt).sub, /kost onbekend · partner 50 st$/);
+  assert.equal(backfillRowValueTitle(unknown, fmt), null);
+  const partly = row({ unitPieces: 1, flags: ['NO_COST', 'PARTNER'], valueEur: 0, batches: [...unknown.batches,
+    { purchaseOrderId: 46, orderNumber: 'PO-2026-013', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 10, piecesLeft: 10, unitCostEur: 3.1, costState: 'APPLIED' },
+  ] });
+  assert.equal(plain(backfillRowValue(partly, fmt)), '€ 31');
+  /* Stock worth less than a euro shows its cents rather than "€ 0". */
+  const cheap = row({ unitPieces: 1, flags: ['PARTNER'], valueEur: 0, batches: [
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 4, piecesLeft: 4, unitCostEur: 0.08, costState: 'APPLIED' },
+  ] });
+  assert.equal(plain(backfillRowValue(cheap, fmt)), '€ 0,32');
+  /* A display product: the cost is per display, pieces left are pieces (100 pieces = 8 displays + 4 loose). */
+  assert.equal(partnerValue(row({ unitPieces: 12, batches: [
+    { purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: 100, piecesLeft: 100, unitCostEur: 24, costState: 'APPLIED' },
+  ] })), 200);
+});
+
+test('an all-partner preview: Waarde counts the partner stock and names it, the rows show their value', () => {
+  const partner = (productId: number, sku: string, unitPieces: number, piecesLeft: number, unitCostEur: number | null): StockBatchBackfillRow => row({
+    productId, sku, name: sku, unitPieces, stockPieces: piecesLeft, valueEur: 0, flags: unitCostEur === null ? ['NO_COST', 'PARTNER'] : ['PARTNER'],
+    batches: [{ purchaseOrderId: 44, orderNumber: 'PO-2026-008', kind: 'RECEIPT', owner: 'PARTNER', piecesIn: piecesLeft, piecesLeft, unitCostEur,
+      costState: unitCostEur === null ? 'NONE' : 'APPLIED' }],
+  });
+  const rows = [partner(1, 'DOM-15X30-BL', 12, 1260, 8.318), partner(2, 'VAS-S', 1, 400, 3.1), partner(3, 'VAS-L', 1, 25, null)];
+  const preview = report({ products: 3, batches: 3, openingPieces: 0, unassignedPieces: 0, valueEur: 0, rows });
+  const figures = backfillFigures(preview, fmt);
+  assert.equal(plain(figures[4].value), '€ 2.113', '873,39 + 1.240,00 of partner stock, not "€ 0"');
+  assert.equal(plain(figures[4].sub ?? ''), 'waarvan partner € 2.113');
+  assert.equal(plain(figures[4].title ?? ''), '€ 2.113,39 · waarvan partner € 2.113,39');
+  assert.deepEqual(flaggedRows(preview).map((item) => plain(backfillRowValue(item, fmt))), ['€ 873', '€ 1.240', '—']);
+  assert.deepEqual(flaggedRows(preview).map((item) => backfillRowText(item, fmt).sub), ['partner 1.260 st', 'partner 400 st', 'kost onbekend · partner 25 st']);
+  /* Own and partner together: the own value of the server plus the partner part. */
+  const mixed = backfillFigures(report({ valueEur: 184220.1, rows }), fmt)[4];
+  assert.equal(plain(mixed.value), '€ 186.333');
+  assert.equal(plain(mixed.title ?? ''), '€ 186.333,49 · waarvan partner € 2.113,39');
+});
+
+test('the start sheet shows the partner line under Waarde and the row tooltip', async () => {
+  const sheet = await readFile(new URL('../src/app/features/products/stock-batch-start-sheet.ts', import.meta.url), 'utf8');
+  assert.match(sheet, /@if \(figure\.sub\) \{ <small class="sbs-figs__sub">\{\{ figure\.sub \}\}<\/small> \}/);
+  assert.match(sheet, /\[attr\.title\]="backfillValueTitle\(row\)"/);
 });
 
 test('notBookedText names every received container that was never booked', () => {

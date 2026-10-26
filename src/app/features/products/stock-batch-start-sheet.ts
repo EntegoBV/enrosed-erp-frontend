@@ -7,8 +7,8 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import {
-  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, checkRowText, flaggedRows, notBookedText, productsText, repairedCount,
-  type StockBatchSheetMode,
+  FLAGGED_LIMIT, backfillFigures, backfillRowText, backfillRowValue, backfillRowValueTitle, checkRowText, flaggedRows, notBookedText,
+  productsText, repairedCount, type StockBatchSheetMode,
 } from './stock-batch-start';
 
 /**
@@ -31,7 +31,8 @@ import {
           } @else if (report(); as report) {
             <div class="sbs-figs" role="group" aria-label="Proef">
               @for (figure of figures(); track figure.label) {
-                <div [attr.title]="figure.title ?? null"><small>{{ figure.label }}</small><b>{{ figure.value }}</b></div>
+                <div [attr.title]="figure.title ?? null"><small>{{ figure.label }}</small><b>{{ figure.value }}</b>
+                  @if (figure.sub) { <small class="sbs-figs__sub">{{ figure.sub }}</small> }</div>
               }
             </div>
             <p class="sbs-help">Proef: er wordt nog niets bewaard.</p>
@@ -42,7 +43,7 @@ import {
                   <li class="sbs-row">
                     <span class="sbs-row__main"><b class="sbs-row__title" [title]="text.title">{{ text.title }}</b>
                       <span class="sbs-row__sub" [title]="text.sub">{{ text.sub }}</span></span>
-                    <span class="sbs-row__num">{{ backfillValue(row) }}</span>
+                    <span class="sbs-row__num" [attr.title]="backfillValueTitle(row)">{{ backfillValue(row) }}</span>
                   </li>
                 }
               </ul>
@@ -97,11 +98,14 @@ import {
   `,
   styles: `
     .sbs-sheet { display: grid; gap: 12px; min-width: 0; }
-    .sbs-figs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    /* Waarde gets a little more room for its "waarvan partner € x" line */
+    .sbs-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.3fr); overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .sbs-figs > div { display: grid; align-content: start; gap: 1px; min-width: 0; padding: 10px 12px; border-left: 1px solid var(--line); }
     .sbs-figs > div:first-child { border-left: 0; }
     .sbs-figs small { overflow: hidden; color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
     .sbs-figs b { font-size: 17px; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap; }
+    /* "waarvan partner € x" under Waarde: a plain muted line, not the uppercase label */
+    .sbs-figs .sbs-figs__sub { font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
     .sbs-help, .sbs-note, .sbs-error { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
     .sbs-help--warn { color: var(--warn); font-weight: 650; }
     .sbs-error { color: var(--danger); }
@@ -166,6 +170,7 @@ export class StockBatchStartSheet implements OnInit {
 
   protected backfillText = (row: StockBatchBackfillReport['rows'][number]) => backfillRowText(row, this.fmt);
   protected backfillValue = (row: StockBatchBackfillReport['rows'][number]) => backfillRowValue(row, this.fmt);
+  protected backfillValueTitle = (row: StockBatchBackfillReport['rows'][number]) => backfillRowValueTitle(row, this.fmt);
   protected checkText = (row: StockBatchCheckRow) => checkRowText(row, this.fmt);
 
   ngOnInit(): void {

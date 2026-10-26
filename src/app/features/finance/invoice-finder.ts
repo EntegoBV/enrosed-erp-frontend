@@ -40,6 +40,24 @@ export function rowKeyValid(key: string): boolean {
 
 const credit = (row: InvoiceRow): boolean => row.kind === 'CREDIT_NOTE';
 
+/**
+ * An incoming Odoo bill whose ENROSED cost was deleted (statusReason
+ * COST_REMOVED, no mark) is simply not booked: it reads "Nieuw" and offers
+ * every action of a new bill, so it can be booked or marked again (Emre,
+ * 2026-10-26: "ik moet altijd kunnen wijzigen"). The fixed server answers
+ * NEW and registrable; an older one answers HANDLED with blockedBy
+ * COST_REMOVED, which reads the same here.
+ */
+export function costRemoved(row: InvoiceRow): boolean {
+  return row.source === 'ODOO' && row.direction === 'IN' && row.statusReason === 'COST_REMOVED' && !row.odoo?.mark;
+}
+
+/** An incoming Odoo bill can be registered as a cost: the server says so, or (older server) its only block is the removed cost. */
+export function canRegister(row: InvoiceRow): boolean {
+  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo) return false;
+  return row.odoo.registrable || row.odoo.blockedBy === 'COST_REMOVED';
+}
+
 /** The one-word status pill. */
 export function statusWord(row: InvoiceRow): { label: string; tone: StatusTone } {
   switch (row.status) {
@@ -53,7 +71,9 @@ export function statusWord(row: InvoiceRow): { label: string; tone: StatusTone }
     case 'SETTLED': return { label: 'Verrekend', tone: 'ok' };
     case 'NO_DATA': return { label: 'Zonder gegevens', tone: 'amber' };
     case 'NEW': return { label: 'Nieuw', tone: 'accent' };
-    case 'HANDLED': return { label: row.statusReason === 'BEFORE_START' ? 'Ouder' : 'Afgehandeld', tone: 'grey' };
+    case 'HANDLED':
+      if (costRemoved(row)) return { label: 'Nieuw', tone: 'accent' };
+      return { label: row.statusReason === 'BEFORE_START' ? 'Ouder' : 'Afgehandeld', tone: 'grey' };
     case 'CONTAINER': return { label: 'Bij container', tone: 'grey' };
     case 'TICA': return { label: 'TICA', tone: 'plum' };
     case 'CANCELLED': return { label: 'Geannuleerd', tone: 'grey' };
@@ -120,10 +140,10 @@ export function peppolFact(row: InvoiceRow): string | null {
   return 'Peppol bezig';
 }
 
-/** What Odoo adds to an Odoo row: the removed cost, the mark's note, a concept, or Odoo's own payment state. */
+/** What Odoo adds to an Odoo row: the earlier removed cost, the mark's note, a concept, or Odoo's own payment state. */
 export function odooFact(row: InvoiceRow): string | null {
   if (row.source !== 'ODOO' || !row.odoo) return null;
-  if (row.statusReason === 'COST_REMOVED') return 'kost verwijderd';
+  if (costRemoved(row)) return 'kost eerder verwijderd';
   const note = row.odoo.mark?.note?.trim();
   if (note) return note.length > 40 ? `${note.slice(0, 39).trimEnd()}…` : note;
   if (row.odoo.state === 'draft') return 'concept in Odoo';
@@ -257,18 +277,28 @@ export function monthGroups(rows: readonly InvoiceRow[]): { label: string; rows:
   return groups.map(({ label, rows: list }) => ({ label, rows: list }));
 }
 
+/* COST_REMOVED is no block (an older server still sends it): such a bill can be booked again, see costRemoved. */
 const BLOCKED: Readonly<Record<string, string>> = {
   CANCELLED: 'Geannuleerd in Odoo', NO_DATE: 'Nog geen factuurdatum in Odoo', ZERO: 'Bedrag is nul', NOT_EUR: 'Niet in euro',
-  TICA: 'Via TICA-afrekeningen', MARKED: 'Eerst markering wissen', COST_REMOVED: 'Kost verwijderd in ENROSED', DEMO: 'Voorbeeldgegevens',
+  TICA: 'Via TICA-afrekeningen', MARKED: 'Eerst markering wissen', DEMO: 'Voorbeeldgegevens',
 };
 
 /** Why an incoming Odoo row cannot be registered; null when it can, or for anything else. */
 export function blockedText(row: InvoiceRow): string | null {
-  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo || row.odoo.registrable) return null;
+  if (row.source !== 'ODOO' || row.direction !== 'IN' || !row.odoo || canRegister(row)) return null;
   return row.odoo.blockedBy ? BLOCKED[row.odoo.blockedBy] ?? null : null;
 }
 
-/** The preview's primary action and the rest (⋯); first matching line of the contract's table wins. */
+/** The preview's one muted line: why it cannot be registered, and that its earlier cost was removed; null when neither. */
+export function previewNote(row: InvoiceRow): string | null {
+  const parts = [blockedText(row), costRemoved(row) ? 'Kost eerder verwijderd in ENROSED' : null].filter((part): part is string => !!part);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/**
+ * The preview's primary action and the rest (⋯); first matching line of the contract's table wins. Since 2026-10-26 a
+ * removed cost reads as a new bill (no own line any more) and a mark that sets the status can also be changed.
+ */
 export function rowActions(row: InvoiceRow): { primary: InvoiceAction | null; more: InvoiceAction[] } {
   const files = (row.files ?? []).length > 0;
   const pick = (primary: InvoiceAction, more: InvoiceAction[] = []): { primary: InvoiceAction | null; more: InvoiceAction[] } => ({
@@ -281,13 +311,19 @@ export function rowActions(row: InvoiceRow): { primary: InvoiceAction | null; mo
     case 'SALES': return pick('open-sales', ['download']);
     default: break;
   }
-  if (row.odoo?.mark) return pick('clear-mark', ['download']);
+  const mark = row.odoo?.mark;
+  if (mark) {
+    /* A mark can always be cleared; while it is what the status says, it can also be changed in place (a second mark replaces it). */
+    if (row.status === 'HANDLED' || row.status === 'CONTAINER') {
+      return pick('clear-mark', mark.resolution === 'CONTAINER' ? ['handled', 'container', 'download'] : ['container', 'download']);
+    }
+    return pick('clear-mark', ['download']);
+  }
   if (row.status === 'TICA') return pick('open-tica', ['download']);
   if (row.status === 'CANCELLED') return pick('download');
-  if (row.statusReason === 'COST_REMOVED') return pick('container', ['download']);
   if (row.direction === 'OUT') return pick('download');
-  const unhandled = row.status === 'NEW' || (row.status === 'HANDLED' && row.statusReason === 'BEFORE_START');
-  if (unhandled && row.odoo?.registrable) return pick('register', ['handled', 'container', 'download']);
+  const unhandled = row.status === 'NEW' || (row.status === 'HANDLED' && row.statusReason === 'BEFORE_START') || costRemoved(row);
+  if (unhandled && canRegister(row)) return pick('register', ['handled', 'container', 'download']);
   if (unhandled) return pick('handled', ['container', 'download']);
   return pick('download');
 }

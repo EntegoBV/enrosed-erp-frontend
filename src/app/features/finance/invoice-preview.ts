@@ -10,7 +10,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { FinanceState } from './finance-state';
 import { InvoiceFinderState } from './invoice-finder-state';
 import {
-  ACTION_LABELS, blockedText, downloadName, linkChips, numberText, partyName, previewFacts, previewKind, rowActions, statusWord,
+  ACTION_LABELS, downloadName, linkChips, numberText, partyName, previewFacts, previewKind, previewNote, rowActions, statusWord,
 } from './invoice-finder';
 import type { InvoiceAction } from './invoice-finder';
 
@@ -167,7 +167,8 @@ export class InvoicePreview {
   readonly actions = computed(() => (this.row() ? rowActions(this.row()!) : { primary: null, more: [] as InvoiceAction[] }));
   /** ⋯ on the desk: the rest besides the primary and Downloaden (which has its own button there). */
   readonly rest = computed(() => this.actions().more.filter((action) => action !== 'download'));
-  readonly blocked = computed(() => (this.row() ? blockedText(this.row()!) : null));
+  /** One muted line: why it cannot be registered, and/or that its earlier cost was removed. */
+  readonly blocked = computed(() => (this.row() ? previewNote(this.row()!) : null));
 
   readonly frameUrl = signal<SafeResourceUrl | null>(null);
   readonly imageUrl = signal<string | null>(null);

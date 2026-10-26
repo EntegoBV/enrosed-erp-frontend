@@ -19,8 +19,8 @@ export type StockBatchSheetMode = 'start' | 'check';
 /** What these texts need of a BatchFormat: unit words differ per row, so only count and eur. */
 export type StartFormat = Pick<BatchFormat, 'count' | 'eur'>;
 
-/** One tile of the dry run's figures; `title` is the tooltip, when it says more. */
-export interface BackfillFigure { label: string; value: string; title?: string }
+/** One tile of the dry run's figures; `sub` is a small line under the value, `title` the tooltip, when they say more. */
+export interface BackfillFigure { label: string; value: string; sub?: string; title?: string }
 
 /** The banner under the stock page's header; null when there is nothing to say. */
 export interface StockBatchBanner { text: string; link: string; mode: StockBatchSheetMode; warn: boolean }
@@ -33,14 +33,41 @@ export function productsText(count: number, fmt: StartFormat): string {
   return `${fmt.count(count, 1)} ${count === 1 ? 'product' : 'producten'}`;
 }
 
-/** [Producten, Batches, Beginvoorraad (stuks), Zonder batch (stuks), Waarde]; the value counts own batches only. */
+type BackfillBatch = StockBatchBackfillRow['batches'][number];
+
+const cents = (value: number): number => Math.round(value * 100) / 100;
+
+/** A batch's value left, the server's rule for own batches: unit cost (per sales unit) × pieces left ÷ pieces per unit, to the cent. */
+function batchValue(batch: BackfillBatch, unitPieces: number): number {
+  const cost = batch.unitCostEur;
+  if (cost === null || cost === undefined || !Number.isFinite(cost) || !(batch.piecesLeft > 0)) return 0;
+  return cents(cost * batch.piecesLeft / Math.max(1, unitPieces));
+}
+
+/**
+ * The value left in a row's partner batches. The server's valueEur counts own
+ * batches only; on production every received container is a partner one, so
+ * without this the dry run read "€ 0" for stock that has a cost (2026-10-26).
+ */
+export function partnerValue(row: StockBatchBackfillRow): number {
+  return cents(row.batches.filter((batch) => batch.owner === 'PARTNER')
+    .reduce((sum, batch) => sum + batchValue(batch, row.unitPieces), 0));
+}
+
+/**
+ * [Producten, Batches, Beginvoorraad (stuks), Zonder batch (stuks), Waarde]; Waarde is the stock value of own and partner
+ * batches, with "waarvan partner € x" under it.
+ */
 export function backfillFigures(report: StockBatchBackfillReport, fmt: StartFormat): BackfillFigure[] {
+  const partner = cents(report.rows.reduce((sum, row) => sum + partnerValue(row), 0));
+  const total = cents(report.valueEur + partner);
+  const part = (decimals: 0 | 2) => `waarvan partner ${fmt.eur(partner, decimals)}`;
   return [
     { label: 'Producten', value: fmt.count(report.products, 1) },
     { label: 'Batches', value: fmt.count(report.batches, 1) },
     { label: 'Beginvoorraad', value: `${fmt.count(report.openingPieces, 1)} st` },
     { label: 'Zonder batch', value: `${fmt.count(report.unassignedPieces, 1)} st` },
-    { label: 'Waarde', value: fmt.eur(report.valueEur, 0), title: `${fmt.eur(report.valueEur, 2)} · eigen batches, partner niet` },
+    { label: 'Waarde', value: fmt.eur(total, 0), ...(partner ? { sub: part(0), title: `${fmt.eur(total, 2)} · ${part(2)}` } : { title: fmt.eur(total, 2) }) },
   ];
 }
 
@@ -78,9 +105,20 @@ export function backfillRowText(row: StockBatchBackfillRow, fmt: StartFormat): {
   return { title: rowTitle(row), sub: parts.join(' · ') };
 }
 
-/** The row's value of own batches in whole euros; "—" when nothing in it has a cost (never "€ 0" beside "kost onbekend"). */
+/**
+ * The row's stock value, own and partner batches, in whole euros (cents below € 1, so stock with a cost never reads
+ * "€ 0"); "—" when nothing in it has a cost (never "€ 0" beside "kost onbekend").
+ */
 export function backfillRowValue(row: StockBatchBackfillRow, fmt: StartFormat): string {
-  return row.flags.includes('NO_COST') && !row.valueEur ? '—' : fmt.eur(row.valueEur, 0);
+  const total = cents(row.valueEur + partnerValue(row));
+  if (row.flags.includes('NO_COST') && !total) return '—';
+  return fmt.eur(total, total > 0 && total < 1 ? 2 : 0);
+}
+
+/** The tooltip of a row's value with partner stock: "€ 1.234,50 · waarvan partner € 1.000,00"; null without partner value. */
+export function backfillRowValueTitle(row: StockBatchBackfillRow, fmt: StartFormat): string | null {
+  const partner = partnerValue(row);
+  return partner ? `${fmt.eur(cents(row.valueEur + partner), 2)} · waarvan partner ${fmt.eur(partner, 2)}` : null;
 }
 
 /** "Niet bijgeboekt: PO-2026-019, PO-2026-020", or null when every received container is booked. */
