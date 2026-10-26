@@ -1390,9 +1390,33 @@ export class ProductView {
     setTimeout(() => {
       if (version !== this.loadVersion) return;
       const target = [id, SECTION_ALIASES[id]].find((name) => name && document.getElementById(name));
-      if (target) this.scrollToDetailSection(target);
-      else if (tries > 1) this.scrollWhenShown(id, version, tries - 1);
+      if (target) {
+        this.scrollToDetailSection(target);
+        this.holdSection(target, version);
+      } else if (tries > 1) this.scrollWhenShown(id, version, tries - 1);
     }, tries === 30 ? 0 : 100);
+  }
+
+  /**
+   * Cards above the section (stock, price build-up) still fill in after that first scroll, and the browser's
+   * scroll anchoring then carries the section out of view: keep it in place for a moment, until the user scrolls.
+   */
+  private holdSection(id: string, version: number, rounds = 6): void {
+    let userMoved = false;
+    const stop = () => { userMoved = true; };
+    const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'] as const;
+    for (const type of events) window.addEventListener(type, stop, { once: true, passive: true });
+    const step = (left: number) => setTimeout(() => {
+      const target = document.getElementById(id);
+      const live = !userMoved && version === this.loadVersion && !!target;
+      if (live && target) {
+        const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+        if (Math.abs(target.getBoundingClientRect().top - margin) > 4) target.scrollIntoView({ block: 'start' });
+      }
+      if (live && left > 1) step(left - 1);
+      else for (const type of events) window.removeEventListener(type, stop);
+    }, 250);
+    step(rounds);
   }
 
   private loadCatalogueNavigation(): Promise<void> {

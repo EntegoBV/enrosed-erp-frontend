@@ -7,6 +7,8 @@ app-product-view { display: block; min-width: 0; }
 app-product-view .pd-phone .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 app-product-view .pd-phone .mono { font-family: var(--mono); font-size: 13px; }
 app-product-view .pph-edit { font-size: 15px; }
+/* A link to a section (#product-batches from a purchase order) lands below the 44 px bar, not under it. */
+app-product-view .pd-phone :is(.ios-section, .ios-disclosure)[id] { scroll-margin-top: calc(var(--appbar-h, 44px) + 8px); }
 
 /* ---- hero card ---- */
 app-product-view .pph-card { margin: 4px 16px 18px; padding: 14px; border-radius: 22px; background: var(--surface); box-shadow: 0 1px 2px rgb(26 22 20 / 5%); outline: none; }

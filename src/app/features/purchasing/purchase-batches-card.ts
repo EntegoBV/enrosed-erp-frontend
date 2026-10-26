@@ -101,6 +101,8 @@ import { purchaseBatchFigures, purchaseBatchSummary, type PurchaseBatchRow } fro
   `,
   styles: `
     :host { display: block; min-width: 0; }
+    /* "Nog op voorraad" wraps at 375-390 px: the three figures still stand on one line. */
+    .pbc-phone .ios-figures > div { align-content: space-between; }
     .pbc-phone .pbc-cell { align-items: center; }
     .pbc-phone .ios-cell__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* The units may not fit beside the cost at 375 px: the line wraps once instead of cutting a figure. */
