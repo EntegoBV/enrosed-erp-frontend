@@ -22,9 +22,6 @@ import { Ui } from '../../shared/ui';
         aria-label="Alle winkels nu controleren" title="Alle winkels nu controleren">
         <app-icon name="refresh" [size]="17" /><span class="sr-desk-label">Nu controleren</span>
       </button>
-      <button class="btn btn--sm btn--primary" type="button" (click)="sendTest()" [disabled]="busy()" title="Stuurt een testpush en testmail">
-        <app-icon name="bell" [size]="17" /><span>Testmelding</span>
-      </button>
     </app-page-header>
     <div class="content sr">
       @if (loadError(); as error) { <div class="sr-panel"><app-load-error title="Radar kon niet worden geladen" [message]="error" [busy]="loading()" (retry)="load()" /></div> }
@@ -46,6 +43,15 @@ import { Ui } from '../../shared/ui';
             @if (!data.browserEnabled) { · <span class="sr-warn">browsercontroles uit</span> }
             @if (data.devices === 0) { · <span class="sr-warn">geen toestel aangemeld voor meldingen</span> }
           </p>
+          <div class="sr-hero-tests">
+            <button class="btn btn--sm btn--primary" type="button" (click)="sendTestPush()" [disabled]="busy()" title="Stuurt een testpush naar je toestellen">
+              <app-icon name="bell" [size]="16" /><span>Testpush</span>
+            </button>
+            <button class="btn btn--sm" type="button" (click)="sendTestMail()" [disabled]="busy()" title="Stuurt een testmail naar {{ data.mailTo }}">
+              <app-icon name="arrow-out" [size]="16" /><span>Testmail</span>
+            </button>
+            @if (lastTest(); as note) { <span class="sr-test-note" [class.sr-warn]="!note.ok">{{ note.text }}</span> }
+          </div>
           @if (availableRows().length > 0) {
             <div class="sr-hero-links">
               @for (row of availableRows(); track row.key) {
@@ -87,6 +93,7 @@ import { Ui } from '../../shared/ui';
     .sr-hero{border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:22px 24px;margin-bottom:18px}.sr-hero--on{border-color:color-mix(in srgb,var(--ok) 55%,var(--line));background:color-mix(in srgb,var(--ok) 7%,var(--surface))}.sr-hero--off{opacity:.75}
     .sr-hero-eyebrow{margin:0 0 6px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700}.sr-hero-title{margin:0;font-size:24px;line-height:1.2;font-weight:800}.sr-hero--on .sr-hero-title{color:var(--ok)}
     .sr-hero-meta{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--muted)}.sr-hero-meta strong{color:var(--ink);font-weight:600}.sr-hero-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.sr-hero-links .btn{display:inline-flex;align-items:center;gap:6px}
+    .sr-hero-tests{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}.sr-hero-tests .btn{display:inline-flex;align-items:center;gap:6px}.sr-test-note{font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
     .sr-warn{color:var(--danger,#b4232c);font-weight:600}.sr-muted{color:var(--muted)}
     .sr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
     .sr-card{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:16px 18px}.sr-card--on{border-color:color-mix(in srgb,var(--ok) 60%,var(--line));box-shadow:inset 3px 0 var(--ok)}.sr-card--err{border-color:color-mix(in srgb,var(--danger,#b4232c) 45%,var(--line))}
@@ -109,6 +116,7 @@ export class StockRadarPage {
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly loadError = signal<string | null>(null);
+  readonly lastTest = signal<{ ok: boolean; text: string } | null>(null);
   readonly availableRows = computed(() => (this.feed()?.stores ?? []).filter((row) => row.available === true));
   private request = 0;
 
@@ -157,17 +165,37 @@ export class StockRadarPage {
     }
   }
 
-  async sendTest(): Promise<void> {
+  async sendTestPush(): Promise<void> {
     if (this.busy()) return;
     this.busy.set(true);
     try {
-      const result = await this.api.sendTest();
+      const result = await this.api.sendTestPush();
       const pushed = result.pushStatuses.filter((status) => status >= 200 && status < 300).length;
-      const mail = result.mailStatus >= 200 && result.mailStatus < 300 ? 'mail verstuurd' : result.mailStatus === 0 ? 'mail via lokale mailer' : 'mail mislukt (' + result.mailStatus + ')';
-      if (result.devices === 0) this.ui.toast('Geen toestel aangemeld voor meldingen - zet eerst meldingen aan op dit toestel. ' + mail, 'err');
-      else this.ui.toast(`Testmelding naar ${pushed} van ${result.devices} toestel(len) · ${mail}`, pushed > 0 ? 'ok' : 'err');
+      const text = result.devices === 0
+        ? 'Geen toestel aangemeld voor meldingen: open de test-ERP op je gsm en zet Meldingen op dit toestel aan.'
+        : `Testpush naar ${pushed} van ${result.devices} toestel(len) (antwoord ${result.pushStatuses.join(', ')}).`;
+      this.lastTest.set({ ok: pushed > 0, text });
+      this.ui.toast(text, pushed > 0 ? 'ok' : 'err');
     } catch (error) {
-      this.ui.toast(messageOf(error, 'De testmelding is mislukt.'), 'err');
+      this.ui.toast(messageOf(error, 'De testpush is mislukt.'), 'err');
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async sendTestMail(): Promise<void> {
+    if (this.busy()) return;
+    this.busy.set(true);
+    try {
+      const result = await this.api.sendTestMail();
+      const ok = (result.mailStatus >= 200 && result.mailStatus < 300) || result.mailStatus === 0;
+      const text = ok
+        ? `Testmail verstuurd naar ${result.mailTo}${result.mailStatus === 0 ? ' (lokale mailer)' : ''}.`
+        : `Testmail mislukt (${result.mailStatus})${result.detail ? ': ' + result.detail : ''}`;
+      this.lastTest.set({ ok, text });
+      this.ui.toast(text, ok ? 'ok' : 'err');
+    } catch (error) {
+      this.ui.toast(messageOf(error, 'De testmail is mislukt.'), 'err');
     } finally {
       this.busy.set(false);
     }

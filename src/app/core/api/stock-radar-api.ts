@@ -45,11 +45,15 @@ export interface StockRadarFeed {
   stores: StockRadarRow[];
 }
 
-export interface StockRadarTestResult {
+export interface StockRadarPushTest {
   devices: number;
   pushStatuses: number[];
+}
+
+export interface StockRadarMailTest {
   mailStatus: number;
   mailTo: string;
+  detail: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -68,7 +72,11 @@ export class StockRadarApi {
     return firstValueFrom(this.http.post<StockRadarFeed>(api(`/api/stock-radar/${encodeURIComponent(key)}/check`), {}));
   }
 
-  sendTest(): Promise<StockRadarTestResult> {
-    return firstValueFrom(this.http.post<StockRadarTestResult>(api('/api/stock-radar/test-notification'), {}));
+  sendTestPush(): Promise<StockRadarPushTest> {
+    return firstValueFrom(this.http.post<StockRadarPushTest>(api('/api/stock-radar/test-push'), {}));
+  }
+
+  sendTestMail(): Promise<StockRadarMailTest> {
+    return firstValueFrom(this.http.post<StockRadarMailTest>(api('/api/stock-radar/test-mail'), {}));
   }
 }
