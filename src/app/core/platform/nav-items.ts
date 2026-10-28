@@ -163,14 +163,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { id: 'terms', label: 'Voorwaarden & privacy', icon: 'book', link: '/voorwaarden', wide: true, hint: 'Bekijk wat klanten te zien krijgen' },
       { id: 'deleted-items', label: 'Verwijderde items', icon: 'trash', link: '/settings/deleted-items', wide: true,
         hint: 'Verwijderde offertes, facturen en inkooporders herstellen' },
-      { id: 'stock-radar', label: 'Voorraadradar', icon: 'search', link: '/voorraadradar', wide: true, onlyUser: 'emre',
-        newUntil: '2027-01-01', hint: 'iPhone Duo bij Apple, MediaMarkt, Coolblue en meer' },
     ],
   },
 ];
 
 /** The workspace doors: in the sidebar under the groups, on Meer under "Snel naar". */
 export const NAV_WORKSPACES: readonly NavItem[] = [
+  /* Emre's personal radar: a door of its own, so the phone finds it at the top of Meer. */
+  { id: 'stock-radar', label: 'Voorraadradar', short: 'Radar', icon: 'search', link: '/voorraadradar', tone: 'accent', onlyUser: 'emre',
+    newUntil: '2027-01-01', hint: 'iPhone Duo bij Apple, MediaMarkt, Coolblue en meer' },
   { id: 'files', label: 'Documenten & media', short: 'Media', icon: 'media', link: '/files', tone: 'plum',
     hint: 'Foto’s, PDF’s en bestanden beheren en delen' },
   { id: 'costs', label: 'Kosten & bank', short: 'Kosten', icon: 'exchange', link: '/costs', tone: 'green',

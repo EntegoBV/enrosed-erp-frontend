@@ -129,7 +129,7 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
             <!-- The workspaces everyone opens daily stand on their own, below a
                  hairline: the library, the money, the website. -->
             <div class="sidebar__rule" aria-hidden="true"></div>
-            @for (item of navWorkspaces; track item.id) {
+            @for (item of navWorkspaces(); track item.id) {
               <a class="sidebar__link sidebar__link--workspace" [routerLink]="item.link" [attr.title]="item.label"
                  [class.active]="itemActive(item)" [attr.aria-current]="itemActive(item) ? 'page' : null">
                 <app-icon class="sidebar__icon" [name]="item.icon" [size]="18" />
@@ -315,7 +315,8 @@ export class App {
   sidebarItems(group: NavGroup): NavItem[] {
     return group.items.filter((item) => navItemVisible(item, this.auth.user()?.username ?? null));
   }
-  readonly navWorkspaces = NAV_WORKSPACES;
+  /** The workspace doors for this person: personal screens show for their owner only. */
+  readonly navWorkspaces = computed(() => NAV_WORKSPACES.filter((item) => navItemVisible(item, this.auth.user()?.username ?? null)));
   readonly navMore = NAV_MORE;
   readonly navDevice = NAV_DEVICE;
 
