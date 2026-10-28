@@ -175,12 +175,12 @@ export const LEGAL_LANGUAGES: readonly SegmentOption[] = [
     .legal__edit { display: grid; gap: 8px; }
     .legal__textarea { width: 100%; min-height: 60vh; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface);
       color: var(--ink); font: inherit; font-size: 14px; line-height: 1.6; resize: vertical; }
-    @media (max-width: 679px) { .legal__textarea { font-size: 16px; min-height: 50vh; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .legal__textarea { font-size: 16px; min-height: 50vh; } }
     .legal__hint { margin: 0; color: var(--muted); font-size: 12.5px; }
     .legal__sheet-foot { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
     .legal__sheet-foot .btn { min-height: 44px; }
     /* The phone sheet body has no side padding (it expects inset groups): reading text and the editor bring their own 16 px gutter. */
-    @media (max-width: 679.98px) { .legal__read--sheet, .legal__edit { padding-inline: 16px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .legal__read--sheet, .legal__edit { padding-inline: 16px; } }
   `,
 })
 export class SettingsLegal implements SettingsEditor {

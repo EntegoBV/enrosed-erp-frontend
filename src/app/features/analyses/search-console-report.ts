@@ -208,7 +208,7 @@ type SearchSort = 'clicks' | 'impressions' | 'ctr' | 'position';
     .sc-method p:last-child { margin-bottom: 0; }
     button:focus-visible, summary:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--sc-blue); outline-offset: 3px; }
     .sc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .sc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
       .sc-kpi { padding: 14px; border-radius: 18px; }
       .sc-kpi > strong { font-size: 27px; }

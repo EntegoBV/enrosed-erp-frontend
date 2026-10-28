@@ -79,7 +79,7 @@
 }
 
 /* ---- phone */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   #finance-workspace {
     .fin-inv-entry { margin-bottom: 12px; }
     .fin-inv-entry .ios-cell__lead { color: var(--rose); }

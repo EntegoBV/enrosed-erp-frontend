@@ -938,7 +938,7 @@ const normalizeCategoryCode = (value: string): string => value
     .settings-content { padding-top: 12px; }
     .workbook-card { overflow: hidden; }
     /* Phone: the category card of /website/categories folds on its head. */
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .settings-content--website .settings-head { cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
       .settings-content--website .settings-head::after { content: ''; width: 8px; height: 8px; margin-left: auto; flex: none;
         border-right: 1.8px solid var(--muted); border-bottom: 1.8px solid var(--muted);
@@ -1106,7 +1106,7 @@ const normalizeCategoryCode = (value: string): string => value
       .category-conflict, .category-conflict__actions { align-items: stretch; flex-direction: column; }
       .category-conflict .btn { width: 100%; min-height: 48px; }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .workbook-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .workbook-steps li { align-items: flex-start; }
       .workbook-actions { grid-template-columns: auto auto; justify-content: flex-start; }
@@ -1122,7 +1122,7 @@ const normalizeCategoryCode = (value: string): string => value
       .category-item__actions { display: flex; }
       .category-item__actions .btn { width: auto; }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .settings-content { padding-top: 16px; }
       .settings-content--website { padding-top: 0; }
     }

@@ -121,7 +121,7 @@
 /* ------------------------------------------------------------ desk toolbar
    52 px, solid, a crumb to the screen above, the title at the kit's
    .wk-toolbar__title size, compact actions, a divider and the bell. */
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   :root { --appbar-h: calc(52px + var(--safe-t)); }
   .appbar {
     gap: 12px;
@@ -188,7 +188,7 @@
   .appbar__divider { width: 1px; height: 20px; flex: none; background: var(--line); }
   .appbar__actions:has(> :not(.appbar__divider, app-notification-bell, .hide-desktop)) > .appbar__divider { display: block; }
 }
-@media (min-width: 680px) and (max-width: 1023.98px) {
+@media (min-width: 680px) and (max-width: 1023.98px) and (hover: hover) {
   .appbar { padding: var(--safe-t) 16px 0; }
   .appbar__actions { gap: 6px; }
   .appbar__actions > .btn { padding: 0 10px; }
@@ -199,7 +199,7 @@
    condenses into the canvas-coloured bar (the IosNav behaviour). Detail screens: the
    same bar from the start, title over subtitle. Glass capsules and
    circles for back, actions and the bell. */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   :root { --appbar-h: calc(44px + var(--safe-t)); }
   .appbar {
     gap: 2px;
@@ -322,7 +322,7 @@
 .sidebar__count-rail { display: none; }
 .sidebar__rule { display: none; }
 
-@media (min-width: 680px) and (max-width: 1023.98px) {
+@media (min-width: 680px) and (max-width: 1023.98px) and (hover: hover) {
   .sidebar .sidebar__count-full { display: none; }
   .sidebar .sidebar__count-rail { display: inline; }
   /* 16 px, top right of the icon. */
@@ -344,7 +344,7 @@
 @media (min-width: 1024px) {
   .sidebar__foot .sidebar__link--device { margin: 0 -4px; }
 }
-@media (min-width: 680px) and (max-width: 899.98px) {
+@media (min-width: 680px) and (max-width: 899.98px) and (hover: hover) {
   .sidebar .sidebar__link--rail > .sidebar__count { top: 8px; }
 }
 /* 900-1023: Login-aanvragen stands in the rail with its own chip; the same number on Meer would read as twice as many. */

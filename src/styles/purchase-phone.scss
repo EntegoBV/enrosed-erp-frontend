@@ -9,7 +9,7 @@
    its beige --bg; cards and lists are --surface white.
    ========================================================================== */
 
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
 /* ---- frame: the kit's sticky nav and subbar stick against .mpo-phone */
 :is(app-purchase-view,app-purchase-editor) .mpo-phone{--ios-bg:var(--bg);--mpo-tabs-h:74px;display:block;min-width:0}
 .mpo-phone--view{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 108px)}

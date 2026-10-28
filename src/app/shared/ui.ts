@@ -20,6 +20,7 @@ import {
 import {
   sheetBackdropFactor, sheetDragOffset, sheetDragOutcome, sheetDragStarted,
 } from './sheet-drag';
+import { deskViewport } from '../core/platform/desktop-viewport';
 
 /* ------------------------------------------------------------------ sheet */
 
@@ -178,7 +179,7 @@ export class Sheet implements AfterViewInit, OnDestroy {
 
   /** Only a touch phone drags; a desk dialog never moves. */
   private dragEnabled(): boolean {
-    return typeof window !== 'undefined' && window.innerWidth < 680
+    return typeof window !== 'undefined' && !deskViewport(window)
       && !!window.matchMedia?.('(pointer: coarse)').matches;
   }
 
@@ -283,7 +284,7 @@ export class Sheet implements AfterViewInit, OnDestroy {
        Phone: tapping the dimmed area is the natural way to dismiss a
        bottom sheet, so there it still closes. A read-only dialog
        (backdropCloses) has no work to lose: it closes on the desk too. */
-    if (window.innerWidth >= 680 && !this.backdropCloses()) return;
+    if (deskViewport(window) && !this.backdropCloses()) return;
     this.requestClose();
   }
 

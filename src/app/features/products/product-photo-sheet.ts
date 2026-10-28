@@ -315,13 +315,13 @@ const EXTRA_SWITCHES: ReadonlyArray<{ channel: CatalogChannel; label: string; he
     .ps-foot { display: contents; }
     .ps-foot__note { flex: 1; align-self: center; color: var(--ink-2); font-size: 12.5px; line-height: 1.35; }
     .ps-desk { display: none; }
-    @media (max-width: 679.98px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       /* Folds closed: the sheet is as high as it gets and the picture takes what the rows leave, so both folds stay on the first screen. */
       .ps--fit { display: flex; flex-direction: column; min-height: calc(92dvh - 186px - var(--safe-b, 0px) - env(safe-area-inset-bottom, 0px)); }
       .ps--fit .ps-stage { flex: 1 1 auto; grid-template-rows: minmax(110px, 1fr) auto; }
       .ps--fit .ps-fig__img { flex: 1 1 0; height: auto; min-height: 60px; }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .ps { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
       /* The photo stays in view while the rows and the settings scroll. */
       .ps-stage { position: sticky; top: 0; }

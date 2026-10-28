@@ -2,7 +2,7 @@
    glass tab bar, inset groups, swipe rows) is the kit's; the kit also hides
    the ERP tab bar once the page renders .ios-page. These are the few
    finance parts on top, scoped under the page host. */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   #finance-workspace {
     .fin-ios-search { padding: 0 var(--ios-inset) 8px; }
     .fin-ios-note { margin: 0 0 12px; }

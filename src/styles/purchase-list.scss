@@ -58,7 +58,7 @@ app-purchase-list .swipe--dragging .pl-more{transform:translateX(var(--swipe-off
 /* The row menu: its head is the container name, which is never cut (B4). The kit's popover head and the iOS sheet title are
    one line with an ellipsis and no title; under the menu's own class they wrap instead (the end, "40FTHQ", tells two apart). */
 app-purchase-list .pl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
-@media (max-width:679.98px){app-purchase-list .pl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-purchase-list .pl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
 
 /* Swipe: the buttons under a row show only while it is open, dragged or the button has focus; no 1px sliver (B17). */
 app-purchase-list .pl-swipe>.swipe__archive,app-purchase-list .pl-swipe>.swipe__delete{opacity:0}
@@ -96,10 +96,10 @@ app-purchase-list .pl-loading{margin:0 var(--ios-inset)}
 
 /* ---- the new-calculation sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),
    so the plain fields, the supplier card and the container cards keep the 16 px gutter here; the desk sheet is unchanged. */
-@media (max-width:679.98px){app-purchase-list .sheet--ios .pl-new{padding:0 var(--ios-inset,16px)}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-purchase-list .sheet--ios .pl-new{padding:0 var(--ios-inset,16px)}}
 /* Below 1280 px the desk toolbar's tools leave the subtitle 34-110 px: "8 containercalculaties" would only show cut.
    The same count stands on the Inkooporders tab, so the line steps aside there. */
-@media (min-width:680px) and (max-width:1279.98px){app-purchase-list .appbar__sub{display:none}}
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) {app-purchase-list .appbar__sub{display:none}}
 app-purchase-list .pl-tracking-entry{padding-bottom:0}
 app-purchase-list .pl-tracking-link{display:flex;align-items:center;gap:12px;padding:13px 16px;border:1px solid var(--line);border-radius:15px;background:var(--surface);color:var(--ink);text-decoration:none}
 app-purchase-list .pl-tracking-link__icon{display:grid;place-items:center;flex:none;width:38px;height:38px;border-radius:11px;background:var(--rose-soft);color:var(--rose-dark)}

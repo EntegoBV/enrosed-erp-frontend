@@ -52,7 +52,7 @@ import { WeekNlPipe } from '../../shared/pipes';
     .fulfillment__action .btn { min-height:44px;margin:0;flex:none }
     .fulfillment__hint { margin:11px 0 0;color:var(--muted);font-size:11px;line-height:1.5 }
     .fulfillment__error { margin:12px 0 0;color:var(--danger);font-size:13px;line-height:1.5 }
-    @media(max-width:679px) { .fulfillment { padding:15px;border-radius:19px }.fulfillment__parts { gap:3px }.fulfillment__copy { min-width:150px }.fulfillment__sibling { width:100%;grid-template-columns:1fr auto;align-items:center }.fulfillment__action .btn { width:100% } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .fulfillment { padding:15px;border-radius:19px }.fulfillment__parts { gap:3px }.fulfillment__copy { min-width:150px }.fulfillment__sibling { width:100%;grid-template-columns:1fr auto;align-items:center }.fulfillment__action .btn { width:100% } }
   `,
 })
 export class SalesFulfillmentCard {

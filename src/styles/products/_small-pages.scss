@@ -36,7 +36,7 @@ app-barcode-pool-page .ean-product small { color: var(--muted); font-size: 11.5p
 app-barcode-pool-page .ean-wrap { white-space: normal; }
 app-barcode-pool-page .pool-item.swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; }
 app-barcode-pool-page .pool-row .mono { font-family: var(--mono); letter-spacing: .03em; }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-barcode-pool-page .content.ean--phone { padding-left: 0; padding-right: 0; }
   app-barcode-pool-page .ean-seg, app-barcode-pool-page .ean-search { padding: 0 var(--ios-inset) 10px; }
   app-barcode-pool-page .ean-add { margin: 0 var(--ios-inset) 16px; }

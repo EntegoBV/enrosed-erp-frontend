@@ -532,7 +532,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
       .cover-stage { padding: 30px 26px 26px; }
       .studio-section { padding: 24px; }
     }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .catalog-page { padding-inline: 12px; padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
       .catalog-workspace { gap: 16px; }
       .studio-preview { padding: 16px; border-radius: 22px; }

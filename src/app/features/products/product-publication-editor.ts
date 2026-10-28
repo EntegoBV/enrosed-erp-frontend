@@ -644,7 +644,7 @@ interface FamilyFeaturedOption {
       font-weight: 700;
     }
 
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .publication > summary {
         grid-template-columns: auto minmax(0, 1fr) auto auto auto;
         padding: 14px 18px;
@@ -692,7 +692,7 @@ interface FamilyFeaturedOption {
         gap: 12px;
       }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .channel-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }

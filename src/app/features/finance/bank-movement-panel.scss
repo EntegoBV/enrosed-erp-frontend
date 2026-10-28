@@ -35,6 +35,6 @@
 .bank-swipe .ios-swipe__btn { line-height: 1.15; text-align: center; white-space: normal; }
 /* A day's head: the day and "Saldo einde dag {€}" each on one line; the saldo drops below on a narrow phone. */
 .bank-day-head { flex-wrap: wrap; row-gap: 2px; h2 { white-space: nowrap; } .ios-section__trail { margin-left: auto; white-space: nowrap; } }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .bank-history { margin-inline: var(--ios-inset); summary { min-height: 36px; align-content: center; } }
 }

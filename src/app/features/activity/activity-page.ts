@@ -205,7 +205,7 @@ const MAX_EXTRA_PAGES = 4;
     .log-cell { align-items: flex-start; }
     .log-wrap { white-space: normal; overflow-wrap: anywhere; }
     .log-cell__time { font-family: var(--mono, ui-monospace, monospace); }
-    @media (max-width: 679px) { .log-page { --ios-inset: 0px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .log-page { --ios-inset: 0px; } }
   `,
 })
 export class ActivityPage {

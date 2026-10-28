@@ -38,7 +38,7 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [{ provide: FINANCE_SECTION, useExisting: forwardRef(() => VatReturnPanel) }],
   imports: [Icon, EurPipe, Segmented, Skeleton, Sheet],
-  styles: ['@media (max-width: 679px) { .tica-vat-warning { padding: 0 16px; } }'],
+  styles: ['@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .tica-vat-warning { padding: 0 16px; } }'],
   template: `
     @if (result().ticaPendingCount || result().ticaSalesIncomplete) {
       <p class="fin-hint fin-warn-text tica-vat-warning" role="status">TICA-btw nog onvolledig. @if (result().ticaPendingCount) { {{ result().ticaPendingCount }} afrekening(en) wachten op controle. }

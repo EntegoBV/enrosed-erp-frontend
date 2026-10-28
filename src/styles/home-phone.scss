@@ -15,7 +15,7 @@ app-home-task-cells, app-open-page { display: block; }
 app-home-add-sheet { display: contents; }
 
 /* ---- shell: the tab bar beside the '+' */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .shell--home > .tabbar { right: calc(var(--safe-r) + 12px + var(--tabbar-h)); }
 }
 .home-phone { --ios-tabbar-h: var(--tabbar-h); }

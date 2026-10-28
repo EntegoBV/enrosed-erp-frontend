@@ -4,7 +4,7 @@
    upload pill and Quick Look as a black screen. Scoped under the page host;
    the kit's tab bar and toolbar take care of --tabbar-h.
    ========================================================================== */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-files-page#files-workspace {
     .files-phone__caption a { color: var(--rose); text-decoration: none; }
     .files-phone__subbar { display: grid; gap: 8px; }

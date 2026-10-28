@@ -164,7 +164,7 @@ import { OdooSyncState } from './odoo-sync-state';
     .odoo-empty { padding: 16px 0; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
     .odoo-more { margin-top: 14px; }
     .odoo-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       :host { margin: 0 0 20px; }
       .odoo-head { padding: 12px; gap: 9px; flex-wrap: wrap; }
       .odoo-head-actions { width: 100%; margin-left: 44px; }

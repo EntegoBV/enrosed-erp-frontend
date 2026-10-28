@@ -34,7 +34,7 @@ import type { CostDriftNotice } from './product-price-build';
     .pch-sheet { display: grid; gap: 12px; min-width: 0; }
     .pch-sheet__name { margin: 0; color: var(--muted); font-size: 13px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
     .pch-sheet__name span { color: var(--rose-dark); }
-    @media (max-width: 679.98px) { .pch-sheet { padding: 0 16px; } .pch-sheet__name { text-align: center; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .pch-sheet { padding: 0 16px; } .pch-sheet__name { text-align: center; } }
   `,
 })
 export class ProductCostHistorySheet {

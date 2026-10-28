@@ -25,7 +25,7 @@
 .ts-error { padding: 12px 20px; color: var(--danger); background: var(--danger-soft); font-size: 13px; overflow-wrap: anywhere; }
 .ts-form .ts-error { padding: 12px; border-radius: 8px; }
 .ts-foot { display: flex; width: 100%; justify-content: flex-end; gap: 10px; }
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .ts-head { padding: 16px; flex-wrap: wrap; }
   .ts-head > div { flex-basis: calc(100% - 40px); }
   .ts-head .btn { width: 100%; min-height: 44px; }

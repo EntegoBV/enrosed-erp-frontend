@@ -444,7 +444,7 @@ button.cf-rule-cell__eur{color:var(--rose-dark);font-weight:650;cursor:pointer}
  .cf-bottom{grid-template-columns:minmax(0,1fr)}
  .cf-head{flex-wrap:wrap}
 }
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 

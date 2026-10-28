@@ -108,7 +108,7 @@ import { WebsitePriceStore } from './website-price-store';
     .quote-setting__status span, .quote-setting__hint { color: var(--ink-2); }
     .quote-setting__hint { font-size: 12px; margin-top: 12px; }
     .quote-setting__error { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--danger); font-size: 13px; margin-top: 12px; }
-    @media (max-width: 679px) { .quote-setting__row { gap: 14px; align-items: flex-start; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .quote-setting__row { gap: 14px; align-items: flex-start; } }
     @media (prefers-reduced-motion: reduce) { .quote-setting__switch::before, .quote-setting__switch span { transition: none; } }
     .q-ios__text { white-space: normal; }
     .q-ios__error { color: var(--danger); }

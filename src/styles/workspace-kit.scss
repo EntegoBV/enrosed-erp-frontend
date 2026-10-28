@@ -3,8 +3,10 @@
    (Kosten & bank, Documenten & media, Inkoop betalingen).
 
    Prefixes
-   - wk-*   the desk, i.e. DesktopViewport.active() (680px and up)
-   - ios-*  the phone (below 680px)
+   - wk-*   the desk, i.e. DesktopViewport.active() (DESK_MEDIA: 1024px and
+            up, or 680px and up with a hovering pointer)
+   - ios-*  the phone (PHONE_MEDIA: below 680px, or a touch screen without
+            hover below 1024px, such as an unfolded iPhone Duo)
    - tone-*, wk-meter, wk-equation, wk-amount and wk-dot work on both.
 
    Opt-in: nothing here changes a screen until it renders the classes. The
@@ -45,11 +47,11 @@
 
 /* ---- shell (opt-in) */
 app-ios-nav,app-ios-tabbar,app-wk-side-foot{display:contents}
-@media (min-width:680px){
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
  .shell--workspace:has(.wk-page){height:100dvh;overflow:hidden}
  .shell--workspace:has(.wk-page)>.main{height:100dvh;min-height:0;overflow:hidden;background:var(--wk-bg)}
  body:has(.shell--workspace .wk-page) .toasts{bottom:calc(var(--wk-status-h) + 14px)}}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .shell--workspace-phone:has(.ios-page)>.tabbar{display:none}
  body:has(.shell--workspace-phone .ios-page):not(:has(.ios-tabbar,.ios-toolbar)){--tabbar-h:0px}
  body:has(.ios-tabbar,.ios-toolbar){--tabbar-h:var(--ios-tabbar-h)}
@@ -379,7 +381,7 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-swipe[data-armed=start] .ios-swipe__actions--start>.ios-swipe__btn:not(:first-child),.ios-swipe[data-armed=end] .ios-swipe__actions--end>.ios-swipe__btn:not(:first-child){width:0;padding:0}
 .ios-swipe:has(.ios-swipe__actions--start :focus-visible){--swipe-x:calc(76px * var(--swipe-start-n,1))}.ios-swipe:has(.ios-swipe__actions--end :focus-visible){--swipe-x:calc(-76px * var(--swipe-end-n,1))}
 /* sheet refinements, opt-in with <app-sheet variant="ios">, phone only */
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .sheet.sheet--ios{padding-bottom:0;border-radius:26px 26px 0 0;background:var(--ios-bg)}
  .sheet--ios .sheet__grab{margin-top:6px;background:color-mix(in srgb,var(--ink) 22%,transparent)}
  .sheet--ios .sheet__head{position:relative;justify-content:center;min-height:52px;padding:6px 60px;border-bottom:0}

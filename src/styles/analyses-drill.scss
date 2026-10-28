@@ -61,7 +61,7 @@ app-an-drill .and__table .wk-th__btn { text-align: inherit; }
 app-an-drill .is-ok { color: var(--ok); } app-an-drill .is-warn { color: var(--warn); }
 app-an-drill .is-danger { color: var(--danger); } app-an-drill .is-muted { color: var(--muted); }
 
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   /* The head sticks to the top of the scrolling body: no padding above it. */
   app-an-drill .sheet__body { padding: 0 0 12px; }
   app-an-drill .and { gap: 0; }
@@ -76,7 +76,7 @@ app-an-drill .is-danger { color: var(--danger); } app-an-drill .is-muted { color
   app-an-drill .and__gap { min-height: 34px; font-size: 12.5px; }
 }
 
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-an-drill .and { gap: 14px; }
   app-an-drill .and__scope, app-an-drill .and__summary, app-an-drill .and__empty, app-an-drill .and__note { margin: 0 calc(var(--ios-inset) + 4px); }
   app-an-drill .and__seg { margin: 0 var(--ios-inset); }

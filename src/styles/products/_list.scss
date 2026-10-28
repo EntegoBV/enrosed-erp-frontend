@@ -63,7 +63,7 @@ app-product-list .plp-demo__chev { transition: transform var(--dur-1, .12s) var(
 app-product-list .plp-demo__chev--open { transform: rotate(180deg); }
 
 /* ---- Phone page ---- */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-product-list .content.plp { padding-left: 0; padding-right: 0; }
   app-product-list .plp-search { padding: 0 var(--ios-inset) 6px; }
   app-product-list .plp-filter { margin-right: -6px; }
@@ -89,7 +89,7 @@ app-product-list .swipe--dragging { user-select: none; }
 app-product-list .swipe--dragging .swipe__row { transform: translateX(var(--swipe-offset, 0px)); transition: none; cursor: grabbing; }
 
 /* ==== Desk (≥680): toolbar search, the subbar, the table (≥900), cards (680–899) ==== */
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   /* Wide enough for the whole placeholder, "Zoek naam, SKU, kleur of barcode". */
   app-product-list .pl-search { width: 300px; }
   app-product-list .pl-tool app-icon { flex: none; }
@@ -125,11 +125,11 @@ app-product-list .swipe--dragging .swipe__row { transform: translateX(var(--swip
 }
 /* Up to 1180 the search rests narrower so the subtitle stays whole (236 px still fits the
    shorter placeholder "Zoek naam, SKU of barcode" whole); it widens while in use. */
-@media (min-width: 680px) and (max-width: 1179.98px) {
+@media (min-width: 1024px) and (max-width: 1179.98px), (min-width: 680px) and (max-width: 1179.98px) and (hover: hover) {
   app-product-list .pl-search { width: 236px; transition: width var(--dur-2, .2s) var(--ease-out, ease); }
   app-product-list .pl-search:focus-within { width: 300px; }
 }
-@media (min-width: 680px) and (max-width: 1279.98px) {
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) {
   /* The two secondary tools become icons, their words in title and aria-label. */
   app-product-list .pl-tool__label { display: none; }
   app-product-list .pl-tool { padding-inline: 8px; }

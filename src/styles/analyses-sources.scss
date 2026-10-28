@@ -21,7 +21,7 @@
 .mk-fig--lg { margin-top: 4px; }
 .mk-fig--lg > button { min-height: 64px; }
 .mk-fig--lg b { font-size: 15px; }
-@media (max-width: 679.98px) { .mk-fig--lg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .mk-fig--lg { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---------- Bezoekers (critique N4: these replace component rules) */
 app-website-analytics .an-bar { margin-bottom: 6px; }
@@ -32,7 +32,7 @@ app-website-analytics .an-kpi__foot.is-ok { color: var(--ok); }
 app-website-analytics .wa__plot { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
 app-website-analytics .wa__yaxis { display: flex; flex-direction: column; justify-content: space-between; min-width: 28px; color: var(--muted);
   font-size: 10.5px; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; }
-@media (max-width: 679.98px) { .an-phone app-website-analytics .an-bar { margin-inline: 0; } }
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .an-phone app-website-analytics .an-bar { margin-inline: 0; } }
 
 /* ---------- Markt & container (critique N4: these replace component rules) */
 app-market-analysis .an-bar { margin-bottom: var(--an-gap); }
@@ -40,7 +40,7 @@ app-market-analysis .fr-tiles { display: grid; grid-template-columns: repeat(aut
 app-market-analysis .fr-vs { margin: -2px 0 10px; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 app-market-analysis .fr-vs b { color: var(--ink); } app-market-analysis .fr-vs b.is-warn { color: var(--warn); } app-market-analysis .fr-vs b.is-ok { color: var(--ok); }
 app-market-analysis .btn app-icon { margin-right: 4px; }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-market-analysis .fr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .an-phone app-market-analysis .an-bar { margin-inline: 0; }
 }

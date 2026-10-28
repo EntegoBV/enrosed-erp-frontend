@@ -538,7 +538,7 @@ const STORAGE_KEY = 'enrosed.market';
     .save-error{margin-top:9px;padding:8px 10px;border-radius:9px;background:var(--danger-soft);color:var(--danger);font-size:11px}
     .market-sheet-foot{display:flex;width:100%;justify-content:flex-end;gap:8px}
     @media(max-width:899.98px){.fx-pair+.fx-pair{border-top:1px solid var(--line);border-left:0}}
-    @media(max-width:679.98px){.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {.mk-card__head,.fx-pair,.fx-insight,.fr-detail{padding-left:14px;padding-right:14px}.fr-group{padding-left:14px;padding-right:14px}
       .mk-table summary,.mk-table__scroll th,.mk-table__scroll td{padding-left:14px;padding-right:14px}.fr-horizons{grid-template-columns:repeat(2,1fr)}
       .fx-pair__now strong{font-size:26px}}
     :host, .mk { min-width: 0; }
@@ -560,7 +560,7 @@ const STORAGE_KEY = 'enrosed.market';
     .mk-table__scroll { min-width: 0; max-width: 100%; }
     .market-sheet-foot .btn { min-height: 44px; }
     :is(button, summary, a):focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .mk { gap: 14px; }
       .mk-card__head, .fx-pair, .fx-insight, .fr-detail { padding: 16px; }
       .mk-card { border-radius: 22px; }

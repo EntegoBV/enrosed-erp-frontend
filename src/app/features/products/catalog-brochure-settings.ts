@@ -115,7 +115,7 @@ export interface CatalogBrochureDraft {
     .page-plan li span { display: grid; width: 19px; height: 24px; flex: none; place-items: center; border: 1px solid var(--line-strong); border-radius: 2px; background: var(--surface); color: var(--muted); font-size: 8px; }
     .page-plan p { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
     @container brochure-settings (min-width: 600px) { .brochure-fields { grid-template-columns: 1fr 1fr; } .photo-choice { grid-template-columns: 1fr 160px; align-items: center; } }
-    @media (max-width: 679px) { summary { padding: 18px; } .finish-body { padding-inline: 18px; } .page-plan { padding: 16px 18px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { summary { padding: 18px; } .finish-body { padding-inline: 18px; } .page-plan { padding: 16px 18px; } }
     @media (prefers-reduced-motion: reduce) { .finish-plus { transition: none; } }
   `,
 })

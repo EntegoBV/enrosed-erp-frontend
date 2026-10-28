@@ -130,7 +130,7 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
     :host { display: block; min-width: 0; }
     /* The kit's groups carry their own inset; the content gives them the width. */
     .more-content { max-width: 640px; padding-inline: 0; }
-    @media (min-width: 680px) { .more-content { --ios-inset: 0px; } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .more-content { --ios-inset: 0px; } }
     .ios-tile { flex: none; }
     .ios-cell__title .wk-pill { margin-left: 6px; }
     .ios-disclosure > summary .ios-count { margin-left: 4px; }

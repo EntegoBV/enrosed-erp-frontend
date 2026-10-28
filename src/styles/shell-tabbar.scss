@@ -201,7 +201,7 @@
 .tabbar-menu__row:focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: -3px; }
 .tabbar-menu__rule { height: 1px; margin: 4px 12px; background: var(--ios-sep, var(--line)); }
 
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   /* The bar makes room for the '+' beside it; five tabs then use the kit's 9.5 px labels. */
   .shell:has(> .main .fab:not(.fab--text)) > .tabbar { right: calc(var(--safe-r) + 12px + var(--ios-tabbar-h, 60px)); }
   :is(.shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar .tabbar__item { padding: 0; font-size: 9.5px; letter-spacing: -.02em; }
@@ -212,6 +212,6 @@
 @media (max-width: 359.98px) {
   .tabbar .tabbar__item { font-size: 9px; }
 }
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   .tabbar, .fab { display: none; }
 }

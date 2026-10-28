@@ -60,7 +60,7 @@ import { STATUS_BACK_LABEL, defaultStatusBack, type StatusBackOption, type Statu
     .back-sheet__choice small{color:var(--muted);font-size:12.5px}
     .back-sheet__lines{display:grid;gap:6px;margin:0;padding-left:18px;font-size:13.5px;line-height:1.45}
     .back-sheet__blocked{margin:0;padding:10px 12px;border-radius:12px;background:var(--warn-soft);color:#7c450b;font-size:13px;line-height:1.45}
-    @media (max-width:679.98px){.back-sheet{padding:0 16px}}
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {.back-sheet{padding:0 16px}}
   `,
 })
 export class PurchaseStatusBackSheet {

@@ -369,7 +369,7 @@ const LONG_LABELS: Record<LongField, string> = {
     .set-long > .set-textarea, .set-long > .set-hint { grid-column: 1; justify-self: stretch; }
     .set-textarea--sheet { min-height: 0; max-height: none; font-size: 16px; field-sizing: fixed; }
     /* The phone sheet body has no side padding (it expects inset groups): this text brings its own 16 px gutter. */
-    @media (max-width: 679.98px) { .set-long { padding-inline: 16px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .set-long { padding-inline: 16px; } }
     .set-long__foot { display: flex; justify-content: flex-end; gap: 8px; width: 100%; }
     .set-long__foot .btn { min-height: 44px; }
   `,

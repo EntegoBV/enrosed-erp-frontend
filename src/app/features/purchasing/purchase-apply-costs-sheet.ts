@@ -146,12 +146,12 @@ import { applyCostsButton, applyCostsRequest, newerNotice, withOverwrite, type A
     .ac-row__keep input { width: 16px; height: 16px; margin: 0; accent-color: var(--rose); }
     .ac-foot { display: contents; }
     /* Desk: one line per product, the figures beside the name. */
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .ac-row { grid-template-columns: minmax(0, 1.15fr) minmax(0, 2.4fr) auto; grid-template-areas: 'name figs link' 'basis figs link' 'keep figs link'; align-items: start; gap: 2px 18px; }
       .ac-row__figures, .ac-row__skip { margin-top: 0; }
       .ac-row__skip { align-self: center; }
     }
-    @media (max-width: 679.98px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .ac-sheet { padding: 0 16px; }
       .ac-row__history--none { display: none; }
       .ac-foot { display: flex; flex-direction: column-reverse; gap: 8px; width: 100%; }
