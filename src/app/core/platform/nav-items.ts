@@ -57,6 +57,8 @@ export interface NavItem {
   tabRoot?: boolean;
   /** The tile tone on Meer. */
   tone?: NavTone;
+  /** A personal screen: listed for this username only. */
+  onlyUser?: string;
 }
 
 export interface NavGroup {
@@ -161,6 +163,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { id: 'terms', label: 'Voorwaarden & privacy', icon: 'book', link: '/voorwaarden', wide: true, hint: 'Bekijk wat klanten te zien krijgen' },
       { id: 'deleted-items', label: 'Verwijderde items', icon: 'trash', link: '/settings/deleted-items', wide: true,
         hint: 'Verwijderde offertes, facturen en inkooporders herstellen' },
+      { id: 'stock-radar', label: 'Voorraadradar', icon: 'search', link: '/voorraadradar', wide: true, onlyUser: 'emre',
+        newUntil: '2027-01-01', hint: 'iPhone Duo bij Apple, MediaMarkt, Coolblue en meer' },
     ],
   },
 ];
@@ -231,9 +235,14 @@ export function groupCountKeys(group: NavGroup, surface: 'sidebar' | 'meer'): Na
     .map((item) => item.countKey as NavCountKey);
 }
 
-/** The items Meer lists per group: everything except the phone tab roots. */
-export function meerItems(group: NavGroup): NavItem[] {
-  return group.items.filter((item) => !item.tabRoot);
+/** Whether a person sees the item: personal screens list for their owner only. */
+export function navItemVisible(item: NavItem, username: string | null): boolean {
+  return !item.onlyUser || (username !== null && item.onlyUser.toLowerCase() === username.toLowerCase());
+}
+
+/** The items Meer lists per group: everything except the phone tab roots (and other people's personal screens). */
+export function meerItems(group: NavGroup, username: string | null = null): NavItem[] {
+  return group.items.filter((item) => !item.tabRoot && navItemVisible(item, username));
 }
 
 /** Every navigation target as a full URL, for the "nothing dropped" checks. */

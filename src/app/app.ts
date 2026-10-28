@@ -20,7 +20,7 @@ import { DesktopViewport } from './core/platform/desktop-viewport';
 import { WorkspaceReturn } from './core/platform/workspace-return';
 import { sidebarGroupForUrl, toggleSidebarGroup } from './core/platform/sidebar-navigation';
 import {
-  NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew, navItemUrl,
+  NAV_DEVICE, NAV_GROUPS, NAV_HOME, NAV_MORE, NAV_WORKSPACES, groupCountKeys, navItemActive, navItemIsNew, navItemUrl, navItemVisible,
 } from './core/platform/nav-items';
 import type { NavCountKey, NavGroup, NavItem } from './core/platform/nav-items';
 import type { SidebarGroup } from './core/platform/sidebar-navigation';
@@ -119,7 +119,7 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
               <div class="sidebar__sub" [id]="'sidebar-' + group.id"
                    [class.sidebar__sub--closed]="!groupOpen(group.id)">
                 <div class="sidebar__sub-list">
-                  @for (item of group.items; track item.id) {
+                  @for (item of sidebarItems(group); track item.id) {
                     <ng-container [ngTemplateOutlet]="navLink" [ngTemplateOutletContext]="{ $implicit: item }" />
                   }
                 </div>
@@ -310,6 +310,11 @@ export class App {
   /* The navigation table, shared with Meer. */
   readonly navHome = NAV_HOME;
   readonly navGroups = NAV_GROUPS;
+
+  /** A group's sidebar rows for this person: personal screens show for their owner only. */
+  sidebarItems(group: NavGroup): NavItem[] {
+    return group.items.filter((item) => navItemVisible(item, this.auth.user()?.username ?? null));
+  }
   readonly navWorkspaces = NAV_WORKSPACES;
   readonly navMore = NAV_MORE;
   readonly navDevice = NAV_DEVICE;

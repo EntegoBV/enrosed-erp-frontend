@@ -166,7 +166,7 @@ export class MorePage {
 
   /** A group's rows on Meer: everything except the phone's tab roots. */
   itemsOf(group: NavGroup): NavItem[] {
-    return meerItems(group);
+    return meerItems(group, this.auth.user()?.username ?? null);
   }
 
   titleOf(item: NavItem): string {

@@ -3598,3 +3598,19 @@ IBAN to `/settings?sectie=company`; an "Alle instellingen" row in NAV_GROUPS
 navItemActive rule for a bare `/settings`). Until it lands, every phone
 settings view ends with its own "Alle instellingen ›" row (settings-page,
 `.set-all`); drop that row once Meer has one.
+
+## Voorraadradar (2026-10-28, test branch)
+
+A personal screen for Emre at `/voorraadradar` (`features/stock-radar/stock-radar-page.ts`,
+`core/api/stock-radar-api.ts`): the backend's stock radar for the iPhone Duo
+(see the backend AI-CONTEXT). One responsive component: a hero with the verdict
+("Nu beschikbaar bij N winkels" / "Nergens binnen 3 dagen te krijgen"), a card
+per shop (status pill, last text, price, promised date, last check, rhythm,
+last notification with push/mail status, "Open winkel", "Nu controleren"), and
+two header actions: "Nu controleren" and "Testmelding" (push + mail to Emre).
+Refreshes itself every 10 s while visible.
+
+Navigation: the Bedrijf group row `stock-radar` carries `onlyUser: 'emre'`;
+`navItemVisible(item, username)` hides such rows from everyone else in the desk
+sidebar (`App.sidebarItems`) and on Meer (`meerItems(group, username)`). The
+backend answers 404 to other users anyway.
