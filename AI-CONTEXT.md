@@ -26,10 +26,9 @@ digital signing, change proposals) served by the same app.
   messages in English, grouped per topic.
 - Standalone components, signals, zoneless change detection, OnPush
   everywhere. Inline templates+styles in the component `.ts` files.
-- Node tests:
-  `node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test --experimental-strip-types tests/*.test.mts`;
-  modules with a node test may only `import type` from other src files;
-  also `npx ng build` and visual checks at 375 px and desk widths.
+- No automated tests: Emre had them all removed on 2026-10-28; do not write
+  or run tests. Check a change with `npx ng build` and visual checks at
+  375 px and desk widths.
 - Errors surface via `messageOf(failure, fallback)` - the backend sends
   readable Dutch messages on 409s; show them.
 
