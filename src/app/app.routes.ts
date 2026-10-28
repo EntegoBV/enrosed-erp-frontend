@@ -387,13 +387,6 @@ export const routes: Routes = [
       import('./features/activity/activity-page').then((m) => m.ActivityPage),
   },
   {
-    path: 'voorraadradar',
-    title: 'Voorraadradar',
-    canActivate: [authGuard],
-    loadComponent: () =>
-      import('./features/stock-radar/stock-radar-page').then((m) => m.StockRadarPage),
-  },
-  {
     path: 'more',
     title: 'Meer',
     canActivate: [authGuard],

@@ -57,8 +57,6 @@ export interface NavItem {
   tabRoot?: boolean;
   /** The tile tone on Meer. */
   tone?: NavTone;
-  /** A personal screen: listed for this username only. */
-  onlyUser?: string;
 }
 
 export interface NavGroup {
@@ -169,9 +167,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 
 /** The workspace doors: in the sidebar under the groups, on Meer under "Snel naar". */
 export const NAV_WORKSPACES: readonly NavItem[] = [
-  /* Emre's personal radar: a door of its own, so the phone finds it at the top of Meer. */
-  { id: 'stock-radar', label: 'Voorraadradar', short: 'Radar', icon: 'search', link: '/voorraadradar', tone: 'accent', onlyUser: 'emre',
-    newUntil: '2027-01-01', hint: 'iPhone Duo bij Apple, MediaMarkt, Coolblue en meer' },
   { id: 'files', label: 'Documenten & media', short: 'Media', icon: 'media', link: '/files', tone: 'plum',
     hint: 'Foto’s, PDF’s en bestanden beheren en delen' },
   { id: 'costs', label: 'Kosten & bank', short: 'Kosten', icon: 'exchange', link: '/costs', tone: 'green',
@@ -236,14 +231,9 @@ export function groupCountKeys(group: NavGroup, surface: 'sidebar' | 'meer'): Na
     .map((item) => item.countKey as NavCountKey);
 }
 
-/** Whether a person sees the item: personal screens list for their owner only. */
-export function navItemVisible(item: NavItem, username: string | null): boolean {
-  return !item.onlyUser || (username !== null && item.onlyUser.toLowerCase() === username.toLowerCase());
-}
-
-/** The items Meer lists per group: everything except the phone tab roots (and other people's personal screens). */
-export function meerItems(group: NavGroup, username: string | null = null): NavItem[] {
-  return group.items.filter((item) => !item.tabRoot && navItemVisible(item, username));
+/** The items Meer lists per group: everything except the phone tab roots. */
+export function meerItems(group: NavGroup): NavItem[] {
+  return group.items.filter((item) => !item.tabRoot);
 }
 
 /** Every navigation target as a full URL, for the "nothing dropped" checks. */

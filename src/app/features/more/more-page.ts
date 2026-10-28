@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api/auth';
 import { Icon } from '../../shared/icon';
@@ -6,7 +6,7 @@ import { PageHeader } from '../../shared/page-header';
 import { THEMES, Theme } from '../../core/platform/theme';
 import { WorkQueue } from '../../core/api/work-queue';
 import {
-  NAV_DEVICE, NAV_GROUPS, NAV_WORKSPACES, groupCountKeys, meerItems, meerLabel, navItemIsNew, navItemVisible,
+  NAV_DEVICE, NAV_GROUPS, NAV_WORKSPACES, groupCountKeys, meerItems, meerLabel, navItemIsNew,
 } from '../../core/platform/nav-items';
 import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-items';
 
@@ -32,7 +32,7 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
       <section class="ios-section" aria-labelledby="meer-snel">
         <div class="ios-section__head"><h2 id="meer-snel">Snel naar</h2></div>
         <nav class="ios-group ios-group--icons" aria-labelledby="meer-snel">
-          @for (item of workspaces(); track item.id) {
+          @for (item of workspaces; track item.id) {
             <a class="ios-cell" [routerLink]="item.link">
               <span [class]="'ios-tile tone-' + item.tone"><app-icon [name]="item.icon" [size]="18" /></span>
               <span class="ios-cell__body">
@@ -155,8 +155,7 @@ export class MorePage {
   readonly work = inject(WorkQueue);
 
   /* The navigation table, shared with the desk sidebar. */
-  /** The doors for this person: personal screens show for their owner only. */
-  readonly workspaces = computed(() => NAV_WORKSPACES.filter((item) => navItemVisible(item, this.auth.user()?.username ?? null)));
+  readonly workspaces = NAV_WORKSPACES;
   readonly groups = NAV_GROUPS;
   readonly device = NAV_DEVICE;
 
@@ -167,7 +166,7 @@ export class MorePage {
 
   /** A group's rows on Meer: everything except the phone's tab roots. */
   itemsOf(group: NavGroup): NavItem[] {
-    return meerItems(group, this.auth.user()?.username ?? null);
+    return meerItems(group);
   }
 
   titleOf(item: NavItem): string {
