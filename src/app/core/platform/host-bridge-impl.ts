@@ -11,6 +11,7 @@ import type {
 import { HostBridge } from './host-bridge';
 import type { HostBridgeImplementation, HostContribution, HostPageSource } from './host-bridge';
 import { NavHistory } from './nav-history-service';
+import { navPath } from './nav-history';
 import { WorkspaceReturn } from './workspace-return';
 import { NAV_GROUPS, navItemActive, navItemUrl } from './nav-items';
 import { tabMenuFor } from './tab-menu';
@@ -264,7 +265,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
   private dispatch(command: HostCommand): void {
     switch (command.type) {
       case 'action': this.runAction(command.id); break;
-      case 'back': this.history.popScreens(command.count ?? 1, () => this.owner?.source.onBack()); break;
+      case 'back': this.history.popScreens(command.count ?? 1, () => this.webBack()); break;
       case 'open': {
         const nav: HostNavDirection = command.nav ?? 'push';
         void this.router.navigateByUrl(command.url, { info: { nav }, replaceUrl: nav === 'replace' || nav === 'tab' });
@@ -295,15 +296,37 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     if (owner?.source.mirror?.()?.click(id)) return;
     if (id.startsWith('nav:')) { void this.router.navigateByUrl(id.slice(4), { info: { nav: 'push' } }); return; }
     if (id.startsWith('ext:')) { this.bridge.send({ type: 'openExternal', url: id.slice(4) }); return; }
-    if (id === 'workspaceBack') {
-      void this.router.navigateByUrl(this.injector.get(WorkspaceReturn).phoneUrl(), { info: { nav: 'pop' } });
-      return;
-    }
+    if (id === 'workspaceBack') { this.leaveTo(this.injector.get(WorkspaceReturn).phoneUrl()); return; }
     if (owner?.ids.has(id)) { owner.source.onAction({ id, finish: () => undefined }); return; }
     for (const contribution of this.bridge.contributions().values()) if (contribution.action?.(id)) return;
     if (id === 'bell' && owner?.source.bell) { owner.source.bell()?.open(); return; }
     if (owner) owner.source.onAction({ id, finish: () => undefined });
     else this.bridge.send({ type: 'log', level: 'warn', text: `action ${id} without a page` });
+  }
+
+  /**
+   * A native back with nothing below in history: a page whose back control
+   * names a url leaves without growing the stack; otherwise the page's own
+   * control runs (a folder up, a document's section).
+   */
+  private webBack(): void {
+    const url = this.owner?.page?.back?.url;
+    if (url) this.leaveTo(url);
+    else this.owner?.source.onBack();
+  }
+
+  /**
+   * Leaves for `url` the way the native stack expects: history back when
+   * that screen lies below (hostStack and screensBelow collapse the same
+   * screens), else a replace, so the depth never grows. A forward
+   * navigation here would push the origin on top of the workspace in the
+   * shell's NavigationStack.
+   */
+  private leaveTo(url: string): void {
+    const screens = this.history.hostStack();
+    const at = screens.slice(0, -1).map(navPath).lastIndexOf(navPath(url));
+    if (at >= 0) { this.history.popScreens(screens.length - 1 - at, () => undefined); return; }
+    void this.router.navigateByUrl(url, { info: { nav: 'pop' }, replaceUrl: true });
   }
 
   /** Pull to refresh: the page's own refresh when it declares one, else the work queue; `refreshDone` either way. */
