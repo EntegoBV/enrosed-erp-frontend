@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, inject, signal, viewChild } from '@angular/core';
+import type { HostPageInput } from '../../core/platform/host-bridge';
+import { HostPage } from '../../shared/host-page';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Auth } from '../../core/api/auth';
@@ -14,9 +16,9 @@ function deviceStore(): Storage | null {
 @Component({
   selector: 'app-login-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, HostPage],
   template: `
-    <main class="login">
+    <main class="login" [hostPage]="hostPage">
       <picture class="login__art" aria-hidden="true">
         <source media="(max-width: 679px)" srcset="login/enrosed-login-mobile.webp" />
         <img src="login/enrosed-login-desktop.webp" alt="" fetchpriority="high" />
@@ -95,6 +97,8 @@ function deviceStore(): Storage | null {
   `,
 })
 export class LoginPage {
+  /** The native host draws no bars here: the dark artwork wants light status text, and the tab bar waits for the sign-in. */
+  readonly hostPage: HostPageInput = { title: 'Aanmelden', chrome: false, tabBar: 'hidden', statusBar: 'light' };
   private readonly auth = inject(Auth);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);

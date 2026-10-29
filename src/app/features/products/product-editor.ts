@@ -26,6 +26,8 @@ import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { stockCellEdit, type BookingKind } from './stock-booking';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { HostPage, menuRows } from '../../shared/host-page';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -98,11 +100,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList,
-  ],
+    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList, HostPage],
   template: `
     @if (!desktop.active()) {
-      <header class="product-mobile-header">
+      <header class="product-mobile-header" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
         <!-- A long name gets the room: the back capsule folds to the kit's circle (foundation rule B10). -->
         <a class="product-mobile-back" [class.ios-capsule]="!phoneBackCompact()" [class.ios-circle]="phoneBackCompact()"
            [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']"
@@ -2005,6 +2006,34 @@ export class ProductEditor implements OnDestroy {
   readonly variantOptionLabel = productVariantOptionLabel;
   readonly catalogueNeighbours = computed(() => !this.editorReady() || this.isNew() || !this.navFamiliesReady() ? null
     : productCatalogNavigation(this.catalogueProducts(), this.families(), this.categories(), this.draft().id));
+  /**
+   * The native host's chrome (the phone header and the dock are hidden there): the name as the title, the dock's
+   * state as the subtitle, Opslaan/Aanmaken as the primary, the toolbar menu's rows as the menu, the way back.
+   */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const ready = this.editorReady();
+    const isNew = this.isNew();
+    const draft = this.draft();
+    const busy = this.saveBusy();
+    const dirty = this.workspaceDirty();
+    const toProduct = !isNew && ready;
+    return {
+      title: ready ? (draft.name || 'Nieuw product') : 'Product laden',
+      subtitle: this.dockPhotoNote() ? 'Foto’s worden meteen bewaard' : busy ? this.saveActionLabel() : dirty ? 'Wijzigingen klaar' : isNew ? 'Nieuw product' : 'Alles opgeslagen',
+      back: { label: toProduct ? 'Product' : 'Producten', url: toProduct ? `/products/${draft.id}` : '/products' },
+      primary: { id: 'save', label: isNew ? 'Aanmaken' : 'Opslaan', symbol: isNew ? 'plus' : 'checkmark', disabled: busy || !dirty },
+      actions: [],
+      menu: ready && !isNew ? menuRows(this.toolbarMenuItems()) : [],
+      guardsBack: this.dirty() || this.familyDirty() || this.agreementDirty(),
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'save') { void this.save(); return; }
+    const item = this.toolbarMenuItems().find((candidate) => candidate.id === event.id);
+    if (item) this.pickToolbarAction(item);
+  }
+
   readonly toolbarMenu = signal<MenuPoint | null>(null);
   private toolbarMenuTrigger: HTMLElement | null = null;
   private toolbarMenuDesktop: boolean | null = null;

@@ -25,6 +25,8 @@ import { costQuantity, costWords, entryCostBasis, productCostBasis, sameCostBasi
 interface PriceBuild { rows: PriceRow[]; source: string | null; live: CostBuild['live']; drift: CostDriftNotice | null; }
 import { IosNav } from '../../shared/ios-nav';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
 import { NavHistory } from '../../core/platform/nav-history-service';
 import { capsuleLabel } from '../../core/platform/return-label';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
@@ -87,7 +89,8 @@ export type { ReceivedContainer } from './received-containers';
       <!-- The phone product page on the kit's iOS bar, like the phone purchase order: the page root carries
            the bar and every sheet host as direct children (N3), so the shell's push/pop never moves them. -->
       <div class="ios-page pd-phone">
-        <app-ios-nav [title]="product.name" [customLarge]="true" [backLabel]="backText()" [backAriaLabel]="'Terug naar ' + backName()" (back)="goBack()">
+        <app-ios-nav [title]="product.name" [customLarge]="true" [backLabel]="backText()" [backAriaLabel]="'Terug naar ' + backName()" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <!-- Condensed, Bewerken becomes a circle so the small title keeps its room. -->
             @if (barCondensed()) {
@@ -866,6 +869,18 @@ export class ProductView {
     { id: 'build', label: 'Prijsopbouw', iconName: 'list' },
     { id: 'history', label: 'Kostprijshistoriek', iconName: 'recent' },
   ];
+  /** The native host's chrome: Bewerken as the primary, the '…' rows as the menu. */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const product = this.product();
+    if (!product) return null;
+    return { primary: { id: `nav:/products/${product.id}/edit`, label: 'Bewerken', icon: 'pencil' }, actions: [], menu: menuRows(this.moreItems) };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const product = this.product();
+    const item = this.moreItems.find((candidate) => candidate.id === event.id);
+    if (product && item) this.pickMore(item, product);
+  }
   /** The Afspraken disclosure opens itself when the link points at it (#product-agreements). */
   readonly agreementsOpenAtStart = typeof window !== 'undefined' && window.location.hash === '#product-agreements';
   readonly publicationGroups = computed(() => groupPublicationIssues(this.publicationIssues()));

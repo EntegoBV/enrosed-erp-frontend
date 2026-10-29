@@ -21,10 +21,11 @@
      A bottom toolbar (Documenten's selection) still stands at the bottom and keeps its room. */
   :root[data-host] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
 
-  /* Hidden, not removed: the probe reads its display. */
-  :root[data-host] .tabbar { visibility: hidden; pointer-events: none; }
-  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .fab, .ios-tabbar, .ios-accessory, .shero-bar, .mpo-dock,
-    .product-mobile-header, .product-editor-dock, .safe-paint, [data-safe-area-probe]) { display: none !important; }
+  /* Hidden, not removed: the bridge's probe reads the ERP bar's display, the mirror reads the '+' and the kit's tab bar. */
+  :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) { visibility: hidden !important; pointer-events: none !important; }
+  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .shero-bar, .mpo-dock, .product-mobile-header, .product-editor-dock, .safe-paint) {
+    display: none !important;
+  }
 
   /* The legacy header: the sticky bar is a spacer; the large title below it is content. */
   :root[data-host] .appbar { height: var(--safe-t); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; }

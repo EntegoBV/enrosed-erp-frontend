@@ -6,6 +6,7 @@ import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { PageHeader } from '../../shared/page-header';
 import {
   CONTAINER_TYPES, DEFAULT_PURCHASE_CONTAINER_TYPE, PURCHASE_CONTAINER_TYPES, PurchaseContainerType, containerLabel,
@@ -64,7 +65,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             EurPipe, NumPipe, CbmPipe, DateNlPipe],
   template: `
     <app-purchase-list-styles />
-    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
+    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()" [host]="hostPage" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
         <app-segmented class="pl-tabs" label="Werklijst of archief" semantics="tabs" [options]="tabOptions()"
                        [value]="archiveTab() ? 'archive' : 'active'" (changed)="showArchive($event === 'archive')" />
@@ -944,6 +945,13 @@ export class PurchaseList {
           this.deletingOrderId.set(null);
         }
       });
+  }
+
+  /** The native host's chrome: the '+' Calculatie and the section's title menu. */
+  readonly hostPage: HostPageInput = { accessory: { id: 'startNew', label: 'Calculatie', icon: 'plus', prominent: true }, titleMenu: 'auto' };
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'startNew') this.startNew();
   }
 
   startNew(): void {

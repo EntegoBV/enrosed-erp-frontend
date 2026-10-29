@@ -1,7 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { WorkspaceReturn } from '../../core/platform/workspace-return';
+import { HostBridge } from '../../core/platform/host-bridge';
+import { HOST_SYMBOLS } from '../../core/platform/host';
+import type { HostMenuItem, HostTab } from '../../core/platform/host';
 import { Icon } from '../../shared/icon';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
 import { Sheet } from '../../shared/ui';
@@ -108,6 +111,33 @@ export class WebsiteTabbar {
   /** The current path, handed in by the nav (it already follows the router). */
   readonly path = input.required<string>();
   readonly sheetOpen = signal(false);
+
+  constructor() {
+    /* The native host: these four tabs and the sheet's rows on every website page, for as long as the bar lives. */
+    const host = inject(HostBridge);
+    if (host.present) {
+      effect(() => host.contribute('website', { tabBar: 'website', workspaceTabs: this.hostTabs(), menu: this.hostMenu() }));
+      inject(DestroyRef).onDestroy(() => host.contribute('website', null));
+    }
+  }
+
+  readonly hostTabs = computed<HostTab[]>(() => this.tabs().map((tab) => {
+    const out: HostTab = { id: tab.id, label: tab.label, icon: tab.icon, symbol: HOST_SYMBOLS[tab.icon] ?? 'circle.dashed', active: tab.active, url: String(tab.link) };
+    if (tab.badge) { out.badge = tab.badge; out.warn = true; }
+    return out;
+  }));
+
+  readonly hostMenu = computed<HostMenuItem[]>(() => [
+    { id: 'nav:/website/seo', label: 'SEO', icon: 'search' },
+    { id: 'nav:/website/categories', label: 'Categorieën', icon: 'grid' },
+    { id: 'nav:/website/publication', label: 'Publicatie', icon: 'upload' },
+    { separator: true },
+    { id: 'nav:/settings?sectie=website', label: 'Prijzen op de website', icon: 'tag' },
+    { id: 'nav:/stock-locations', label: 'Afhalen & locaties', icon: 'truck' },
+    { id: `ext:${this.siteUrl}`, label: this.siteLabel, symbol: 'safari' },
+    { separator: true },
+    { id: 'workspaceBack', label: `Terug naar ${this.backLabel()}`, symbol: 'chevron.backward' },
+  ]);
 
   readonly siteUrl = environment.websitePreviewUrl;
   readonly siteHost = hostOf(environment.websitePreviewUrl);

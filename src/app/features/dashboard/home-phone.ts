@@ -17,6 +17,8 @@ import { othersOf } from './home-priority';
 import type { HomeTask, Tier } from './home-priority';
 import { HomeTaskCells } from './home-task-cells';
 import { PlannerCards } from './planner-cards';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
 import { HomeInkoop } from './widgets/home-inkoop';
 import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
@@ -62,7 +64,7 @@ const MENU: ContextMenuItem[] = [
     @let t = data.tasks();
     @let bellCount = data.work.actionCount();
     <div class="ios-page home-phone">
-      <app-ios-nav title="Vandaag" [subtitle]="subtitle()">
+      <app-ios-nav title="Vandaag" [subtitle]="subtitle()" [host]="hostPage()" (hostAction)="hostAction($event)">
         <span trail class="ios-glass-group">
           <button class="ios-circle home-phone__bell" type="button" [attr.aria-label]="bellLabel()" (click)="bell.open()">
             <app-icon name="bell" [size]="20" />
@@ -202,6 +204,27 @@ export class HomePhone {
   readonly menu = signal(false);
   readonly adding = signal(false);
   readonly menuItems = MENU;
+  private readonly bellRef = viewChild(NotificationBell);
+
+  /** The native host's chrome: '+' Toevoegen, the bell with its count, the '…' rows; pull to refresh reloads. */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const count = this.data.work.actionCount();
+    return {
+      accessory: { id: 'add', label: 'Toevoegen', icon: 'plus', prominent: true },
+      actions: [{ id: 'bell', label: this.bellLabel(), icon: 'bell', badge: count || undefined }],
+      menu: menuRows(MENU),
+      refreshable: true,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    switch (event.id) {
+      case 'add': this.adding.set(true); break;
+      case 'bell': this.bellRef()?.open(); break;
+      case 'refresh': event.finish(this.data.load()); break;
+      default: this.menuPick(event.id);
+    }
+  }
 
   /** "Goedemorgen · donderdag 15 oktober". */
   readonly subtitle = computed(() => `${greeting(this.data.hour())} · ${longDate(this.data.today())}`);

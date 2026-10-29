@@ -41,6 +41,9 @@ import { SalesOrder,
   QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction, HostMenuItem } from '../../core/platform/host';
+import { HostPage } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -71,7 +74,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage],
   template: `
     @if (view(); as data) {
       @if (cancelSheet()) {
@@ -191,7 +194,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </app-page-header>
       }
 
-      <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales">
+      <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
         <section class="sales-hero erp-workspace__hero" [class.sales-hero--credit]="isCreditNote()" id="sales-overview" aria-labelledby="sales-overview-title">
           <!-- Phone: the app bar folds into the hero - back, PDF and the
                edit action live on the dark surface itself. -->
@@ -1401,6 +1404,44 @@ export class SalesView {
   goBack(): void {
     if (window.history.length <= 1) { void this.routerNav.navigateByUrl('/sales'); return; }
     this.browserLocation.back();
+  }
+
+  /**
+   * The native host's chrome for the phone document (its hero bar is hidden there): Bewerken/Beheren as the
+   * primary (In verwerking nemen while a website order waits), PDF, and Annuleren / Order splitsen in the menu.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const label = this.actionLabel();
+    const edit: HostAction = { id: 'edit', label, symbol: label === 'Bewerken' ? 'pencil' : 'slider.horizontal.3' };
+    const canEdit = !this.isCreditNote() || data.order.status === 'CONCEPT';
+    const take = this.webOrderOpen();
+    const menu: HostMenuItem[] = [];
+    if (this.canCancel()) menu.push({ id: 'openCancel', label: this.cancelLabel('Annuleren'), icon: 'close', destructive: true, disabled: this.cancelling() });
+    else if (this.canCancelCredit()) menu.push({ id: 'cancelCredit', label: 'Annuleren', icon: 'close', destructive: true, disabled: this.invoiceBusy() });
+    if (!this.isCreditNote() && !this.isWebOrder() && !this.splitBlockReason(data)) {
+      menu.push({ id: 'openSplit', label: 'Order splitsen', disabled: this.invoiceBusy() || this.sendingQuote() });
+    }
+    return {
+      title: data.order.number, subtitle: this.customerName(), back: { label: 'Verkoop', url: '' },
+      primary: take ? { id: 'openTake', label: 'In verwerking nemen', disabled: this.invoiceBusy() } : canEdit ? edit : null,
+      actions: [...(take && canEdit ? [edit] : []), { id: 'downloadPdf', label: 'PDF', icon: 'pdf', disabled: this.downloading() }],
+      menu, tabBar: 'erp',
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    switch (event.id) {
+      case 'edit': if (data) void this.routerNav.navigate(['/sales', data.order.id, 'edit']); break;
+      case 'downloadPdf': this.downloadPdf(); break;
+      case 'openCancel': this.openCancel(); break;
+      case 'cancelCredit': this.cancelCredit(); break;
+      case 'openSplit': this.openSplit(); break;
+      case 'openTake': this.openTake(); break;
+      case 'back': this.goBack(); break;
+    }
   }
   private readonly routerNav = inject(Router);
 

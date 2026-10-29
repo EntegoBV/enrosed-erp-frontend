@@ -9,6 +9,9 @@ import { WorkspaceReturn } from '../../core/platform/workspace-return';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
+import { HOST_SYMBOLS } from '../../core/platform/host';
+import type { HostTab } from '../../core/platform/host';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { MenuTrigger } from '../../shared/menu-trigger';
 import { DateNlPipe } from '../../shared/pipes';
 import { Segmented, SegmentOption } from '../../shared/segmented';
@@ -57,7 +60,8 @@ import { FilesInspector } from './files-inspector';
       } @else {
         <app-ios-nav [title]="navTitle()" [backLabel]="c.picking() ? null : isRoot() ? rootBackLabel() : ''"
                      [backUrl]="isRoot() ? ret.phoneUrl() : null"
-                     [backAriaLabel]="isRoot() ? 'Terug naar ' + ret.label() : 'Terug naar ' + c.parentTitle()" (back)="c.goBack()">
+                     [backAriaLabel]="isRoot() ? 'Terug naar ' + ret.label() : 'Terug naar ' + c.parentTitle()" (back)="c.goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           @if (c.picking()) {
             <span lead><button class="ios-capsule ios-capsule--sm" type="button" (click)="allOrNone()">{{ allPicked() ? 'Geen' : 'Alles' }}</button></span>
           }
@@ -417,6 +421,37 @@ export class FilesPhone {
       { id: 'archive', label: 'Archief', icon: 'archive', link: '/files', query: { view: 'all', archief: 1 }, active: place === 'archive' },
     ];
   });
+
+  /**
+   * The native host's chrome: the three tabs, '+' while something can be added, Selecteer and the ⋯; in selection
+   * mode Alles/Geen and Klaar, and no tab bar (the web's selection toolbar stays at the bottom).
+   */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const picking = this.c.picking();
+    const tabs: HostTab[] = this.tabs().map((tab) => {
+      const query = new URLSearchParams(Object.entries(tab.query ?? {}).map(([key, value]) => [key, String(value)])).toString();
+      return { id: tab.id, label: tab.label, icon: tab.icon, symbol: HOST_SYMBOLS[tab.icon] ?? 'circle.dashed', active: tab.active, url: query ? `/files?${query}` : '/files' };
+    });
+    return {
+      accessory: !picking && this.canAdd() ? { id: 'add', label: 'Toevoegen', icon: 'plus', prominent: true } : null,
+      primary: picking ? { id: 'done', label: 'Klaar', symbol: 'checkmark' } : null,
+      actions: picking
+        ? [{ id: 'allOrNone', label: this.allPicked() ? 'Geen' : 'Alles' }]
+        : [...(this.isList() ? [{ id: 'select', label: 'Selecteer', disabled: !this.c.assets().length }] : []), { id: 'menu', label: 'Meer', icon: 'more' }],
+      workspaceTabs: tabs,
+      tabBar: picking ? 'hidden' : 'files',
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    switch (event.id) {
+      case 'add': this.addOpen.set(true); break;
+      case 'done': this.c.togglePicking(false); break;
+      case 'allOrNone': this.allOrNone(); break;
+      case 'select': this.c.togglePicking(true); break;
+      case 'menu': this.screenMenu(); break;
+    }
+  }
 
   readonly empty = computed(() => {
     const location = this.c.loc();

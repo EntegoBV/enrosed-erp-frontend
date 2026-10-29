@@ -39,6 +39,8 @@ import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
   MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction, HostMenuItem } from '../../core/platform/host';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -91,7 +93,8 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="mobileCommercialEditable()"
-                       (titleChange)="patch({ number: $event })">
+                       (titleChange)="patch({ number: $event })"
+                       [host]="hostPage()" (hostAction)="hostAction($event)">
         <div class="quote-header-actions">
           <!-- 'In verwerking nemen' needs the room on a phone; the hero below carries the same total. -->
           @if (!advanceAgreement() && !webOrderOpen()) {
@@ -2730,6 +2733,67 @@ export class SalesEditor {
   readonly desktop = inject(DesktopViewport);
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Gegevens', 'Producten', 'Levering', 'Controle'] as const;
+
+  /**
+   * The native host's chrome: Opslaan while something is unsaved, else the dock's step primary (the same chain as
+   * the phone dock, whose buttons the host hides), PDF, Annuleren in the menu; a dirty editor guards the back swipe.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const dirty = this.dirty();
+    let primary: HostAction | null = null;
+    if (this.canEdit() && this.documentDirty() && !this.transportSaving()) {
+      primary = { id: 'save', label: 'Opslaan', symbol: 'checkmark', disabled: this.saving() || this.saveConflict() };
+    } else if (this.webOrderOpen()) {
+      primary = { id: 'openTake', label: 'In verwerking nemen', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (this.webOrderCancelled()) {
+      primary = { id: 'pdfView', label: 'PDF bekijken', icon: 'pdf' };
+    } else if (!dirty && this.pendingRevision()) {
+      primary = { id: 'focusPendingRevision', label: 'Wijziging beoordelen' };
+    } else if (!dirty && data.order.status === 'GEACCEPTEERD' && this.invoiceBlockedByOrder(data)) {
+      primary = { id: 'duplicate', label: 'Nieuwe kopie', icon: 'copy', disabled: this.busy() };
+    } else if (!dirty && !this.isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
+      primary = { id: 'makeInvoice', label: this.advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken'),
+        symbol: 'doc.badge.plus', disabled: this.invoiceConversionBusy() || this.saving() };
+    } else if (!dirty && !this.isInvoiceDoc() && this.canReopen(data)) {
+      primary = { id: 'reopen', label: 'Heropenen', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (!dirty && this.invoiceFirst(data)) {
+      primary = { id: 'makeInvoice', label: 'Factuur maken', disabled: this.invoiceConversionBusy() || this.saving() || this.sending() };
+    } else if (!dirty && !this.isClaimDoc() && !this.sendIssues().length) {
+      primary = { id: 'openSend', label: this.sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen', disabled: this.sending() };
+    } else if (!dirty && !this.isClaimDoc() && this.sendIssues().length) {
+      const count = this.sendIssues().length;
+      primary = { id: 'fixIssue', label: `${count} open ${count === 1 ? 'punt' : 'punten'}` };
+    } else if (!dirty && this.isCreditNoteDoc() && data.order.status === 'CONCEPT') {
+      primary = { id: 'issueCreditNote', label: 'Uitreiken', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (!dirty && this.isClaimDoc()) {
+      primary = { id: 'pdfView', label: 'PDF bekijken', icon: 'pdf' };
+    }
+    const menu: HostMenuItem[] = [];
+    if (this.canCancel()) menu.push({ id: 'openCancel', label: this.cancelLabel(data, 'Annuleren'), icon: 'close', destructive: true, disabled: this.busy() });
+    return {
+      subtitle: dirty ? 'Niet opgeslagen' : this.customerName(),
+      primary, actions: [{ id: 'openPdfSheet', label: 'PDF', icon: 'pdf' }], menu, guardsBack: dirty,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    switch (event.id) {
+      case 'save': void this.save(); break;
+      case 'openTake': this.openTake(); break;
+      case 'pdfView': case 'openPdfSheet': this.openPdfSheet(); break;
+      case 'focusPendingRevision': this.focusPendingRevision(); break;
+      case 'duplicate': void this.duplicate(); break;
+      case 'makeInvoice': if (data) this.makeInvoiceFromEditor(data); break;
+      case 'reopen': this.reopen(); break;
+      case 'openSend': this.openSend(); break;
+      case 'fixIssue': { const issue = this.sendIssues()[0]; if (issue) this.fixIssue(issue); break; }
+      case 'issueCreditNote': this.issueCreditNote(true); break;
+      case 'openCancel': this.openCancel(); break;
+    }
+  }
 
   stepOfId(id: (typeof this.workflowSections)[number]['id']): number {
     return this.stepOf(id);

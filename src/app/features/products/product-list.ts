@@ -5,6 +5,8 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product, ProductFamily, StockLevel, ExpectedStock, StockLocation } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
@@ -82,7 +84,7 @@ interface ProductSwipe {
     PhotoExportSheet, LoadError, ContextMenu, Sheet, ProductListTable,
     ProductListStyles],
   template: `
-    <app-page-header title="Producten" [subtitle]="listSubtitle()">
+    <app-page-header title="Producten" [subtitle]="listSubtitle()" [host]="hostPage" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
         <label class="wk-search pl-search">
           <app-icon name="search" [size]="15" />
@@ -503,6 +505,18 @@ export class ProductList implements ProductListTableHost {
     { id: 'pdf', label: 'Catalogus PDF', iconName: 'pdf' },
     { id: 'photos', label: 'Foto’s exporteren', iconName: 'media' },
   ];
+  /** The native host's chrome: '+' Product, Voorraad, the '…' rows as the menu, the section's title menu. */
+  readonly hostPage: HostPageInput = {
+    accessory: { id: 'nav:/products/new', label: 'Product', icon: 'plus', prominent: true },
+    actions: [{ id: 'nav:/stock', label: 'Voorraad', icon: 'stock' }],
+    menu: menuRows(this.moreItems),
+    titleMenu: 'auto',
+  };
+
+  hostAction(event: HostActionEvent): void {
+    const item = this.moreItems.find((candidate) => candidate.id === event.id);
+    if (item) this.pickMore(item);
+  }
   /** The row being deleted: only that one leaves with motion, never rows a filter hides. */
   readonly removingId = signal<number | null>(null);
   readonly filtersOpen = signal(false);

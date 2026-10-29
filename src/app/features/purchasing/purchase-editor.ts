@@ -115,10 +115,13 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { containerName } from './container-name';
 import {
   STEP_BUTTON, actionsMenu, costsSupersededCount, countWords, editNextStep, lineCount, linePriceText, orderNumberLocked, parseTab, paymentsDot, productsDot, replaceTabInUrl, rootSectionOf, statusLabel, statusTone, stepConfirm,
-  stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
+  STEP_SYMBOL, stepTarget, stepToward, tabOfSection, tabParam, tabSegments, unsavedSummary, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
 import { IosNav } from '../../shared/ios-nav';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction } from '../../core/platform/host';
+import { menuRows } from '../../shared/host-page';
 import { Icon } from '../../shared/icon';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
@@ -173,7 +176,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--edit">
-        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()">
+        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <button trail class="ios-capsule ios-capsule--sm mpo-actions" type="button" aria-haspopup="dialog" [attr.aria-expanded]="actionsOpen()"
                   (click)="actionsOpen.set(true)">Acties <app-icon name="chevron-down" [size]="14" /></button>
           <!-- As the product editor: what is being edited, its status, and two figures that open their tab. -->
@@ -1549,6 +1553,31 @@ export class PurchaseEditor {
 
   productSku(productId: number): string | null {
     return this.productById().get(productId)?.sku || null;
+  }
+
+  /**
+   * The native host's chrome (the save bar keeps its fill meter there): Opslaan while something is unsaved, else the
+   * save bar's step; the Acties rows as the menu; the state as the subtitle; a dirty editor guards the back swipe.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const dirty = this.dirty();
+    const step = this.editStep();
+    const primary: HostAction | null = dirty
+      ? { id: 'save', label: 'Opslaan', symbol: 'checkmark', disabled: this.saving() || this.negativeExtra() }
+      : step ? { id: 'editStep', label: this.editStepLabel(step), symbol: step === 'PRODUCTEN' ? 'plus' : STEP_SYMBOL[step] } : null;
+    return {
+      subtitle: this.saving() ? 'Bezig met opslaan' : dirty ? (this.unsavedText() || 'Niet opgeslagen') : 'Alles opgeslagen',
+      primary, actions: [], menu: menuRows(this.actionsMenuItems()), guardsBack: dirty,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'save') { void this.save(); return; }
+    if (event.id === 'editStep') { const step = this.editStep(); if (step) this.runEditStep(step); return; }
+    const item = this.actionsMenuItems().find((candidate) => candidate.id === event.id);
+    if (item) this.pickAction(item);
   }
 
   /** Acties: what the old Afronden step and its Meer acties held. */

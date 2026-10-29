@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "enrosed-host-contract/1",
+  "title": "Enrosed native host bridge, version 1",
+  "description": "Messages between the Angular ERP (web) and the enrosed-erp-ios shell (native). Web -> native messages travel as JSON strings through window.webkit.messageHandlers.enrosed.postMessage (fire and forget) or enrosedAsk.postMessage (a reply is awaited); native -> web commands arrive through window.enrosedHost.receive(json) and the per-type handlers registered with enrosedHost.on(type, fn), replayed after enrosedHost.ready(). Both sides tolerate unknown fields. The same file lives in both repositories; the web's tools/check-host.mjs validates every message the web emits against the `message` and `ask` definitions.",
+  "oneOf": [{ "$ref": "#/$defs/message" }, { "$ref": "#/$defs/ask" }],
+  "$defs": {
+    "message": {
+      "oneOf": [
+        { "$ref": "#/$defs/ready" }, { "$ref": "#/$defs/auth" }, { "$ref": "#/$defs/theme" }, { "$ref": "#/$defs/badges" },
+        { "$ref": "#/$defs/navWillChange" }, { "$ref": "#/$defs/page" }, { "$ref": "#/$defs/scroll" }, { "$ref": "#/$defs/overlay" },
+        { "$ref": "#/$defs/haptic" }, { "$ref": "#/$defs/file" }, { "$ref": "#/$defs/share" }, { "$ref": "#/$defs/openExternal" },
+        { "$ref": "#/$defs/refreshDone" }, { "$ref": "#/$defs/log" }
+      ]
+    },
+    "ask": { "oneOf": [{ "$ref": "#/$defs/confirm" }, { "$ref": "#/$defs/prompt" }] },
+
+    "colour": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "themeColours": {
+      "type": "object", "required": ["accent", "accentDark", "background"],
+      "properties": { "accent": { "$ref": "#/$defs/colour" }, "accentDark": { "$ref": "#/$defs/colour" }, "background": { "$ref": "#/$defs/colour" } }
+    },
+    "ready": {
+      "type": "object", "required": ["type", "hostVersion", "app", "loggedIn", "theme", "url"],
+      "properties": {
+        "type": { "const": "ready" }, "hostVersion": { "const": 1 }, "app": { "type": "string", "description": "the build: the main script's file name" },
+        "loggedIn": { "type": "boolean" }, "theme": { "$ref": "#/$defs/themeColours" }, "url": { "type": "string" }
+      }
+    },
+    "auth": { "type": "object", "required": ["type", "loggedIn"], "properties": { "type": { "const": "auth" }, "loggedIn": { "type": "boolean" } } },
+    "theme": {
+      "type": "object", "required": ["type", "accent", "accentDark", "background"],
+      "properties": { "type": { "const": "theme" }, "accent": { "$ref": "#/$defs/colour" }, "accentDark": { "$ref": "#/$defs/colour" }, "background": { "$ref": "#/$defs/colour" } }
+    },
+    "badges": {
+      "type": "object", "required": ["type", "sales", "more", "bell"],
+      "properties": {
+        "type": { "const": "badges" },
+        "sales": { "type": "integer", "minimum": 0, "description": "WorkQueue.actionCount: the Verkoop tab" },
+        "more": { "type": "integer", "minimum": 0, "description": "WorkQueue.loginRequestCount: the Meer tab" },
+        "bell": { "type": "integer", "minimum": 0, "description": "the same number as sales (the bell never drifts from the tab)" }
+      }
+    },
+    "navDirection": { "enum": ["push", "pop", "replace", "tab"] },
+    "navWillChange": {
+      "type": "object", "required": ["type", "direction", "to"],
+      "description": "Sent at NavigationStart with the requested URL; when the router settles on another URL (a redirect) a second one with direction replace and the final URL follows before the page.",
+      "properties": { "type": { "const": "nav.willChange" }, "direction": { "$ref": "#/$defs/navDirection" }, "to": { "type": "string" } }
+    },
+    "action": {
+      "type": "object", "required": ["id", "label"],
+      "description": "A toolbar or menu item. The web sends `symbol` (SF Symbol, resolved from HOST_SYMBOLS or the action's word) whenever it knows one and keeps `icon` (the web's icon name); unknown symbols fall back to circle.dashed. Ids: the page's method names; `nav:<url>` navigates, `ext:<url>` opens outside, `workspaceBack` leaves a workspace, `bell` opens the notifications, `editTitle` asks for the document number, `refresh` runs the page's refresh.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 }, "label": { "type": "string" }, "symbol": { "type": "string" }, "icon": { "type": "string" },
+        "prominent": { "type": "boolean" }, "destructive": { "type": "boolean" }, "disabled": { "type": "boolean" }, "badge": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "separator": { "type": "object", "required": ["separator"], "properties": { "separator": { "const": true } } },
+    "menuItem": { "oneOf": [{ "$ref": "#/$defs/action" }, { "$ref": "#/$defs/separator" }] },
+    "titleRow": {
+      "type": "object", "required": ["id", "label", "symbol", "current", "url"],
+      "properties": {
+        "id": { "type": "string" }, "label": { "type": "string" }, "symbol": { "type": "string" }, "icon": { "type": "string" },
+        "count": { "type": "integer", "minimum": 1 }, "current": { "type": "boolean" }, "url": { "type": "string" }
+      }
+    },
+    "tab": {
+      "type": "object", "required": ["id", "label", "symbol", "active", "url"],
+      "properties": {
+        "id": { "type": "string" }, "label": { "type": "string" }, "symbol": { "type": "string" }, "icon": { "type": "string" },
+        "badge": { "type": "integer", "minimum": 1 }, "warn": { "type": "boolean" }, "active": { "type": "boolean" }, "url": { "type": "string" }
+      }
+    },
+    "stackEntry": { "type": "object", "required": ["url", "title"], "properties": { "url": { "type": "string" }, "title": { "type": "string" } } },
+    "back": { "type": "object", "required": ["label", "url"], "properties": { "label": { "type": "string" }, "url": { "type": "string", "description": "empty when the web's own back control decides (a workspace's way out, a folder up)" } } },
+    "tabBar": { "enum": ["erp", "hidden", "costs", "files", "website"] },
+    "page": {
+      "type": "object",
+      "required": ["type", "url", "title", "chrome", "statusBar", "largeTitle", "condensed", "stack", "actions", "menu", "tabBar", "source"],
+      "description": "The screen on view. The stack lists the screens bottom first up to this one (one NavigationStack entry each); the shell drops a page whose url differs from the latest nav.willChange/open URL it knows for that web view.",
+      "properties": {
+        "type": { "const": "page" },
+        "url": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "chrome": { "type": "boolean", "description": "false: no bars at all (the login page)" },
+        "statusBar": { "enum": ["dark", "light"] },
+        "largeTitle": { "type": "boolean", "description": "the web shows a large title as content; native shows the inline title only while condensed" },
+        "condensed": { "type": "boolean" },
+        "titleEditable": { "type": "boolean" },
+        "back": { "$ref": "#/$defs/back" },
+        "stack": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/stackEntry" } },
+        "primary": { "$ref": "#/$defs/action" },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+        "menu": { "type": "array", "items": { "$ref": "#/$defs/menuItem" } },
+        "titleMenu": { "type": "array", "items": { "$ref": "#/$defs/titleRow" } },
+        "accessory": { "$ref": "#/$defs/action" },
+        "tabBar": { "$ref": "#/$defs/tabBar" },
+        "workspaceTabs": { "type": "array", "items": { "$ref": "#/$defs/tab" } },
+        "guardsBack": { "type": "boolean" },
+        "overlay": { "type": "boolean" },
+        "refreshable": { "type": "boolean" },
+        "source": { "enum": ["host", "mirror"] }
+      }
+    },
+    "scroll": { "type": "object", "required": ["type", "condensed"], "properties": { "type": { "const": "scroll" }, "condensed": { "type": "boolean" } } },
+    "overlay": { "type": "object", "required": ["type", "open"], "properties": { "type": { "const": "overlay" }, "open": { "type": "boolean" } } },
+    "haptic": { "type": "object", "required": ["type", "kind"], "properties": { "type": { "const": "haptic" }, "kind": { "enum": ["selection", "light", "medium", "success", "warning", "error"] } } },
+    "file": {
+      "type": "object", "required": ["type", "name", "mime", "base64"],
+      "description": "A blob of at most 20 MB; larger ones take the anchor download (WKDownload).",
+      "properties": { "type": { "const": "file" }, "name": { "type": "string" }, "mime": { "type": "string" }, "base64": { "type": "string" } }
+    },
+    "share": { "type": "object", "required": ["type", "title"], "properties": { "type": { "const": "share" }, "title": { "type": "string" }, "url": { "type": "string" }, "text": { "type": "string" } } },
+    "openExternal": { "type": "object", "required": ["type", "url"], "properties": { "type": { "const": "openExternal" }, "url": { "type": "string" } } },
+    "refreshDone": { "type": "object", "required": ["type"], "properties": { "type": { "const": "refreshDone" } } },
+    "log": { "type": "object", "required": ["type", "level", "text"], "properties": { "type": { "const": "log" }, "level": { "enum": ["info", "warn", "error"] }, "text": { "type": "string" } } },
+
+    "confirm": {
+      "type": "object", "required": ["type", "title", "confirm", "cancel"],
+      "description": "Reply { ok: boolean, secondary?: boolean }. `secondary` is a third button between the two (the leave question's Niet opslaan); a host that ignores it still answers ok/cancel.",
+      "properties": {
+        "type": { "const": "confirm" }, "title": { "type": "string" }, "message": { "type": "string" }, "confirm": { "type": "string" },
+        "cancel": { "type": "string" }, "destructive": { "type": "boolean" }, "secondary": { "type": "string" }
+      }
+    },
+    "prompt": {
+      "type": "object", "required": ["type", "title", "value", "confirm", "cancel"],
+      "description": "Reply { value: string | null } (null when cancelled).",
+      "properties": {
+        "type": { "const": "prompt" }, "title": { "type": "string" }, "message": { "type": "string" }, "value": { "type": "string" },
+        "placeholder": { "type": "string" }, "confirm": { "type": "string" }, "cancel": { "type": "string" }
+      }
+    },
+
+    "commands": {
+      "description": "Native -> web, through window.enrosedHost.receive(json) / the handler registered with enrosedHost.on(type, fn). Documentation only; the web does not validate them.",
+      "oneOf": [
+        { "type": "object", "required": ["type", "id"], "properties": { "type": { "const": "action" }, "id": { "type": "string" } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "back" }, "count": { "type": "integer", "minimum": 1, "description": "default 1; history back that many screens, or the page's own back control when history has nothing below" } } },
+        { "type": "object", "required": ["type", "url"], "properties": { "type": { "const": "open" }, "url": { "type": "string" }, "nav": { "$ref": "#/$defs/navDirection", "description": "default push; replace and tab replace the history entry" } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "tabRoot" } }, "description": "scroll to the top" },
+        { "type": "object", "required": ["type", "state"], "properties": { "type": { "const": "lifecycle" }, "state": { "enum": ["active", "background"] } } },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "refresh" } }, "description": "pull to refresh; the web answers refreshDone" },
+        { "type": "object", "required": ["type", "top", "right", "bottom", "left"], "properties": { "type": { "const": "insets" }, "top": { "type": "number" }, "right": { "type": "number" }, "bottom": { "type": "number" }, "left": { "type": "number" } }, "description": "informational; the web also sets --host-safe-t/r/b/l on <html>" },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "sessionCheck" } }, "description": "re-read the shared localStorage session after another web view signed in or out" }
+      ]
+    },
+    "hostGlobal": {
+      "description": "What the document-start script defines: window.enrosedHost = { version: 1, platform: 'ios', device: 'duo' | 'phone', receive(json), on(type, fn), ready() }. The web registers one handler per command type with on(), then calls ready(); commands received before that are queued and replayed. Without on() the web replaces receive() with its own dispatcher."
+    }
+  }
+}

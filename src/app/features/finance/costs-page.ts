@@ -30,6 +30,9 @@ import { CostPartySheet } from './cost-party-sheet';
 import { CostSheet } from './cost-sheet';
 import { FairSheet } from './fair-sheet';
 import { FinanceCreateMenu } from './finance-create-menu';
+import { financeHostTabs } from './finance-tabbar';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
 import { FinanceFilters } from './finance-filters';
 import { FinanceHelpSheet } from './finance-help-sheet';
 import { FinanceInspector } from './finance-inspector';
@@ -143,7 +146,8 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
     } @else {
       <div class="ios-page fin-ios">
         <app-ios-nav [title]="pageTitle()" [subtitle]="phoneSubtitle()" [backLabel]="subScreen() ? 'Terug' : backCapsule()" [backUrl]="subScreen() ? null : ret.phoneUrl()"
-                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + backText()" (back)="backFromSection()">
+                     [backAriaLabel]="subScreen() ? 'Terug naar vorige onderdeel' : 'Terug naar ' + backText()" (back)="backFromSection()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <button trail class="ios-circle fin-phone-add" type="button" aria-label="Factuur, kost of andere registratie toevoegen" (click)="createMenu()?.open()"><app-icon name="plus" [size]="22" /></button>
           <button trail class="ios-circle" type="button" aria-label="Meer opties voor Kosten en bank" (click)="phoneMore()"><app-icon name="more" [size]="22" /></button>
           <!-- The kit's segmented control on every place with segments (it replaced a native 'Toon' select for three or four). -->
@@ -423,37 +427,54 @@ export class CostsPage {
     });
   }
 
-  phoneMore(): void {
+  /** The phone's ⋯ rows (the native host shows the same rows as its menu). */
+  readonly phoneMenuItems = computed<ContextMenuItem[]>(() => {
     const loaded = this.state.loadedAt();
-    this.state.openMenu({
-      title: 'Kosten & bank', anchor: null, cancelLabel: 'Annuleren',
-      items: [
-        ...(this.state.hasOdooAccounts() ? [{ id: 'sync', label: this.sync.syncing() ? 'Ophalen…' : 'Transacties ophalen', iconName: 'exchange', disabled: this.sync.busy() || !this.sync.ready() }] : []),
-        { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
-        { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
-        { id: 'invoices', label: 'Facturen', iconName: 'document' },
-        /* No CSV on Facturen: it would export costs. */
-        ...(this.state.location().view === 'invoices' ? [] : [{ id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download' }]),
-        { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
-        { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
-        { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
-        ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : []),
-        ...(this.state.location().view === 'bank' && this.state.location().tab === 'movements' && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
-          label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
-      ],
-      pick: (id) => {
-        if (id === 'sync') void this.sync.syncBank();
-        else if (id === 'refresh') void this.state.load();
-        else if (id === 'analysis') this.state.openAnalysis();
-        else if (id === 'invoices') this.finder.open();
-        else if (id === 'csv') this.exportCurrent();
-        else if (id === 'package') this.state.openPackage();
-        else if (id === 'help') this.state.helpOpen.set(true);
-        else if (id === 'odoo') this.sync.sheetOpen.set(true);
-        else if (id === 'archived') this.state.archivedOpen.set(true);
-        else if (id === 'historical') this.state.showHistorical.set(!this.state.showHistorical());
-      },
-    });
+    return [
+      ...(this.state.hasOdooAccounts() ? [{ id: 'sync', label: this.sync.syncing() ? 'Ophalen…' : 'Transacties ophalen', iconName: 'exchange', disabled: this.sync.busy() || !this.sync.ready() }] : []),
+      { id: 'refresh', label: 'Vernieuwen', iconName: 'refresh', hint: loaded ? `bijgewerkt ${this.clock(loaded)}` : undefined },
+      { id: 'analysis', label: 'Rapportage', iconName: 'analytics' },
+      { id: 'invoices', label: 'Facturen', iconName: 'document' },
+      /* No CSV on Facturen: it would export costs. */
+      ...(this.state.location().view === 'invoices' ? [] : [{ id: 'csv', label: this.section()?.exportCsv ? 'Exporteer CSV' : this.state.exportThisYearLabel(), iconName: 'download' }]),
+      { id: 'package', label: 'Boekhouderspakket', iconName: 'archive' },
+      { id: 'help', label: 'Hoe werkt je banksaldo?', iconName: 'info' },
+      { id: 'odoo', label: 'Odoo-verbinding', iconName: 'exchange' },
+      ...(this.state.archivedAccounts().length ? [{ id: 'archived', label: 'Gearchiveerde rekeningen', iconName: 'archive' }] : []),
+      ...(this.state.location().view === 'bank' && this.state.location().tab === 'movements' && this.state.historicalCount() ? [{ id: 'historical', iconName: 'archive',
+        label: this.state.showHistorical() ? 'Eerdere registraties verbergen' : `Eerdere registraties tonen (${this.state.historicalCount()})` }] : []),
+    ];
+  });
+
+  pickPhoneMenu(id: string): void {
+    if (id === 'sync') void this.sync.syncBank();
+    else if (id === 'refresh') void this.state.load();
+    else if (id === 'analysis') this.state.openAnalysis();
+    else if (id === 'invoices') this.finder.open();
+    else if (id === 'csv') this.exportCurrent();
+    else if (id === 'package') this.state.openPackage();
+    else if (id === 'help') this.state.helpOpen.set(true);
+    else if (id === 'odoo') this.sync.sheetOpen.set(true);
+    else if (id === 'archived') this.state.archivedOpen.set(true);
+    else if (id === 'historical') this.state.showHistorical.set(!this.state.showHistorical());
+  }
+
+  phoneMore(): void {
+    this.state.openMenu({ title: 'Kosten & bank', anchor: null, cancelLabel: 'Annuleren', items: this.phoneMenuItems(), pick: (id) => this.pickPhoneMenu(id) });
+  }
+
+  /** The native host's chrome: the five places as its tabs (with what waits there), '+' as the accessory, the ⋯ rows as the menu. */
+  readonly hostPage = computed<HostPageInput>(() => ({
+    accessory: { id: 'create', label: 'Toevoegen', icon: 'plus', prominent: true },
+    actions: [],
+    menu: menuRows(this.phoneMenuItems()),
+    workspaceTabs: financeHostTabs(this.state.location(), this.shell.counts()),
+    tabBar: 'costs',
+  }));
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'create') this.createMenu()?.open();
+    else this.pickPhoneMenu(event.id);
   }
 
   /** The costs on screen as CSV: the filtered list on Uitgaven, else everything of this year. */

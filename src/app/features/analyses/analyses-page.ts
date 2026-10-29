@@ -50,6 +50,8 @@ import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
 import { financingsWithSchedule, underBuffer } from './cash-view';
 import { IosNav } from '../../shared/ios-nav';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostMenuItem } from '../../core/platform/host';
 import { NotificationBell } from '../../shared/notification-bell';
 import { Sheet } from '../../shared/ui';
 import { WorkQueue } from '../../core/api/work-queue';
@@ -264,7 +266,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                       [bellCount]="bellCount()" [bellLabel]="bellLabel()" (back)="goBack()" (bell)="openBell()" (refreshed)="refresh()" />
     } @else {
       <div class="ios-page an an-phone" [attr.aria-busy]="busy() || filtering()">
-        <app-ios-nav [title]="phoneTitle()" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()">
+        <app-ios-nav [title]="phoneTitle()" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <button class="ios-circle an-bell" type="button" [attr.aria-label]="bellLabel()" (click)="openBell()">
               <app-icon name="bell" [size]="20" />
@@ -1380,6 +1383,34 @@ export class AnalysesPage {
   /** The capsule text; '' (a chevron circle) when the name is longer than ten characters. */
   readonly backLabel = computed(() => capsuleLabel(this.origin().label));
   readonly backAria = computed(() => this.origin().label ? `Terug naar ${this.origin().label}` : 'Terug');
+
+  /** The native host's chrome: the bell, Vernieuwen, the ⋯ rows as the menu; pull to refresh runs refresh(). */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const menu: HostMenuItem[] = [];
+    if (this.howLines().length) menu.push({ id: 'how', label: 'Hoe gerekend', icon: 'info' });
+    if (this.section() === 'market') menu.push({ id: 'addRate', label: 'Tarief toevoegen', icon: 'plus' });
+    for (const link of this.menuLinks()) {
+      const query = link.query ? new URLSearchParams(Object.entries(link.query).filter((pair): pair is [string, string] => pair[1] !== null)).toString() : '';
+      menu.push({ id: link.external ? `ext:${link.url}` : `nav:${link.url}${query ? '?' + query : ''}`, label: link.label, icon: link.icon });
+    }
+    const count = this.bellCount();
+    return {
+      actions: [
+        { id: 'bell', label: this.bellLabel(), icon: 'bell', badge: count || undefined },
+        { id: 'refresh', label: 'Vernieuwen', icon: 'refresh', disabled: this.busy() },
+      ],
+      menu, refreshable: true,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    switch (event.id) {
+      case 'bell': this.openBell(); break;
+      case 'refresh': event.finish(this.refresh()); break;
+      case 'how': this.sheet.set('how'); break;
+      case 'addRate': this.addRate(); break;
+    }
+  }
 
   /* The bell as a proxy circle in the phone trail (critique B7, the home's pattern). */
   readonly bellCount = this.work.actionCount;

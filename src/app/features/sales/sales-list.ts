@@ -18,6 +18,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { PageHeader } from '../../shared/page-header';
 import { WorkQueue } from '../../core/api/work-queue';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -84,7 +85,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
   template: `
     <app-sales-list-styles />
-    <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
+    <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()" [host]="hostPage()" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
         <app-segmented class="sl-tabs" label="Documenten" semantics="tabs" controls="sales-document-results" [options]="tabOptions()"
                        [value]="docTab()" (changed)="switchTab($any($event))" />
@@ -909,6 +910,18 @@ export class SalesList {
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<SalesTab>('OFFERTE');
   readonly businessScope = signal<SalesScope>('ALL');
+
+  /** The native host's chrome: the '+' (Order, or Container kiezen in the partner scope) and the section's title menu. */
+  readonly hostPage = computed<HostPageInput>(() => ({
+    accessory: this.businessScope() === 'PARTNER'
+      ? { id: 'startNew', label: 'Container kiezen', icon: 'purchase' }
+      : { id: 'startNew', label: 'Order', icon: 'plus', prominent: true },
+    titleMenu: 'auto',
+  }));
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'startNew') this.startNew();
+  }
   readonly outstandingOnly = signal(false);
   /** Facturen tab: everything, invoices only, or credit notes only (query param docs). */
   readonly docsFilter = signal<SalesDocsFilter>('all');

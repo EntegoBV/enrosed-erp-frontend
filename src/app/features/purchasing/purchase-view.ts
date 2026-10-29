@@ -60,6 +60,9 @@ import { IosNav } from '../../shared/ios-nav';
 import { Icon } from '../../shared/icon';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction } from '../../core/platform/host';
+import { menuRows } from '../../shared/host-page';
 import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
@@ -71,7 +74,7 @@ import { batchPending, batchStale, mergeStale, purchaseBatchRows } from './purch
 import { PurchaseBatchesCard } from './purchase-batches-card';
 import { lineVersionText } from './purchase-supplier-version';
 import {
-  costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
+  STEP_SYMBOL, costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -95,7 +98,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
-        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()">
+        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <button class="ios-circle" type="button" aria-label="PDF downloaden" (click)="pdfOpen.set(true)"><app-icon name="pdf" [size]="19" /></button>
             <button class="ios-circle" type="button" aria-label="Meer acties" aria-haspopup="dialog" [attr.aria-expanded]="moreMenu()" (click)="moreMenu.set(true)"><app-icon name="more" [size]="20" /></button>
@@ -1530,6 +1534,41 @@ export class PurchaseView {
     else if (item.id === 'files') void this.routerNav.navigate(['/files'], { queryParams: { view: 'purchase', doel: id } });
     else if (item.id === 'invoices') void this.routerNav.navigate(['/costs'], { queryParams: { view: 'invoices', po: id } });
     else if (item.id === 'analysis') void this.routerNav.navigate(['/analyses/purchasing'], { queryParams: { orderId: id } });
+  }
+
+  /**
+   * The native host's chrome (the web dock is hidden there): the next step as the primary (Bestellen, Container
+   * vertrokken…), Bewerken and PDF as items, the '…' rows as the menu; the ERP tab bar stays.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const step = this.readStep();
+    const edit: HostAction = { id: 'edit', label: 'Bewerken', icon: 'pencil' };
+    return {
+      subtitle: data.order.alias ? `${data.order.number} · ${this.supplierName()}` : this.supplierName(),
+      primary: step ? { id: 'step', label: stepLabel(step, this.costsApplied(), false), symbol: STEP_SYMBOL[step] } : edit,
+      actions: [...(step ? [edit] : []), { id: 'pdf', label: 'PDF', icon: 'pdf' }],
+      menu: menuRows(this.moreItems()),
+      tabBar: 'erp',
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    if (!data) return;
+    const step = this.readStep();
+    switch (event.id) {
+      case 'edit':
+        void this.routerNav.navigate(['/purchasing', data.order.id, 'edit'], { queryParams: step ? { tab: tabParam(this.activeTab()) } : this.editQuery() });
+        break;
+      case 'pdf': this.pdfOpen.set(true); break;
+      case 'step': if (step) this.openStep(step); break;
+      default: {
+        const item = this.moreItems().find((candidate) => candidate.id === event.id);
+        if (item) this.pickMore(item);
+      }
+    }
   }
 
   /* ---- the next step: asked here, run by the editor --------------------- */

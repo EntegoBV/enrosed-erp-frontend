@@ -628,6 +628,163 @@ clock, the page did not reach into it (no side inset), so the paint
 elements have no size there; they stay for a future iOS that lets the page
 in. Not seen yet: the unfolded upright pose's top inset.
 
+## Native host (enrosed-erp-ios, 2026-10-29)
+
+Emre wanted a TestFlight app around the ERP with real native chrome ("echte
+native componentjes voor Duo", glass buttons, every page adapting, the
+actions "tot rechts" in the Duo's strip). The web side is **host mode**: the
+ERP runs in a WKWebView of the Swift shell (`/Users/work/Documents/GitHub/
+enrosed-erp-ios`, brief `docs/implementation-brief.md` there), publishes a
+**page descriptor** for the screen on view and the shell draws the tab bar,
+the navigation bar, the back button and the toolbar items from it (on an
+iPhone Duo in the side strip, on a Pro Max as horizontal bars). Host mode
+is invisible without a host: the PWA must stay pixel-identical (the pixel
+diff below), so every host style lives under `:root[data-host]` and every
+message behind `HostBridge.present`. Web changes for it go to production
+`main` only (no test environment for this work).
+
+**Detection and start** (`core/platform/host.ts`, pure): `window.enrosedHost`
+(the shell's document-start script) or the user-agent suffix
+`EnrosedHost/1 (iOS; duo|phone)`. `installHost(document)` marks
+`<html data-host="ios" data-host-device="duo|phone">` and runs FIRST in
+`App`'s constructor; in host mode App then starts `HostBridge` and skips
+`installNavRail`, `installDuoStatusBar`, the lazy `installNavMotion` and
+the tab bar's long press (the shell has title menus for the sections). The
+web is always the phone shell there (a WKWebView reports `hover: none`).
+
+**The contract** is `tools/host-contract.json` (JSON Schema, draft 2020-12;
+the same file lives in the iOS repo; change both or neither). Transport:
+web → native `window.webkit.messageHandlers.enrosed.postMessage(JSON)` (fire
+and forget) and `enrosedAsk.postMessage(JSON)` (a reply is awaited);
+native → web `window.enrosedHost.receive(json)`, the web registering one
+handler per command type with `enrosedHost.on(type, fn)` and then calling
+`enrosedHost.ready()` (commands received before that are queued). Messages
+web → native: `ready`, `auth`, `theme`, `badges`, `nav.willChange`, `page`,
+`scroll`, `overlay`, `haptic`, `file`, `share`, `openExternal`,
+`refreshDone`, `log`; asks: `confirm` (with an optional `secondary`
+button: the leave question's Niet opslaan) and `prompt`. Commands native →
+web: `action {id}`, `back {count}`, `open {url, nav}`, `tabRoot`,
+`lifecycle`, `refresh`, `insets`, `sessionCheck`. Both sides tolerate
+unknown fields. A `nav.willChange` goes out at NavigationStart with the
+requested URL; when the router settles on another URL (a redirect) a
+second one with `replace` and the final URL follows, so the shell's
+stale-descriptor guard (a `page` whose `url` differs from the latest URL
+it knows is dropped) never drops a real page.
+
+**Who publishes** (`core/platform/host-bridge.ts`, `HostBridge`):
+- `app-page-header` and `app-ios-nav` bind themselves to the bridge and
+  publish for every page that has one: title, subtitle, the back control
+  (`back {label, url}`; url empty when the web's own back decides, as on a
+  workspace root or a folder level), `largeTitle` and `condensed` (from
+  `observeLargeTitle`, unchanged), `titleEditable`, the stack and either
+  the page's explicit **`[host]`** input (`HostPageInput`: `primary`,
+  `actions`, `menu`, `accessory`, `titleMenu: 'auto'`, `workspaceTabs`,
+  `tabBar`, `guardsBack`, `refreshable`, and `title`/`subtitle`/`back`
+  overrides) with `(hostAction)` delivering the shell's actions by id, or,
+  without `[host]`, a **mirror** of the projected buttons
+  (`shared/host-page.ts` `describeMirror`: every visible button or link of
+  `.appbar__actions` / `[lead]` / `[trail]`, the first `.btn--primary` as
+  the primary, the page's `.fab` / `.ios-accessory` as the accessory, the
+  kit's `.ios-tabbar` as the workspace tabs; label from text or aria-label,
+  icon from `app-icon`'s `data-icon`; a native action clicks the element).
+  A `MutationObserver` keeps the mirror current. `app-page-header` adds its
+  own bell as the `bell` action in both modes. So every one of the ~60
+  header pages has native chrome, and no action appears twice: host.scss
+  hides the web controls on every page.
+- Pages without a header use the **`[hostPage]`** directive
+  (`shared/host-page.ts`): the login page (`chrome: false, tabBar: 'hidden',
+  statusBar: 'light'`), the sales document view (its `.shero-bar` is
+  hidden), the product editor (its `.product-mobile-header` and dock).
+- Long-lived parts **contribute** to every page of a workspace:
+  `WebsiteTabbar` contributes `tabBar: 'website'`, the four tabs and the
+  rows of its "…" sheet as the menu (`bridge.contribute('website', …)`).
+- Without a publisher within 300 ms of a navigation the bridge publishes a
+  bare page (title from `screenLabel`), so the shell never keeps stale
+  chrome.
+- Action ids are the page's method names. Reserved ids: `nav:<url>`
+  (navigates with `info: { nav: 'push' }`), `ext:<url>` (`openExternal`),
+  `workspaceBack` (`WorkspaceReturn.phoneUrl()`), `bell`, `editTitle` (a
+  native `prompt`, then the header's `titleChange`), `refresh` (the page's
+  `(hostAction)` gets `{ id: 'refresh', finish(promise) }` when it declared
+  `refreshable`, else `WorkQueue.refresh`; the bridge answers `refreshDone`).
+- Descriptors are deduped (JSON) and coalesced to one post per animation
+  frame; the **tab-bar probe** runs at that moment:
+  `getComputedStyle(.tabbar).display === 'none'` → `tabBar: 'hidden'`, so
+  the existing hide rules (the editors, the catalogue studio, the PO view's
+  dock, the workspace pages) keep deciding; `.tabbar` stays in the DOM in
+  host mode with `visibility: hidden`. An explicit `tabBar` in `[host]`
+  overrides it (the PO view keeps `'erp'`, Documenten's selection mode
+  sends `'hidden'`, the workspaces their own kind).
+- The **stack** (`nav-history.ts` `hostStack`): the screens bottom first up
+  to the current one, sections of one screen and replaceUrl entries
+  collapsed; the shell mirrors it as its NavigationStack path. `back
+  {count}` → `NavHistory.popScreens`: history back that many screens, or
+  the page's own back control when history has nothing below.
+- Shell-level messages: `ready` (build id = the main script's file name,
+  loggedIn, the theme colours read from `--rose` / `--rose-dark` /
+  `--ios-bg`, the URL), `auth` on `Auth.isLoggedIn()` changes, `badges`
+  (`actionCount` → sales and bell, `loginRequestCount` → more), `theme` on
+  palette changes. `sessionCheck` → `Auth.recheckSession()` (the storage
+  event may not cross WKWebViews). `insets` is informational: the page
+  trusts `env()`; the bridge also sets `--host-safe-t/r/b/l` on `<html>`.
+- `Ui.confirm` asks the host (plain-text message, destructive flag, the
+  secondary button) and falls back to the web sheet when the host has no
+  ask handler; `Ui.toast` sends a `haptic` (success/error); every `app-sheet`
+  sends `overlay {open}` (the shell hides its tab bar under a sheet's dim)
+  and a light haptic. `saveBlob` posts `file {name, mime, base64}` for blobs
+  up to 20 MB (`postHostFile`); bigger ones keep the anchor download.
+  `PushSetup.hosted` is true in host mode (no Push API in a WKWebView):
+  Instellingen › Dit toestel says notifications come from the home-screen
+  app.
+
+**Explicit `[host]` descriptors** exist for: Home (`+` Toevoegen, bell,
+the "…" rows, refreshable), the Verkoop/Inkoop/Producten lists (`+` and
+`titleMenu: 'auto'` from `tabMenuFor` with the queue's counts; Producten
+also Voorraad and its "…" rows), the sales document view (Bewerken/Beheren
+or In verwerking nemen as the primary, PDF, Annuleren / Order splitsen),
+the sales editor (Opslaan while dirty, else the dock's step chain; PDF;
+Annuleren; `guardsBack`), the purchase order view (the next step as the
+primary with `STEP_SYMBOL`, Bewerken, PDF, the "…" rows, `tabBar: 'erp'`),
+the purchase editor (Opslaan or the save bar's step, the Acties rows,
+`guardsBack`), the product view (Bewerken, the "…" rows), the product editor
+(`[hostPage]`: Opslaan/Aanmaken, the toolbar menu, the dock's state as the
+subtitle), Kosten & bank (`financeHostTabs` from FINANCE_NAV with the
+shell's counts, `+`, the "…" rows: `phoneMenuItems` / `pickPhoneMenu`),
+Documenten & media (the three tabs, `+`, Selecteer or Alles/Geen + Klaar,
+`tabBar: 'hidden'` while picking), the website (the contribution above),
+Analyses (bell, Vernieuwen, the "…" rows, refreshable) and the login page.
+Meer and Instellingen rely on the mirror (the bell, a dirty editor's
+Opslaan).
+
+**host.scss** (`styles/host.scss`, loaded last, every selector under
+`:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--safe-t)`; `.tabbar`,
+`.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the probe
+and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`,
+`.product-mobile-header`, `.product-editor-dock`, `.safe-paint` gone; the
+`.appbar` and `.ios-nav` bars become transparent spacers of height
+`--safe-t` (the native status bar + navigation bar, since the shell sets
+`contentInsetAdjustmentBehavior = .never`), their children hidden, the
+large titles and `[hero]` / `[below]` blocks kept (`.ios-subbar` sticks at
+`--safe-t`); the editors' docks lose their buttons and keep step and
+status (the PO save bar keeps its fill meter). Sheets and toasts already
+follow `--safe-b`.
+
+**Checking** (headless, no device needed): `node tools/check-host.mjs --out
+<dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
+session's scratchpad, a development build in its `dist`). It installs the
+shell's stub (`window.enrosedHost`, the two message handlers logging into
+`window.__hostLog`) via `Page.addScriptToEvaluateOnNewDocument`, sets the
+user-agent suffix, applies `Emulation.setSafeAreaInsetsOverride` per pose
+(951×669 r84/b34, 466×678 r84/b34, 678×466 l84/b34, 440×956 t59/b117,
+669×951 t106/b117), screenshots every main route, dumps the messages,
+validates each against the contract and checks the web chrome hidden, the
+content clear of the strip and the spacer as high as the top inset; on the
+first pose it drives `action`, `back`, `open`, `tabRoot`, `refresh`,
+`insets`, `sessionCheck`, a sheet's `overlay` and `Ui.confirm` through the
+ask channel. Before pushing: the same routes WITHOUT the stub at 390×780,
+382×700, 669×900 and 951×669 must be pixel-identical (`pngdiff.mjs --dir`)
+between a build of `main` and the branch.
+
 ## Analyses (2026-10-17 redesign)
 
 Contract: scratchpad redesign/analyses/design.md + critique.md (the critique
