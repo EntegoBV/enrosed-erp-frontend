@@ -511,14 +511,41 @@ before its first frame; `navRailFor` and `stripSide` are pure):
 - otherwise a touch screen of the phone shell held sideways and at least
   340 px high (`(hover: none) and (max-width: 1023.98px) and (orientation:
   landscape) and (min-height: 340px)`: an unfolded Duo whose strip stays
-  outside the page, the Duo folded sideways, a landscape iPhone):
-  `data-nav-rail="right"`. The rail stands 10 px inside the right safe area
-  and the page keeps clear of it. Lower (a phone browser's landscape tab
-  with its bars, about 300 px) the rail and its '+' (318 px) would run off
-  the top, so the bottom bar stays;
+  outside the page, the Duo folded sideways, a landscape iPhone), or an
+  iPhone Duo folded upright (`data-duo` and `(hover: none) and
+  (orientation: portrait) and (max-width: 383.98px)`; a Split View pane on
+  the unfolded display is 385-475 px and keeps the bottom bar, since the
+  page cannot tell which pane it is in): `data-nav-rail="right"`. The rail stands 10 px inside the right safe area and the page
+  keeps clear of it (the lane, `--rail-lane`: the rail and 10 px on each
+  side). Lower than 340 px (a phone browser's landscape tab with its bars,
+  about 300 px) the rail and its '+' (318 px) would run off the top, so the
+  bottom bar stays;
 - otherwise the bottom bar. The insets are read from a hidden fixed probe
   padded by `env(safe-area-inset-*)`, again on every resize (twice: iOS
   settles them late) and whenever either media query flips.
+
+**On the Duo itself** (`data-duo`, no strip inset; Emre, 2026-10-29: "rechts
+helemaal tegenaan"): the rail stands against the page's right edge
+(`--rail-x: env(safe-area-inset-right)`, 0 there) with an 8 px lane to the
+content, so beside the strip it is as far right as the page goes, in the
+two poses where the strip is known to be on the right: unfolded sideways
+(the 867 px page; a device measurement, github drudge/sable#480, has the
+strip on the right in both turns) and folded upright (382 px). Folded
+sideways (594 px) the strip is on the camera's side, left or right, which
+the page cannot tell: the rail keeps its 10 px margin there. Folded upright
+the rail is icon-only and 52 px (46 px cells, a 48 px '+', the badges on
+the icon's right so '9+' stays inside the page), as the Duo's own strip bars
+are icon-only, leaving 322 px of page. That page is narrower than any
+phone the screens were drawn for, so what ended in '…' there (a sweep of
+every parameterless route, first screen and scrolled) gets room: the
+subtitles wrap to two lines (Documenten's collection hints and empty
+folder card, Kosten & bank's Rapportage row, the website overview widget,
+the SEO audit's empty cell), and under the same `[data-duo]` folded media
+a bar showing its small title has a chevron-only back capsule (`.ios-back`
+at 44 px, `font-size: 0`, the accessible name stays; as iOS does when a
+title needs the room), a 16 px title, a two-line `.appbar__sub` and
+12.5 px segmented labels. Unfolded upright (669 px) keeps the bottom bar,
+like the Duo's apps.
 
 **The rail** (`styles/nav-rail.scss`, loaded last, every selector starting
 with `:root[data-...]` so it out-ranks the bottom bar's rules): the ERP tab
@@ -550,14 +577,15 @@ the upright poses (about 124 pt unfolded, 170 pt folded); folded sideways
 the status bar is hidden and native bars start 24 pt from the top, so the
 rail may reach up there. Two columns from 800 px (the home, Analyses)
 assume an 800 px page: with the lane and no strip they wait until 928 px
-(a sideways iPhone at 852 or 896 keeps one column; the Duo at 951 has
-two). On the unfolded Duo held sideways (`(hover: none) and (orientation:
-landscape) and (min-width: 928px) and (max-width: 960px) and
-(min-height: 560px)`) the split stands on the hinge, 475.5 pt from the
-page's left edge, not in the page's middle: the lane or the strip on the
-right made the page narrower than the display and put the second column on
-the fold (Emre, 2026-10-29). The right column takes the smaller share
-(about 384 px at 951). The website text editor's bar steps aside while
+(a sideways iPhone at 852 or 896 keeps one column), except on a Duo. On
+the unfolded Duo held sideways (`data-duo` and `(hover: none) and
+(orientation: landscape) and (min-width: 860px) and (max-width: 960px)
+and (min-height: 560px)`: the 867 px page beside the strip, or 951 with
+the strip as an inset) the split stands on the hinge, 475.5 pt from the
+page's left edge, not in the page's middle: the lane made the page
+narrower than the display and put the second column on the fold (Emre,
+2026-10-29). The right column takes the smaller share (311.5 px at 867,
+cards 279.5; 384 at 951). The website text editor's bar steps aside while
 typing only at the bottom; the rail stays in its lane. Screens only: a
 printout gets no lane.
 
@@ -575,7 +603,12 @@ home-screen web app does not see the strip as an inset: iOS keeps it out of
 the page, as WebKit says Safari 27.1 keeps web content out of the space
 behind the side controls, and fills it white (the opaque `default` status
 bar; non-updated native apps get a black bar there). A page cannot draw in
-that strip. Since iOS 26 neither `theme-color` nor the manifest colours a
+that strip. With the translucent status bar (below) iOS paints the strip in
+the page's background colour instead, so page and strip read as one beige
+surface with the clock in the strip; the page still ends at the strip
+(867 px unfolded sideways, 382 folded upright; the one-column home at 867
+proved the width), so the rail stands against the page's edge, beside the
+clock column, never under it. Since iOS 26 neither `theme-color` nor the manifest colours a
 home-screen app's status bar.
 
 **The Duo's translucent status bar** (Emre: "Zet op prod", 2026-10-29;
@@ -592,10 +625,11 @@ translucent bar covers unless a solid fixed element runs along that edge
 (at least 6 px deep, 80 % long, within 4 px; not a pseudo-element, checked
 by hit-test): two real, hit-testable `.safe-paint` elements in the page
 colour, sized by the insets (`nav-rail.scss`), along the top (z 65, over
-the sticky bars) and in the strip (z 39, under the rail). Not seen on the
-device yet: whether the page reaches into the strip, what colour the clock
-takes over the beige, and whether WebKit 301994 (no top inset in
-standalone) still bites.
+the sticky bars) and in the strip (z 39, under the rail). Seen on the
+device after re-adding (2026-10-29): the strip turned beige with a dark
+clock, the page did not reach into it (no side inset), so the paint
+elements have no size there; they stay for a future iOS that lets the page
+in. Not seen yet: the unfolded upright pose's top inset.
 
 ## Analyses (2026-10-17 redesign)
 
