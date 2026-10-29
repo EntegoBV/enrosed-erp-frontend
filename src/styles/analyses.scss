@@ -91,7 +91,9 @@ a.an-kpi--link:hover { border-color: var(--rose-line); }
 .an-row--chev { grid-template-columns: auto minmax(0, 1fr) auto 10px; }
 .an-row--nolead.an-row--chev { grid-template-columns: minmax(0, 1fr) auto 10px; }
 .an-row + .an-row::before, .an-more::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--line); }
-a.an-row:hover, button.an-row:hover { background: var(--surface-2); }
+/* A finger reaches these rows on the phone (the variance rows open a dialog) and WebKit keeps :hover on the last tapped
+   element until the next tap, so the hover tint is gated on a real pointer. */
+@media (hover: hover) { a.an-row:hover, button.an-row:hover { background: var(--surface-2); } }
 button.an-row { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
 .an-row__body { display: grid; gap: 1px; min-width: 0; }
 /* Titles and subs wrap; nothing that carries a figure is cut (critique B2). */
@@ -206,6 +208,26 @@ app-notification-bell.an-bell-host .bell { display: none; }
   .an-phone .an-share { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
   .an-phone .an-share > .an-meter { grid-column: 1; grid-row: 2; }
   .an-phone .an-share > .an-row__meta { grid-column: 2; grid-row: 2; }
+}
+
+/* The wide phone: figures four-up (eight Verkoop tiles = two rows, no lone tile across). From 800 px (the sideways Duo)
+   the cards take the desk's own two columns (the .an-col wrappers are in the template, the desk shows them so at
+   900-1279) and the page lifts the shell's column cap (workspace-kit.scss .ios-page): two columns of 443 px, cards
+   keep margin 0 var(--ios-inset), so the gutter is 32 px around the hinge. The pair and its columns carry no gap or
+   bottom margin of their own: the cards' margins set the 22 px rhythm, as on the phone where both are display:
+   contents. A three-card group spans its third card, as the desk does from 900. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .an-phone .an-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .an-phone .an-kpis--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .an-phone .an-kpi:last-child:nth-child(odd) { grid-column: auto; }
+}
+@media (min-width: 800px) and (max-width: 1023.98px) and (hover: none) {
+  app-analyses-page .ios-page.an-phone { max-width: none; }
+  .an-phone .an-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-bottom: 0; align-items: start; }
+  .an-phone .an-col { display: grid; gap: 0; align-content: start; min-width: 0; }
+  .an-phone .an-cols--3 > :nth-child(3):last-child { grid-column: 1 / -1; }
+  .an-phone .an-kpis--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .an-phone .an-kpis--6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 
 /* ---------- desk 680–1023: the tabs as chips (the rail has no sub-items) */

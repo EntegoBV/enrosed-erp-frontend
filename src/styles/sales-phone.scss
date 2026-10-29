@@ -1,0 +1,26 @@
+/* ==========================================================================
+   The sales document on the wide phone (600-1023 px, hover: none: an unfolded iPhone Duo). The view and the editor keep
+   their component styles (at the 24 kB budget line), so these few rules are global: scoped under the hosts, each class
+   doubled to outrank the emulated selectors. The page column (--page-col) is the shell's; the docks centre through
+   styles.scss. Loaded from styles.scss after sales-advance-billing.
+   ========================================================================== */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  /* The phone's full-bleed hero would stop at the column's edge at 951: it becomes a card, with the desk's own row
+     (title and badges side by side, facts four-up, delivery facts three-up). The view has no app bar on a phone (back,
+     PDF and the edit action sit in the hero), so the card keeps the status bar clear through --safe-t, which the
+     full-bleed hero padded inside itself. */
+  app-sales-view .sales-hero.sales-hero { margin: var(--safe-t) 0 4px; border-radius: 22px; padding: 16px 16px 15px; }
+  app-sales-view .sales-hero__top.sales-hero__top { flex-direction: row; align-items: center; text-align: left; }
+  app-sales-view .sales-hero__identity.sales-hero__identity { align-items: flex-start; }
+  app-sales-view .sales-hero__top.sales-hero__top .sales-hero__badges.sales-hero__badges { justify-content: flex-end; }
+  app-sales-view .hero-details.hero-details { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* The emulated rule that hides the label (`.hero-details__pay[_ng] small[_ng]`) is (0,3,1): a descendant rule needs
+     a third class to outrank it, so the parent's class is doubled as well. */
+  app-sales-view .hero-details.hero-details .hero-details__pay small { display: inline; }
+  app-sales-view .details-grid.details-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  app-sales-view .details-grid.details-grid > .detail-item.detail-item:last-child:nth-child(odd) { grid-column: auto; }
+  /* The four-stop rail stays on top (updateActiveSection reads its bottom as the activation line) but takes the
+     editor's own 680+ look: 640 px, marks beside their captions. */
+  app-sales-view .sales-section-nav.sales-section-nav, app-sales-editor .workflow-nav.workflow-nav { max-width: 640px; margin-inline: auto; }
+  app-sales-view .sales-section-nav.sales-section-nav button, app-sales-editor .workflow-nav.workflow-nav button { flex-direction: row; gap: 7px; font-size: 11.5px; }
+}

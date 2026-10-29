@@ -125,3 +125,10 @@
     .ios-cell__title.wk-tr--muted { color: var(--muted); }
   }
 }
+
+/* The wide phone: the segmented control under the title stops stretching (hand-sized, at the inset); the page is the
+   shell's column, the five-tab bar centres through the kit (nothing here touches it), the widgets stay 2 x 2 (three
+   plus one would orphan the fourth). */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  #finance-workspace .fin-phone-seg > app-segmented { max-width: 480px; }
+}

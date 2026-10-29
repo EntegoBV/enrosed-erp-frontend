@@ -315,8 +315,9 @@
     --product-header-h: calc(44px + var(--safe-t));
     .photo-workspace .photo-details { scroll-margin-block: calc(var(--product-header-h) + 90px) calc(110px + var(--safe-b)); }
     background: color-mix(in srgb, var(--bg) 65%, var(--surface));
-    /* The foundation's glass detail bar: '‹ Product' and Acties as glass capsules, the name over "Bewerken". */
-    .product-mobile-header { position: sticky; top: 0; z-index: 42; isolation: isolate; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: var(--product-header-h); padding: var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px); }
+    /* The foundation's glass detail bar: '‹ Product' and Acties as glass capsules, the name over "Bewerken". The shell
+       pads the side insets already (a sideways iPhone Duo), so the bar counts them once. */
+    .product-mobile-header { position: sticky; top: 0; z-index: 42; isolation: isolate; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; min-height: var(--product-header-h); padding: var(--safe-t) 8px 0; }
     .product-mobile-header::before { content: ''; position: absolute; inset: 0; z-index: -1; border-bottom: .5px solid var(--ios-sep); background: var(--glass-bg-strong); backdrop-filter: var(--glass-filter); -webkit-backdrop-filter: var(--glass-filter); }
     .product-mobile-back { gap: 2px; text-decoration: none; }
     .product-mobile-title { display: grid; justify-items: center; min-width: 0; line-height: 1.15; text-align: center; }
@@ -407,6 +408,17 @@
     .product-editor-dock .product-editor-dock__photos { gap: 2px; line-height: 1.25; }
     .product-editor-dock .product-editor-dock__photos strong { font-size: 13px; white-space: normal; }
     .product-editor-dock .product-editor-dock__photos small { color: var(--ink-2); font-size: 12px; font-weight: 400; text-transform: none; white-space: normal; }
+  }
+
+  /* The wide phone: the page takes the shell's column itself (the 1800 px cap above is (1,1,0) and outranks the .content
+     rule in styles.scss; without this the form stayed the screen's width under a header indented to the column), the
+     sticky header's buttons sit at the column's edge like the shell's .appbar, the four measures in one row, the dock
+     on the tab bar's width (both sides set: auto margins centre the fixed box, insets kept). */
+  @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+    .product-editor-page, .product-editor-lead__content { max-width: var(--page-col, 760px); }
+    .product-mobile-header { padding-inline: max(8px, calc((100% - var(--page-col, 760px)) / 2 + 8px)); }
+    .measure-grid--4, .identity-layout__measurements .measure-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .product-editor-dock { max-width: var(--ios-tabbar-w, 520px); margin-inline: auto; }
   }
 }
 
