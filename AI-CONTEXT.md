@@ -29,6 +29,21 @@ digital signing, change proposals) served by the same app.
 - No automated tests: Emre had them all removed on 2026-10-28; do not write
   or run tests. Check a change with `npx ng build` and visual checks at
   375 px and desk widths.
+- **One phone/desk breakpoint, touch-aware (2026-10-29, iPhone Duo).** The
+  desk is `(min-width: 1024px), (min-width: 680px) and (hover: hover)`, the
+  phone its exact complement `(max-width: 679.98px), (hover: none) and
+  (max-width: 1023.98px)`: a touch screen without hover keeps the phone
+  shell up to 1023 px (an unfolded iPhone Duo is 669 × 951 points and
+  reports hover: none in every pose; a landscape iPhone and an upright iPad
+  too), a desktop window gets the desk from 680 px as before (the rail to
+  1023, the full sidebar from 1024). Write both lists out in full in CSS
+  (183 queries were swept on 2026-10-29; never a bare 680 px query again);
+  in TS use `DESK_MEDIA` / `PHONE_MEDIA` / `deskViewport()` or the
+  `DesktopViewport` signal (core/platform/desktop-viewport.ts), never
+  `innerWidth` or `screen.width` (stale after unfolding). Wide-phone
+  rules (600-1023 px, hover: none: `WIDE_PHONE_MEDIA`) are the subject of
+  "Wide phone shell (iPhone Duo, 2026-10-29)". Visual checks: 375/390 px,
+  669 and 951 px with touch emulation, and the desk.
 - Errors surface via `messageOf(failure, fallback)` - the backend sends
   readable Dutch messages on 409s; show them.
 
@@ -386,6 +401,89 @@ render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
 (check the first Vercel deployment of that change once: if it fails on
 vercel.json, drop only the headers block).
+
+## Wide phone shell (iPhone Duo, 2026-10-29)
+
+Emre uses the ERP as a home-screen web app on an iPhone Duo (Apple's
+foldable). Its CSS viewport per pose (WebKit, Safari 27.1): folded upright
+382 wide, folded sideways 594 × 368-406, unfolded upright 669 × 867-902,
+unfolded sideways 951 × 585-620 (the natural reading pose; the web app has
+no browser chrome, so about 951 × 669 minus the status bar). Every pose
+reports `hover: none` and `pointer: coarse`; a fold fires 2-3 resize
+events (one transient 466 × 498) without a reload; `screen.width` stays
+466 after unfolding; `100vh` is 18 px too tall when folded (use dvh).
+
+**The shell.** Before this round the desk started at a bare 680 px, so the
+unfolded Duo got the desk rail on a touch screen. Now the breakpoint is
+touch-aware (see "Standing conventions"): the Duo keeps the phone shell in
+every pose, and the wide phone shell is the band `(min-width: 600px) and
+(max-width: 1023.98px) and (hover: none)` (`WIDE_PHONE_MEDIA`): the
+unfolded Duo at 669 and 951, a landscape iPhone, an upright iPad. Nothing
+of this round changes below 600 px or on the desk.
+
+**Two tokens** (workspace-kit.scss, set under the wide query only):
+`--page-col: 760px`, the page column that `.content`, `.ios-page` and
+the phone purchase order (`.mpo-phone`) centre on (at 669 the column is
+wider than the screen, so nothing moves; at 951 a one-column page is a
+760 px column with beige on both sides and the hinge in the middle), and
+`--ios-tabbar-w: 520px`, the width of every floating bar. The legacy
+header follows the column (shell.scss: the bar keeps its full width and
+glass, its back capsule and bell move to the column's edge, the large title
+takes the column); a page that centres a narrower column sets
+`--page-col` on its host (Meer: 640). Never set it to `none`: a page
+that needs the whole width lifts the cap with `max-width: none` on its
+`.ios-page` (the home and Analyses do).
+The legacy column rule is `.shell .main .content.content` (0,4,0) on
+purpose: a page's own cap on its `.content` (emulated component styles,
+(0,2,0), or an area partial's `app-host .content.x`) loses there, so no
+page spans the full 951 under a header that follows the column. Meer sets
+`--page-col: 640px` only from 800 px; print resets the cap.
+
+**Bars as one centred group.** The ERP tab bar, the kit bars (Kosten & bank,
+Documenten & media), the home's '+', the labelled pill, the upload pill, the
+editors' docks and the legacy action bar read `--ios-tabbar-w`: a bar
+without a '+' is 520 px centred; beside a '+' the bar and the '+' centre as
+one group (bar + 12 px + '+': at 951 the bar runs 179-699 and the '+'
+711-771, at 669 38-558 and 570-630). Tabs are 104 px and the labels return
+to the kit's 10 px. Fixed boxes are centred with `left: calc(50% - W/2)`
+or `left + right + max-width + margin-inline: auto`, never a transform
+(trap rule). The long-press menu reads the bar's rect when it opens, so it
+follows on its own; it closes on a resize (a fold) as on a scroll. The
+large title's observer rebuilds when the bar's height changes
+(`observeLargeTitle`, a ResizeObserver on the bar).
+
+**Sheets and toasts as cards.** Every phone `.overlay > .sheet` keeps clear
+of the side insets; on the wide phone it is a floating card: 16 px off the
+sides, 12 px above the home indicator, 640 px at most (a wide sheet 940),
+all corners rounded, still bottom-anchored with the grab, the drag and
+`mo-sheet-in` untouched. Toasts are 440 px, centred.
+
+**Width goes into tiles and figures, never into words or rows.** Figures go
+three or four up where they form a grid (purchase Lading · Volume · Vulling,
+the product's four figures, Analyses KPIs, the Kasprognose figures, Search
+Console metrics, the Toevoegen tiles, the supplier sheet, Documenten's
+tiles); rows, forms, groups and cells keep the phone's layout; stretched
+segmented controls are capped at 480 px, left at the inset. Two columns only
+where two independent blocks sit side by side and the desk already proves
+the split, from 800 px (`(min-width: 800px) and (max-width: 1023.98px) and
+(hover: none)`): the home (Kas + Te doen beside Agenda + Cijfers, the
+8 px gutter on the hinge; `.home-phone__body` / `__col` wrappers,
+blocks on narrower phones, never `display: contents`, the '+' stays a
+direct child of `.home-phone`) and Analyses (the desk's own `.an-col`
+pair). No list, document, form or sheet goes two-column.
+
+**Hover gates.** WebKit keeps `:hover` on the last tapped element, so
+`:hover` rules a finger reaches sit in `@media (hover: hover)`; their
+`:active` halves stay bare.
+
+**Checking.** Headless Chrome over CDP with `Emulation.setEmulatedMedia`
+features hover: none / pointer: coarse and device metrics 382 × 700,
+669 × 900, 951 × 620 (and 390 × 780 as the phone reference) against a
+development build, a static server with a planted staff session and a mock
+API of empty shapes; the harness of the 2026-10-29 session lived in its
+scratchpad (serve.mjs, mock-api.mjs, shoot.mjs; rebuild it from this
+description when gone). The short shell for a landscape iPhone or the Duo
+folded sideways (`(hover: none) and (max-height: 500px)`) is not built.
 
 ## Analyses (2026-10-17 redesign)
 
