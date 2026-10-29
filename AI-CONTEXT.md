@@ -575,12 +575,27 @@ home-screen web app does not see the strip as an inset: iOS keeps it out of
 the page, as WebKit says Safari 27.1 keeps web content out of the space
 behind the side controls, and fills it white (the opaque `default` status
 bar; non-updated native apps get a black bar there). A page cannot draw in
-that strip. The only lever is `apple-mobile-web-app-status-bar-style`
-`black-translucent` (read when the app is added to the Home Screen), which
-iOS 26/27 pairs with a progressive blur under the status bar and missing
-top insets in standalone (WebKit 301994); it is not tried. Since iOS 26
-neither `theme-color` nor the manifest colours a home-screen app's status
-bar.
+that strip. Since iOS 26 neither `theme-color` nor the manifest colours a
+home-screen app's status bar.
+
+**The Duo's translucent status bar** (Emre: "Zet op prod", 2026-10-29;
+`core/platform/duo-status-bar.ts`): on a Duo-sized screen (466 x 678 or
+669 x 951 in either orientation; WebKit keeps reporting 466 x 678 after
+unfolding) the shell sets `data-duo` and switches
+`apple-mobile-web-app-status-bar-style` to `black-translucent` at start-up;
+every other device keeps the opaque `default`. iOS reads the meta when the
+app is added to the Home Screen, so it takes effect only after the app is
+removed and added again from Safari. Under a translucent bar the page draws
+under the status bar, which on the Duo is the strip, so the strip may then
+arrive as an inset and the side rail stands in it. iOS 26/27 blur what a
+translucent bar covers unless a solid fixed element runs along that edge
+(at least 6 px deep, 80 % long, within 4 px; not a pseudo-element, checked
+by hit-test): two real, hit-testable `.safe-paint` elements in the page
+colour, sized by the insets (`nav-rail.scss`), along the top (z 65, over
+the sticky bars) and in the strip (z 39, under the rail). Not seen on the
+device yet: whether the page reaches into the strip, what colour the clock
+takes over the beige, and whether WebKit 301994 (no top inset in
+standalone) still bites.
 
 ## Analyses (2026-10-17 redesign)
 
