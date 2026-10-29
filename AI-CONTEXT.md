@@ -153,6 +153,11 @@ load lazily: the phone motion, the '/' and '?' keys and the route progress
 with preloading are install functions imported from their own effects in
 App, and Sneltoetsen is an `@defer` block. Keep new shell code out of the
 first screen the same way; area CSS in global partials counts against it.
+Main stood at 951.05 kB before the native host (2026-10-29); the host adds
+only its facade (`HostBridge`: detection, the transport, the signals) and
+host.scss to the first screen, because `host-bridge-impl.ts` and
+`host-symbols.ts` load through `import()` inside a host, and the production
+initial total is 956.73 kB (186.80 kB transfer, 12 files; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -667,11 +672,31 @@ web: `action {id}`, `back {count}`, `open {url, nav}`, `tabRoot`,
 `lifecycle`, `refresh`, `insets`, `sessionCheck`. Both sides tolerate
 unknown fields. A `nav.willChange` goes out at NavigationStart with the
 requested URL; when the router settles on another URL (a redirect) a
-second one with `replace` and the final URL follows, so the shell's
+second one with `replace` and the final URL follows, and when the
+navigation never happens (NavigationCancel other than a redirect or a
+superseding navigation, NavigationError: a guard refused it, a dirty
+editor's leave question answered Annuleren) one with `replace` and the
+current URL follows and the page goes out again, so the shell's
 stale-descriptor guard (a `page` whose `url` differs from the latest URL
-it knows is dropped) never drops a real page.
+it knows is dropped) never drops a real page. The direction: `pop` on
+popstate, `replace` for replaceUrl (a named `tab` stays `tab`), else
+navDirection's answer with `tab` mapped to `push`, and a same-path query
+step that shows another screen (the agenda's day pick) is a `push` too:
+inside one web view the web's tab rule does not apply, and every
+navigation that grows the stack needs the shell's snapshot first.
 
-**Who publishes** (`core/platform/host-bridge.ts`, `HostBridge`):
+**Two halves** of the bridge: `HostBridge` (`core/platform/host-bridge.ts`)
+is a facade the PWA's initial bundle carries (detection, `present`, the
+transport send/ask/confirm/prompt/haptic/overlay, `contribute`, the
+signals); its `bind` and `start` load `host-bridge-impl.ts`
+(`HostBridgeImpl`: compose, publish, the commands, the shell messages)
+through `import()` once inside a host, and that chunk alone imports
+`host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
+the workspace tab bars import it too, lazily). So the production initial
+total is 956.73 kB against main's 951.05 kB (host.scss and the
+facade), well under the 1 MB error budget: the baseline to track.
+
+**Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
   publish for every page that has one: title, subtitle, the back control
   (`back {label, url}`; url empty when the web's own back decides, as on a
@@ -703,10 +728,17 @@ it knows is dropped) never drops a real page.
   chrome.
 - Action ids are the page's method names. Reserved ids: `nav:<url>`
   (navigates with `info: { nav: 'push' }`), `ext:<url>` (`openExternal`),
-  `workspaceBack` (`WorkspaceReturn.phoneUrl()`), `bell`, `editTitle` (a
-  native `prompt`, then the header's `titleChange`), `refresh` (the page's
-  `(hostAction)` gets `{ id: 'refresh', finish(promise) }` when it declared
-  `refreshable`, else `WorkQueue.refresh`; the bridge answers `refreshDone`).
+  `workspaceBack` (leaves for `WorkspaceReturn.phoneUrl()` the way the
+  native stack expects, `leaveTo`: history back when that screen lies
+  below, else a replaceUrl navigation, so the depth never grows), `bell`
+  (the header's own bell opens the Meldingen sheet; it is no page id, a
+  page that declares `bell` itself keeps it), `editTitle` (a native
+  `prompt`, then the header's `titleChange`), `refresh` (the pull-to-refresh
+  id: the page's `(hostAction)` gets `{ id: 'refresh', finish(promise) }`
+  when it declared `refreshable`, else `WorkQueue.refresh`; the bridge
+  answers `refreshDone`. A page that declares a `refresh` action or menu
+  row of its own, Kosten & bank's Vernieuwen, receives it like any other
+  id).
 - Descriptors are deduped (JSON) and coalesced to one post per animation
   frame; the **tab-bar probe** runs at that moment:
   `getComputedStyle(.tabbar).display === 'none'` → `tabBar: 'hidden'`, so
@@ -717,9 +749,15 @@ it knows is dropped) never drops a real page.
   sends `'hidden'`, the workspaces their own kind).
 - The **stack** (`nav-history.ts` `hostStack`): the screens bottom first up
   to the current one, sections of one screen and replaceUrl entries
-  collapsed; the shell mirrors it as its NavigationStack path. `back
-  {count}` → `NavHistory.popScreens`: history back that many screens, or
-  the page's own back control when history has nothing below.
+  collapsed; the shell mirrors it as its NavigationStack path. A `/login`
+  entry is a root (`NavEntry.root`, carried over to the screen the sign-in
+  replaces it with): the stack starts over there, so the login page
+  publishes depth 0 and the shell pops to its root on sign-out. `back
+  {count}` → `NavHistory.popScreens`: history back that many screens
+  (never below a root), or, when history has nothing below, `webBack`: a
+  page whose back control names a url leaves through `leaveTo` (no stack
+  growth), otherwise the page's own back control runs (a folder up, a
+  document's section).
 - Shell-level messages: `ready` (build id = the main script's file name,
   loggedIn, the theme colours read from `--rose` / `--rose-dark` /
   `--ios-bg`, the URL), `auth` on `Auth.isLoggedIn()` changes, `badges`
@@ -783,7 +821,11 @@ first pose it drives `action`, `back`, `open`, `tabRoot`, `refresh`,
 `insets`, `sessionCheck`, a sheet's `overlay` and `Ui.confirm` through the
 ask channel. Before pushing: the same routes WITHOUT the stub at 390×780,
 382×700, 669×900 and 951×669 must be pixel-identical (`pngdiff.mjs --dir`)
-between a build of `main` and the branch.
+between a build of `main` and the branch. The 2026-10-29 review's seven
+fixes (the lazy split, the bell, `leaveTo`, the refused navigation, the
+costs refresh row, the push direction, the login root) were checked the
+same way, with a probe of those six behaviours next to the checker
+(scratchpad `fix-verify/probe.mjs`).
 
 ## Analyses (2026-10-17 redesign)
 
