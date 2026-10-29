@@ -216,7 +216,8 @@ class Page {
   }
   send(method, params) { return this.cdp.send(method, params, this.sid); }
   async eval(expression) {
-    const r = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    /* A page whose scripts never settle (an effect loop) must not hang the run: 15 s per evaluation. */
+    const r = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true, timeout: 15000 });
     if (r.exceptionDetails) throw new Error('eval: ' + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text));
     return r.result.value;
   }

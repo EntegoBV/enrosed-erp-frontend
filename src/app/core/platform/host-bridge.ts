@@ -197,7 +197,7 @@ export class HostBridge {
   /** A phone sheet opened or closed: the native tab bar hides while one is open. */
   overlay(open: boolean): void {
     if (!this.present) return;
-    const before = this.overlays();
+    const before = untracked(() => this.overlays());
     const after = Math.max(0, before + (open ? 1 : -1));
     this.overlays.set(after);
     if ((before > 0) !== (after > 0)) this.send({ type: 'overlay', open: after > 0 });
@@ -230,7 +230,8 @@ export class HostBridge {
   /** Adds (or removes, with null) what a workspace part contributes to every page while it lives. */
   contribute(key: string, contribution: HostContribution | null): void {
     if (!this.present) return;
-    const next = new Map(this.contributions());
+    /* Called from a contributor's effect: reading the map untracked keeps that effect from depending on its own write. */
+    const next = new Map(untracked(() => this.contributions()));
     if (contribution) next.set(key, contribution);
     else next.delete(key);
     this.contributions.set(next);

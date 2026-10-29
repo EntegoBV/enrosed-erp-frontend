@@ -288,14 +288,14 @@ export const ACTION_SYMBOLS: Readonly<Record<string, string>> = {
   'open punt': 'exclamationmark.circle', verwijderen: 'trash', 'calculatie verwijderen': 'trash', 'status terugzetten': 'arrow.uturn.backward',
 };
 
-/** A label without a trailing ellipsis, a leading '+' or a trailing '?', collapsed and trimmed. */
+/** A label without a trailing ellipsis (no label ends in "…") or a leading '+', collapsed and trimmed; a question mark stays. */
 export function cleanLabel(raw: string | null | undefined): string {
-  return (raw ?? '').replace(/\s+/g, ' ').replace(/^\+\s*/, '').replace(/(…|\.\.\.|\?)\s*$/, '').trim();
+  return (raw ?? '').replace(/\s+/g, ' ').replace(/^\+\s*/, '').replace(/(…|\.\.\.)\s*$/, '').trim();
 }
 
 /** The SF Symbol for an action's word, or undefined when the word is unknown. */
 export function symbolForLabel(label: string | null | undefined): string | undefined {
-  const text = cleanLabel(label).toLocaleLowerCase('nl');
+  const text = cleanLabel(label).replace(/\?\s*$/, '').toLocaleLowerCase('nl');
   if (!text) return undefined;
   if (ACTION_SYMBOLS[text]) return ACTION_SYMBOLS[text];
   const prefix = Object.keys(ACTION_SYMBOLS).filter((key) => text.startsWith(key + ' ')).sort((a, b) => b.length - a.length)[0];
