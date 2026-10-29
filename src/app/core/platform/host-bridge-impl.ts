@@ -119,7 +119,11 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     let primary = (explicit ? input.primary : mirror?.primary) ?? undefined;
     if (primary) primary = normalise({ prominent: true, ...primary });
     const actions = (explicit ? input.actions ?? [] : mirror?.actions ?? []).map(normalise);
-    if (bell && !ids.has('bell')) actions.push(normalise({ id: 'bell', label: bellLabel(bell.count), icon: 'bell', badge: bell.count || undefined }));
+    if (bell && !ids.has('bell')) {
+      actions.push(normalise({ id: 'bell', label: bellLabel(bell.count), icon: 'bell', badge: bell.count || undefined }));
+      /* The header's own bell is no page id: runAction opens it itself. */
+      ids.delete('bell');
+    }
     const menu = normaliseMenu(explicit ? input.menu ?? [] : mirror?.menu ?? []);
     if (titleEditable && !ids.has('editTitle')) menu.push(normalise({ id: 'editTitle', label: 'Nummer wijzigen', symbol: 'pencil.line' }));
     if (contribution?.menu?.length) {
