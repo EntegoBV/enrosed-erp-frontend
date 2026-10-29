@@ -430,6 +430,8 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
   `,
   styles: `
     .lr-segments { min-width: 300px; }
+    /* The wide phone (an unfolded iPhone Duo): the control stays hand-sized instead of spanning the 736 px column. */
+    @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .lr-segments { max-width: 480px; } }
     .lr-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
     .lr-row:last-child { border-bottom: 0; }
     .lr-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }

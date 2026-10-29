@@ -113,6 +113,10 @@ app-sales-list .swipe:has(>.swipe__archive:focus-visible) .swipe__row{transform:
 app-sales-list .sl--phone{--ios-inset:4px}
 app-sales-list .sl--phone>.sl-tabs{margin:0 var(--ios-inset) 10px}
 app-sales-list .sl-isearch{margin:0 var(--ios-inset) 14px}
+/* The wide phone (an unfolded iPhone Duo, a landscape iPhone, an upright iPad): three 160 px tabs instead of 243 - a 36 px
+   text control 736 px wide reads stretched, 480 is a hand. Left at the inset under the title; the search keeps its full
+   row with the filter circle at its right. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-sales-list .sl--phone>.sl-tabs{max-width:480px} }
 app-sales-list .sl-isearch:has(+.sl-ichips){margin-bottom:4px}
 app-sales-list .sl-ichips{margin-bottom:6px}
 app-sales-list .sl-ichips .ios-chip>app-icon{margin-right:-4px}

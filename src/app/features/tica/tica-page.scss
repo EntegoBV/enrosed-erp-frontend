@@ -88,6 +88,9 @@ app-tica-page .tl-attn span,app-tica-page .tl-pattn span{min-width:0;overflow-wr
 app-tica-page .tl--phone{--ios-inset:4px}
 app-tica-page .tl--phone>.tl-tabs{margin:0 var(--ios-inset) 10px}
 app-tica-page .tl-isearch{margin:0 var(--ios-inset) 8px}
+/* The wide phone (an unfolded iPhone Duo): the segmented control stays hand-sized (480 px) at the inset instead of
+   spanning the 736 px column; the search keeps its full row with the filter circle at its right. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-tica-page .tl--phone>.tl-tabs{max-width:480px} }
 app-tica-page .tl-ichips{margin-bottom:8px}
 app-tica-page .tl-ichip__badge--warn{background:var(--warn)}
 app-tica-page .ios-chip[aria-pressed=true] .tl-ichip__badge--warn{background:#fff;color:var(--warn)}

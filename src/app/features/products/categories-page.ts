@@ -165,7 +165,8 @@ const WEBSITE_CATEGORY_PHOTOS: { match: RegExp; url: string; label: string }[] =
   styles: [`
     .cat-choice { display: grid; gap: 8px; }
     .cat-choice__option { display: flex; width: 100%; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
-    .cat-choice__option:hover { border-color: var(--rose-line); background: var(--rose-soft); }
+    /* WebKit keeps :hover on the last tapped option (every iPhone Duo pose is hover: none), so the hover tint is gated. */
+    @media (hover: hover) { .cat-choice__option:hover { border-color: var(--rose-line); background: var(--rose-soft); } }
     .cat-choice__option i { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--rose); font-size: 15px; font-style: normal; }
     .cat-choice__option span { display: grid; gap: 2px; min-width: 0; }
     .cat-choice__option b { font-size: 13.5px; }

@@ -95,6 +95,9 @@ app-supplier-list .sup-capsules{display:flex;gap:8px;margin:0 var(--ios-inset);p
 app-supplier-list .sup-capsules .ios-capsule{display:inline-flex;align-items:center;gap:6px}
 app-supplier-list .sup-figures{margin-bottom:0}
 app-supplier-list .sup-figures__wide{grid-column:1/-1}
+/* The wide phone: the sheet is the shell's 640 px card (body about 608), so the three figures share one row at about
+   200 px each and the wide one stops spanning (same specificity as the rule above, later, so it wins). */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-supplier-list .sup-figures{--fig-n:3} app-supplier-list .sup-figures__wide{grid-column:auto} }
 app-supplier-list .sup-address{padding:12px 16px}
 app-supplier-list .sup-link{color:var(--rose-dark)}
 app-supplier-list .sup-notes--cell{padding:12px 16px}

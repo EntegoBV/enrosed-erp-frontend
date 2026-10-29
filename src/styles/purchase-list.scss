@@ -68,6 +68,9 @@ app-purchase-list .swipe--open>.swipe__delete,app-purchase-list .swipe--open-sta
 app-purchase-list .pl--phone{--ios-inset:4px}
 app-purchase-list .pl--phone>.pl-tabs{margin:0 var(--ios-inset) 10px}
 app-purchase-list .pl-isearch{margin:0 var(--ios-inset) 14px}
+/* The wide phone (an unfolded iPhone Duo): the segmented control stays hand-sized (480 px) at the inset instead of
+   spanning the 736 px column; the search keeps its full row with the filter circle at its right. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-purchase-list .pl--phone>.pl-tabs{max-width:480px} }
 app-purchase-list .pl-filter{position:relative;display:grid;flex:none;place-items:center;width:44px;height:44px;border-radius:50%;background:color-mix(in srgb,var(--ink) 7%,transparent);color:var(--ink-2)}
 app-purchase-list .pl-filter--on{background:var(--rose-soft);color:var(--rose-dark)}
 app-purchase-list .pl-filter__badge{position:absolute;top:2px;right:0;display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:999px;background:var(--rose);box-shadow:0 0 0 2px var(--surface);color:#fff;font-size:10.5px;font-weight:800}

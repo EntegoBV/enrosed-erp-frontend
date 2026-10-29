@@ -140,6 +140,10 @@ app-stock-page .sheet--ios .sk-book { padding: 0 16px; }
   app-stock-page .skp-search { padding: 0 var(--ios-inset) 6px; }
   app-stock-page .skp-editbar { margin: 0 var(--ios-inset) 14px; }
 }
+/* The wide phone (an unfolded iPhone Duo): the location control stays hand-sized (480 px) at the inset instead of spanning
+   the 736 px column. The app-segmented host carries .ios-seg (display: grid), so max-width sizes it; the one-location
+   capsule is not an app-segmented and keeps its size. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-stock-page .skp-seg > app-segmented { max-width: 480px; } }
 app-stock-page .skp-row {
   display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px; padding: 10px 14px 10px 16px;
   border: 0; background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;

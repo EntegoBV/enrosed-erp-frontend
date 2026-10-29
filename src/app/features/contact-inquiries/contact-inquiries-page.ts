@@ -110,7 +110,9 @@ const STATUSES: { value: ContactInquiryStatus; label: string }[] = [
     .contact-list { overflow: hidden; }
     .contact-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 18px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
     .contact-row:last-child { border-bottom: 0; }
-    .contact-row:hover, .contact-row:focus-visible { background: var(--surface-2); }
+    .contact-row:focus-visible { background: var(--surface-2); }
+    /* WebKit keeps :hover on the last tapped row (every iPhone Duo pose is hover: none), so the hover tint is gated. */
+    @media (hover: hover) { .contact-row:hover { background: var(--surface-2); } }
     .contact-row__copy { display: grid; min-width: 0; flex: 1; gap: 5px; }
     .contact-row__copy > span, .contact-row__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 13px; }
     .contact-row__copy .contact-row__message { color: var(--ink-2); }
