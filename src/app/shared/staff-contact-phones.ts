@@ -82,7 +82,7 @@ import { normalizedStaffPhone, staffPhoneError } from './staff-contact-phone';
     .contact-phones--embedded { padding: 0; border: 0; border-radius: 0; background: none; }
     .contact-phones--embedded .contact-phone { grid-template-columns: minmax(0, 1fr); gap: 3px; }
     .contact-phones--embedded .contact-phones__rows { gap: 10px; }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .contact-phones--embedded .contact-phone__field { grid-template-columns: 168px minmax(0, 1fr); align-items: center; column-gap: 14px; }
       .contact-phones--embedded .contact-phone__field > span { justify-self: end; color: var(--ink-2); font-size: 13px; font-weight: 600; text-align: right; }
       .contact-phones--embedded .contact-phone__field .input { min-height: 36px; height: 36px; border-radius: 9px; font-size: 14px; }

@@ -126,7 +126,7 @@ const FIRST_MOVES = 20;
     .pbs-more { justify-self: start; margin-top: 6px; font-size: 13px; }
     .pbs-to { min-width: 0; max-width: 60%; }
     .pbs-to span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    @media (max-width: 679.98px) { .pbs-sheet { padding: 0 16px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .pbs-sheet { padding: 0 16px; } }
   `,
 })
 export class ProductBatchSheet {

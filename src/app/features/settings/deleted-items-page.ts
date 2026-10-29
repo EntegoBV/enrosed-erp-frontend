@@ -209,8 +209,8 @@ import {
     .deleted-detail__actions{display:flex;gap:10px;width:100%}.deleted-detail__actions>span{flex:1}.deleted-detail__actions>.btn{min-height:44px}
     @media (max-width: 1279px) { .trash { --wk-cols: minmax(0, 1.4fr) minmax(0, 1.2fr) 140px 130px 110px 20px; } }
     /* The phone sheet body has no side padding (it expects inset groups): the detail brings its own 16 px gutter. */
-    @media (max-width: 679.98px) { .deleted-detail { padding-inline: 16px; } }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .deleted-detail { padding-inline: 16px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .deleted-facts{grid-template-columns:1fr}.deleted-facts>div{grid-template-columns:120px minmax(0,1fr)}
       .deleted-detail__actions>.btn--primary{flex:1}.deleted-detail__actions>span{display:none}
     }

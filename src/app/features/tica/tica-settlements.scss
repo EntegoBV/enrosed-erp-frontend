@@ -39,7 +39,7 @@
 .settlement-bank-options strong, .settlement-bank-options span span, .settlement-bank-options small { display: block; font-size: 12px; overflow-wrap: anywhere; }
 .settlement-bank-options span span, .settlement-bank-options small { color: var(--muted); font-size: 11px; margin-top: 3px; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--rose); outline-offset: 3px; }
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .settlement-detail, .settlement-editor { padding: 8px 16px 20px; min-width: 0; }
   .settlement-sheet-actions .btn { flex: 1; min-height: 44px; }
   .settlement-field-pair { gap: 10px; }

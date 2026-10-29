@@ -166,7 +166,7 @@ import { notificationTarget } from './notification-target';
       line-height: 1;
     }
     /* Desk: a 32 px ghost square at the end of the toolbar. */
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .bell::before { content: none; }
       .bell {
         width: 32px;

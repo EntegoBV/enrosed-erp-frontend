@@ -9,7 +9,7 @@
    its beige --bg; cards and lists are --surface white.
    ========================================================================== */
 
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
 /* ---- frame: the kit's sticky nav and subbar stick against .mpo-phone */
 :is(app-purchase-view,app-purchase-editor) .mpo-phone{--ios-bg:var(--bg);--mpo-tabs-h:74px;display:block;min-width:0}
 .mpo-phone--view{padding-bottom:calc(var(--tabbar-h) + var(--safe-b) + 108px)}
@@ -277,4 +277,13 @@ body:has(app-purchase-view .mpo-dock) .tabbar{display:none}
 /* I-B25 (2026-10-19): the quote, partner, Enrosed kost and PDF sheets open as iOS sheets here; the iOS body has no side
    padding of its own, so their plain content keeps a 16 px gutter. */
 :is(app-purchase-view,app-purchase-editor) .sheet--ios :is(.pq,.pp,.xs,.pdf-body){padding:0 var(--ios-inset,16px)}
+}
+
+/* The wide phone: the frame takes the shell's column (it is not an .ios-page; its sticky nav and tabs come along, the
+   docks are fixed and centred by styles.scss); Lading · Volume · Vulling in one row (the meter keeps 200+ px). The tab
+   control and every pane keep their phone layout inside the column. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  :is(app-purchase-view, app-purchase-editor) .mpo-phone { max-width: var(--page-col, 760px); margin-inline: auto; }
+  app-purchase-view .mpo-figures { --fig-n: 3; }
+  app-purchase-view .mpo-figures > :nth-child(3) { grid-column: auto; }
 }

@@ -38,7 +38,7 @@ app-supplier-list .sup-detail__who p{margin:2px 0 0;color:var(--muted);font-size
 app-supplier-list .sup-detail__actions{display:flex;flex:none;align-items:center;gap:6px}
 /* The ⋯ menu's head is the supplier name, up to two lines like everywhere else (N13): it wraps under the menu's own class. */
 app-supplier-list .sup-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
-@media (max-width:679.98px){app-supplier-list .sup-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-supplier-list .sup-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
 app-supplier-list .sup-strip{border-top:1px solid var(--line)}
 app-supplier-list .sup-sec{min-width:0;padding:14px 20px;border-top:1px solid var(--line)}
 app-supplier-list .sup-sec__title{margin:0 0 8px;color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
@@ -95,11 +95,14 @@ app-supplier-list .sup-capsules{display:flex;gap:8px;margin:0 var(--ios-inset);p
 app-supplier-list .sup-capsules .ios-capsule{display:inline-flex;align-items:center;gap:6px}
 app-supplier-list .sup-figures{margin-bottom:0}
 app-supplier-list .sup-figures__wide{grid-column:1/-1}
+/* The wide phone: the sheet is the shell's 640 px card (body about 608), so the three figures share one row at about
+   200 px each and the wide one stops spanning (same specificity as the rule above, later, so it wins). */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-supplier-list .sup-figures{--fig-n:3} app-supplier-list .sup-figures__wide{grid-column:auto} }
 app-supplier-list .sup-address{padding:12px 16px}
 app-supplier-list .sup-link{color:var(--rose-dark)}
 app-supplier-list .sup-notes--cell{padding:12px 16px}
 /* The edit form in its iOS sheet: the sheet body has no side padding of its own, so the legend and the numbered
    sections keep the 16 px gutter here; Verwijderen sits as a cell under the form (the desk sheet is unchanged). */
-@media (max-width:679.98px){app-supplier-list .sheet--ios .sup-form{padding:0 var(--ios-inset,16px)}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-supplier-list .sheet--ios .sup-form{padding:0 var(--ios-inset,16px)}}
 app-supplier-list .sup-delete{margin-top:4px}
 

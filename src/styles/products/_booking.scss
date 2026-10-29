@@ -25,7 +25,7 @@ app-stock-booking-sheet .bk-preview.is-short { border-color: color-mix(in srgb, 
 app-stock-booking-sheet .bk-preview.is-same { color: var(--muted); }
 
 /* Phone: inset rows, label left and the control right, the figure large. */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-stock-booking-sheet .bk { gap: 14px; padding: 0 16px; }
   app-stock-booking-sheet .bk-sub { text-align: center; }
   app-stock-booking-sheet .bk-fields {

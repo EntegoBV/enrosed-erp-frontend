@@ -247,7 +247,7 @@ interface PhotoCompareView {
       overflow-wrap: anywhere; }
     .pk-cmp__row img { width: 76px; height: 64px; border: 1px solid var(--line-strong); border-radius: 10px; background: #fff; object-fit: contain; }
     .pk-cmp__this img { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .pk-top:has(.pk-upload) { grid-template-columns: minmax(0, 1fr) 360px; align-items: center; gap: 20px; }
       .pk-top .pk-intro { order: -1; }
       .pk-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

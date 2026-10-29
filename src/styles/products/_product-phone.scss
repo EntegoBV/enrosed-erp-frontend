@@ -161,3 +161,11 @@ app-product-view .pph-agree-select {
   flex: 0 1 auto; min-width: 0; max-width: 62%; padding: 4px 0; border: 0; background: transparent; color: var(--muted);
   font: inherit; font-size: 16px; text-align: right; text-overflow: ellipsis;
 }
+
+/* The wide phone: a 160 px photo beside the identity and the four figures in one row; the page itself is the shell's
+   column (workspace-kit.scss .ios-page), the groups stay one list. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  app-product-view .pph-top { grid-template-columns: 160px minmax(0, 1fr); gap: 16px; }
+  app-product-view .pph-photo { width: 160px; height: 160px; }
+  app-product-view .pph-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

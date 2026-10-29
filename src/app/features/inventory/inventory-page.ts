@@ -283,7 +283,7 @@ const counted = (value: number, one: string, many: string) => `${whole(value)} $
     .inv-hub__link { min-height: 34px; padding: 0; border: 0; background: none; color: var(--rose-dark); font: inherit;
       font-size: 13.5px; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
     .inv-hub__rule { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.6; white-space: pre-line; }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .inv-hub__more { width: 34px; }
     }
   `,

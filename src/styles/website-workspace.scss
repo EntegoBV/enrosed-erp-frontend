@@ -29,13 +29,13 @@
 
 /* ---- shell: the website side is the kit's .wk-side; a converted page is a .wk-page (desk) or .ios-page (phone).
    app.ts applies .shell--website, not .shell--workspace, so the kit's scroll lock and toast offset are repeated here. */
-@media (min-width:680px){
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
  .shell.shell--website{flex-direction:row}
  .shell--website:has(.wk-page){height:100dvh;overflow:hidden}
  .shell--website:has(.wk-page)>.main{height:100dvh;min-height:0;overflow:hidden;background:var(--wk-bg)}
  body:has(.shell--website .wk-page) .toasts{bottom:calc(var(--wk-status-h) + 14px)}
 }
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  body:has(.shell--website .ios-tabbar) .toasts{bottom:calc(var(--tabbar-h) + var(--safe-b) + 24px)}
  /* the Homepage and Teksten save bars sit just above the tab bar: a toast stands above them, never on Opslaan (as purchase-phone.scss) */
  body:has(.shell--website .ws-savebar, .shell--website .ws-ph-editor .ws-edfoot.is-dirty) .toasts{bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 104px)}

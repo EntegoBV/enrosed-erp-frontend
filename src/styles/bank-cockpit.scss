@@ -503,7 +503,7 @@
 }
 
 /* ==================================================== phone */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   #finance-workspace {
     .fin-ios-odoo { width: calc(100% - 2 * var(--ios-inset)); border: 0; font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
     .fin-hero { background: linear-gradient(150deg, #1d3a2f, #142721); }

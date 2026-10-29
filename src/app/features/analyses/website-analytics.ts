@@ -411,7 +411,7 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
     .wa__hours { min-width: 0; }
     .wa__state .linklike { min-height: 44px; }
     button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .wa__card { padding: 15px; border-radius: 20px; }
       .wa__hours-head, .wa__hours-row { grid-template-columns: 22px repeat(24, minmax(0, 1fr)); gap: 1px; }
     }

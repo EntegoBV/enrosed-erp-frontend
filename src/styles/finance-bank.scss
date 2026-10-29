@@ -11,7 +11,7 @@
   .fin-bank-pending__row .fin-bank-pending__reference { color: var(--ink-2); font-weight: 650; }
   .fin-bank-pending__row strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
 }
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   #finance-workspace {
     /* Bank and Transacties are ios-* pages: their groups keep the --ios-inset gutter themselves. */
     app-bank-panel { padding: 0 0 24px; }

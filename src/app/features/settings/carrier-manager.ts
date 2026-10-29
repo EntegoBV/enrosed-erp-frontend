@@ -399,7 +399,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .carrier-page__head { display:flex;align-items:center;justify-content:space-between;gap:12px }
     .carrier-page__head p { font-size:11.5px;line-height:1.45 }
     .carrier-page__head .btn { flex:none }
-    @media(max-width:679px) { .carrier-page__head .btn { display:none } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .carrier-page__head .btn { display:none } }
     .carrier-card { padding:15px }
     .carrier-card__head { display:flex;align-items:flex-start;justify-content:space-between;gap:12px }
     .carrier-card__id h2 { font-size:16px }
@@ -447,10 +447,10 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .quick-fold[open] .quick-fold__chev { transform:rotate(-135deg) }
     .quick-fold>*:not(summary) { margin:0 13px 12px }
     .quick-quote__form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px }
-    @media(min-width:680px) { .quick-quote__form { grid-template-columns:repeat(5,minmax(0,1fr)) auto;align-items:end } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .quick-quote__form { grid-template-columns:repeat(5,minmax(0,1fr)) auto;align-items:end } }
     .quick-quote__form label { display:grid;gap:3px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em }
     .quick-quote__form .btn { align-self:end }
-    @media(max-width:679px) { .quick-quote__form .btn { grid-column:1/-1 } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .quick-quote__form .btn { grid-column:1/-1 } }
     .quick-fold .peek-result { background:var(--surface) }
     .peek-explainer { margin:0 0 12px;color:var(--ink-2);font-size:12px;line-height:1.55 }
     .peek-explainer .muted { display:block;margin-top:3px;font-size:10.5px }
@@ -458,10 +458,10 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .peek-try__head h4 { font-size:13px }
     .peek-try__head p { margin:1px 0 9px;color:var(--muted);font-size:10.5px }
     .peek-try__form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px }
-    @media(min-width:680px) { .peek-try__form { grid-template-columns:1.2fr .7fr 1fr .9fr auto;align-items:end } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .peek-try__form { grid-template-columns:1.2fr .7fr 1fr .9fr auto;align-items:end } }
     .peek-try__form label { display:grid;gap:3px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em }
     .peek-try__form .btn { align-self:end }
-    @media(max-width:679px) { .peek-try__form .btn { grid-column:1/-1 } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .peek-try__form .btn { grid-column:1/-1 } }
     .peek-result { margin:11px 0 0;padding:9px 11px;display:grid;gap:4px;border-radius:11px;background:var(--surface) }
     .peek-result div { display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:11.5px }
     .peek-result dt { color:var(--muted) }
@@ -478,7 +478,7 @@ import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
     .peek-zone__chips i { padding:1.5px 7px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);font-size:10px;font-style:normal;font-variant-numeric:tabular-nums }
     .tier-table__sticky { position:sticky;left:0;background:var(--surface);white-space:nowrap;font-weight:650;box-shadow:1px 0 0 var(--line) }
     thead .tier-table__sticky { background:var(--surface-2) }
-    @media(max-width:679px) { .carrier-facts { grid-template-columns:repeat(3,minmax(0,1fr)) } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .carrier-facts { grid-template-columns:repeat(3,minmax(0,1fr)) } }
   `],
 })
 export class CarrierManager {

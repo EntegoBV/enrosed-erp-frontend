@@ -61,7 +61,7 @@ button.inv-chip{cursor:pointer}
 .inv-line__link:disabled{opacity:.45;cursor:default}
 .inv-line__wipe{justify-self:start;color:var(--muted)}
 .inv-line__moved{display:grid;justify-items:start;gap:3px;margin-top:4px}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .inv-line .inv-chip--stop{min-height:32px;padding-inline:12px;font-size:13px}
  .inv-line__link{min-height:40px}}
 
@@ -112,7 +112,7 @@ button.inv-chip{cursor:pointer}
 .inv-reason__choice:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}
 .inv-reason__note{margin-bottom:0}
 .inv-reason__must{color:var(--danger);font-weight:650}
-@media (min-width:680px){.inv-reason__choices{grid-template-columns:1fr 1fr}.inv-reason__choice{min-height:44px;font-size:14.5px}}
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {.inv-reason__choices{grid-template-columns:1fr 1fr}.inv-reason__choice{min-height:44px;font-size:14.5px}}
 
 /* ---- add sheet and booking sheet: grouped lists; the phone sheet has no side padding of its own */
 .inv-add,.inv-book{min-width:0}
@@ -138,12 +138,12 @@ button.inv-chip{cursor:pointer}
 /* the server's refusal of "Telling boeken": stays above the summary until the next attempt */
 .inv-book__refused{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:14px;font-weight:650;line-height:1.45}
 .inv-book__refused span{flex:1 1 220px;min-width:0}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .inv-reason,.inv-add__search,.inv-add__empty,.inv-add__alert,.inv-add__loading,.inv-book__alert,.inv-book__loading,.inv-book__summary{margin-inline:16px}
  .inv-add,.inv-book{--ios-inset:16px}
  .inv-reason__lead{margin-top:4px}
  .inv-book{padding-top:8px}}
-@media (min-width:680px){
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
  .inv-add,.inv-book{--ios-inset:0px;padding:14px;border-radius:14px;background:var(--ios-bg)}
  .inv-moved__answers .btn{flex:none;min-height:34px}}
 

@@ -24,7 +24,7 @@ app-sales-list .sl-search{flex:none;width:300px;min-width:0}
 @media (max-width:1180px){app-sales-list .sl-search{width:256px}}
 @media (max-width:1100px){app-sales-list .sl-search{width:210px}}
 /* Below 1280 px the toolbar's tools leave the subtitle no room; the counts stand on the tabs, so the line steps aside there. */
-@media (min-width:680px) and (max-width:1279.98px){app-sales-list .appbar__sub{display:none}}
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) {app-sales-list .appbar__sub{display:none}}
 
 /* ---- subbar: it wraps on a narrow desk; the table head sticks under its measured height (--sl-subbar-h, set by the list) */
 app-sales-list .sl-subbar{flex-wrap:wrap;row-gap:6px;padding-block:4px}
@@ -100,7 +100,7 @@ app-sales-list .swipe--dragging .sl-more{transform:translateX(var(--swipe-offset
 /* The row menu: its head is the document; the kit's popover head and the iOS sheet title are one line with an ellipsis,
    under the menu's own class they wrap instead. */
 app-sales-list .sl-menu .cm__head{white-space:normal;overflow-wrap:anywhere}
-@media (max-width:679.98px){app-sales-list .sl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-sales-list .sl-menu .sheet--ios .sheet__head h2{white-space:normal;overflow-wrap:anywhere;text-wrap:balance}}
 
 /* Swipe (desk and phone): the buttons under a row show only while it is open, dragged or the button has focus; no
    1px sliver, and "Archief" no longer sits fully opaque under every row (B17, V-L4). A focused archive button slides
@@ -113,6 +113,10 @@ app-sales-list .swipe:has(>.swipe__archive:focus-visible) .swipe__row{transform:
 app-sales-list .sl--phone{--ios-inset:4px}
 app-sales-list .sl--phone>.sl-tabs{margin:0 var(--ios-inset) 10px}
 app-sales-list .sl-isearch{margin:0 var(--ios-inset) 14px}
+/* The wide phone (an unfolded iPhone Duo, a landscape iPhone, an upright iPad): three 160 px tabs instead of 243 - a 36 px
+   text control 736 px wide reads stretched, 480 is a hand. Left at the inset under the title; the search keeps its full
+   row with the filter circle at its right. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-sales-list .sl--phone>.sl-tabs{max-width:480px} }
 app-sales-list .sl-isearch:has(+.sl-ichips){margin-bottom:4px}
 app-sales-list .sl-ichips{margin-bottom:6px}
 app-sales-list .sl-ichips .ios-chip>app-icon{margin-right:-4px}
@@ -165,4 +169,4 @@ app-sales-list .ios-cell:has(>.sl-select__native:focus-visible){outline:3px soli
 
 /* ---- the new-document sheet: on a phone the iOS sheet body has no side padding of its own (its ios-groups bring theirs),
    so the plain fields keep the 16 px gutter here; the desk sheet is unchanged. */
-@media (max-width:679.98px){app-sales-list .sheet--ios .sl-new{padding:0 var(--ios-inset,16px)}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-sales-list .sheet--ios .sl-new{padding:0 var(--ios-inset,16px)}}

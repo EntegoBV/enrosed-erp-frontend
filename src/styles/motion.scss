@@ -89,7 +89,7 @@
 app-sheet.mo-leaving { animation: mo-hold var(--dur-out) linear; }
 app-sheet.mo-leaving .overlay { pointer-events: none; animation: mo-fade-out var(--dur-out) var(--ease-in) forwards; }
 app-sheet.mo-leaving .sheet { animation: mo-sheet-out var(--dur-out) var(--ease-in) forwards; }
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   app-sheet.mo-leaving { animation-duration: var(--dur-1); }
   app-sheet.mo-leaving .overlay { animation-duration: var(--dur-1); }
   app-sheet.mo-leaving .sheet { animation: mo-dialog-out var(--dur-1) var(--ease-in) forwards; }
@@ -98,7 +98,7 @@ app-sheet.mo-leaving .sheet { animation: mo-sheet-out var(--dur-out) var(--ease-
 
 /* Drag to dismiss (phone): the grab and the head take the finger; the grab's
    hit area is 24 px tall. The body keeps its native scrolling. */
-@media (max-width: 679.98px) and (pointer: coarse) {
+@media (max-width: 679.98px) and (pointer: coarse), (hover: none) and (pointer: coarse) and (max-width: 1023.98px) {
   .sheet__grab, .sheet__head { touch-action: none; }
   .sheet__grab { position: relative; cursor: grab; }
   .sheet__grab::before { content: ''; position: absolute; inset: -10px -60px; }
@@ -111,7 +111,7 @@ app-sheet.mo-leaving .sheet { animation: mo-sheet-out var(--dur-out) var(--ease-
 .confirm-message { margin: 0; font-size: 14.5px; line-height: 1.55; }
 .confirm-actions { display: flex; flex: 1; justify-content: flex-end; gap: 8px; }
 .confirm-actions > .btn { flex: none; }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .sheet--ios .confirm-message { padding: 4px 20px 0; }
   .confirm-actions { flex-direction: column-reverse; }
   .confirm-actions > .btn { width: 100%; min-height: 50px; }

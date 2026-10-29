@@ -47,7 +47,7 @@ import { messageOf } from '../../core/api/errors';
 import { STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { WorkQueue } from '../../core/api/work-queue';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
-import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { DesktopViewport, deskViewport } from '../../core/platform/desktop-viewport';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
@@ -1663,7 +1663,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .quote-header-button--send svg { width:13px;height:13px;flex:none;margin-left:-1px }
     .quote-header-button--send-quiet { background:var(--rose-soft);color:var(--rose-dark);
       box-shadow:none;border:1px solid var(--rose-line) }
-    @media(max-width:679px) { .quote-header-button--desktop { display:none } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .quote-header-button--desktop { display:none } }
     @media(max-width:380px) {
       .quote-header-actions { gap:3px }
       .quote-header-total { padding-right:0 }
@@ -1900,7 +1900,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .receipt__note { margin:9px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5 }
     .line-fields { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px }
     .line-unit-context { margin:8px 0 0;color:var(--muted);font-size:11px;line-height:1.45;overflow-wrap:anywhere }
-    @media (min-width:680px) { .line-fields { grid-template-columns:110px 130px minmax(150px,220px) } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .line-fields { grid-template-columns:110px 130px minmax(150px,220px) } }
     .receipt__min { position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 10px;
       margin:4px 0 6px;padding:8px 11px 12px;border:1px solid #eddcb9;border-radius:11px;background:var(--warn-soft);
       color:var(--warn);font-size:12px;font-weight:650 }
@@ -1978,7 +1978,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .sales-mobile-dock__save:disabled { opacity:.58 }
     .sales-mobile-dock__primary { flex:none }
     @media(max-width:390px) { .sales-mobile-dock__primary { flex:1 }.sales-mobile-dock__save { padding-inline:9px!important } }
-    @media (min-width:680px) { .sales-mobile-dock { display:none } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .sales-mobile-dock { display:none } }
     .products-empty { padding:38px 18px 42px;text-align:center }
     .products-empty__art { width:64px;height:64px;margin:0 auto 12px;display:grid;place-items:center;border:1px dashed var(--rose-mid);border-radius:20px;background:var(--rose-soft);color:var(--rose-dark);font-size:28px }
     .products-empty h3 { font-size:16px }
@@ -2062,7 +2062,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .status-actions .btn--primary { min-width:150px }
     .status-actions .delete-draft { min-height:0;padding:6px 2px;color:var(--danger);opacity:.75 }
     .status-actions .delete-draft:hover { opacity:1;text-decoration:underline }
-    @media(max-width:679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .status-actions { flex-direction:column-reverse;align-items:stretch }
       .status-actions__spacer { display:none }
       .status-actions .delete-draft { margin:4px auto 0 }
@@ -2087,7 +2087,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
       .section-heading p { max-width:190px }
       .logistics-option .badge { display:none }
     }
-    @media(min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .quote-hero__top { padding:22px 24px 20px }
       .quote-header-total span { display:block }
       .workflow-nav { max-width:640px;margin-inline:auto }
@@ -2099,7 +2099,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
 
       .line-internal__units .line-internal__unit-profit { grid-column:auto }
     }
-    @media(min-width:680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .sales-page { padding-bottom:24px }
       #quote-setup,#order-lines,#quote-logistics,#quote-check,#quote-status { scroll-margin-top:calc(var(--appbar-h) + 28px) }
       .workflow-layout { display:grid;grid-template-columns:minmax(0,1fr) 168px;gap:16px;align-items:start }
@@ -4239,7 +4239,7 @@ export class SalesEditor {
 
     const appbarBottom = document.querySelector<HTMLElement>('.appbar')
       ?.getBoundingClientRect().bottom ?? 0;
-    const mobileNavBottom = window.innerWidth < 680
+    const mobileNavBottom = !deskViewport(window)
       ? (document.querySelector<HTMLElement>('.workflow-nav')?.getBoundingClientRect().bottom
         ?? appbarBottom)
       : appbarBottom;

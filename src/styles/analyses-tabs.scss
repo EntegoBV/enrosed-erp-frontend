@@ -16,12 +16,12 @@
   background: color-mix(in srgb, var(--rose) 12%, var(--surface)); color: var(--rose-dark); font: inherit; font-size: 14px; font-weight: 600; text-overflow: ellipsis; }
 .an-phone-search { margin: 0 var(--ios-inset, 16px) 14px; }
 /* Phone row 2 wraps like every phone tool row: the supplier fills the line beside the period, the order chip gets its own line. */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .an-phone .an-pick-phone + .an-capsule-select { flex: 1 1 0; min-width: 0; max-width: none; }
 }
 .an-kpis--6 { --an-cols: 6; }
 /* Figures with cents (Containerkost) stay whole in four columns below 1280 (critique B2). */
-@media (min-width: 680px) and (max-width: 1279.98px) { .an-kpis--cents .an-kpi__value { font-size: 19px; } }
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) { .an-kpis--cents .an-kpi__value { font-size: 19px; } }
 @media (max-width: 1279.98px) { .an-kpis--6 { --an-cols: 3; } }
 
 /* ---------- generic table (scorecard, partner containers) */
@@ -45,7 +45,7 @@
 .an-docs--inline { display: none; margin-top: 4px; }
 @media (max-width: 1279.98px) { .an-ptable .an-col-docs { display: none; } .an-ptable .an-docs--inline { display: grid; } }
 /* Below 1100 (742 px of content at 1024) the scorecard and partner tables tighten their inner padding and first column, so they fit without the scroll region. */
-@media (min-width: 680px) and (max-width: 1099.98px) {
+@media (min-width: 1024px) and (max-width: 1099.98px), (min-width: 680px) and (max-width: 1099.98px) and (hover: hover) {
   .an-table :is(th, td) { padding-inline: 8px; }
   .an-table :is(th, td):first-child { padding-left: 16px; }
   .an-table :is(th, td):last-child { padding-right: 16px; }
@@ -56,7 +56,7 @@
 app-container-cost-analysis { display: block; min-width: 0; }
 /* Figure labels stay on one line at 1100 (critique N2): below 1280 the qualifier "externe kost" moves into the sub. */
 .cc .cc-narrow { display: none; }
-@media (min-width: 680px) and (max-width: 1279.98px) { .cc .cc-wide { display: none; } .cc .cc-narrow { display: inline; } }
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) { .cc .cc-wide { display: none; } .cc .cc-narrow { display: inline; } }
 .cc-pay__amount { display: grid; gap: 4px; }
 .cc-pay__amount > span { color: var(--muted); font-size: 12px; }
 .cc-pay__amount > strong { color: var(--rose-dark); font-size: 26px; font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.025em; line-height: 1.15; }
@@ -173,7 +173,7 @@ app-container-cost-analysis { display: block; min-width: 0; }
   .an-vline { grid-template-columns: minmax(0, 1fr) 120px; }
   .an-vline__value { grid-column: 1 / -1; }
 }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .an-phone .an-bar--sub { margin-top: -6px; }
   .an-phone .an-bar--seg { margin-bottom: 12px; overflow: visible; }
   .an-phone .an-parts { flex: 1; }
@@ -207,7 +207,7 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .an-legend { gap: 4px 12px; font-size: 11.5px; }
 .an-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 3px; background: var(--tone, var(--muted)); vertical-align: -1px; }
 .an-legend .tone-grey { background: var(--muted-2); }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .an-phone .an-funnel { padding: 14px 16px 6px; }
   .an-phone .an-funnel__row { grid-template-columns: minmax(0, 1fr) 90px 30px; gap: 10px; }
   .an-phone .an-funnel__foot { margin: 4px 16px 0; padding: 9px 0 12px; border-top: .5px solid var(--ios-sep); font-size: 12.5px; }
@@ -219,11 +219,11 @@ app-container-cost-analysis { display: block; min-width: 0; }
 .an-quality b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .an-quality .is-warn, .an-quality .is-warn b { color: var(--warn); }
 a.an-row--link { color: inherit; text-decoration: none; }
-@media (max-width: 679.98px) { .an-phone .an-quality { margin: -14px calc(var(--ios-inset, 16px) + 16px) var(--an-gap); font-size: 13px; } }
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .an-phone .an-quality { margin: -14px calc(var(--ios-inset, 16px) + 16px) var(--an-gap); font-size: 13px; } }
 
 /* ---------- Resultaat: five figures only from 1280; narrower 3 + 2 without a hole (critique B2.3) */
 .an-kpis--5 { --an-cols: 5; }
-@media (min-width: 680px) and (max-width: 1279.98px) {
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) {
   .an-kpis--5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .an-kpis--5 > .an-kpi { grid-column: span 2; }
   .an-kpis--5 > .an-kpi:nth-child(n + 4) { grid-column: span 3; }
@@ -251,7 +251,7 @@ app-an-month-bars { display: block; padding: 8px 0 12px; }
 .an-mbars__years { display: grid; grid-template-columns: repeat(var(--n, 12), minmax(0, 1fr)); margin: 6px 16px 0 76px; color: var(--muted); font-size: 10.5px;
   font-weight: 650; font-variant-numeric: tabular-nums; }
 .an-mbars__years span { min-width: 0; padding: 3px 0 0 4px; border-top: 1px solid var(--line); border-left: 1px solid var(--line-strong); white-space: nowrap; }
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .an-phone .an-mbars { grid-template-columns: 40px minmax(0, 1fr); padding: 12px 12px 2px; }
   .an-phone .an-mbars__x { margin: 4px 12px 0 60px; font-size: 10px; }
   .an-phone .an-mbars__years { margin: 5px 12px 0 60px; font-size: 10px; }

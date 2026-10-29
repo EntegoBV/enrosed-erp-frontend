@@ -231,10 +231,10 @@ export {
     .shared-sheet__actions { display: contents; }
     /* "Opslaan en toepassen op 3 kleuren" beside Annuleren is wider than a 390 px phone: the two buttons (flex: 1, never
        narrower than their label) share a row while they fit and otherwise wrap, each then filling its own row. */
-    @media (max-width: 679.98px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .shared-sheet__actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: 8px; min-width: 0; }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .shared-sheet { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
       .source-card, .review, .basis-warn, .protected-note { grid-column: 1 / -1; }
       .field-groups { grid-column: 1; }

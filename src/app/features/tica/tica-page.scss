@@ -22,7 +22,7 @@ app-tica-page .tl-panel{min-width:0}
 /* ---- desk toolbar: the search gives way first; the import state is one pill with its refresh button */
 app-tica-page .tl-search{flex:none;width:260px;min-width:0}
 @media (max-width:1180px){app-tica-page .tl-search{width:170px}}
-@media (min-width:680px) and (max-width:1279.98px){app-tica-page .tl-wide{display:none}}
+@media (min-width: 1024px) and (max-width: 1279.98px), (min-width: 680px) and (max-width: 1279.98px) and (hover: hover) {app-tica-page .tl-wide{display:none}}
 app-tica-page .tl-sync{flex:none;gap:6px;padding-right:3px;white-space:nowrap}
 app-tica-page .tl-sync__go{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
 app-tica-page .tl-sync__go:hover:not(:disabled){background:color-mix(in srgb,currentColor 12%,transparent)}
@@ -30,7 +30,7 @@ app-tica-page .tl-sync__go:disabled{opacity:.45;cursor:default}
 app-tica-page .tl-sync__go:focus-visible{outline:2px solid var(--rose);outline-offset:1px}
 /* No room for the words: they stay for screen readers (the pill is the live region), the time or 'Ophalen…' shows. */
 app-tica-page .tl-sync__short{display:none}
-@media (min-width:680px) and (max-width:1099.98px){
+@media (min-width: 1024px) and (max-width: 1099.98px), (min-width: 680px) and (max-width: 1099.98px) and (hover: hover) {
   app-tica-page .tl-sync__text{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
   app-tica-page .tl-sync__short{display:inline}
 }
@@ -88,6 +88,9 @@ app-tica-page .tl-attn span,app-tica-page .tl-pattn span{min-width:0;overflow-wr
 app-tica-page .tl--phone{--ios-inset:4px}
 app-tica-page .tl--phone>.tl-tabs{margin:0 var(--ios-inset) 10px}
 app-tica-page .tl-isearch{margin:0 var(--ios-inset) 8px}
+/* The wide phone (an unfolded iPhone Duo): the segmented control stays hand-sized (480 px) at the inset instead of
+   spanning the 736 px column; the search keeps its full row with the filter circle at its right. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { app-tica-page .tl--phone>.tl-tabs{max-width:480px} }
 app-tica-page .tl-ichips{margin-bottom:8px}
 app-tica-page .tl-ichip__badge--warn{background:var(--warn)}
 app-tica-page .ios-chip[aria-pressed=true] .tl-ichip__badge--warn{background:#fff;color:var(--warn)}
@@ -120,4 +123,4 @@ app-tica-page .tl-fapply .ios-cell__title{color:var(--rose-dark);font-weight:650
 app-tica-page .tl-fnote{margin-top:-6px}
 app-tica-page .tl-sheet-error{margin:0 calc(var(--ios-inset,16px) + 16px) 12px;color:var(--danger);font-size:13px}
 app-tica-page .tl-sheet-foot{display:flex;justify-content:flex-end;gap:10px;width:100%}
-@media (max-width:679.98px){app-tica-page .tl-sheet-foot .btn{flex:1;min-height:44px}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {app-tica-page .tl-sheet-foot .btn{flex:1;min-height:44px}}

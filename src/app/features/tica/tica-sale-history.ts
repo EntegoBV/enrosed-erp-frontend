@@ -64,7 +64,7 @@ import { ticaStockLabel } from './tica-stock-rules';
     .tsh-movements small { display:block;color:var(--muted);font-size:11px;margin-top:4px; }
     .tsh-movements a { flex:none;align-self:flex-start; }
     .tsh-error { color:var(--danger);font-size:13px; }
-    @media(max-width:679px) { .tsh-body {padding:8px 16px 20px;} .tsh-movements li {flex-wrap:wrap;} }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .tsh-body {padding:8px 16px 20px;} .tsh-movements li {flex-wrap:wrap;} }
   `,
 })
 export class TicaSaleHistory {

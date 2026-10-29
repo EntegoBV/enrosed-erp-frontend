@@ -430,6 +430,8 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
   `,
   styles: `
     .lr-segments { min-width: 300px; }
+    /* The wide phone (an unfolded iPhone Duo): the control stays hand-sized instead of spanning the 736 px column. */
+    @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .lr-segments { max-width: 480px; } }
     .lr-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); font: inherit; text-align: left; cursor: pointer; }
     .lr-row:last-child { border-bottom: 0; }
     .lr-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
@@ -463,7 +465,7 @@ const EMPTY_DRAFT: NewCustomerDraft = { company: '', vatNumber: '', countryCode:
     .lr-foot { display: flex; flex: 1; flex-wrap: wrap; gap: 8px; min-width: 0; }
     /* Why the approve button is off, next to that button instead of somewhere in the scrolling body. */
     .lr-foot__hint { order: -1; flex-basis: 100%; text-align: right; font-size: 12.5px; color: var(--ink-2); }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       /* The long approve label gets a row of its own; three buttons side by side cut it off at 375 px. */
       .lr-foot__main { order: 2; flex-basis: 100%; }
       .lr-foot__hint { order: 1; text-align: center; }

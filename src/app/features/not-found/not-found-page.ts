@@ -94,7 +94,7 @@ const DOORS = [
       .nf__door .ios-tile { grid-row: auto; }
       .nf__door-title { margin-top: 2px; }
     }
-    @media (max-width: 679.98px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .nf { padding-inline: 0; }
       .nf__intro { padding: 12px 24px 4px; }
       .nf__label { text-align: left; margin-inline: calc(var(--ios-inset) + 16px); }

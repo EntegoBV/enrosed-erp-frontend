@@ -1509,7 +1509,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     :host#product-editor-workspace .product-section-copy small { font-size: 11px; line-height: 1.35; color: var(--muted); }
     :host#product-editor-workspace .product-section-arrow { position: absolute; right: 15px; top: 22px; color: var(--section-tone); }
     :host#product-editor-workspace .product-section-translation { min-height: 48px; margin-top: 14px; border-radius: 16px; }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       :host#product-editor-workspace .section-head { align-items: center; }
       :host#product-editor-workspace .product-editor-dock { border-radius: 22px 22px 0 0; }
       :host#product-editor-workspace .product-editor-dock__save { min-height: 48px; border-radius: 16px; }
@@ -1552,7 +1552,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .supplier-rows-error .linklike { font-size: 12.5px; font-weight: 650; }
     .agreement-supplier { margin: 0; max-width: 420px; }
     /* Phone: only the active section is in the DOM flow; desktop: all. */
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .editor-canvas .editor-section,
       .editor-canvas .editor-desktop-only { display: none; }
       .editor-canvas[data-tab="identity"] #identity,
@@ -1603,7 +1603,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     /* Desktop idiom only (the rail breakpoint); a phone has no room next
        to Opslaan and goes back to the list anyway. */
     .product-nav { display: none; }
-    @media (min-width: 680px) { .product-nav { display: inline-flex; } }
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .product-nav { display: inline-flex; } }
     .magic-field { position: relative; display: block; }
     .magic-field .input { padding-right: 44px; }
     .magic-field__btn { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px;
@@ -1669,7 +1669,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .stock-history__what b { font-weight: 650; font-size: 13px; }
     .stock-history__what small { color: var(--muted); font-size: 11.5px; }
     .stock-history__after { color: var(--muted); font-size: 12.5px; text-align: right; overflow-wrap: anywhere; }
-    @media (max-width: 679px) { .stock-history__row { grid-template-columns: 64px minmax(0, 1fr) auto; } .stock-history__after { grid-column: 2; text-align: left; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .stock-history__row { grid-template-columns: 64px minmax(0, 1fr) auto; } .stock-history__after { grid-column: 2; text-align: left; } }
     .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
     .price-preview {
       display: flex; align-items: flex-end; justify-content: space-between; gap: 14px;
@@ -1720,7 +1720,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     .variant-chip small { color: var(--muted); font-size: 9.5px; }
     .variant-copy__field { margin: 0; }
 
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .section-head { padding-inline: 18px; }
       .editor-section .card__body { padding: 18px; }
       .measure-grid { gap: 10px; }

@@ -102,7 +102,7 @@
 .cn-offset__amount > span { font-size: 12px; font-weight: 650; }
 .cn-sentence { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
 
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .cn-lines { border: 0; background: transparent; gap: 8px; overflow: visible; }
   .cn-lines__head { display: none; }
   .cn-line { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'product product' 'invoiced amount' 'qty price'; gap: 10px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }

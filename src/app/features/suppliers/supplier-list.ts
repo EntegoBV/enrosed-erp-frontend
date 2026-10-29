@@ -610,7 +610,7 @@ function blank(): Supplier {
   styles: [`
     :host{display:block}
     .form-section{margin:0 0 12px;padding:12px 12px 0;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.form-section__head{display:flex;align-items:flex-start;gap:9px;margin-bottom:12px}.form-section__head>span{display:grid;width:30px;height:30px;flex:none;place-items:center;border-radius:9px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760}.form-section__head h3{font-size:13px}.form-section__head p{color:var(--muted);font-size:10.5px}.field-error{color:var(--danger);font-size:11px}.input[aria-invalid="true"]{border-color:var(--danger)}
-    @media(min-width: 680px){.form-section{padding:15px 15px 1px}}
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {.form-section{padding:15px 15px 1px}}
   `],
 })
 export class SupplierList {

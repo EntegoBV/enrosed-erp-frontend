@@ -122,7 +122,7 @@ import {
     .sbs-row__part { color: var(--muted); font-size: 11.5px; font-weight: 500; }
     .sbs-row__num--warn { color: var(--warn); }
     .sbs-more { justify-self: start; }
-    @media (max-width: 679.98px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .sbs-sheet { padding: 0 16px; }
       /* Two per row so "Beginvoorraad" is never cut; Waarde takes the last row. */
       .sbs-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }

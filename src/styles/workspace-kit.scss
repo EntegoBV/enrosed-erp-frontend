@@ -3,8 +3,10 @@
    (Kosten & bank, Documenten & media, Inkoop betalingen).
 
    Prefixes
-   - wk-*   the desk, i.e. DesktopViewport.active() (680px and up)
-   - ios-*  the phone (below 680px)
+   - wk-*   the desk, i.e. DesktopViewport.active() (DESK_MEDIA: 1024px and
+            up, or 680px and up with a hovering pointer)
+   - ios-*  the phone (PHONE_MEDIA: below 680px, or a touch screen without
+            hover below 1024px, such as an unfolded iPhone Duo)
    - tone-*, wk-meter, wk-equation, wk-amount and wk-dot work on both.
 
    Opt-in: nothing here changes a screen until it renders the classes. The
@@ -39,17 +41,22 @@
  --ios-bg:#f2efeb;--ios-sep:rgb(60 50 45/16%);--ios-radius:22px;--ios-inset:16px;--ios-row:52px;--ios-nav-h:44px;--ios-tabbar-h:60px;
  --glass-bg:color-mix(in srgb,var(--surface) 72%,transparent);--glass-bg-strong:color-mix(in srgb,var(--surface) 86%,transparent);--glass-filter:blur(24px) saturate(1.6);--glass-edge:rgb(255 255 255/60%);--glass-shadow:0 8px 28px rgb(26 22 20/14%),0 1px 2px rgb(26 22 20/6%);--glass-highlight:inset 0 1px 0 rgb(255 255 255/75%)}
 @media (prefers-reduced-transparency:reduce){:root{--glass-bg:var(--surface);--glass-bg-strong:var(--surface);--glass-filter:none}}
+/* The wide phone (600-1023 px, hover: none): an unfolded iPhone Duo (669 upright, 951 sideways), a landscape iPhone,
+   an upright iPad. Two numbers: the page column that .content, .ios-page and the phone purchase order centre on, and
+   the width of every floating bar (the ERP tab bar, the kit bars, the '+' beside them, the docks, the toasts).
+   Designers change them here only. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { :root { --page-col: 760px; --ios-tabbar-w: 520px; } }
 
 /* ---- tones: one palette for tiles, pills, chips, dots, meters and swipe buttons */
 .tone-accent{--tone:var(--rose)}.tone-ok{--tone:var(--ok)}.tone-warn{--tone:var(--warn)}.tone-danger{--tone:var(--danger)}.tone-blue{--tone:#3b76b3}.tone-teal{--tone:#2a8783}.tone-amber{--tone:#c7851d}.tone-green{--tone:#3b945a}.tone-plum{--tone:#8157a3}.tone-grey{--tone:#8e8984}.tone-ink{--tone:var(--ink-2)}
 
 /* ---- shell (opt-in) */
 app-ios-nav,app-ios-tabbar,app-wk-side-foot{display:contents}
-@media (min-width:680px){
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
  .shell--workspace:has(.wk-page){height:100dvh;overflow:hidden}
  .shell--workspace:has(.wk-page)>.main{height:100dvh;min-height:0;overflow:hidden;background:var(--wk-bg)}
  body:has(.shell--workspace .wk-page) .toasts{bottom:calc(var(--wk-status-h) + 14px)}}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .shell--workspace-phone:has(.ios-page)>.tabbar{display:none}
  body:has(.shell--workspace-phone .ios-page):not(:has(.ios-tabbar,.ios-toolbar)){--tabbar-h:0px}
  body:has(.ios-tabbar,.ios-toolbar){--tabbar-h:var(--ios-tabbar-h)}
@@ -248,17 +255,23 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
 /* The status area, condensed title and sticky controls share the page canvas.
    Keep glass on controls only: translucent bands change colour as cards pass underneath. */
-.ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px)}
+.ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) 8px 0}
 .ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg);opacity:0;transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed::before{opacity:1}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
 .ios-nav__title{min-width:0;max-width:100%;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed .ios-nav__title{opacity:1;transform:none}
-.ios-large{padding:2px calc(var(--safe-r) + 20px) 10px calc(var(--safe-l) + 20px)}
+.ios-large{padding:2px 20px 10px}
 .ios-large__title{margin:0;color:var(--ink);font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.12;overflow-wrap:anywhere}
 .ios-large__sub{margin:3px 0 0;color:var(--muted);font-size:13px;line-height:1.35}.ios-large__sentinel{height:1px;margin-top:-1px}
 .ios-subbar{position:sticky;top:calc(var(--ios-nav-h) + var(--safe-t));z-index:29;padding:6px var(--ios-inset) 10px}
 .ios-subbar::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg)}
+/* The wide phone: a kit page is one centred column (the two pages that go two-column, the home and Analyses, lift this
+   cap in their own partials). The sticky nav, the large title and every group move with it; its fixed children
+   (.ios-accessory, .ios-tabbar, .ios-float) are viewport-positioned and unaffected - no transform, filter or container
+   may ever be added to .ios-page. The nav's ::before is opaque --ios-bg, the same beige as the body, so a
+   column-wide bar reads as full width. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .ios-page{max-width:var(--page-col,760px);margin-inline:auto} }
 /* glass buttons: 44px hit area, 36px visual */
 .ios-circle{position:relative;isolation:isolate;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
 .ios-circle::before{content:'';position:absolute;inset:4px;z-index:-1;border-radius:50%;background:var(--glass-bg);box-shadow:var(--glass-highlight),0 1px 3px rgb(26 22 20/12%);backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
@@ -369,6 +382,17 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-toolbar__btn:active:not(:disabled){background:color-mix(in srgb,var(--rose) 12%,transparent)}.ios-toolbar__btn:disabled{opacity:.35;cursor:default}.ios-toolbar__btn--danger{color:var(--danger)}
 .ios-float{position:fixed;bottom:calc(var(--tabbar-h) + var(--safe-b) + 18px);left:calc(var(--safe-l) + 10px);z-index:39;display:flex;align-items:center;gap:10px;max-width:calc(100% - 96px - var(--safe-l) - var(--safe-r));min-height:44px;padding:6px 14px 6px 6px;overflow:hidden;border:1px solid var(--glass-edge);border-radius:999px;background:var(--glass-bg-strong);box-shadow:var(--glass-shadow),var(--glass-highlight);color:var(--ink);font:inherit;font-size:13px;font-weight:600;backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
 .ios-float__bar{position:absolute;bottom:0;left:0;width:var(--progress,0%);height:3px;background:var(--rose);transition:width var(--dur-2,.2s) var(--ease-out,ease)}
+/* The wide phone: the kit bars take one width, centred; a bar with the round accessory centres with it as one group
+   (bar + 12 px + accessory: 951 → bar 179-699, '+' 711-771; 669 → 38-558, 570-630). Five tabs are 104 px, so the
+   labels return to 10 px. The upload pill lines up with the accessory bar's left end. The same selectors as the phone
+   rules above, later in the file, so they win. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+ .ios-tabbar,.ios-toolbar{left:calc(50% - var(--ios-tabbar-w,520px) / 2);right:auto;width:var(--ios-tabbar-w,520px)}
+ .ios-tabbar--with-accessory{left:calc(50% - (var(--ios-tabbar-w,520px) + 12px + var(--ios-tabbar-h)) / 2)}
+ .ios-accessory{right:auto;left:calc(50% + (var(--ios-tabbar-w,520px) + 12px - var(--ios-tabbar-h)) / 2)}
+ .ios-tabbar:has(> :nth-child(5)) .ios-tab{padding:0 2px;font-size:10px;letter-spacing:.01em}
+ .ios-float{left:calc(50% - (var(--ios-tabbar-w,520px) + 12px + var(--ios-tabbar-h)) / 2);max-width:var(--ios-tabbar-w,520px)}
+}
 /* swipe rows (SwipeActions sits on .ios-swipe) */
 .ios-swipe{position:relative;overflow:hidden;background:var(--surface)}
 .ios-swipe__row{position:relative;z-index:1;background:var(--surface);transform:translate3d(var(--swipe-x,0px),0,0);transition:transform .25s cubic-bezier(.16,1,.3,1);touch-action:pan-y}
@@ -379,7 +403,7 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-swipe[data-armed=start] .ios-swipe__actions--start>.ios-swipe__btn:not(:first-child),.ios-swipe[data-armed=end] .ios-swipe__actions--end>.ios-swipe__btn:not(:first-child){width:0;padding:0}
 .ios-swipe:has(.ios-swipe__actions--start :focus-visible){--swipe-x:calc(76px * var(--swipe-start-n,1))}.ios-swipe:has(.ios-swipe__actions--end :focus-visible){--swipe-x:calc(-76px * var(--swipe-end-n,1))}
 /* sheet refinements, opt-in with <app-sheet variant="ios">, phone only */
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .sheet.sheet--ios{padding-bottom:0;border-radius:26px 26px 0 0;background:var(--ios-bg)}
  .sheet--ios .sheet__grab{margin-top:6px;background:color-mix(in srgb,var(--ink) 22%,transparent)}
  .sheet--ios .sheet__head{position:relative;justify-content:center;min-height:52px;padding:6px 60px;border-bottom:0}
@@ -389,6 +413,16 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
  .sheet--ios .sheet__foot{position:relative;isolation:isolate;padding:10px 16px calc(12px + var(--safe-b));border-top:0;background:transparent}
  .sheet--ios .sheet__foot::before{content:'';position:absolute;inset:0;z-index:-1;border-top:.5px solid var(--ios-sep);background:var(--glass-bg-strong);backdrop-filter:var(--glass-filter);-webkit-backdrop-filter:var(--glass-filter)}
  .sheet--ios .sheet__foot:empty{display:none}.sheet--ios .sheet__foot .btn{min-height:50px;font-size:16px;font-weight:650}}
+/* The wide phone: the iOS sheet is a floating card (the overlay carries the side and home-indicator insets:
+   styles.scss), so the sheet's own bottom padding goes. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+ .sheet.sheet--ios{border-radius:26px}
+ .sheet--ios .sheet__foot{padding-bottom:12px}
+ /* The glass is the foot's ::before (inset 0) and the sheet clips nothing, so the card's bottom corners go on both or
+    the glass pokes out square over the backdrop. */
+ .sheet--ios .sheet__foot,.sheet--ios .sheet__foot::before{border-radius:0 0 26px 26px}
+ .sheet--ios:has(.sheet__foot:empty) .sheet__body{padding-bottom:16px}
+}
 /* focus rings */
 :is(.wk-btn,.wk-seg__opt,.wk-chip,.wk-th__btn,.wk-link,.wk-side__item,.wk-side__back,.wk-crumbs>a,.wk-crumbs>button):focus-visible{outline:2px solid var(--rose);outline-offset:2px}
 :is(.ios-capsule,.ios-circle,.ios-tab,.ios-accessory,.ios-chip,.ios-seg__opt,.ios-toolbar__btn,.ios-swipe__btn,.ios-hero,.ios-widget):focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:2px}

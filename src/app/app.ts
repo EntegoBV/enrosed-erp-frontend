@@ -660,6 +660,8 @@ export class App {
     const method = on ? 'addEventListener' : 'removeEventListener';
     /* The page's own scroll only (an element's scroll does not bubble): a long menu scrolling inside itself stays. */
     this.document[method]('scroll', this.tabMenuScroll);
+    /* A fold or unfold of an iPhone Duo moves the bar: the menu, placed from the bar's old rect, closes as on a scroll. */
+    this.document.defaultView?.[method]('resize', this.tabMenuScroll);
     this.document[method]('keydown', this.tabMenuEscape as EventListener, true);
   }
 

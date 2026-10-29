@@ -121,7 +121,7 @@
 /* ------------------------------------------------------------ desk toolbar
    52 px, solid, a crumb to the screen above, the title at the kit's
    .wk-toolbar__title size, compact actions, a divider and the bell. */
-@media (min-width: 680px) {
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   :root { --appbar-h: calc(52px + var(--safe-t)); }
   .appbar {
     gap: 12px;
@@ -188,7 +188,7 @@
   .appbar__divider { width: 1px; height: 20px; flex: none; background: var(--line); }
   .appbar__actions:has(> :not(.appbar__divider, app-notification-bell, .hide-desktop)) > .appbar__divider { display: block; }
 }
-@media (min-width: 680px) and (max-width: 1023.98px) {
+@media (min-width: 680px) and (max-width: 1023.98px) and (hover: hover) {
   .appbar { padding: var(--safe-t) 16px 0; }
   .appbar__actions { gap: 6px; }
   .appbar__actions > .btn { padding: 0 10px; }
@@ -199,11 +199,11 @@
    condenses into the canvas-coloured bar (the IosNav behaviour). Detail screens: the
    same bar from the start, title over subtitle. Glass capsules and
    circles for back, actions and the bell. */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   :root { --appbar-h: calc(44px + var(--safe-t)); }
   .appbar {
     gap: 2px;
-    padding: var(--safe-t) calc(var(--safe-r) + 8px) 0 calc(var(--safe-l) + 8px);
+    padding: var(--safe-t) 8px 0;
   }
   .appbar::before {
     background: var(--ios-bg);
@@ -280,12 +280,22 @@
   .appbar__actions > .btn--icon-mobile { width: 44px; padding: 0; }
   .appbar__actions > .btn--icon-mobile::before { inset: 4px; border-radius: 50%; }
   /* The large title: 34/800 like app-ios-nav, its caption the subtitle. */
-  .appbar__large { padding: 2px calc(var(--safe-r) + 20px) 10px calc(var(--safe-l) + 20px); }
+  .appbar__large { padding: 2px 20px 10px; }
   .appbar__large-title { margin: 0; color: var(--ink); font-size: 34px; font-weight: 800; letter-spacing: -.03em; line-height: 1.12; overflow-wrap: anywhere; }
   .appbar__large-sub { margin: 3px 0 0; color: var(--muted); font-size: 13px; line-height: 1.35; }
   .appbar__sentinel { height: 1px; margin-top: -1px; }
   /* Content right under a large title starts close to it (critique N8: only there). */
   app-page-header:has(> .appbar__large) + .content { padding-top: 4px; }
+}
+
+/* The wide phone: the legacy header follows the page column (--page-col, workspace-kit.scss). The bar keeps its full
+   width and glass; its back capsule and bell move to the column's edge like the kit nav inside a capped .ios-page;
+   the large title, a sibling of the bar, takes the column itself. The percentage resolves against the full-width
+   host; max() keeps 8 px when the host is narrower than the column. A page that centres a narrower column (Meer:
+   640) sets --page-col on its host and the header follows. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .appbar { padding-inline: max(8px, calc((100% - var(--page-col, 760px)) / 2 + 8px)); }
+  .appbar__large { max-width: var(--page-col, 760px); margin-inline: auto; }
 }
 
 /* ------------------------------------------------------- sidebar functions
@@ -322,7 +332,7 @@
 .sidebar__count-rail { display: none; }
 .sidebar__rule { display: none; }
 
-@media (min-width: 680px) and (max-width: 1023.98px) {
+@media (min-width: 680px) and (max-width: 1023.98px) and (hover: hover) {
   .sidebar .sidebar__count-full { display: none; }
   .sidebar .sidebar__count-rail { display: inline; }
   /* 16 px, top right of the icon. */
@@ -344,7 +354,7 @@
 @media (min-width: 1024px) {
   .sidebar__foot .sidebar__link--device { margin: 0 -4px; }
 }
-@media (min-width: 680px) and (max-width: 899.98px) {
+@media (min-width: 680px) and (max-width: 899.98px) and (hover: hover) {
   .sidebar .sidebar__link--rail > .sidebar__count { top: 8px; }
 }
 /* 900-1023: Login-aanvragen stands in the rail with its own chip; the same number on Meer would read as twice as many. */

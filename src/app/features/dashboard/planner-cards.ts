@@ -478,7 +478,8 @@ interface CompactAgendaEntry {
       gap: 9px; width: 100%; min-height: 43px; padding: 6px 1px; border: 0; border-bottom: 1px solid var(--line);
       background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
     .planner-compact__row:last-child { border-bottom: 0; }
-    .planner-compact__row:hover { background: var(--surface-2); }
+    /* Hover looks only where a pointer hovers: WebKit keeps :hover on the last tapped element (iPhone, iPad). */
+    @media (hover: hover) { .planner-compact__row:hover { background: var(--surface-2); } }
     .planner-compact__date { display: grid; color: var(--rose-dark); font-size: 10.5px; font-weight: 720; }
     .planner-compact__date small { color: var(--muted); font-size: 10px; font-weight: 600; }
     .planner-compact__copy { display: grid; min-width: 0; }
@@ -507,7 +508,7 @@ interface CompactAgendaEntry {
     .cal-head strong { font-size: 13.5px; text-transform: capitalize; }
     .cal-nav { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
       color: var(--ink-2); font-size: 15px; cursor: pointer; }
-    .cal-nav:hover { background: var(--surface-2); }
+    @media (hover: hover) { .cal-nav:hover { background: var(--surface-2); } }
     /* Day cells stay hand-sized: never wider than a thumb, however wide the card. */
     .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 46px)); gap: 2px; justify-content: space-between; }
     .cal-dow { padding: 2px 0 4px; color: var(--muted); font-size: 9.5px; font-weight: 750;
@@ -553,7 +554,7 @@ interface CompactAgendaEntry {
     }
     .cal-agenda__row { display: flex; gap: 10px; width: 100%; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--line);
       background: transparent; font: inherit; text-align: left; cursor: pointer; align-items: baseline; }
-    .cal-agenda__row:hover { background: var(--surface-2); }
+    @media (hover: hover) { .cal-agenda__row:hover { background: var(--surface-2); } }
     .cal-agenda__time { flex: none; min-width: 40px; color: var(--muted); font-size: 11.5px; }
     .cal-agenda__time--allday { display: inline-grid; place-items: center; min-width: 40px; padding: 1px 0;
       border-radius: 7px; background: var(--rose-soft); color: var(--rose-dark); font-size: 9.5px;
@@ -570,7 +571,7 @@ interface CompactAgendaEntry {
     .task--done .task__title { color: var(--muted); text-decoration: line-through; }
     .task__remove { width: 26px; height: 26px; flex: none; border: 0; border-radius: 8px; background: transparent;
       color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
-    .task__remove:hover { background: var(--danger-soft); color: var(--danger); }
+    @media (hover: hover) { .task__remove:hover { background: var(--danger-soft); color: var(--danger); } }
     .task-list__toggle { display: block; width: 100%; margin-top: 8px; padding: 9px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
       color: var(--muted); font-size: 12px; font-weight: 650; text-align: center; text-decoration: none; }
@@ -588,7 +589,7 @@ interface CompactAgendaEntry {
     .attach-name small { color: var(--muted); font-weight: 500; margin-left: 5px; }
     .attach-remove { width: 26px; height: 26px; flex: none; border: 0; border-radius: 8px; background: transparent;
       color: var(--muted); font-size: 16px; cursor: pointer; }
-    .attach-remove:hover { background: var(--danger-soft); color: var(--danger); }
+    @media (hover: hover) { .attach-remove:hover { background: var(--danger-soft); color: var(--danger); } }
     .attach-add { display: inline-flex; }
     .view-sub { margin: -6px 0 4px; color: var(--ink-2); font-size: 13px; }
     .view-sub b { text-transform: capitalize; }
@@ -607,7 +608,7 @@ interface CompactAgendaEntry {
     .upcoming__row { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 0;
       border: 0; background: transparent; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
     .upcoming__row b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .upcoming__row:hover b { color: var(--rose-dark); }
+    @media (hover: hover) { .upcoming__row:hover b { color: var(--rose-dark); } }
     .task__date--loose { background: var(--surface-2); color: var(--muted); }
     .task-parent { display: flex; align-items: baseline; gap: 6px; width: 100%; margin-top: 10px; padding: 9px 12px;
       border: 1px dashed var(--rose-line); border-radius: 11px; background: var(--rose-soft);
@@ -618,7 +619,7 @@ interface CompactAgendaEntry {
     .snooze-row { display: flex; gap: 6px; margin-top: 7px; flex-wrap: wrap; }
     .snooze { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
       color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 650; cursor: pointer; }
-    .snooze:hover { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); }
+    @media (hover: hover) { .snooze:hover { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); } }
     .snooze--clear { color: var(--muted); }
     .task__tick { width: 19px; height: 19px; accent-color: var(--rose); flex: none; }
     .task__body { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; padding: 0; border: 0;

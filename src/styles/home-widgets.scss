@@ -32,6 +32,16 @@ app-home-website, app-home-markt, app-home-tica { display: contents; }
 .home-w--phone:not(.ios-widget--wide) .home-w__icon { grid-area: icon; }
 .home-w--phone:not(.ios-widget--wide) .home-w__names { grid-area: names; }
 .home-w--phone:not(.ios-widget--wide) .home-w__chev { grid-area: chev; }
+/* A half block of 260 px and more (313 px at 669, 364 on an upright iPad) puts icon | title | chevron on one row as the
+   wide blocks do; every phone up to 440 px (blocks <= 199 px) and the 951 columns (215 px) stay stacked. .home-w is the
+   size container already. Under the wide-phone query on purpose: a 562-599 px viewport (the folded iPhone Duo sideways,
+   594) reaches 260 too, and nothing changes below 600 px this round. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  @container (min-width: 260px) {
+    .home-phone .home-w--phone:not(.ios-widget--wide) .home-w__head { grid-template-areas: none; row-gap: 0; }
+    .home-phone .home-w--phone:not(.ios-widget--wide) :is(.home-w__icon, .home-w__names, .home-w__chev) { grid-area: auto; }
+  }
+}
 .home-w__icon { width: 26px; height: 26px; border-radius: 8px; }
 .home-w--phone .home-w__icon { width: 24px; height: 24px; border-radius: 7px; }
 .home-w__title { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
@@ -75,7 +85,8 @@ app-home-website, app-home-markt, app-home-tica { display: contents; }
 .home-w__fig.is-warn .home-w__fig-value { color: var(--warn); }
 .home-w__fig.is-danger .home-w__fig-value { color: var(--danger); }
 .home-w__fig--link .home-w__fig-label { color: var(--rose-dark); }
-.home-w__fig--link:hover .home-w__fig-value { text-decoration: underline; text-underline-offset: 3px; }
+/* Hover looks only where a pointer hovers: WebKit keeps :hover on the last tapped element (iPhone, iPad). */
+@media (hover: hover) { .home-w__fig--link:hover .home-w__fig-value { text-decoration: underline; text-underline-offset: 3px; } }
 .home-w__figs-wide { grid-column: 1 / -1; align-self: center; }
 @container (min-width: 430px) {
   .home-w__figs--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -132,7 +143,7 @@ app-home-website, app-home-markt, app-home-tica { display: contents; }
 .home-w__event { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 10px; padding: 5px 0 6px; color: inherit; font-size: 12.5px; text-decoration: none; }
 .home-w__event-name { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .home-w__event-name b { color: var(--ink); font-weight: 650; }
-.home-w__event:hover .home-w__event-name b { text-decoration: underline; text-underline-offset: 2px; }
+@media (hover: hover) { .home-w__event:hover .home-w__event-name b { text-decoration: underline; text-underline-offset: 2px; } }
 .home-w__event-when { color: #3b76b3; font-weight: 650; white-space: nowrap; }
 .home-w__event-when.is-late { color: var(--warn); }
 .home-w__progress { grid-column: 1 / -1; height: 3px; overflow: hidden; border-radius: 2px; background: var(--line); }
@@ -202,3 +213,11 @@ app-home-website, app-home-markt, app-home-tica { display: contents; }
 .home-kas-hero__age { margin: 0 0 2px; color: rgb(255 255 255 / 68%); font-size: 12.5px; }
 .home-kas-hero__age.is-warn { color: #f4cf9a; }
 .home-kas-hero__fig span { color: rgb(255 255 255 / 72%); font-size: 12.5px; line-height: 1.3; }
+/* The wide one-column phone (600-799 px: the upright iPhone Duo at 669): the two figures stay hand-sized side by side at
+   the left instead of 300 px apart, and the sparkline gets height to read as a curve (viewBox 300 x 54,
+   preserveAspectRatio none, non-scaling strokes: the taller box costs nothing). Not in the 951 columns (439 px): there
+   the hero is a phone's. */
+@media (min-width: 600px) and (max-width: 799.98px) and (hover: none) {
+  .home-phone .home-kas-hero > .home-kas-hero__figs { grid-template-columns: repeat(2, minmax(0, 240px)); column-gap: 28px; }
+  .home-phone .home-kas-hero__spark { height: 72px; }
+}

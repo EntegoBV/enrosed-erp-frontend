@@ -711,7 +711,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
       padding: 12px;
       background: var(--surface-2);
     }
-    @media (max-width: 679px) {
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .picker-category, .picker-family, .picker-family--batch { min-width: 0; }
       .picker-family { margin: 0 10px 7px; border-radius: 13px; }
       .picker-family__toggle { min-height: 62px; padding: 7px 5px 7px 8px;
@@ -733,7 +733,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
       .picker-footer-label--wide { display: none; }
       .picker-footer-label--compact { display: inline; }
     }
-    @media (min-width: 680px) {
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .picker-grouped { margin-inline: 0; grid-template-columns: minmax(0, 1fr); align-items: start; }
       .picker-category { min-width: 0; padding: 0 8px 8px; overflow: hidden;
         border: 1px solid var(--line); border-radius: 16px; }

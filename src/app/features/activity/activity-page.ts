@@ -205,7 +205,12 @@ const MAX_EXTRA_PAGES = 4;
     .log-cell { align-items: flex-start; }
     .log-wrap { white-space: normal; overflow-wrap: anywhere; }
     .log-cell__time { font-family: var(--mono, ui-monospace, monospace); }
-    @media (max-width: 679px) { .log-page { --ios-inset: 0px; } }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .log-page { --ios-inset: 0px; } }
+    /* The wide phone: the page takes the shell's column and a 16 px gutter like the sales, purchase and TICA lists (the
+       chips row's -12 px bleed to .content's edge is unchanged). The column is repeated here because the 1240 px desk cap
+       above is emulated to (0,2,0) and outranks the shell's .content column rule (styles.scss, (0,1,0)); this rule has
+       the same specificity as the rules above and comes later, so it wins. */
+    @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .log-page { --ios-inset: 4px; max-width: var(--page-col, 760px); } }
   `,
 })
 export class ActivityPage {

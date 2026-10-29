@@ -25,11 +25,17 @@
 .ts-error { padding: 12px 20px; color: var(--danger); background: var(--danger-soft); font-size: 13px; overflow-wrap: anywhere; }
 .ts-form .ts-error { padding: 12px; border-radius: 8px; }
 .ts-foot { display: flex; width: 100%; justify-content: flex-end; gap: 10px; }
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .ts-head { padding: 16px; flex-wrap: wrap; }
   .ts-head > div { flex-basis: calc(100% - 40px); }
   .ts-head .btn { width: 100%; min-height: 44px; }
   .ts-summary, .ts-location { padding-inline: 16px; }
   .ts-form { padding: 8px 16px 20px; }
   .ts-foot .btn { flex: 1; }
+}
+/* The wide phone: the card head keeps its button at the right, as on the desk, instead of a 700 px button under it. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .ts-head { flex-wrap: nowrap; }
+  .ts-head > div { flex-basis: auto; }
+  .ts-head .btn { width: auto; min-height: 44px; }
 }

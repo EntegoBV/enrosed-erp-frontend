@@ -84,6 +84,12 @@ import { dashboardSearchEvidence, dashboardSearchSource } from './dashboard-sear
     .search-summary__metrics dt { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
     .search-summary__metrics dd { margin: 4px 0 0; color: var(--ink); font-size: 24px; font-weight: 750; line-height: 1.1; letter-spacing: -.035em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .search-summary__metrics > div:nth-child(n + 3) dd { font-size: 20px; }
+    /* The wide one-column phone (600-799 px: the upright iPhone Duo at 669): the four metrics in one row. A media query
+       on purpose, not a container one: the desk's two-column card shares this component. */
+    @media (min-width: 600px) and (max-width: 799.98px) and (hover: none) {
+      .search-summary__metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .search-summary__metrics > div:nth-child(n + 3) dd { font-size: 24px; }
+    }
     .search-summary__details { border-top: 1px solid var(--line); }
     .search-summary__details summary { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 9px; min-height: 44px; padding: 9px 14px; cursor: pointer; font-size: 10.5px; list-style: none; }
     .search-summary__details summary::-webkit-details-marker { display: none; }
@@ -99,7 +105,8 @@ import { dashboardSearchEvidence, dashboardSearchSource } from './dashboard-sear
     .search-summary__notice button { text-decoration: underline; }
     .search-summary__link { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--rose-dark); text-decoration: none; font-size: 11.5px; font-weight: 700; }
     .search-summary__link span { font-size: 18px; font-weight: 400; }
-    .search-summary__link:hover { background: var(--surface-2); }
+    /* Only where a pointer hovers: WebKit keeps :hover on the last tapped element. */
+    @media (hover: hover) { .search-summary__link:hover { background: var(--surface-2); } }
     .search-summary :is(a, button, summary):focus-visible { outline: 2px solid var(--rose); outline-offset: -3px; }
   `,
 })

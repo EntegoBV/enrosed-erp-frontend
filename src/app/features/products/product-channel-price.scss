@@ -22,7 +22,7 @@
 .pcp-history ol { list-style: none; padding: 0; margin: 12px 0 0; font-size: 12px; }
 .pcp-history li { padding: 9px 0; border-top: 1px solid var(--line); line-height: 1.5; }
 .pcp-history small { display: block; color: var(--muted); }
-@media (max-width: 679px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   .pcp { padding: 16px; }
   .pcp-head { flex-wrap: wrap; }
   .pcp-actions .btn { min-height: 44px; flex: 1; }

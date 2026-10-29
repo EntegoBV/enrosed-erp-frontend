@@ -78,6 +78,10 @@ const MENU: ContextMenuItem[] = [
         }
       </app-ios-nav>
 
+      <!-- The wide phone (home-phone.scss): from 800 px the body is two columns, Kas + Te doen beside Agenda + Cijfers.
+           The '+' below stays outside this body: a slide on the body (nav-motion) would trap the fixed accessory. -->
+      <div class="home-phone__body">
+      <div class="home-phone__col">
       <app-home-kas variant="phone" />
 
       <!-- Te doen: Nu and Vandaag, at most seven rows -->
@@ -118,6 +122,8 @@ const MENU: ContextMenuItem[] = [
           </div>
         }
       </section>
+      </div>
+      <div class="home-phone__col">
 
       <!-- Agenda: W7's card - the pin, the next seven days, the rest of today and what comes; its rows open like Agenda › Dag -->
       <div class="home-phone__agenda"><app-agenda-strip variant="phone" [cards]="cards" /></div>
@@ -157,6 +163,8 @@ const MENU: ContextMenuItem[] = [
           </a>
         </div>
       </section>
+      </div>
+      </div>
 
       <button class="ios-accessory" type="button" aria-label="Toevoegen" (click)="adding.set(true)"><app-icon name="plus" [size]="26" /></button>
     </div>

@@ -4,7 +4,7 @@
    upload pill and Quick Look as a black screen. Scoped under the page host;
    the kit's tab bar and toolbar take care of --tabbar-h.
    ========================================================================== */
-@media (max-width: 679.98px) {
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   app-files-page#files-workspace {
     .files-phone__caption a { color: var(--rose); text-decoration: none; }
     .files-phone__subbar { display: grid; gap: 8px; }
@@ -57,7 +57,8 @@
     .files-screen { display: block; }
     .files-screen__preview { display: grid; place-items: center; min-height: 180px; margin: 4px var(--ios-inset) 14px; overflow: hidden; border-radius: var(--ios-radius); background: var(--surface); }
     .files-screen__image { display: block; width: 100%; padding: 0; border: 0; background: var(--surface); }
-    .files-screen__image img { display: block; width: 100%; max-height: 46vh; object-fit: contain; }
+    /* dvh: 100vh is 18 px too tall on a folded iPhone Duo. */
+    .files-screen__image img { display: block; width: 100%; max-height: 46dvh; object-fit: contain; }
     .files-screen__doc { display: grid; justify-items: center; gap: 12px; padding: 28px 16px; }
     .files-screen__name { margin: 0 calc(var(--ios-inset) + 4px) 20px; }
     .files-screen__title { width: 100%; margin: 0 -4px; padding: 2px 4px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font: inherit; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
@@ -67,12 +68,13 @@
     .files-pending .ios-cell__body { color: inherit; text-decoration: none; }
     .files-danger { color: var(--danger); }
 
-    /* Quick Look as a black screen (its desk layer: styles/files-workspace.scss) */
+    /* Quick Look as a black screen (its desk layer: styles/files-workspace.scss). The layer is fixed to the viewport,
+       outside the shell's side padding, so its bar and stage carry --safe-l/--safe-r themselves (a sideways iPhone Duo). */
     .files-ql--screen { background: #000; }
-    .files-ql--screen .files-ql__bar { gap: 6px; min-height: calc(var(--ios-nav-h) + var(--safe-t)); padding: var(--safe-t) 6px 0; text-align: center; }
+    .files-ql--screen .files-ql__bar { gap: 6px; min-height: calc(var(--ios-nav-h) + var(--safe-t)); padding: var(--safe-t) calc(var(--safe-r) + 6px) 0 calc(var(--safe-l) + 6px); text-align: center; }
     .files-ql--screen .files-ql__title b { font-size: 16px; }
     .files-ql--screen .files-ql__icon { width: 44px; height: 44px; }
-    .files-ql--screen .files-ql__stage { padding: 8px 0 calc(var(--ios-tabbar-h) + var(--safe-b) + 24px); touch-action: pan-y; }
+    .files-ql--screen .files-ql__stage { padding: 8px var(--safe-r) calc(var(--ios-tabbar-h) + var(--safe-b) + 24px) var(--safe-l); touch-action: pan-y; }
     .files-ql--screen .files-ql__card { margin: 0 24px; padding: 28px 24px; }
     .files-ql__toolbar { border-color: rgb(255 255 255 / 12%); background: rgb(40 36 34 / 78%); }
     .files-ql__toolbar .ios-toolbar__btn { color: #fff; }
@@ -93,6 +95,11 @@
     .sheet--ios .files-tray__status { flex-basis: 100%; order: -1; text-align: center; }
     .files-picker__add { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--rose); font: inherit; font-size: 16px; }
   }
+}
+
+/* The wide phone: tiles of a hand's width instead of three blown-up thumbnails (four at 669, four to five in the column). */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  app-files-page#files-workspace .files-tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 }
 
 @keyframes files-flash { 0%, 60% { background: var(--rose-soft); } }

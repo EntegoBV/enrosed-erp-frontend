@@ -175,7 +175,7 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
 
 /* ---- phone: Betalingen as grouped lists on the page, not a card */
 .purchase-payments-plain{--ios-inset:0px}
-@media (max-width:679.98px){section.card.purchase-payments-plain{padding:0;border:0;background:transparent;box-shadow:none;overflow:visible}}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {section.card.purchase-payments-plain{padding:0;border:0;background:transparent;box-shadow:none;overflow:visible}}
 app-purchase-payment-overview{display:block;min-width:0}
 app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16px}
 .pp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 14px}
@@ -376,7 +376,7 @@ html.staff-touch-fixed .pay-sheet__amount .input{font-size:20px!important}
 .settle-sheet .select{width:100%;min-height:44px}
 .settle-sheet>.btn{justify-self:start}
 .first-sheet>p{margin:0;font-size:14px;line-height:1.5}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  .pay-sheet,.settle-sheet,.first-sheet{padding:0 16px}
  :is(.pay-sheet,.settle-sheet) :is(.input,.select){font-size:16px}
  .pay-sheet__amount .input{font-size:28px}
@@ -456,7 +456,7 @@ app-purchase-reconciliation{display:block;min-width:0}
 .rc-product__plan{color:var(--muted)}
 .reconciliation__notes ul{margin:2px 0 10px;padding-left:16px;color:var(--muted);font-size:11px;line-height:1.5}.reconciliation__notes li+li{margin-top:5px}
 .reconciliation__foot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--muted-2);font-size:12.5px}
-@media (max-width:679.98px){
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
  /* thumb-sized targets: the inline links and the PDF button are real actions on a phone */
  .pr-payee{padding:12px 0}.pr-payee__copy b{font-size:15px}.pr-payee__figures{font-size:13px}.pr-payee__state .wk-link{min-height:44px;font-size:14px}
  .rc-product{font-size:14px}.rc-product__copy small{font-size:12px}.rc-product__amount small{font-size:12px}

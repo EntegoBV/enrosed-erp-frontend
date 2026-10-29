@@ -19,7 +19,9 @@ app-agenda-page, app-agenda-month, app-agenda-strip, app-agenda-rows { display: 
 .home-dot--taak { background: none; box-shadow: inset 0 0 0 1.5px var(--tone); }
 .home-day { position: relative; display: grid; align-content: center; justify-items: center; gap: 4px; min-width: 0; min-height: 44px; padding: 2px 0 4px;
   border: 0; border-radius: 12px; background: none; color: var(--ink); font: inherit; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.home-day:hover:not(.is-skel), .home-day:active:not(.is-skel) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+/* The pressed look stays bare; the hover look only where a pointer hovers (WebKit keeps :hover on the last tapped day). */
+.home-day:active:not(.is-skel) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+@media (hover: hover) { .home-day:hover:not(.is-skel) { background: color-mix(in srgb, var(--ink) 5%, transparent); } }
 .home-day__wd { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
 .home-day__num { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-size: 17px; font-variant-numeric: tabular-nums; line-height: 1; }
 .home-day__dots { display: flex; align-items: center; justify-content: center; gap: 3px; height: 6px; color: var(--muted); font-size: 10px; }
@@ -70,7 +72,8 @@ app-agenda-page, app-agenda-month, app-agenda-strip, app-agenda-rows { display: 
 .home-arow.has-check .home-arow__main { padding-left: 8px; }
 .home-arow.no-when .home-arow__main { grid-template-columns: 3px minmax(0, 1fr) auto; padding-left: 22px; }
 button.home-arow__main { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-button.home-arow__main:is(:hover, :active) { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+button.home-arow__main:active { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+@media (hover: hover) { button.home-arow__main:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); } }
 .home-arows--desk .home-arow__main { grid-template-columns: 50px 3px minmax(0, 1fr) auto; gap: 8px; min-height: 38px; padding: 4px 8px; border-radius: 8px; font-size: 12.5px; }
 .home-arows--desk .home-arow__check { width: 28px; padding: 0 0 0 4px; }
 .home-arows--desk .ios-check { width: 18px; height: 18px; }
