@@ -147,3 +147,49 @@ export function tabMenuPlacement(tabCenter: number, barLeft: number, barRight: n
   const left = Math.max(barLeft, Math.min(tabCenter - width / 2, barRight - width));
   return { left: Math.round(left), width: Math.round(width), origin: Math.round(tabCenter - left) };
 }
+
+/** The menu's fixed geometry (shell-tabbar.scss): a 44 px row, the 1 px rule with 4 px above and below, 6 px padding and a 1 px border on each side. */
+export const TAB_MENU_ROW_PX = 44;
+export const TAB_MENU_RULE_PX = 9;
+export const TAB_MENU_FRAME_PX = 14;
+/** Beside a rail: the gap to the rail and the least margin to the screen's edges (px). */
+export const TAB_MENU_SIDE_GAP = 10;
+export const TAB_MENU_SIDE_MARGIN = 12;
+
+/** The menu's height (px) for its row count: the rows, the rule after the tab's own list, the frame. */
+export function tabMenuHeight(rows: number): number {
+  return TAB_MENU_FRAME_PX + rows * TAB_MENU_ROW_PX + (rows > 1 ? TAB_MENU_RULE_PX : 0);
+}
+
+/**
+ * Where the menu stands beside a tab of the vertical rail (nav-rail.ts; px, the viewport's): on the page's side of
+ * the rail (left of a right rail), centred on the tab and kept on screen inside the safe area's top and bottom (at
+ * least the margin; the home indicator is 34 px on the iPhone Duo), so a finger held on the tab slides straight
+ * across onto a row. top and maxHeight replace the bottom bar's bottom; origin and originY are the tab's centre
+ * inside the menu, where it grows from.
+ */
+export function tabMenuSidePlacement(
+  tab: { top: number; bottom: number },
+  rail: { left: number; right: number },
+  viewport: { width: number; height: number },
+  rows: number,
+  safe: { top: number; bottom: number } = { top: 0, bottom: 0 },
+): { left: number; width: number; top: number; maxHeight: number; origin: number; originY: number } {
+  const onRight = rail.left + rail.right > viewport.width;
+  const room = (onRight ? rail.left : viewport.width - rail.right) - TAB_MENU_SIDE_GAP - TAB_MENU_SIDE_MARGIN;
+  const width = Math.max(0, Math.min(TAB_MENU_WIDTH, room));
+  const left = onRight ? rail.left - TAB_MENU_SIDE_GAP - width : rail.right + TAB_MENU_SIDE_GAP;
+  const minTop = Math.max(TAB_MENU_SIDE_MARGIN, safe.top);
+  const maxBottom = viewport.height - Math.max(TAB_MENU_SIDE_MARGIN, safe.bottom);
+  const height = Math.min(tabMenuHeight(rows), Math.max(0, maxBottom - minTop));
+  const centre = (tab.top + tab.bottom) / 2;
+  const top = Math.max(minTop, Math.min(centre - height / 2, maxBottom - height));
+  return {
+    left: Math.round(left),
+    width: Math.round(width),
+    top: Math.round(top),
+    maxHeight: Math.round(maxBottom - top),
+    origin: Math.round((rail.left + rail.right) / 2 - left),
+    originY: Math.round(centre - top),
+  };
+}

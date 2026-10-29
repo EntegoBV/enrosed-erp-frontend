@@ -1060,7 +1060,11 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 }
 @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
   .overlay { padding: 0 calc(var(--safe-r) + 16px) calc(var(--safe-b) + 12px) calc(var(--safe-l) + 16px); }
-  .sheet { max-width: 640px; border-radius: var(--r-lg); padding-bottom: 0; }
+  /* The card stands 12 px above the home indicator, so its height leaves that, the top inset and 12 px at the top, in
+     every wide pose: a sideways phone (the Duo folded, 466 px high with a 34 px indicator) otherwise pushed a 92dvh
+     sheet's grab over the top edge, and with a top inset (the Duo unfolded upright, 82 px) a tall card started under
+     the status bar. Without insets 92dvh stays the smaller value, as before. */
+  .sheet { max-width: 640px; max-height: min(92dvh, calc(100dvh - var(--safe-t) - var(--safe-b) - 24px)); border-radius: var(--r-lg); padding-bottom: 0; }
   .sheet--wide { max-width: 940px; }
   /* The card's bottom corners are round but .sheet clips nothing (an overflow clip would cut focus rings), so the
      foot's surface-2 background takes the same radius instead of poking out square over the backdrop. */
@@ -1071,8 +1075,9 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
 
 .action-bar {
   position: fixed;
-  left: 10px;
-  right: 10px;
+  /* Inside the side insets: a sideways iPhone's notch, the iPhone Duo's strip, the side rail's lane (nav-rail.scss). */
+  left: calc(var(--safe-l) + 10px);
+  right: calc(var(--safe-r) + 10px);
   bottom: calc(var(--tabbar-h) + var(--safe-b) + 18px);
   z-index: 25;
   background: rgb(255 255 255 / 88%);
@@ -3810,3 +3815,5 @@ a.desk-kpi{text-decoration:none}
 /* The home's partials (home-widgets, home-desk, home-phone, home-agenda) load with the home routes, not here:
    features/dashboard/home-styles.ts (the 1 MB initial budget, AI-CONTEXT "Initial bundle budget"). */
 @include meta.load-css('styles/products');
+/* The side rail (iPhone Duo strip, a sideways phone): last, its rules re-place the bars of every partial above. */
+@include meta.load-css('styles/nav-rail');

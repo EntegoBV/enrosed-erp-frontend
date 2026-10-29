@@ -1,5 +1,6 @@
 import {
-  ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked, viewChild,
+  ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, untracked,
+  viewChild,
 } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { PushSetup } from './core/platform/push';
@@ -32,8 +33,9 @@ import { parentOf } from './core/platform/page-parent';
 import { phoneTabForUrl } from './core/platform/phone-tabs';
 import {
   TAB_MENU_HOLD_MS, TAB_MENU_PUSH, clickGuardAfter, isMenuKey, liesUnder, menuFocusIndex, pressWandered, startTabPress, tabMenuFor,
-  tabMenuPlacement,
+  tabMenuPlacement, tabMenuSidePlacement,
 } from './core/platform/tab-menu';
+import { installNavRail, readSafeInsets } from './core/platform/nav-rail';
 import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
 import { preloadWanted } from './core/platform/shell-loading-plan';
@@ -188,7 +190,8 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
       </div>
 
       @if (!bare() && !websiteWorkspace()) {
-        <!-- A long press on Verkoop, Inkoop or Producten opens that section's pages above the tab (tab-menu.ts). -->
+        <!-- A long press on Verkoop, Inkoop or Producten opens that section's pages above the tab (tab-menu.ts), or
+             beside it while the bar stands in the side rail (nav-rail.ts). -->
         <nav class="tabbar" #tabbar>
           <a class="tabbar__item" routerLink="/dashboard"
              [class.active]="phoneTab() === 'home'" [attr.aria-current]="phoneTab() === 'home' ? 'page' : null">
@@ -227,6 +230,8 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
           <div class="tabbar-menu__backdrop" (click)="closeTabMenu()"></div>
           <div class="tabbar-menu" role="menu" [attr.aria-label]="menu.label" animate.leave="tabbar-menu--leaving" data-kit-overlay
                [style.left.px]="menu.left" [style.width.px]="menu.width" [style.--tab-x]="menu.origin + 'px'"
+               [class.tabbar-menu--side]="menu.top !== undefined" [style.top.px]="menu.top ?? null" [style.max-height.px]="menu.maxHeight ?? null"
+               [style.--tab-y]="menu.originY === undefined ? null : menu.originY + 'px'"
                (keydown)="tabMenuKey($event)" (contextmenu)="$event.preventDefault()">
             @for (row of menu.rows; track row.item.id) {
               <a class="tabbar-menu__row" role="menuitem" [routerLink]="row.item.link" [queryParams]="row.item.query ?? null"
@@ -266,6 +271,8 @@ export class App {
     void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
+    /* The tab bar's place (bottom, or the iPhone Duo's side rail) is on <html> before the shell's first frame. */
+    inject(DestroyRef).onDestroy(installNavRail(this.document));
   }
 
   readonly auth = inject(Auth);
@@ -460,8 +467,8 @@ export class App {
      listeners are native: the click that ends a long press must be stopped before RouterLink. */
   private readonly injector = inject(Injector);
   private readonly tabbar = viewChild<ElementRef<HTMLElement>>('tabbar');
-  /** The open menu and where it stands over its tab. */
-  readonly tabMenu = signal<(TabMenu & { left: number; width: number; origin: number }) | null>(null);
+  /** The open menu and where it stands: over its tab, or beside it in the side rail (top, maxHeight and originY set). */
+  readonly tabMenu = signal<(TabMenu & { left: number; width: number; origin: number; top?: number; maxHeight?: number; originY?: number }) | null>(null);
   /** The row under a finger that slid on from the tab after the menu opened. */
   readonly tabMenuHot = signal<string | null>(null);
   private tabPress: TabPress | null = null;
@@ -636,8 +643,13 @@ export class App {
     const bar = link.closest('.tabbar')?.getBoundingClientRect();
     if (!menu || !bar) return;
     const box = link.getBoundingClientRect();
+    const view = this.document.defaultView;
+    /* Taller than wide: the bar stands in the side rail (nav-rail.ts), and the menu opens beside the tab. */
+    const placement = view && bar.height > bar.width
+      ? tabMenuSidePlacement(box, bar, { width: view.innerWidth, height: view.innerHeight }, menu.rows.length, readSafeInsets(this.document))
+      : tabMenuPlacement(box.left + box.width / 2, bar.left, bar.right);
     this.tabMenuOpener = link;
-    this.tabMenu.set({ ...menu, ...tabMenuPlacement(box.left + box.width / 2, bar.left, bar.right) });
+    this.tabMenu.set({ ...menu, ...placement });
     this.watchTabMenu(true);
     afterNextRender({
       read: () => this.document.querySelector<HTMLElement>('.tabbar-menu [role="menuitem"]')?.focus({ preventScroll: true }),

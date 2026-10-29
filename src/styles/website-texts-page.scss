@@ -25,7 +25,7 @@
 .ws-ph-seg{padding:4px var(--ios-inset) 12px}
 .ws-ph-search{margin-top:8px}
 /* editor: the centred two-line title under the bar (label / "x van 9 talen"), never cut (design §3.4) */
-.ws-ph-edhead{display:grid;justify-items:center;gap:2px;padding:2px calc(var(--safe-r) + 20px) 12px calc(var(--safe-l) + 20px);text-align:center}
+.ws-ph-edhead{display:grid;justify-items:center;gap:2px;padding:2px 20px 12px;text-align:center}
 .ws-ph-edhead h1{margin:0;color:var(--ink);font-size:20px;font-weight:720;letter-spacing:-.02em;line-height:1.25;overflow-wrap:anywhere}
 .ws-ph-edhead small{color:var(--muted);font-size:13px;font-weight:600}
 /* its bar: the small title gets the room between the back capsule and "…" (centred when the sides allow it) and never runs under them */
@@ -50,6 +50,6 @@
 .ws-ct-parked .ws-ed>:not(.ws-ed__card),.ws-ct-parked .ws-ed__card>:not(.ws-edfoot){display:none}
 .ws-ct-parked .ws-ed__card{border:0}
 .ws-texts-ios:has(.ws-edfoot.is-dirty){padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 100px)}
-/* typing on a phone: the tab bar steps aside so the save bar sits at the keyboard (critique N22) */
-body:has(.ws-ios textarea:focus) .ios-tabbar,body:has(.ws-ios textarea:focus) .ios-accessory{display:none}
+/* typing on a phone: the bottom tab bar steps aside so the save bar sits at the keyboard (critique N22); the side rail (nav-rail.scss) stays in its lane */
+:root:not([data-nav-rail]) body:has(.ws-ios textarea:focus) .ios-tabbar,:root:not([data-nav-rail]) body:has(.ws-ios textarea:focus) .ios-accessory{display:none}
 body:has(.ws-ios textarea:focus) .ws-ph-editor .ws-edfoot.is-dirty{bottom:calc(var(--safe-b) + 10px)}
