@@ -27,8 +27,22 @@
    come inline, so the bottom bar's bottom goes; it grows from the tab. */
 .tabbar-menu.tabbar-menu--side { bottom: auto; transform-origin: var(--tab-x, 100%) var(--tab-y, 50%); }
 
+/* The status bar's area on an iPhone Duo (core/platform/duo-status-bar.ts). Under a translucent status bar iOS 27
+   blurs what the page draws there, unless a solid fixed element runs along that edge (at least 6 px deep, 80 % long,
+   within 4 px of it; pseudo-elements do not count): then it takes that element's colour. Two real elements in the
+   page colour: along the top (the unfolded upright Duo's status bar) and in the side strip, under the rail (z 40).
+   Each is as deep as its inset, so under the opaque bar, or where no inset is, they take no room. The top one sits
+   over the sticky bars (60) and under the tab menu (70), the sheets and the toasts. They stay hit-testable (iOS's
+   colour pick was checked by hit-test) and cover no control: the bars pad below the top inset, the rail is above. */
+.safe-paint { display: none; }
+
 /* Screens only: printing from a sideways phone keeps the page's own margins (no lane, no re-placed bars). */
 @media screen {
+  :root[data-duo] .safe-paint--top { display: block; position: fixed; top: 0; right: 0; left: 0; z-index: 65; height: env(safe-area-inset-top, 0px); background: var(--bg); }
+  :root[data-side-strip] .safe-paint--side { display: block; position: fixed; top: 0; bottom: 0; z-index: 39; background: var(--bg); }
+  :root[data-side-strip='right'] .safe-paint--side { right: 0; width: env(safe-area-inset-right, 0px); }
+  :root[data-side-strip='left'] .safe-paint--side { left: 0; width: env(safe-area-inset-left, 0px); }
+
   @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
     :root[data-nav-rail] {
       --rail-w: 68px;

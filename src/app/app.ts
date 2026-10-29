@@ -36,6 +36,7 @@ import {
   tabMenuPlacement, tabMenuSidePlacement,
 } from './core/platform/tab-menu';
 import { installNavRail, readSafeInsets } from './core/platform/nav-rail';
+import { installDuoStatusBar } from './core/platform/duo-status-bar';
 import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
 import { preloadWanted } from './core/platform/shell-loading-plan';
@@ -258,6 +259,11 @@ import { preloadWanted } from './core/platform/shell-loading-plan';
     }
 
     <app-ui-host />
+
+    <!-- The status bar's area on an iPhone Duo (duo-status-bar.ts, nav-rail.scss): solid page colour that iOS 27 takes
+         for a translucent bar instead of blurring the page under it. Sized by the insets, so elsewhere they take no room. -->
+    <div class="safe-paint safe-paint--top" aria-hidden="true"></div>
+    <div class="safe-paint safe-paint--side" aria-hidden="true"></div>
   `,
 })
 export class App {
@@ -271,6 +277,8 @@ export class App {
     void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
+    /* On an iPhone Duo the home-screen app asks for a translucent status bar, so its side strip becomes the page's. */
+    installDuoStatusBar(this.document);
     /* The tab bar's place (bottom, or the iPhone Duo's side rail) is on <html> before the shell's first frame. */
     inject(DestroyRef).onDestroy(installNavRail(this.document));
   }
