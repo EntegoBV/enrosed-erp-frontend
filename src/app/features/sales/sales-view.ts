@@ -41,6 +41,7 @@ import { SalesOrder,
   QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
+import { HostBridge } from '../../core/platform/host-bridge';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import type { HostAction, HostMenuItem } from '../../core/platform/host';
 import { HostPage } from '../../shared/host-page';
@@ -1424,7 +1425,7 @@ export class SalesView {
       menu.push({ id: 'openSplit', label: 'Order splitsen', disabled: this.invoiceBusy() || this.sendingQuote() });
     }
     return {
-      title: data.order.number, subtitle: this.customerName(), back: { label: 'Verkoop', url: '' },
+      title: data.order.number, subtitle: this.customerName(), back: { label: this.hostBridge.belowLabel() || 'Verkoop', url: '' },
       primary: take ? { id: 'openTake', label: 'In verwerking nemen', disabled: this.invoiceBusy() } : canEdit ? edit : null,
       actions: [...(take && canEdit ? [edit] : []), { id: 'downloadPdf', label: 'PDF', icon: 'pdf', disabled: this.downloading() }],
       menu, tabBar: 'erp',
@@ -1444,6 +1445,7 @@ export class SalesView {
     }
   }
   private readonly routerNav = inject(Router);
+  private readonly hostBridge = inject(HostBridge);
 
   readonly portalLink = signal<CustomerPortalLink | null>(null);
   readonly profitMode = signal<'UNIT' | 'LINE'>('UNIT');
