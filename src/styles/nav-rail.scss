@@ -1,0 +1,145 @@
+/* ==========================================================================
+   The side rail (2026-10-29, the iPhone Duo follow-up; core/platform/nav-rail.ts decides, AI-CONTEXT "Side rail").
+   iOS 27.1 apps on an iPhone Duo stand their tab bar in a strip on the side of the screen, under the status bar;
+   the phone shell's bars follow them there:
+   - :root[data-side-strip]: the page sees the Duo's strip as a one-sided safe-area inset (84 px). The tab bar and
+     its '+' stand in it, centred, bottom-aligned as the system's own bars; the page already keeps clear of the
+     strip through --safe-l / --safe-r.
+   - :root[data-nav-rail='right'] without a strip: a touch screen held sideways, 340 px high or more. The rail
+     stands 10 px inside the right safe area, and on the pages that show it --safe-r grows by its lane
+     (68 + 2 x 10 px), so the page, its header, the sheets, the toasts and the pills keep clear of it as they do of
+     a notch; the home and Analyses keep one column until the page is wide enough for two (end of this file).
+   In the strip the rail is bottom-aligned like the system's bars: its top stays below the status cluster of the
+   upright poses (about 124 pt unfolded, 170 pt folded); folded sideways the status bar is hidden and native bars
+   start 24 pt from the top.
+   The bar turns into a vertical capsule, 68 px wide (the widest label, Transacties, is 54.5 px at 9.5 px and
+   -.02em; the cells keep 58), icon over label; the '+' is a circle beneath it (the trailing end of a horizontal
+   bar). Below 380 px of height the labels go, as in the system's strip. Nothing at
+   the bottom makes room for a bar any more: --tabbar-h is 0 unless a bottom toolbar (.ios-toolbar) stands there.
+   Bars with words (toolbars, docks, the labelled '+' pill) stay horizontal at the bottom of the page. Screens
+   only: a printout keeps its own margins.
+   Loaded last (styles.scss): every selector here starts with :root[data-...] and out-ranks the bottom bar's rules
+   (shell-tabbar.scss up to (0,5,0) for the bar beside a '+', workspace-kit.scss, the home's lazily loaded
+   home-phone.scss). Never a transform on the rail or a parent (trap rule).
+   ========================================================================== */
+
+/* The long-press menu beside a rail tab (App.openTabMenu, tab-menu.ts tabMenuSidePlacement): top and max-height
+   come inline, so the bottom bar's bottom goes; it grows from the tab. */
+.tabbar-menu.tabbar-menu--side { bottom: auto; transform-origin: var(--tab-x, 100%) var(--tab-y, 50%); }
+
+/* Screens only: printing from a sideways phone keeps the page's own margins (no lane, no re-placed bars). */
+@media screen {
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-nav-rail] {
+      --rail-w: 68px;
+      --rail-cell: 52px;
+      --rail-plus: 60px;
+      /* between the capsule and the '+' beneath it */
+      --rail-gap: 12px;
+      /* the system strip's bars end 24 pt above the screen's edge */
+      --rail-bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) - 10px));
+    }
+    /* The rail's distance from its screen edge: 10 px inside the safe area, or centred in the Duo's strip. */
+    :root[data-nav-rail='right'] { --rail-x: calc(env(safe-area-inset-right, 0px) + 10px); }
+    :root[data-nav-rail='left'] { --rail-x: calc(env(safe-area-inset-left, 0px) + 10px); }
+    :root[data-side-strip='right'] { --rail-x: calc((env(safe-area-inset-right, 0px) - var(--rail-w)) / 2); }
+    :root[data-side-strip='left'] { --rail-x: calc((env(safe-area-inset-left, 0px) - var(--rail-w)) / 2); }
+    @media (max-height: 379.98px) { :root[data-nav-rail] { --rail-cell: 44px; --rail-plus: 52px; } }
+
+    /* The lane, without a strip: only on the pages that show a rail. The ERP bar is hidden by the editors, the
+       catalogue studio, the phone purchase order's dock and the workspace pages (styles.scss, product-editor-workspace,
+       purchase-phone, workspace-kit); a workspace's own bar (.ios-tabbar) always stands. */
+    :root[data-nav-rail='right']:not([data-side-strip]) body:is(:has(.ios-tabbar), :has(.shell > .tabbar):not(:has(app-purchase-editor, app-sales-editor, app-catalog-export, app-product-editor, app-purchase-view .mpo-dock, .shell--workspace-phone .ios-page))) {
+      --safe-r: calc(env(safe-area-inset-right, 0px) + var(--rail-w) + 20px);
+    }
+    /* No bar at the bottom. The home sizes its '+' and its bottom room by the bar's height (home-phone.scss): it keeps 60. */
+    :root[data-nav-rail] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
+    :root[data-nav-rail] .home-phone { --ios-tabbar-h: 60px; }
+
+    /* ---- the bars: a vertical capsule. :is() lifts every ERP bar to the specificity of the bar beside a '+'. */
+    :root[data-nav-rail] :is(.shell, .shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar,
+    :root[data-nav-rail] .ios-tabbar {
+      top: auto;
+      bottom: var(--rail-bottom);
+      width: var(--rail-w);
+      height: auto;
+      grid-template-columns: minmax(0, 1fr);
+      grid-auto-columns: auto;
+      grid-auto-flow: row;
+      grid-auto-rows: var(--rail-cell);
+      border-radius: calc(var(--rail-w) / 2);
+      transition: bottom var(--dur-2, .2s) var(--ease-out, ease);
+    }
+    /* With a '+' (a list's .fab, the home's and a workspace's accessory) the capsule stands on top of it. */
+    :root[data-nav-rail] :is(.shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar,
+    :root[data-nav-rail] .ios-tabbar.ios-tabbar--with-accessory {
+      bottom: calc(var(--rail-bottom) + var(--rail-plus) + var(--rail-gap));
+    }
+    :root[data-nav-rail] :is(.shell, .shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar .tabbar__item,
+    :root[data-nav-rail] .ios-tabbar .ios-tab {
+      padding: 0;
+      border-radius: calc(var(--rail-w) / 2 - 4px);
+      font-size: 9.5px;
+      letter-spacing: -.02em;
+    }
+    /* Kosten & bank sets its tabs at 10.5 px under its page id (finance-phone.scss, (1,2,1)); in the rail they take
+       9.5 px too, or 'Transacties' would end in '…' (the owner's rule: no label ends in '…'). */
+    :root[data-nav-rail] #finance-workspace .ios-tabbar .ios-tab { font-size: 9.5px; }
+    @media (max-height: 379.98px) {
+      :root[data-nav-rail] :is(.tabbar__label, .ios-tab__label) {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    }
+
+    /* ---- the '+' beneath the capsule: a list's round .fab, the home's and a workspace's .ios-accessory */
+    :root[data-nav-rail] .fab:not(.fab--text),
+    :root[data-nav-rail] .ios-accessory {
+      top: auto;
+      bottom: var(--rail-bottom);
+      width: var(--rail-plus);
+      height: var(--rail-plus);
+    }
+
+    /* ---- the side */
+    :root[data-nav-rail='right'] :is(.shell, .shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar,
+    :root[data-nav-rail='right'] .ios-tabbar { left: auto; right: var(--rail-x); }
+    :root[data-nav-rail='left'] :is(.shell, .shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar,
+    :root[data-nav-rail='left'] .ios-tabbar { right: auto; left: var(--rail-x); }
+    :root[data-nav-rail='right'] .fab:not(.fab--text),
+    :root[data-nav-rail='right'] .ios-accessory { left: auto; right: calc(var(--rail-x) + (var(--rail-w) - var(--rail-plus)) / 2); }
+    :root[data-nav-rail='left'] .fab:not(.fab--text),
+    :root[data-nav-rail='left'] .ios-accessory { right: auto; left: calc(var(--rail-x) + (var(--rail-w) - var(--rail-plus)) / 2); }
+
+    /* ---- what stays at the bottom: the labelled '+' pill at the page's right end, beside the rail */
+    :root[data-nav-rail] .fab.fab--text { left: auto; right: calc(var(--safe-r) + 12px); }
+    /* The website builder's save bars floated above a bottom bar (--ios-tabbar-h); they are component styles, loaded
+       later, so these selectors out-rank them (up to (0,5,0) with emulation) whatever the order. */
+    :root[data-nav-rail] .ws-savebar,
+    :root[data-nav-rail] body .ws-ph-editor .ws-edfoot.is-dirty { bottom: calc(var(--safe-b) + 18px); }
+  }
+
+  /* The wide phone: the bottom toolbar centres on the page beside the rail or the strip, not on the screen
+     (workspace-kit.scss centres it on 50%), and the upload pill starts at the page column's left edge (there is no
+     bar to line up with any more). */
+  @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+    :root[data-nav-rail] .ios-toolbar { left: calc(var(--safe-l) + (100% - var(--safe-l) - var(--safe-r) - var(--ios-tabbar-w, 520px)) / 2); }
+    :root[data-nav-rail] .ios-float { left: calc(var(--safe-l) + max(10px, (100% - var(--safe-l) - var(--safe-r) - var(--page-col, 760px)) / 2 + 10px)); }
+  }
+
+  /* Two columns from 800 px (the home, home-phone.scss; Analyses, analyses.scss) assume a page of about 800 px. With
+     the rail's lane and no strip a sideways iPhone (852 x 393, 59 px notch insets) keeps 646 px, too little for two
+     phone columns (139 px widgets, 36 px agenda days): up to 888 px (800 + the lane) the lane keeps one column. The
+     Duo's strip leaves 867 px at 951 and keeps both. These undo the 800 px blocks with the values below them. */
+  @media (min-width: 800px) and (max-width: 887.98px) and (hover: none) {
+    :root[data-nav-rail='right']:not([data-side-strip]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
+    :root[data-nav-rail='right']:not([data-side-strip]) .home-phone__body { display: block; }
+    :root[data-nav-rail='right']:not([data-side-strip]) app-analyses-page .ios-page.an-phone { max-width: var(--page-col, 760px); }
+    :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-cols, .an-col) { display: contents; }
+    :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-kpis--5, .an-kpis--6) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+}
