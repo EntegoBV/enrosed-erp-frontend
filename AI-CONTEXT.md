@@ -549,10 +549,17 @@ bottom-aligned like the system's bars and stays below the status cluster of
 the upright poses (about 124 pt unfolded, 170 pt folded); folded sideways
 the status bar is hidden and native bars start 24 pt from the top, so the
 rail may reach up there. Two columns from 800 px (the home, Analyses)
-assume an 800 px page: with the lane and no strip they wait until 888 px
-(a sideways iPhone at 852 keeps one column; the Duo at 951 has two). The
-website text editor's bar steps aside while typing only at the bottom;
-the rail stays in its lane. Screens only: a printout gets no lane.
+assume an 800 px page: with the lane and no strip they wait until 928 px
+(a sideways iPhone at 852 or 896 keeps one column; the Duo at 951 has
+two). On the unfolded Duo held sideways (`(hover: none) and (orientation:
+landscape) and (min-width: 928px) and (max-width: 960px) and
+(min-height: 560px)`) the split stands on the hinge, 475.5 pt from the
+page's left edge, not in the page's middle: the lane or the strip on the
+right made the page narrower than the display and put the second column on
+the fold (Emre, 2026-10-29). The right column takes the smaller share
+(about 384 px at 951). The website text editor's bar steps aside while
+typing only at the bottom; the rail stays in its lane. Screens only: a
+printout gets no lane.
 
 **Checking.** Chrome 156's `Emulation.setSafeAreaInsetsOverride` gives
 headless shots the Duo's strip: 951 × 669 with insets 0/84/34/0 (top,
@@ -560,8 +567,20 @@ right, bottom, left: unfolded sideways), 466 × 678 with the same (folded
 upright, the page under the strip) and 678 × 466 with 0/0/34/84 (folded
 sideways, camera on the left); without a strip 951 × 669, 594 × 420, and
 852 × 393 with 0/59/21/59 (a notched iPhone sideways); 667 × 375 for the
-icon-only rail. The real device has not been seen yet: which of the two
-placements his home-screen web app gets is open.
+icon-only rail.
+
+**What his Duo does** (Emre, 2026-10-29, the same afternoon): the rail
+stands at the right edge, beside a white strip under the camera. So his
+home-screen web app does not see the strip as an inset: iOS keeps it out of
+the page, as WebKit says Safari 27.1 keeps web content out of the space
+behind the side controls, and fills it white (the opaque `default` status
+bar; non-updated native apps get a black bar there). A page cannot draw in
+that strip. The only lever is `apple-mobile-web-app-status-bar-style`
+`black-translucent` (read when the app is added to the Home Screen), which
+iOS 26/27 pairs with a progressive blur under the status bar and missing
+top insets in standalone (WebKit 301994); it is not tried. Since iOS 26
+neither `theme-color` nor the manifest colours a home-screen app's status
+bar.
 
 ## Analyses (2026-10-17 redesign)
 
