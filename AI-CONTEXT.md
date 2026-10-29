@@ -515,7 +515,9 @@ before its first frame; `navRailFor` and `stripSide` are pure):
   iPhone Duo folded upright (`data-duo` and `(hover: none) and
   (orientation: portrait) and (max-width: 383.98px)`; a Split View pane on
   the unfolded display is 385-475 px and keeps the bottom bar, since the
-  page cannot tell which pane it is in): `data-nav-rail="right"`. The rail stands 10 px inside the right safe area and the page
+  page cannot tell which pane it is in): `data-nav-rail="right"`. (The
+  folded-upright rail was removed again the same day, see "On the Duo
+  itself"; the landscape case stands.) The rail stands 10 px inside the right safe area and the page
   keeps clear of it (the lane, `--rail-lane`: the rail and 10 px on each
   side). Lower than 340 px (a phone browser's landscape tab with its bars,
   about 300 px) the rail and its '+' (318 px) would run off the top, so the
@@ -525,27 +527,22 @@ before its first frame; `navRailFor` and `stripSide` are pure):
   settles them late) and whenever either media query flips.
 
 **On the Duo itself** (`data-duo`, no strip inset; Emre, 2026-10-29: "rechts
-helemaal tegenaan"): the rail stands against the page's right edge
-(`--rail-x: env(safe-area-inset-right)`, 0 there) with an 8 px lane to the
-content, so beside the strip it is as far right as the page goes, in the
-two poses where the strip is known to be on the right: unfolded sideways
-(the 867 px page; a device measurement, github drudge/sable#480, has the
-strip on the right in both turns) and folded upright (382 px). Folded
-sideways (594 px) the strip is on the camera's side, left or right, which
-the page cannot tell: the rail keeps its 10 px margin there. Folded upright
-the rail is icon-only and 52 px (46 px cells, a 48 px '+', the badges on
-the icon's right so '9+' stays inside the page), as the Duo's own strip bars
-are icon-only, leaving 322 px of page. That page is narrower than any
-phone the screens were drawn for, so what ended in '…' there (a sweep of
-every parameterless route, first screen and scrolled) gets room: the
-subtitles wrap to two lines (Documenten's collection hints and empty
-folder card, Kosten & bank's Rapportage row, the website overview widget,
-the SEO audit's empty cell), and under the same `[data-duo]` folded media
-a bar showing its small title has a chevron-only back capsule (`.ios-back`
-at 44 px, `font-size: 0`, the accessible name stays; as iOS does when a
-title needs the room), a 16 px title, a two-line `.appbar__sub` and
-12.5 px segmented labels. Unfolded upright (669 px) keeps the bottom bar,
-like the Duo's apps.
+helemaal tegenaan"): unfolded sideways (the 867 px page; a device
+measurement, github drudge/sable#480, has the strip on the right in both
+turns) the rail stands against the page's right edge (`--rail-x:
+env(safe-area-inset-right)`, 0 there) with an 8 px lane to the content, so
+beside the strip it is as far right as the page goes. Folded sideways
+(594 px) the strip is on the camera's side, left or right, which the page
+cannot tell: the rail keeps its 10 px margin there. Folded upright (382 px)
+and unfolded upright (669 px) keep the bottom bar: a folded rail was tried
+for an afternoon (icon-only, 52 px, leaving 322 px of page) and taken out
+again on his word ("fix zoals vroeger"), because the rows were drawn for
+more. What that sweep taught stays: subtitles that could end in '…' wrap to
+two lines instead (Documenten's collection hints and empty folder card,
+Kosten & bank's Rapportage row, the website overview widget, the SEO
+audit's empty cell). The strip itself is for the native shell
+(enrosed-erp-ios, 2026-10-29 onwards), where the page sees it as an inset
+and the rail stands in it.
 
 **The rail** (`styles/nav-rail.scss`, loaded last, every selector starting
 with `:root[data-...]` so it out-ranks the bottom bar's rules): the ERP tab
