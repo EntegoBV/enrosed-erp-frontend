@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Location } from '@angular/common';
 import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import {
-  currentNavEntry, emptyNavStack, lastUrlFor, recordNavigation, screenBelow, upTarget,
+  currentNavEntry, emptyNavStack, hostStack, lastUrlFor, recordNavigation, screenBelow, screensBelow, upTarget,
 } from './nav-history';
 import type { NavRecord } from './nav-history';
 import { screenLabel } from './return-label';
@@ -38,6 +38,8 @@ export class NavHistory {
     const below = this.below();
     return below ? screenLabel(below) : '';
   });
+  /** The screens up to the current one, bottom first (nav-history.ts hostStack), for the native host's stack. */
+  readonly hostStack = computed(() => hostStack(this.stack()));
 
   constructor() {
     this.router.events.subscribe((event) => {
@@ -74,6 +76,19 @@ export class NavHistory {
     const target = upTarget(this.stack(), parentUrl);
     if (target.back) this.location.historyGo(-target.steps);
     else void this.router.navigateByUrl(target.url, { info: { nav: 'pop' } });
+  }
+
+  /**
+   * The native host popped `count` screens: history back to the screen that
+   * many screens below (as far as history reaches); when nothing lies below,
+   * `webBack` runs the page's own back control instead (a workspace's way
+   * out, a folder's level up). Returns false when it had to fall back.
+   */
+  popScreens(count: number, webBack: () => void): boolean {
+    const target = screensBelow(this.stack(), count);
+    if (target) { this.location.historyGo(-target.steps); return true; }
+    webBack();
+    return false;
   }
 
   back(fallbackUrl: string): void {

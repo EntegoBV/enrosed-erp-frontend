@@ -143,3 +143,42 @@ export function upTarget(stack: NavStack, parentUrl: string): { back: true; step
   if (below && navPath(below.entry.url) === parentPath) return { back: true, steps: below.steps };
   return { back: false, url: lastUrlFor(stack, parentPath) ?? parentUrl };
 }
+
+/**
+ * The screens under and including the current one, bottom first, as the
+ * native host mirrors them (enrosed-erp-ios: one NavigationStack entry per
+ * screen). Consecutive entries of one screen (the sections of /analyses, a
+ * replaceUrl filter change) count once, keeping the URL they settled on;
+ * forward entries are left out. Empty while nothing was recorded.
+ */
+export function hostStack(stack: NavStack): string[] {
+  const screens: string[] = [];
+  for (let at = 0; at <= stack.index; at++) {
+    const url = stack.entries[at].url;
+    if (screens.length && navScreen(screens[screens.length - 1]) === navScreen(url)) screens[screens.length - 1] = url;
+    else screens.push(url);
+  }
+  return screens;
+}
+
+/**
+ * The entry `count` screens below the current one and how many history
+ * steps back it lies, or the deepest one history still has (fewer screens)
+ * with `short` saying how many screens were missing; null when nothing lies
+ * below at all (the native back then means the web's own back control).
+ */
+export function screensBelow(stack: NavStack, count: number): { entry: NavEntry; steps: number; short: number } | null {
+  const current = currentNavEntry(stack);
+  if (!current || count <= 0) return null;
+  let screen = navScreen(current.url);
+  let remaining = count;
+  let found: { entry: NavEntry; steps: number } | null = null;
+  for (let at = stack.index - 1; at >= 0 && remaining > 0; at--) {
+    const next = navScreen(stack.entries[at].url);
+    if (next === screen) continue;
+    screen = next;
+    remaining--;
+    found = { entry: stack.entries[at], steps: stack.index - at };
+  }
+  return found ? { ...found, short: remaining } : null;
+}

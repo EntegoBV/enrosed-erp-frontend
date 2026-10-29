@@ -54,13 +54,7 @@ export class Auth {
       if (event.key !== STORAGE_KEY && event.key !== USER_KEY
           && event.key !== CREDENTIAL_KIND_KEY && event.key !== SESSION_EXPIRY_KEY
           && event.key !== null) return;
-      const wasLoggedIn = this.isLoggedIn();
-      this.credentials.set(this.restore(STORAGE_KEY));
-      this.user.set(this.restoreUser());
-      /* Signed out in another tab: this one goes to the login page too,
-         instead of sitting on a screen whose next call would fail. */
-      if (wasLoggedIn && !this.isLoggedIn()) void this.router.navigate(['/login']);
-      if (this.isLoggedIn() && !this.user()) queueMicrotask(() => void this.resumeAuthentication());
+      this.recheckSession();
     };
     window.addEventListener('storage', onStorage);
     inject(DestroyRef).onDestroy(() => window.removeEventListener('storage', onStorage));
@@ -68,6 +62,21 @@ export class Auth {
     /* Older builds persisted username:password. Verify that credential once,
        exchange it for a signed session token, then replace it in-place. */
     if (this.isLoggedIn()) queueMicrotask(() => void this.resumeAuthentication());
+  }
+
+  /**
+   * Re-reads the shared storage: another tab's storage event, or the native
+   * host's `sessionCheck` after one of its web views signed in or out (the
+   * storage event may not cross WKWebViews).
+   */
+  recheckSession(): void {
+    const wasLoggedIn = this.isLoggedIn();
+    this.credentials.set(this.restore(STORAGE_KEY));
+    this.user.set(this.restoreUser());
+    /* Signed out in another tab: this one goes to the login page too,
+       instead of sitting on a screen whose next call would fail. */
+    if (wasLoggedIn && !this.isLoggedIn()) void this.router.navigate(['/login']);
+    if (this.isLoggedIn() && !this.user()) queueMicrotask(() => void this.resumeAuthentication());
   }
 
   /** Value for the Authorization header, or null while nobody is signed in. */
