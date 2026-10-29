@@ -133,13 +133,26 @@
 
   /* Two columns from 800 px (the home, home-phone.scss; Analyses, analyses.scss) assume a page of about 800 px. With
      the rail's lane and no strip a sideways iPhone (852 x 393, 59 px notch insets) keeps 646 px, too little for two
-     phone columns (139 px widgets, 36 px agenda days): up to 888 px (800 + the lane) the lane keeps one column. The
-     Duo's strip leaves 867 px at 951 and keeps both. These undo the 800 px blocks with the values below them. */
-  @media (min-width: 800px) and (max-width: 887.98px) and (hover: none) {
+     phone columns (139 px widgets, 36 px agenda days), and on the unfolded Duo a page narrower than 928 px (a strip
+     iOS keeps outside it) leaves the hinge split below a right column of 360 px: up to 928 px the lane keeps one
+     column. These undo the 800 px blocks with the values below them. */
+  @media (min-width: 800px) and (max-width: 927.98px) and (hover: none) {
     :root[data-nav-rail='right']:not([data-side-strip]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
     :root[data-nav-rail='right']:not([data-side-strip]) .home-phone__body { display: block; }
     :root[data-nav-rail='right']:not([data-side-strip]) app-analyses-page .ios-page.an-phone { max-width: var(--page-col, 760px); }
     :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-cols, .an-col) { display: contents; }
     :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-kpis--5, .an-kpis--6) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  /* The unfolded iPhone Duo held sideways (951 x 585-669 pt): its hinge runs down the middle of the display, 475.5 pt
+     from the edge the page starts at (Emre's Duo keeps its strip outside the page, on the right; with the strip as an
+     inset the page starts at the display's edge too). The rail's lane or the strip makes the page narrower than the
+     display, so a split in the page's middle put the second column on the fold (2026-10-29: the gutter at 431.5,
+     the hinge at 475.5). The split stands on the hinge instead: the home's 8 px gap and the cards' 16 px insets
+     centre on it, Analyses' two columns meet on it (no gap, 16 px card margins); the right column takes the
+     smaller share (about 384 px at 951). */
+  @media (hover: none) and (orientation: landscape) and (min-width: 928px) and (max-width: 960px) and (min-height: 560px) {
+    :root[data-nav-rail] .home-phone__body { grid-template-columns: calc(475.5px - var(--safe-l) - 4px) minmax(0, 1fr); }
+    :root[data-nav-rail] .an-phone .an-cols { grid-template-columns: calc(475.5px - var(--safe-l)) minmax(0, 1fr); }
   }
 }
