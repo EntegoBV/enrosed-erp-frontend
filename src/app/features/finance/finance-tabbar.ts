@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
-import { HOST_SYMBOLS } from '../../core/platform/host';
+import { HOST_SYMBOLS } from '../../core/platform/host-symbols';
 import type { HostTab } from '../../core/platform/host';
 import { FINANCE_NAV, phoneTabOf } from './finance-sections';
 import type { FinanceLocation } from './finance-url';

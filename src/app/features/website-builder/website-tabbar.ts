@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
 import { WorkspaceReturn } from '../../core/platform/workspace-return';
 import { HostBridge } from '../../core/platform/host-bridge';
-import { HOST_SYMBOLS } from '../../core/platform/host';
+import { HOST_SYMBOLS } from '../../core/platform/host-symbols';
 import type { HostMenuItem, HostTab } from '../../core/platform/host';
 import { Icon } from '../../shared/icon';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';

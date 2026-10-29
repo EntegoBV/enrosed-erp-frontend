@@ -9,7 +9,7 @@ import { WorkspaceReturn } from '../../core/platform/workspace-return';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
 import { IosTab, IosTabbar } from '../../shared/ios-tabbar';
-import { HOST_SYMBOLS } from '../../core/platform/host';
+import { HOST_SYMBOLS } from '../../core/platform/host-symbols';
 import type { HostTab } from '../../core/platform/host';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { MenuTrigger } from '../../shared/menu-trigger';
