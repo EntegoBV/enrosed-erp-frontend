@@ -11,7 +11,7 @@ import type {
 import { HostBridge } from './host-bridge';
 import type { HostBridgeImplementation, HostContribution, HostPageSource } from './host-bridge';
 import { NavHistory } from './nav-history-service';
-import { navPath } from './nav-history';
+import { navPath, navScreen } from './nav-history';
 import { WorkspaceReturn } from './workspace-return';
 import { NAV_GROUPS, navItemActive, navItemUrl } from './nav-items';
 import { tabMenuFor } from './tab-menu';
@@ -401,7 +401,10 @@ export class HostBridgeImpl implements HostBridgeImplementation {
         else if (extras?.replaceUrl || extras?.skipLocationChange) direction = named === 'tab' ? 'tab' : 'replace';
         else {
           const computed = named ?? navDirection(from, event.url, event.navigationTrigger ?? 'imperative', extras?.info, PHONE_TABS);
-          direction = computed === 'none' ? 'replace' : computed;
+          /* One web view per native tab (design §2.4.5): the web's tab rule does not apply, and a new history entry
+             that shows another screen grows the stack, so the shell pushes and needs its snapshot first. */
+          if (computed === 'tab' || (computed === 'none' && navScreen(from) !== navScreen(event.url))) direction = 'push';
+          else direction = computed === 'none' ? 'replace' : computed;
         }
         this.bridge.send({ type: 'nav.willChange', direction, to: event.url });
       } else if (event instanceof NavigationEnd) {
