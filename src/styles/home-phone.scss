@@ -19,6 +19,19 @@ app-home-add-sheet { display: contents; }
   .shell--home > .tabbar { right: calc(var(--safe-r) + 12px + var(--tabbar-h)); }
 }
 .home-phone { --ios-tabbar-h: var(--tabbar-h); }
+/* ---- the wide phone. From 800 px (the sideways iPhone Duo at 951, an upright iPad) the body is two columns: Kas + Te
+   doen beside Agenda + Cijfers. Each column is a large phone (471 px at 951, cells 439), so every phone rule holds
+   (widgets 215 px, agenda days 58 px), and the 16 + 8 + 16 px gutter is centred on the Duo's hinge. The page lifts
+   the shell's column cap (workspace-kit.scss .ios-page): its two columns use the whole width. The wrappers are
+   blocks on narrower phones, not display: contents (nav-motion animates the children of .ios-page; a contents box
+   has nothing to animate); the grid starts below app-ios-nav (a sticky item inside a grid is confined to its own
+   area); the '+' (.ios-accessory) stays a direct child of .home-phone. Never grid-template-areas over the flat
+   section list: a row-spanning section spreads its height over the shared rows and opens gaps. */
+.home-phone__body, .home-phone__col { display: block; min-width: 0; }
+@media (min-width: 800px) and (max-width: 1023.98px) and (hover: none) {
+  .ios-page.home-phone { max-width: none; }
+  .home-phone__body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; align-items: start; }
+}
 /* The bell lives at page-host level; the nav shows a proxy button (G14). */
 /* The page's own bell (the phone and desk homes, Open punten) only hosts the sheet the "Klanten wachten" row opens;
    its button stays hidden. !important and the child combinator because the bell's component rule (.bell[_ngcontent],
@@ -90,6 +103,10 @@ app-home-add-sheet { display: contents; }
 .home-add__tile.is-main { background: var(--rose); color: #fff; }
 .home-add__tile.is-main small { color: rgb(255 255 255 / 82%); }
 .home-add__tile.is-main .ios-tile { background: rgb(255 255 255 / 20%); color: #fff; }
+/* The sheet body sizes the tiles (it holds no fixed child; the sheet is the fixed ancestor): camera, Taak, Afspraak and
+   Kost boeken in one row at a 600 px body (the shell's 640 px card), 2 x 2 on phones. */
+.home-add { container-type: inline-size; }
+@container (min-width: 600px) { .home-add .home-add__tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 
 /* ---- Open punten (open-page.ts) */
 .home-open .ios-section__head h2 { display: flex; align-items: center; gap: 7px; }
