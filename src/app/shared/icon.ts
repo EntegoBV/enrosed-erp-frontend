@@ -13,6 +13,8 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 @Component({
   selector: 'app-icon',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  /* The name as an attribute: the native host's mirror (shared/host-page.ts) reads which glyph a header button carries. */
+  host: { '[attr.data-icon]': 'name()' },
   template: `
     <svg [attr.width]="size()" [attr.height]="size()" viewBox="0 0 24 24" fill="none"
          stroke="currentColor" stroke-width="1.8" stroke-linecap="round"

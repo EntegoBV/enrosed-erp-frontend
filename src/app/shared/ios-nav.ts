@@ -13,6 +13,9 @@ import {
 import { Router } from '@angular/router';
 import { Icon } from './icon';
 import { observeLargeTitle } from './large-title';
+import { HostBridge } from '../core/platform/host-bridge';
+import type { HostActionEvent, HostPageInput } from '../core/platform/host-bridge';
+import { observeMirror } from './host-page';
 
 /**
  * The iOS 26 navigation bar of a workspace phone screen: a transparent bar
@@ -29,6 +32,12 @@ import { observeLargeTitle } from './large-title';
  * backLabel null shows no back button, '' a glass circle with a chevron,
  * any text a glass capsule. With backUrl the button navigates there;
  * without it the (back) output lets the screen decide.
+ *
+ * Inside the native host (core/platform/host-bridge.ts) the bar is a
+ * spacer and the shell draws the chrome from the descriptor this nav
+ * publishes: title, subtitle, back, the large title's state, and either
+ * the screen's explicit `[host]` items (delivered through `(hostAction)`)
+ * or a mirror of the projected [lead]/[trail] buttons.
  */
 @Component({
   selector: 'app-ios-nav',
@@ -79,6 +88,10 @@ export class IosNav {
   readonly backAriaLabel = input('Terug');
   /** Emitted by the back button when there is no backUrl. */
   readonly back = output<void>();
+  /** The native host's items for this screen; undefined mirrors the projected buttons instead. */
+  readonly host = input<HostPageInput | null | undefined>(undefined);
+  /** A native action by id (the screen's method name, or `refresh`). */
+  readonly hostAction = output<HostActionEvent>();
 
   private readonly condensedState = signal(false);
   /** True once the large title has scrolled under the bar. */
@@ -91,6 +104,33 @@ export class IosNav {
 
   constructor() {
     const destroyRef = inject(DestroyRef);
+    const bridge = inject(HostBridge);
+    if (bridge.present) {
+      const element = inject<ElementRef<HTMLElement>>(ElementRef);
+      const mirror = observeMirror(element, destroyRef, {
+        scopes: () => Array.from(element.nativeElement.querySelectorAll('.ios-nav__lead, .ios-nav__trail')),
+        /* The back control is the host's own; a projected [lead] capsule is not. */
+        skip: (control) => control.classList.contains('ios-back')
+          || (control.parentElement?.classList.contains('ios-nav__lead') === true && control.classList.contains('ios-circle')
+            && !!control.querySelector('app-icon[data-icon="chevron-left"]')),
+        pageRoot: () => element.nativeElement.parentElement,
+      });
+      bridge.bind({
+        title: () => this.title(),
+        subtitle: () => this.subtitle(),
+        back: () => {
+          const label = this.backLabel();
+          if (label === null) return null;
+          return { label: label || this.backAriaLabel().replace(/^Terug naar /, '') || 'Terug', url: this.backUrl() ?? '' };
+        },
+        largeTitle: () => this.large,
+        condensed: () => this.condensed(),
+        input: () => this.host(),
+        mirror: () => mirror(),
+        onAction: (event) => this.hostAction.emit(event),
+        onBack: () => this.goBack(),
+      });
+    }
     let stop: (() => void) | null = null;
     afterNextRender(() => {
       const sentinel = this.sentinel()?.nativeElement;

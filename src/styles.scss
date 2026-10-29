@@ -3817,3 +3817,5 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/products');
 /* The side rail (iPhone Duo strip, a sideways phone): last, its rules re-place the bars of every partial above. */
 @include meta.load-css('styles/nav-rail');
+/* The native host (enrosed-erp-ios): last of all, every selector under :root[data-host]; nothing without a host. */
+@include meta.load-css('styles/host');

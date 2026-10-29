@@ -1,0 +1,47 @@
+/* ==========================================================================
+   The native host (enrosed-erp-ios, 2026-10-29; core/platform/host.ts marks <html data-host="ios">). Inside the
+   SwiftUI shell the native chrome draws the tab bar, the navigation bar, the back button and every toolbar item (on
+   an iPhone Duo in the side strip), from the descriptor the web publishes (host-bridge.ts). The web keeps its content
+   and drops its own chrome:
+   - the ERP tab bar stays in the DOM, invisible: the bridge reads its computed display, so every existing hide rule
+     (editors, catalogue studio, the PO dock, workspace pages) keeps deciding when the native tab bar hides;
+   - the bars of app-page-header and app-ios-nav become transparent spacers as high as the top inset (status bar +
+     native bar), so observeLargeTitle keeps its line and the large titles stay web content; [below] sub-bars stick
+     under the native bar;
+   - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock, the product editor's header
+     and dock, the save buttons of the editors' docks and the Duo status paint go: the host has them as items.
+   Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.
+   ========================================================================== */
+@media screen {
+  :root[data-host] {
+    --tabbar-h: 0px;
+    --appbar-h: var(--safe-t);
+  }
+  /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
+     A bottom toolbar (Documenten's selection) still stands at the bottom and keeps its room. */
+  :root[data-host] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
+
+  /* Hidden, not removed: the probe reads its display. */
+  :root[data-host] .tabbar { visibility: hidden; pointer-events: none; }
+  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .fab, .ios-tabbar, .ios-accessory, .shero-bar, .mpo-dock,
+    .product-mobile-header, .product-editor-dock, .safe-paint, [data-safe-area-probe]) { display: none !important; }
+
+  /* The legacy header: the sticky bar is a spacer; the large title below it is content. */
+  :root[data-host] .appbar { height: var(--safe-t); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; }
+  :root[data-host] .appbar::before { display: none; }
+  :root[data-host] .appbar > :is(.appbar__back, .appbar__lead, .appbar__actions) { display: none; }
+
+  /* The kit's nav: the same spacer; [hero] blocks and [below] sub-bars stay. */
+  :root[data-host] .ios-nav { display: block; height: var(--safe-t); padding: 0; }
+  :root[data-host] .ios-nav::before { display: none; }
+  :root[data-host] .ios-nav > :is(.ios-nav__lead, .ios-nav__title, .ios-nav__trail) { display: none; }
+  :root[data-host] .ios-subbar { top: var(--safe-t); }
+
+  /* The editors' docks keep their step and status; the host has Opslaan and the step's button. */
+  :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }
+  :root[data-host] .mpo-savebar :is(.mpo-savebar__btn, .mpo-savebar__state) { display: none; }
+
+  /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
+  :root[data-host] body:not(:has(.ios-toolbar)) .ios-page { padding-bottom: calc(var(--safe-b) + 28px); }
+  :root[data-host] .home-phone { --ios-tabbar-h: 0px; }
+}
