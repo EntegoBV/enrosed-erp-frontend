@@ -12,8 +12,8 @@ import { PHONE_MEDIA } from './desktop-viewport';
  *   (nearly) free. The tab bar stands in that strip, on its side (`data-side-strip` and `data-nav-rail` on
  *   <html>); the page already keeps clear of it through --safe-l / --safe-r;
  * - no strip, but a touch screen of the phone shell held sideways (an unfolded Duo whose strip iOS keeps outside
- *   the page, the Duo folded sideways, a landscape iPhone), or the Duo folded upright: the tab bar stands at the
- *   right edge, against the strip, and the page keeps clear of it (`data-nav-rail="right"`);
+ *   the page, the Duo folded sideways, a landscape iPhone): the tab bar stands at the right edge, against the
+ *   strip where there is one, and the page keeps clear of it (`data-nav-rail="right"`);
  * - otherwise it stays at the bottom (no attribute).
  * styles/nav-rail.scss draws the rail; the shell opens the long-press menu beside it (tab-menu.ts
  * tabMenuSidePlacement). The decision functions are pure.
@@ -38,14 +38,12 @@ export const STRIP_OTHER_MAX = 16;
  * top, so the bottom bar stays.
  */
 export const RAIL_LANDSCAPE_MEDIA = '(hover: none) and (max-width: 1023.98px) and (orientation: landscape) and (min-height: 340px)';
-/**
- * The iPhone Duo folded, upright (duo-status-bar.ts marks the Duo): the page is 382 px wide beside the strip iOS
- * keeps outside it. The Duo's own apps stand their bars in the strip there too, so the rail stands at the page's
- * right edge, against the strip; unfolded upright (669 px) the Duo keeps horizontal bars, and so does the page. A
- * Split View pane on the unfolded display (385-475 px, the hinge between the panes) keeps the bottom bar as well:
- * the page cannot tell which pane it is in, and a rail against the hinge would be wrong in the left one.
+/*
+ * The iPhone Duo folded upright (the page 382 px wide beside the strip iOS keeps outside it) tried a rail at the
+ * page's right edge for an afternoon (2026-10-29): it cost 60 of 382 px and the rows were drawn for more, so on
+ * Emre's word ("fix zoals vroeger") the bottom bar is back there. The strip itself is for the native shell
+ * (enrosed-erp-ios), where the page sees it as an inset and the rail stands in it.
  */
-export const RAIL_DUO_FOLDED_MEDIA = '(hover: none) and (orientation: portrait) and (max-width: 383.98px)';
 
 /** The side of the Duo's strip as the page sees it, or null when the insets are those of any other screen. */
 export function stripSide(insets: SafeInsets): RailSide | null {
@@ -62,15 +60,12 @@ export interface NavRail {
   strip: RailSide | null;
 }
 
-/**
- * The rail for the phone shell (phone), a sideways touch screen (landscape), the page's safe-area insets, and an
- * iPhone Duo folded upright (duoFolded: RAIL_DUO_FOLDED_MEDIA on a Duo).
- */
-export function navRailFor(phone: boolean, landscape: boolean, insets: SafeInsets, duoFolded = false): NavRail {
+/** The rail for the phone shell (phone), a sideways touch screen (landscape) and the page's safe-area insets. */
+export function navRailFor(phone: boolean, landscape: boolean, insets: SafeInsets): NavRail {
   if (!phone) return { side: null, strip: null };
   const strip = stripSide(insets);
   if (strip) return { side: strip, strip };
-  return { side: landscape || duoFolded ? 'right' : null, strip: null };
+  return { side: landscape ? 'right' : null, strip: null };
 }
 
 const PROBE_ATTR = 'data-safe-area-probe';
@@ -115,11 +110,9 @@ export function installNavRail(doc: Document): () => void {
   const probe = safeAreaProbe(doc);
   const phone = view.matchMedia(PHONE_MEDIA);
   const landscape = view.matchMedia(RAIL_LANDSCAPE_MEDIA);
-  const folded = view.matchMedia(RAIL_DUO_FOLDED_MEDIA);
 
   const apply = (): void => {
-    const duoFolded = root.dataset['duo'] !== undefined && folded.matches;
-    const rail = navRailFor(phone.matches, landscape.matches, readSafeInsets(doc), duoFolded);
+    const rail = navRailFor(phone.matches, landscape.matches, readSafeInsets(doc));
     setData(root, 'sideStrip', rail.strip);
     setData(root, 'navRail', rail.side);
   };
@@ -144,7 +137,6 @@ export function installNavRail(doc: Document): () => void {
   later(3000);
   phone.addEventListener('change', schedule);
   landscape.addEventListener('change', schedule);
-  folded.addEventListener('change', schedule);
   view.addEventListener('resize', schedule);
   view.addEventListener('orientationchange', schedule);
   view.addEventListener('pageshow', schedule);
@@ -153,7 +145,6 @@ export function installNavRail(doc: Document): () => void {
   return () => {
     phone.removeEventListener('change', schedule);
     landscape.removeEventListener('change', schedule);
-    folded.removeEventListener('change', schedule);
     view.removeEventListener('resize', schedule);
     view.removeEventListener('orientationchange', schedule);
     view.removeEventListener('pageshow', schedule);

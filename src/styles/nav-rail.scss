@@ -60,28 +60,13 @@
     :root[data-nav-rail='left'] { --rail-x: calc(env(safe-area-inset-left, 0px) + 10px); }
     :root[data-side-strip='right'] { --rail-x: calc((env(safe-area-inset-right, 0px) - var(--rail-w)) / 2); }
     :root[data-side-strip='left'] { --rail-x: calc((env(safe-area-inset-left, 0px) - var(--rail-w)) / 2); }
-    /* An iPhone Duo (duo-status-bar.ts) whose strip iOS keeps outside the page: the rail stands against the page's
-       edge, so beside the strip it is as far right as the page goes, with 8 px to the content (Emre, 2026-10-29).
-       Only where the strip is known to be on the right: unfolded sideways (the 867 px page; the strip stays right in
-       both turns) and folded upright (382 px). Folded sideways (594 px) the strip is on the camera's side, left or
-       right, which the page cannot tell: the rail keeps its 10 px there. */
-    @media (min-width: 800px), (orientation: portrait) {
+    /* An iPhone Duo (duo-status-bar.ts) whose strip iOS keeps outside the page: unfolded sideways (the 867 px page;
+       the strip stays on the right in both turns) the rail stands against the page's edge, so beside the strip it is
+       as far right as the page goes, with 8 px to the content (Emre, 2026-10-29). Folded sideways (594 px) the strip
+       is on the camera's side, left or right, which the page cannot tell: the rail keeps its 10 px there. Folded
+       upright the bottom bar stays (a rail there cost 60 of 382 px; "fix zoals vroeger"). */
+    @media (min-width: 800px) {
       :root[data-duo][data-nav-rail='right']:not([data-side-strip]) { --rail-x: env(safe-area-inset-right, 0px); --rail-lane: calc(var(--rail-w) + 8px); }
-    }
-    /* Folded upright (the page 382 px wide beside the strip): an icon-only rail of 52 px, as the Duo's own strip bars
-       are icon-only, so the page keeps 322 px. The badges hang off the icon's right, inside the capsule: centred they
-       ran 6 px past the page's edge ('9+'). A Split View pane (385 px and up) is not this. */
-    @media (orientation: portrait) and (max-width: 383.98px) {
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) { --rail-w: 52px; --rail-cell: 46px; --rail-plus: 48px; --rail-gap: 10px; }
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.tabbar__count, .ios-tab__badge) { left: auto; right: -10px; }
-      /* The 322 px page is narrower than any phone the screens were drawn for; what ended in '…' there (the owner's
-         rule) gets room: while a bar shows its small title, the back capsule is its chevron alone (as iOS does when
-         a title needs the room; the accessible name stays) and the title is 16 px; a bar's subtitle and a segmented
-         control's labels take the next size down, the subtitle on two lines at most. */
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.appbar:not(.appbar--large), .appbar--condensed, .ios-nav--condensed) .ios-back { width: 44px; padding: 0; justify-content: center; font-size: 0; }
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.appbar__title, .ios-nav__title) { font-size: 16px; }
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) .appbar__sub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
-      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) .ios-seg__opt { padding: 0 5px; font-size: 12.5px; letter-spacing: -.01em; }
     }
     @media (max-height: 379.98px) { :root[data-nav-rail] { --rail-cell: 44px; --rail-plus: 52px; } }
 
@@ -124,8 +109,8 @@
     /* Kosten & bank sets its tabs at 10.5 px under its page id (finance-phone.scss, (1,2,1)); in the rail they take
        9.5 px too, or 'Transacties' would end in '…' (the owner's rule: no label ends in '…'). */
     :root[data-nav-rail] #finance-workspace .ios-tabbar .ios-tab { font-size: 9.5px; }
-    /* Icon-only: a short sideways screen, and the Duo folded upright (the only upright rail). */
-    @media (max-height: 379.98px), (orientation: portrait) and (max-width: 383.98px) {
+    /* Icon-only: a short sideways screen. */
+    @media (max-height: 379.98px) {
       :root[data-nav-rail] :is(.tabbar__label, .ios-tab__label) {
         position: absolute;
         width: 1px;
