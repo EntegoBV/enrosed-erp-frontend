@@ -439,7 +439,8 @@ purpose: a page's own cap on its `.content` (emulated component styles,
 page spans the full 951 under a header that follows the column. Meer sets
 `--page-col: 640px` only from 800 px; print resets the cap.
 
-**Bars as one centred group.** The ERP tab bar, the kit bars (Kosten & bank,
+**Bars as one centred group** (upright; held sideways or beside the Duo's
+strip the tab bars stand in the side rail, next section). The ERP tab bar, the kit bars (Kosten & bank,
 Documenten & media), the home's '+', the labelled pill, the upload pill, the
 editors' docks and the legacy action bar read `--ios-tabbar-w`: a bar
 without a '+' is 520 px centred; beside a '+' the bar and the '+' centre as
@@ -456,7 +457,10 @@ large title's observer rebuilds when the bar's height changes
 of the side insets; on the wide phone it is a floating card: 16 px off the
 sides, 12 px above the home indicator, 640 px at most (a wide sheet 940),
 all corners rounded, still bottom-anchored with the grab, the drag and
-`mo-sheet-in` untouched. Toasts are 440 px, centred.
+`mo-sheet-in` untouched; its height is `min(92dvh, 100dvh - top inset -
+bottom inset - 24px)`, so a sideways phone's card never pushes its grab
+over the top and an upright one never starts under the status bar.
+Toasts are 440 px, centred.
 
 **Width goes into tiles and figures, never into words or rows.** Figures go
 three or four up where they form a grid (purchase Lading · Volume · Vulling,
@@ -482,8 +486,82 @@ features hover: none / pointer: coarse and device metrics 382 × 700,
 development build, a static server with a planted staff session and a mock
 API of empty shapes; the harness of the 2026-10-29 session lived in its
 scratchpad (serve.mjs, mock-api.mjs, shoot.mjs; rebuild it from this
-description when gone). The short shell for a landscape iPhone or the Duo
-folded sideways (`(hover: none) and (max-height: 500px)`) is not built.
+description when gone). Held sideways, the tab bar leaves the bottom for the
+side rail (next section), which gives landscape phones their height back; a
+short shell beyond that (`(hover: none) and (max-height: 500px)`) is not built.
+
+## Side rail (iPhone Duo strip, 2026-10-29)
+
+Emre, after the wide phone shell went live: the menu items belong on the
+right, in the strip where the Duo's own apps put their tab bar. iOS 27.1
+apps on an iPhone Duo stand their tab bar, toolbars and back button in a
+strip on the side (84 pt wide; the status bar at its top, the tab bar at
+its bottom, 24 pt above the edge): folded upright, folded sideways (on the
+camera's side) and unfolded sideways; only the unfolded upright pose keeps
+bars at the top and bottom. Native apps get the strip as a one-sided 84 pt
+safe-area inset. WebKit keeps Safari 27.1's web content out of the space
+behind the outer display's side controls; nothing published says what a
+home-screen web app gets, and an HTML tab bar stays where its CSS puts it.
+
+**The decision** (`core/platform/nav-rail.ts`, installed by the shell
+before its first frame; `navRailFor` and `stripSide` are pure):
+- the page sees a strip: one side's inset of 72 px or more, the other side
+  and the top 16 px at most. `data-side-strip` and `data-nav-rail` (left or
+  right) go on `<html>`, and the rail stands in the strip, centred;
+- otherwise a touch screen of the phone shell held sideways and at least
+  340 px high (`(hover: none) and (max-width: 1023.98px) and (orientation:
+  landscape) and (min-height: 340px)`: an unfolded Duo whose strip stays
+  outside the page, the Duo folded sideways, a landscape iPhone):
+  `data-nav-rail="right"`. The rail stands 10 px inside the right safe area
+  and the page keeps clear of it. Lower (a phone browser's landscape tab
+  with its bars, about 300 px) the rail and its '+' (318 px) would run off
+  the top, so the bottom bar stays;
+- otherwise the bottom bar. The insets are read from a hidden fixed probe
+  padded by `env(safe-area-inset-*)`, again on every resize (twice: iOS
+  settles them late) and whenever either media query flips.
+
+**The rail** (`styles/nav-rail.scss`, loaded last, every selector starting
+with `:root[data-...]` so it out-ranks the bottom bar's rules): the ERP tab
+bar and a workspace's own bar (`.ios-tabbar`) become a vertical glass
+capsule, 68 px wide, icon over a 9.5 px label (-.02em) in 52 px cells (the
+widest label, Transacties, is 54.5 px; the cells keep 58),
+bottom-aligned at `max(24px, inset-bottom - 10px)`; the '+' (a list's round
+`.fab`, the home's and a workspace's `.ios-accessory`) is a 60 px circle
+beneath it, 12 px apart: the trailing end of a horizontal bar. Below 380 px
+of height the labels are visually hidden (still the accessible names) and
+the cells are 44 px, as in the system strip. Without a strip the pages that
+show the rail get `--safe-r` plus 88 px on body (the rail's lane), so the
+page, its header, sheets, toasts, docks and pills keep clear of it as they
+do of a notch. The editors, the catalogue studio, the PO dock and the
+workspace pages without their own bar hide the ERP bar and keep the full
+width: the lane's selector lists them, so keep it in step with the rules
+that hide `.tabbar`. Nothing at the bottom makes room for a bar any more:
+`--tabbar-h` is 0 unless a bottom toolbar (`.ios-toolbar`) stands there,
+and the home keeps `--ios-tabbar-h: 60px` (it sizes its '+' by it). Bars
+with words stay horizontal at the bottom of the page (toolbars, docks, the
+action bar, the labelled '+' pill beside the rail), as Apple keeps text
+buttons and segmented controls in place. The long-press menu opens beside
+the rail (`tabMenuSidePlacement` in tab-menu.ts: on the page's side,
+centred on the tab, kept inside the safe area's top and bottom, growing
+from the tab; `readSafeInsets` reads the probe, because a custom property
+holding env() may come back unresolved). In the strip the rail is
+bottom-aligned like the system's bars and stays below the status cluster of
+the upright poses (about 124 pt unfolded, 170 pt folded); folded sideways
+the status bar is hidden and native bars start 24 pt from the top, so the
+rail may reach up there. Two columns from 800 px (the home, Analyses)
+assume an 800 px page: with the lane and no strip they wait until 888 px
+(a sideways iPhone at 852 keeps one column; the Duo at 951 has two). The
+website text editor's bar steps aside while typing only at the bottom;
+the rail stays in its lane. Screens only: a printout gets no lane.
+
+**Checking.** Chrome 156's `Emulation.setSafeAreaInsetsOverride` gives
+headless shots the Duo's strip: 951 × 669 with insets 0/84/34/0 (top,
+right, bottom, left: unfolded sideways), 466 × 678 with the same (folded
+upright, the page under the strip) and 678 × 466 with 0/0/34/84 (folded
+sideways, camera on the left); without a strip 951 × 669, 594 × 420, and
+852 × 393 with 0/59/21/59 (a notched iPhone sideways); 667 × 375 for the
+icon-only rail. The real device has not been seen yet: which of the two
+placements his home-screen web app gets is open.
 
 ## Analyses (2026-10-17 redesign)
 
