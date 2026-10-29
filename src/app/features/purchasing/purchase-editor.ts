@@ -4565,6 +4565,8 @@ export class PurchaseEditor {
         },
         async () => { await this.save(); resolve(!this.dirty()); },
         () => resolve(true),
+        /* Annuleren keeps the editor; the guard answers, so the router cancels and the native bar hears of it. */
+        () => resolve(false),
       );
     });
   }

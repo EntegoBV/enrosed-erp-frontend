@@ -1,6 +1,6 @@
 import { DestroyRef, Injectable, Injector, effect, inject, untracked } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
-import { NavigationEnd, NavigationStart, Router } from '@angular/router';
+import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationError, NavigationStart, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { HOST_VERSION, cleanLabel } from './host';
@@ -410,6 +410,17 @@ export class HostBridgeImpl implements HostBridgeImplementation {
         }
         this.navStartUrl = null;
         this.scheduleFallback();
+      } else if (event instanceof NavigationError || (event instanceof NavigationCancel
+          && event.code !== NavigationCancellationCode.Redirect
+          && event.code !== NavigationCancellationCode.SupersededByNewNavigation)) {
+        /* The navigation never happened (a guard refused it, the leave question answered Annuleren): the shell's latest
+           URL comes back to the page it still shows, and that page goes out again, since the shell dropped what arrived in
+           between as stale. A redirect or a superseding navigation brings its own NavigationStart and needs nothing here. */
+        if (this.navStartUrl === null) return;
+        this.navStartUrl = null;
+        this.bridge.send({ type: 'nav.willChange', direction: 'replace', to: this.router.url });
+        this.lastSent = '';
+        if (this.owner?.page) { this.pending = this.owner.page; this.scheduleFlush(); } else this.scheduleFallback();
       }
     });
 
