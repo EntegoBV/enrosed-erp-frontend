@@ -209,6 +209,19 @@
      kit pages no longer flash a lighter strip. Login and the customer portal keep theirs. */
   body:has(.shell:not(.shell--bare)) { --bg: #f2efeb; }
 }
+/* The wide phone (an unfolded iPhone Duo, a landscape iPhone, an upright iPad): the bar stops spanning the screen and
+   takes the kit's bar width, centred; beside a '+' the bar and the '+' centre as one group (bar + 12 px + '+'), so at
+   951 the bar runs 179-699 and the '+' 711-771, at 669 38-558 and 570-630. Tabs are 104 px, so the labels return to
+   the kit's 10 px. The :is() selectors repeat the phone block's (0,5,0) and (0,6,0) and come later, so they win; the
+   home's own `.shell--home > .tabbar { right }` (home-phone.scss, (0,2,0)) is beaten whatever its order. The
+   labelled pill hangs over the right end of a plain centred bar again. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .tabbar { left: calc(50% - var(--ios-tabbar-w, 520px) / 2); right: auto; width: var(--ios-tabbar-w, 520px); transition: left var(--dur-2, .2s) var(--ease-out, ease); }
+  :is(.shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar { left: calc(50% - (var(--ios-tabbar-w, 520px) + 12px + var(--ios-tabbar-h, 60px)) / 2); right: auto; }
+  :is(.shell--home, .shell:has(> .main .fab:not(.fab--text))) > .tabbar .tabbar__item { padding: 0 2px; font-size: 10px; letter-spacing: .01em; }
+  .fab:not(.fab--text) { right: auto; left: calc(50% + (var(--ios-tabbar-w, 520px) + 12px - var(--ios-tabbar-h, 60px)) / 2); }
+  .fab.fab--text { right: calc(50% - var(--ios-tabbar-w, 520px) / 2); }
+}
 @media (max-width: 359.98px) {
   .tabbar .tabbar__item { font-size: 9px; }
 }

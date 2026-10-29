@@ -128,6 +128,11 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
   `,
   styles: `
     :host { display: block; min-width: 0; }
+    /* From 800 px (the sideways iPhone Duo at 951, an upright iPad) the header follows this page's 640 column
+       (--page-col, read by styles/shell.scss and styles.scss). Not from 600: at 669 every other page's column is wider
+       than the screen, so the title stays at the phone's 20 px and nothing jumps on the push to Instellingen; there
+       the shell's column rule outranks .more-content's cap and the groups take the screen like Instellingen's. */
+    @media (min-width: 800px) and (max-width: 1023.98px) and (hover: none) { :host { --page-col: 640px; } }
     /* The kit's groups carry their own inset; the content gives them the width. */
     .more-content { max-width: 640px; padding-inline: 0; }
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .more-content { --ios-inset: 0px; } }
@@ -139,6 +144,8 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
     .ios-cell__sub { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
     .ios-cell__title { overflow: visible; white-space: normal; }
     .more-theme__row { display: flex; justify-content: space-between; padding: 0 10px 8px 52px; }
+    /* The wide phone: six 44 px swatches a hand's width apart, left under the cell text, not spread over 546 px. */
+    @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .more-theme__row { justify-content: flex-start; gap: 8px; } }
     .more-theme__swatch { position: relative; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
     .more-theme__swatch::before { position: absolute; inset: 9px; content: ''; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%); }
     .more-theme__swatch--active::before { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--swatch); }

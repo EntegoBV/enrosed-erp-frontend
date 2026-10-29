@@ -230,6 +230,14 @@ a { color: var(--rose); }
   width: 100%;
   margin: 0 auto;
 }
+/* The wide phone (an unfolded iPhone Duo at 951, an upright iPad): every legacy page sits in one centred column
+   (--page-col, workspace-kit.scss) and the page header follows it (styles/shell.scss). At 669 the column is wider
+   than the screen, so nothing moves. The doubled class makes this (0,4,0): a page's own cap on its .content element
+   (emulated component styles are (0,2,0) and load after this file; a partial's app-host .content.x is (0,2,1)) must
+   lose here, or that page spans the full 951 while its header follows the column (Logboek, Prospects, the sales
+   editor, Douane, ...). A page that wants a narrower column sets --page-col on its host (Meer: 640), never max-width.
+   Stays before the print block, which resets .content with the same selector. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .shell .main .content.content { max-width: var(--page-col, 760px); } }
 
 /* --- onderbalk (mobiel): .tabbar and the '+' (.fab), styled in styles/shell-tabbar.scss --- */
 
@@ -1042,6 +1050,22 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   .sheet__foot .btn { flex: none; }
   .sheet__foot .spacer { flex: 1; }
 }
+/* Every phone: the sheet keeps clear of the side insets (a sideways iPhone Duo or iPhone). The wide phone: the sheet
+   is a floating card, 16 px off the sides and 12 px above the home indicator, 640 px at most (a wide sheet 940), all
+   corners rounded; still bottom-anchored (align-items: flex-end), the grab, the head drag (translateY only) and
+   mo-sheet-in untouched. The overlay's padding carries the home-indicator inset, so the card pads nothing; the iOS
+   variant's own foot and corners: workspace-kit.scss. */
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+  .overlay { padding: 0 var(--safe-r) 0 var(--safe-l); }
+}
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .overlay { padding: 0 calc(var(--safe-r) + 16px) calc(var(--safe-b) + 12px) calc(var(--safe-l) + 16px); }
+  .sheet { max-width: 640px; border-radius: var(--r-lg); padding-bottom: 0; }
+  .sheet--wide { max-width: 940px; }
+  /* The card's bottom corners are round but .sheet clips nothing (an overflow clip would cut focus rings), so the
+     foot's surface-2 background takes the same radius instead of poking out square over the backdrop. */
+  .overlay .sheet__foot { padding-bottom: 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+}
 
 /* ============================================== onderaan vastgezette balk */
 
@@ -1131,8 +1155,8 @@ table.data tfoot td {
 
 .toasts {
   position: fixed;
-  left: 12px;
-  right: 12px;
+  left: calc(var(--safe-l) + 12px);
+  right: calc(var(--safe-r) + 12px);
   /* Clear both the floating app tab bar and record-workspace action dock.
      A confirmation must never hide the button that caused it. */
   bottom: calc(var(--tabbar-h) + var(--safe-b) + 102px);
@@ -1156,6 +1180,10 @@ table.data tfoot td {
 }
 .toast__dot { width: 7px; height: 7px; border-radius: 50%; background: #57c089; flex: none; }
 .toast--err .toast__dot { background: #e0796c; }
+/* The wide phone: a hand-wide toast, centred without a transform (left + right + width + auto margins). */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .toasts { width: min(440px, 100% - 24px - var(--safe-l) - var(--safe-r)); margin-inline: auto; }
+}
 
 @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
   .toasts { left: auto; right: 20px; bottom: 20px; width: 320px; }
@@ -1166,6 +1194,9 @@ table.data tfoot td {
 @media print {
   .appbar, .tabbar, .sidebar, .fab, .action-bar { display: none !important; }
   .content { padding: 0; max-width: none; }
+  /* Print reports hover: none and an A4 box sits inside 600-1023 px, so the wide-phone column (the same (0,4,0)
+     selector above) would cap a printout without this reset. */
+  .shell .main .content.content { max-width: none; }
   body { background: #fff; }
   .card { border: 0; box-shadow: none; }
   .overlay { position: static; background: none; padding: 0; }
@@ -3349,6 +3380,12 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 }
 .erp-workspace__mobile-state small { color: var(--muted); font-size: 9px; font-weight: 720; text-transform: uppercase; }
 .erp-workspace__mobile-state strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+/* The wide phone: the editors' docks (sales, purchase) and the legacy action bar take the tab bar's width; both sides
+   stay set, so the over-constrained fixed box centres itself through the auto margins and keeps its safe insets (no
+   transform). The product editor's dock does the same in product-editor-workspace.scss. */
+@media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) {
+  .erp-workspace__mobile-dock, .erp-workspace__mobile-actions, .action-bar { max-width: var(--ios-tabbar-w, 520px); margin-inline: auto; }
+}
 
 @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   /* Editors and the catalogue studio have their own action dock. Reclaim
@@ -3763,6 +3800,7 @@ a.desk-kpi{text-decoration:none}
 @include meta.load-css('styles/purchase-phone');
 @include meta.load-css('styles/sales-credit-note');
 @include meta.load-css('styles/sales-advance-billing');
+@include meta.load-css('styles/sales-phone');
 @include meta.load-css('styles/inventory-count');
 @include meta.load-css('styles/inventory-closing');
 @include meta.load-css('styles/product-sales-setup');
