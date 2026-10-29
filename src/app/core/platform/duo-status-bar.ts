@@ -1,8 +1,10 @@
 /**
  * The iPhone Duo's status bar in the home-screen app (2026-10-29). With the opaque `default` status bar a home-screen
  * web app gets the Duo's side strip as a reserved white bar it cannot draw in: on Emre's Duo the side rail stood
- * beside it. `black-translucent` lets the page draw under the status bar, which on the Duo is that strip, so the page
- * can see it as a safe-area inset and the side rail (nav-rail.ts) stands in it, as the Duo's own apps do.
+ * beside it. With `black-translucent` iOS paints that strip in the page's background colour instead (seen the same
+ * day), so the page and the strip read as one surface; the page itself still ends at the strip (382 wide folded,
+ * 867 unfolded sideways, no side inset), as WebKit keeps web content out of the space behind the side controls in
+ * Safari 27.1. Should a later iOS let the page in, nav-rail.ts sees the strip as an inset and stands the rail in it.
  *
  * iOS reads the meta when the app is added to the Home Screen, so it changes here, at start-up, on a Duo only: its
  * screen is 466 x 678 folded and 669 x 951 unfolded (WebKit keeps reporting 466 x 678 after unfolding). An app added

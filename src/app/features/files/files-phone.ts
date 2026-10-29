@@ -145,7 +145,7 @@ import { FilesInspector } from './files-inspector';
                     <span class="ios-cell__body"><span class="ios-cell__title">Mappen niet geladen</span><span class="ios-cell__sub">Tik om het opnieuw te proberen</span></span>
                   </button>
                 } @else {
-                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Nog geen mappen</span><span class="ios-cell__sub">Bestanden komen vanzelf in de juiste map zodra je ze koppelt.</span></span></div>
+                  <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Nog geen mappen</span><span class="ios-cell__sub ios-cell__sub--2">Bestanden komen vanzelf in de juiste map zodra je ze koppelt.</span></span></div>
                 }
               }
             </div>
@@ -164,7 +164,7 @@ import { FilesInspector } from './files-inspector';
               @for (view of views; track view.key) {
                 <button class="ios-cell" type="button" (click)="c.openView(view.key)">
                   <span class="ios-tile" [class]="view.tone"><app-icon [name]="view.iconName" [size]="18" /></span>
-                  <span class="ios-cell__body"><span class="ios-cell__title">{{ view.label }}</span><span class="ios-cell__sub">{{ view.hint }}</span></span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ view.label }}</span><span class="ios-cell__sub ios-cell__sub--2">{{ view.hint }}</span></span>
                   <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" />
                 </button>
               }

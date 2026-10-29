@@ -4,14 +4,16 @@ import { PHONE_MEDIA } from './desktop-viewport';
  * Where the phone's tab bar stands (2026-10-29, the iPhone Duo follow-up). iOS 27.1 apps on an iPhone Duo move
  * their tab bar, toolbars and back button into a strip on the side of the screen (84 pt wide, the status bar at
  * its top, the tab bar at its bottom): folded upright and sideways, and unfolded sideways; only the unfolded
- * upright pose keeps bars at the top and bottom. An HTML tab bar stays where its CSS puts it, so the shell
- * follows the system itself:
+ * upright pose keeps bars at the top and bottom. A home-screen web app does not reach into that strip: iOS keeps
+ * it outside the page (the page is 382 wide folded, 867 unfolded sideways) and paints it in the page's colour
+ * (seen on Emre's Duo, 2026-10-29). An HTML tab bar stays where its CSS puts it, so the shell follows the system
+ * as far as the page goes:
  * - the page sees the strip: one side's safe-area inset of STRIP_MIN px or more, the other side and the top
  *   (nearly) free. The tab bar stands in that strip, on its side (`data-side-strip` and `data-nav-rail` on
  *   <html>); the page already keeps clear of it through --safe-l / --safe-r;
- * - no strip, but a touch screen of the phone shell held sideways (an unfolded Duo whose strip WebKit keeps
- *   outside the page, the Duo folded sideways, a landscape iPhone): the tab bar stands at the right edge, where
- *   the strip would be, and the page keeps clear of it (`data-nav-rail="right"`);
+ * - no strip, but a touch screen of the phone shell held sideways (an unfolded Duo whose strip iOS keeps outside
+ *   the page, the Duo folded sideways, a landscape iPhone), or the Duo folded upright: the tab bar stands at the
+ *   right edge, against the strip, and the page keeps clear of it (`data-nav-rail="right"`);
  * - otherwise it stays at the bottom (no attribute).
  * styles/nav-rail.scss draws the rail; the shell opens the long-press menu beside it (tab-menu.ts
  * tabMenuSidePlacement). The decision functions are pure.
@@ -36,6 +38,14 @@ export const STRIP_OTHER_MAX = 16;
  * top, so the bottom bar stays.
  */
 export const RAIL_LANDSCAPE_MEDIA = '(hover: none) and (max-width: 1023.98px) and (orientation: landscape) and (min-height: 340px)';
+/**
+ * The iPhone Duo folded, upright (duo-status-bar.ts marks the Duo): the page is 382 px wide beside the strip iOS
+ * keeps outside it. The Duo's own apps stand their bars in the strip there too, so the rail stands at the page's
+ * right edge, against the strip; unfolded upright (669 px) the Duo keeps horizontal bars, and so does the page. A
+ * Split View pane on the unfolded display (385-475 px, the hinge between the panes) keeps the bottom bar as well:
+ * the page cannot tell which pane it is in, and a rail against the hinge would be wrong in the left one.
+ */
+export const RAIL_DUO_FOLDED_MEDIA = '(hover: none) and (orientation: portrait) and (max-width: 383.98px)';
 
 /** The side of the Duo's strip as the page sees it, or null when the insets are those of any other screen. */
 export function stripSide(insets: SafeInsets): RailSide | null {
@@ -52,12 +62,15 @@ export interface NavRail {
   strip: RailSide | null;
 }
 
-/** The rail for the phone shell (phone), a sideways touch screen (landscape) and the page's safe-area insets. */
-export function navRailFor(phone: boolean, landscape: boolean, insets: SafeInsets): NavRail {
+/**
+ * The rail for the phone shell (phone), a sideways touch screen (landscape), the page's safe-area insets, and an
+ * iPhone Duo folded upright (duoFolded: RAIL_DUO_FOLDED_MEDIA on a Duo).
+ */
+export function navRailFor(phone: boolean, landscape: boolean, insets: SafeInsets, duoFolded = false): NavRail {
   if (!phone) return { side: null, strip: null };
   const strip = stripSide(insets);
   if (strip) return { side: strip, strip };
-  return { side: landscape ? 'right' : null, strip: null };
+  return { side: landscape || duoFolded ? 'right' : null, strip: null };
 }
 
 const PROBE_ATTR = 'data-safe-area-probe';
@@ -102,34 +115,52 @@ export function installNavRail(doc: Document): () => void {
   const probe = safeAreaProbe(doc);
   const phone = view.matchMedia(PHONE_MEDIA);
   const landscape = view.matchMedia(RAIL_LANDSCAPE_MEDIA);
+  const folded = view.matchMedia(RAIL_DUO_FOLDED_MEDIA);
 
   const apply = (): void => {
-    const rail = navRailFor(phone.matches, landscape.matches, readSafeInsets(doc));
+    const duoFolded = root.dataset['duo'] !== undefined && folded.matches;
+    const rail = navRailFor(phone.matches, landscape.matches, readSafeInsets(doc), duoFolded);
     setData(root, 'sideStrip', rail.strip);
     setData(root, 'navRail', rail.side);
   };
 
+  /* iOS can settle the insets after the resize, and a home-screen app's insets can arrive after its first frame:
+     each change is read next frame and again at 300 ms, and the start is read again at 1 s and 3 s. */
   let frame = 0;
-  let settle: ReturnType<typeof setTimeout> | null = null;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const later = (ms: number): void => {
+    const timer = setTimeout(() => { timers.delete(timer); apply(); }, ms);
+    timers.add(timer);
+  };
   const schedule = (): void => {
     view.cancelAnimationFrame(frame);
     frame = view.requestAnimationFrame(apply);
-    if (settle !== null) clearTimeout(settle);
-    settle = setTimeout(() => { settle = null; apply(); }, 300);
+    later(300);
   };
+  const shown = (): void => { if (doc.visibilityState === 'visible') schedule(); };
 
   apply();
+  later(1000);
+  later(3000);
   phone.addEventListener('change', schedule);
   landscape.addEventListener('change', schedule);
+  folded.addEventListener('change', schedule);
   view.addEventListener('resize', schedule);
   view.addEventListener('orientationchange', schedule);
+  view.addEventListener('pageshow', schedule);
+  view.visualViewport?.addEventListener('resize', schedule);
+  doc.addEventListener('visibilitychange', shown);
   return () => {
     phone.removeEventListener('change', schedule);
     landscape.removeEventListener('change', schedule);
+    folded.removeEventListener('change', schedule);
     view.removeEventListener('resize', schedule);
     view.removeEventListener('orientationchange', schedule);
+    view.removeEventListener('pageshow', schedule);
+    view.visualViewport?.removeEventListener('resize', schedule);
+    doc.removeEventListener('visibilitychange', shown);
     view.cancelAnimationFrame(frame);
-    if (settle !== null) clearTimeout(settle);
+    for (const timer of timers) clearTimeout(timer);
     probe.remove();
     setData(root, 'sideStrip', null);
     setData(root, 'navRail', null);

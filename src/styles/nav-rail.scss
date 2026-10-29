@@ -53,18 +53,43 @@
       /* the system strip's bars end 24 pt above the screen's edge */
       --rail-bottom: max(24px, calc(env(safe-area-inset-bottom, 0px) - 10px));
     }
-    /* The rail's distance from its screen edge: 10 px inside the safe area, or centred in the Duo's strip. */
+    /* The rail's distance from its screen edge: 10 px inside the safe area, or centred in the Duo's strip. The
+       lane the page keeps clear of it: the rail and 10 px on each side. */
+    :root[data-nav-rail] { --rail-lane: calc(var(--rail-w) + 20px); }
     :root[data-nav-rail='right'] { --rail-x: calc(env(safe-area-inset-right, 0px) + 10px); }
     :root[data-nav-rail='left'] { --rail-x: calc(env(safe-area-inset-left, 0px) + 10px); }
     :root[data-side-strip='right'] { --rail-x: calc((env(safe-area-inset-right, 0px) - var(--rail-w)) / 2); }
     :root[data-side-strip='left'] { --rail-x: calc((env(safe-area-inset-left, 0px) - var(--rail-w)) / 2); }
+    /* An iPhone Duo (duo-status-bar.ts) whose strip iOS keeps outside the page: the rail stands against the page's
+       edge, so beside the strip it is as far right as the page goes, with 8 px to the content (Emre, 2026-10-29).
+       Only where the strip is known to be on the right: unfolded sideways (the 867 px page; the strip stays right in
+       both turns) and folded upright (382 px). Folded sideways (594 px) the strip is on the camera's side, left or
+       right, which the page cannot tell: the rail keeps its 10 px there. */
+    @media (min-width: 800px), (orientation: portrait) {
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) { --rail-x: env(safe-area-inset-right, 0px); --rail-lane: calc(var(--rail-w) + 8px); }
+    }
+    /* Folded upright (the page 382 px wide beside the strip): an icon-only rail of 52 px, as the Duo's own strip bars
+       are icon-only, so the page keeps 322 px. The badges hang off the icon's right, inside the capsule: centred they
+       ran 6 px past the page's edge ('9+'). A Split View pane (385 px and up) is not this. */
+    @media (orientation: portrait) and (max-width: 383.98px) {
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) { --rail-w: 52px; --rail-cell: 46px; --rail-plus: 48px; --rail-gap: 10px; }
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.tabbar__count, .ios-tab__badge) { left: auto; right: -10px; }
+      /* The 322 px page is narrower than any phone the screens were drawn for; what ended in '…' there (the owner's
+         rule) gets room: while a bar shows its small title, the back capsule is its chevron alone (as iOS does when
+         a title needs the room; the accessible name stays) and the title is 16 px; a bar's subtitle and a segmented
+         control's labels take the next size down, the subtitle on two lines at most. */
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.appbar:not(.appbar--large), .appbar--condensed, .ios-nav--condensed) .ios-back { width: 44px; padding: 0; justify-content: center; font-size: 0; }
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) :is(.appbar__title, .ios-nav__title) { font-size: 16px; }
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) .appbar__sub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
+      :root[data-duo][data-nav-rail='right']:not([data-side-strip]) .ios-seg__opt { padding: 0 5px; font-size: 12.5px; letter-spacing: -.01em; }
+    }
     @media (max-height: 379.98px) { :root[data-nav-rail] { --rail-cell: 44px; --rail-plus: 52px; } }
 
     /* The lane, without a strip: only on the pages that show a rail. The ERP bar is hidden by the editors, the
        catalogue studio, the phone purchase order's dock and the workspace pages (styles.scss, product-editor-workspace,
        purchase-phone, workspace-kit); a workspace's own bar (.ios-tabbar) always stands. */
     :root[data-nav-rail='right']:not([data-side-strip]) body:is(:has(.ios-tabbar), :has(.shell > .tabbar):not(:has(app-purchase-editor, app-sales-editor, app-catalog-export, app-product-editor, app-purchase-view .mpo-dock, .shell--workspace-phone .ios-page))) {
-      --safe-r: calc(env(safe-area-inset-right, 0px) + var(--rail-w) + 20px);
+      --safe-r: calc(env(safe-area-inset-right, 0px) + var(--rail-lane));
     }
     /* No bar at the bottom. The home sizes its '+' and its bottom room by the bar's height (home-phone.scss): it keeps 60. */
     :root[data-nav-rail] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
@@ -99,7 +124,8 @@
     /* Kosten & bank sets its tabs at 10.5 px under its page id (finance-phone.scss, (1,2,1)); in the rail they take
        9.5 px too, or 'Transacties' would end in '…' (the owner's rule: no label ends in '…'). */
     :root[data-nav-rail] #finance-workspace .ios-tabbar .ios-tab { font-size: 9.5px; }
-    @media (max-height: 379.98px) {
+    /* Icon-only: a short sideways screen, and the Duo folded upright (the only upright rail). */
+    @media (max-height: 379.98px), (orientation: portrait) and (max-width: 383.98px) {
       :root[data-nav-rail] :is(.tabbar__label, .ios-tab__label) {
         position: absolute;
         width: 1px;
@@ -147,26 +173,25 @@
 
   /* Two columns from 800 px (the home, home-phone.scss; Analyses, analyses.scss) assume a page of about 800 px. With
      the rail's lane and no strip a sideways iPhone (852 x 393, 59 px notch insets) keeps 646 px, too little for two
-     phone columns (139 px widgets, 36 px agenda days), and on the unfolded Duo a page narrower than 928 px (a strip
-     iOS keeps outside it) leaves the hinge split below a right column of 360 px: up to 928 px the lane keeps one
-     column. These undo the 800 px blocks with the values below them. */
+     phone columns (139 px widgets, 36 px agenda days): up to 928 px the lane keeps one column. Not on an iPhone Duo:
+     its page is 867 px and splits on the hinge below. These undo the 800 px blocks with the values below them. */
   @media (min-width: 800px) and (max-width: 927.98px) and (hover: none) {
-    :root[data-nav-rail='right']:not([data-side-strip]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
-    :root[data-nav-rail='right']:not([data-side-strip]) .home-phone__body { display: block; }
-    :root[data-nav-rail='right']:not([data-side-strip]) app-analyses-page .ios-page.an-phone { max-width: var(--page-col, 760px); }
-    :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-cols, .an-col) { display: contents; }
-    :root[data-nav-rail='right']:not([data-side-strip]) .an-phone :is(.an-kpis--5, .an-kpis--6) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__body { display: block; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) app-analyses-page .ios-page.an-phone { max-width: var(--page-col, 760px); }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .an-phone :is(.an-cols, .an-col) { display: contents; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .an-phone :is(.an-kpis--5, .an-kpis--6) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
 
-  /* The unfolded iPhone Duo held sideways (951 x 585-669 pt): its hinge runs down the middle of the display, 475.5 pt
-     from the edge the page starts at (Emre's Duo keeps its strip outside the page, on the right; with the strip as an
-     inset the page starts at the display's edge too). The rail's lane or the strip makes the page narrower than the
-     display, so a split in the page's middle put the second column on the fold (2026-10-29: the gutter at 431.5,
-     the hinge at 475.5). The split stands on the hinge instead: the home's 8 px gap and the cards' 16 px insets
+  /* The unfolded iPhone Duo held sideways (duo-status-bar.ts marks it): its hinge runs down the middle of the
+     951 pt display, 475.5 pt from the page's left edge (the strip iOS keeps outside the page is on the right, so the
+     page starts at the display's edge; the same when the strip arrives as an inset). The page is 867 pt wide and
+     the rail's lane makes it narrower still, so a split in the page's middle put the second column on the fold
+     (Emre, 2026-10-29). The split stands on the hinge instead: the home's 8 px gap and the cards' 16 px insets
      centre on it, Analyses' two columns meet on it (no gap, 16 px card margins); the right column takes the
-     smaller share (about 384 px at 951). */
-  @media (hover: none) and (orientation: landscape) and (min-width: 928px) and (max-width: 960px) and (min-height: 560px) {
-    :root[data-nav-rail] .home-phone__body { grid-template-columns: calc(475.5px - var(--safe-l) - 4px) minmax(0, 1fr); }
-    :root[data-nav-rail] .an-phone .an-cols { grid-template-columns: calc(475.5px - var(--safe-l)) minmax(0, 1fr); }
+     smaller share (about 312 px at 867, 384 at 951). From 860 px, so the 867 page splits too. */
+  @media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
+    :root[data-duo][data-nav-rail] .home-phone__body { grid-template-columns: calc(475.5px - var(--safe-l) - 4px) minmax(0, 1fr); }
+    :root[data-duo][data-nav-rail] .an-phone .an-cols { grid-template-columns: calc(475.5px - var(--safe-l)) minmax(0, 1fr); }
   }
 }
