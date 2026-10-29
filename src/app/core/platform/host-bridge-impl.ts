@@ -292,7 +292,8 @@ export class HostBridgeImpl implements HostBridgeImplementation {
   private runAction(id: string): void {
     const owner = this.owner;
     if (id === 'editTitle' && owner?.source.onTitle) { void this.editTitle(owner); return; }
-    if (id === 'refresh') { this.runRefresh(); return; }
+    /* The reserved pull-to-refresh id, unless the page declared a `refresh` action or menu row of its own (Kosten & bank's Vernieuwen). */
+    if (id === 'refresh' && !owner?.ids.has(id)) { this.runRefresh(); return; }
     if (owner?.source.mirror?.()?.click(id)) return;
     if (id.startsWith('nav:')) { void this.router.navigateByUrl(id.slice(4), { info: { nav: 'push' } }); return; }
     if (id.startsWith('ext:')) { this.bridge.send({ type: 'openExternal', url: id.slice(4) }); return; }
