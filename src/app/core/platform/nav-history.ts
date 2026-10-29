@@ -34,6 +34,12 @@ export interface NavEntry {
   id: number;
   /** The final URL (after redirects). */
   url: string;
+  /**
+   * The native host starts a stack of its own here: the login page, and
+   * the screen that replaces it after the sign-in (hostStack, screensBelow).
+   * The PWA's own below()/up()/back() do not read it.
+   */
+  root?: boolean;
 }
 
 export interface NavStack {
@@ -66,6 +72,8 @@ export function emptyNavStack(): NavStack {
 
 export function recordNavigation(stack: NavStack, nav: NavRecord): NavStack {
   const entry: NavEntry = { id: nav.id, url: nav.url };
+  /* Signed out (or never in): the native host's stack starts over at the login page. */
+  if (navPath(nav.url) === '/login') entry.root = true;
   const lastUrls = { ...stack.lastUrls, [navPath(nav.url)]: nav.url };
 
   if (nav.trigger === 'popstate' || nav.trigger === 'hashchange') {
@@ -75,7 +83,7 @@ export function recordNavigation(stack: NavStack, nav: NavRecord): NavStack {
     if (at >= 0 && navPath(stack.entries[at].url) === navPath(nav.url)) {
       const entries = stack.entries.slice();
       /* The restored entry now carries the pop's id (Angular rewrote its state) and the URL the router settled on. */
-      entries[at] = entry;
+      entries[at] = stack.entries[at].root ? { ...entry, root: true } : entry;
       return { entries, index: at, lastUrls };
     }
     return { entries: [entry], index: 0, lastUrls };
@@ -83,6 +91,8 @@ export function recordNavigation(stack: NavStack, nav: NavRecord): NavStack {
 
   if (nav.replace && stack.index >= 0) {
     const entries = stack.entries.slice(0, stack.index + 1);
+    /* The screen that replaces a root (the sign-in's replaceUrl navigation to the dashboard or returnTo) is the root then. */
+    if (stack.entries[stack.index].root) entry.root = true;
     entries[stack.index] = entry;
     return { entries, index: stack.index, lastUrls };
   }
@@ -149,12 +159,16 @@ export function upTarget(stack: NavStack, parentUrl: string): { back: true; step
  * native host mirrors them (enrosed-erp-ios: one NavigationStack entry per
  * screen). Consecutive entries of one screen (the sections of /analyses, a
  * replaceUrl filter change) count once, keeping the URL they settled on;
- * forward entries are left out. Empty while nothing was recorded.
+ * forward entries are left out. A root entry (the login page, and the
+ * screen the sign-in replaces it with) starts the stack over, so the shell
+ * pops to its root on sign-out and the signed-in screen is a root again.
+ * Empty while nothing was recorded.
  */
 export function hostStack(stack: NavStack): string[] {
   const screens: string[] = [];
   for (let at = 0; at <= stack.index; at++) {
-    const url = stack.entries[at].url;
+    const { url, root } = stack.entries[at];
+    if (root) screens.length = 0;
     if (screens.length && navScreen(screens[screens.length - 1]) === navScreen(url)) screens[screens.length - 1] = url;
     else screens.push(url);
   }
@@ -166,6 +180,8 @@ export function hostStack(stack: NavStack): string[] {
  * steps back it lies, or the deepest one history still has (fewer screens)
  * with `short` saying how many screens were missing; null when nothing lies
  * below at all (the native back then means the web's own back control).
+ * Never steps below a root entry: what history keeps under the login page
+ * is not the shell's stack.
  */
 export function screensBelow(stack: NavStack, count: number): { entry: NavEntry; steps: number; short: number } | null {
   const current = currentNavEntry(stack);
@@ -174,6 +190,7 @@ export function screensBelow(stack: NavStack, count: number): { entry: NavEntry;
   let remaining = count;
   let found: { entry: NavEntry; steps: number } | null = null;
   for (let at = stack.index - 1; at >= 0 && remaining > 0; at--) {
+    if (stack.entries[at + 1].root) break;
     const next = navScreen(stack.entries[at].url);
     if (next === screen) continue;
     screen = next;
