@@ -457,7 +457,9 @@ const normalizeCategoryCode = (value: string): string => value
             contactaanvraag, login-aanvraag, product en agendapunt — en elke ochtend om 9u wat er die dag gepland staat.
             Op iPhone werkt dit zodra de app op het beginscherm staat.
           </p>
-          @if (!push.supported()) {
+          @if (push.hosted()) {
+            <p class="small">Meldingen komen via de Enrosed-app op het beginscherm (Safari). Houd die geïnstalleerd.</p>
+          } @else if (!push.supported()) {
             <p class="small warn-text">Deze browser ondersteunt geen meldingen.</p>
           } @else if (push.enabled()) {
             <div class="push-actions">
@@ -543,7 +545,10 @@ const normalizeCategoryCode = (value: string): string => value
         <section class="ios-section" id="notifications">
           <div class="ios-section__head"><h2>Meldingen op dit toestel</h2></div>
           <div class="ios-group" [class.set-focus]="focusRing() === 'notifications'">
-            @if (!push.supported()) {
+            @if (push.hosted()) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Meldingen</span>
+                <span class="ios-cell__sub set-ios__text">Meldingen komen via de Enrosed-app op het beginscherm (Safari). Houd die geïnstalleerd.</span></span></div>
+            } @else if (!push.supported()) {
               <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Meldingen</span>
                 <span class="ios-cell__sub set-ios__text warn-text">Deze browser ondersteunt geen meldingen.</span></span></div>
             } @else {

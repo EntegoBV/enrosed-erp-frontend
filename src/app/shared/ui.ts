@@ -13,14 +13,17 @@ import {
   OnDestroy,
   ViewChild,
   computed,
+  inject,
   input,
   output,
   signal,
 } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import {
   sheetBackdropFactor, sheetDragOffset, sheetDragOutcome, sheetDragStarted,
 } from './sheet-drag';
 import { deskViewport } from '../core/platform/desktop-viewport';
+import { HostBridge, plainText } from '../core/platform/host-bridge';
 
 /* ------------------------------------------------------------------ sheet */
 
@@ -88,6 +91,8 @@ export class Sheet implements AfterViewInit, OnDestroy {
   readonly closed = output<void>();
 
   readonly headingId = `sheet-heading-${++Sheet.nextId}`;
+  /* Inside the native host the tab bar hides while a sheet is open (its dim must not lie under a tappable bar). */
+  private readonly host = inject(HostBridge);
 
   @ViewChild('dialog', { static: true }) private dialog?: ElementRef<HTMLElement>;
   @ViewChild('overlay', { static: true }) private overlay?: ElementRef<HTMLElement>;
@@ -104,6 +109,8 @@ export class Sheet implements AfterViewInit, OnDestroy {
       ? document.activeElement : null;
     Sheet.stack.push(this);
     this.registered = true;
+    this.host.overlay(true);
+    this.host.haptic('light');
     if (Sheet.bodyLockCount++ === 0) {
       Sheet.previousBodyOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -130,6 +137,7 @@ export class Sheet implements AfterViewInit, OnDestroy {
     this.destroyed = true;
     this.stopDragListening();
     if (this.registered) {
+      this.host.overlay(false);
       const index = Sheet.stack.lastIndexOf(this);
       if (index >= 0) Sheet.stack.splice(index, 1);
       if (Sheet.bodyLockCount > 0 && --Sheet.bodyLockCount === 0) {
@@ -343,6 +351,8 @@ export function escapeHtml(value: string): string {
 @Injectable({ providedIn: 'root' })
 export class Ui {
   private counter = 0;
+  private readonly host = inject(HostBridge);
+  private readonly document = inject(DOCUMENT);
 
   readonly toasts = signal<ToastMessage[]>([]);
   readonly confirmRequest = signal<ConfirmRequest | null>(null);
@@ -354,6 +364,7 @@ export class Ui {
    */
   toast(text: string, kind: 'ok' | 'err' = 'ok', action?: ToastAction): number {
     const id = ++this.counter;
+    if (this.host.present) this.host.haptic(kind === 'err' ? 'error' : 'success');
     this.toasts.update((list) => [...list, action ? { id, text, kind, action } : { id, text, kind }]);
     setTimeout(() => this.dismissToast(id), kind === 'err' ? 7000 : action ? 6000 : 3800);
     return id;
@@ -376,7 +387,7 @@ export class Ui {
     onCancel?: () => void,
   ): void {
     const replaced = this.confirmRequest();
-    this.confirmRequest.set({
+    const request: ConfirmRequest = {
       title: options.title,
       message: options.message,
       confirmLabel: options.confirmLabel ?? 'Bevestigen',
@@ -385,7 +396,23 @@ export class Ui {
       onConfirm,
       onSecondary,
       onCancel,
-    });
+    };
+    if (this.host.present) {
+      /* The native host asks with its own alert (the leave question's Opslaan · Niet opslaan · Annuleren included); a
+         host without the ask handler gets the web sheet after all. */
+      this.confirmRequest.set(null);
+      replaced?.onCancel?.();
+      this.host.confirm({
+        title: request.title, message: plainText(this.document, request.message), confirm: request.confirmLabel,
+        destructive: request.danger, secondary: request.secondaryLabel,
+      }).then((reply) => {
+        if (reply.secondary) request.onSecondary?.();
+        else if (reply.ok) request.onConfirm();
+        else request.onCancel?.();
+      }, () => this.confirmRequest.set(request));
+      return;
+    }
+    this.confirmRequest.set(request);
     /* A question that never gets its answer counts as Annuleren. */
     replaced?.onCancel?.();
   }

@@ -37,6 +37,8 @@ import {
 } from './core/platform/tab-menu';
 import { installNavRail, readSafeInsets } from './core/platform/nav-rail';
 import { installDuoStatusBar } from './core/platform/duo-status-bar';
+import { installHost } from './core/platform/host';
+import { HostBridge } from './core/platform/host-bridge';
 import type { TabMenu, TabMenuRow, TabPress } from './core/platform/tab-menu';
 import { ShortcutsSheet } from './shared/shortcuts-sheet';
 import { preloadWanted } from './core/platform/shell-loading-plan';
@@ -274,14 +276,24 @@ export class App {
   private readonly navHistory = inject(NavHistory);
 
   constructor() {
+    /* The native host (enrosed-erp-ios) first: it marks <html data-host> before anything paints, and the shell then
+       leaves the tab bar, the rail, the Duo status bar and the phone motion to the native chrome (host-bridge.ts). */
+    installHost(this.document);
     void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
+    if (this.host.present) {
+      this.host.start();
+      return;
+    }
     /* On an iPhone Duo the home-screen app asks for a translucent status bar, so its side strip becomes the page's. */
     installDuoStatusBar(this.document);
     /* The tab bar's place (bottom, or the iPhone Duo's side rail) is on <html> before the shell's first frame. */
     inject(DestroyRef).onDestroy(installNavRail(this.document));
   }
+
+  /** The native host's bridge; `present` is false in a browser and nothing of it runs. */
+  readonly host = inject(HostBridge);
 
   readonly auth = inject(Auth);
   /* Instantiated here so the palette is on <html> before the first screen paints. */
@@ -437,8 +449,10 @@ export class App {
   readonly deskWorkspace = computed(() => this.filesWorkspace() || this.financeWorkspace());
   readonly phoneWorkspace = computed(() => this.workspaceRoute() !== null && !this.desktopViewport.active());
 
-  /* Phone push, pop and tab motion (nav-motion.ts), from a lazy chunk: the first screen does not need it. */
+  /* Phone push, pop and tab motion (nav-motion.ts), from a lazy chunk: the first screen does not need it. The
+     native host animates its own pushes, so there it stays off. */
   private readonly navMotion = effect((onCleanup) => {
+    if (this.host.present) return;
     let uninstall: (() => void) | null = null;
     let cancelled = false;
     void import('./core/platform/nav-motion').then((m) => {
@@ -487,7 +501,8 @@ export class App {
 
   private readonly tabbarPress = effect((onCleanup) => {
     const nav = this.tabbar()?.nativeElement;
-    if (!nav) return;
+    /* The native host has title menus for the sections; its hidden web bar takes no press. */
+    if (!nav || this.host.present) return;
     const down = (event: PointerEvent) => this.tabPointerDown(event);
     const context = (event: MouseEvent) => this.tabContextMenu(event);
     const key = (event: KeyboardEvent) => this.tabKey(event);

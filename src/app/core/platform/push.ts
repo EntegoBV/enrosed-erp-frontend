@@ -20,6 +20,8 @@ export class PushSetup {
   private readonly work = inject(WorkQueue);
 
   readonly supported = signal(false);
+  /** Inside the native host (enrosed-erp-ios): no Push API in a WKWebView; the home-screen app keeps the notifications. */
+  readonly hosted = signal(false);
   readonly enabled = signal(false);
   readonly busy = signal(false);
   readonly deviceCount = signal(0);
@@ -27,6 +29,7 @@ export class PushSetup {
   private registration: ServiceWorkerRegistration | null = null;
 
   async init(): Promise<void> {
+    if (document.documentElement.dataset['host']) { this.hosted.set(true); return; }
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     this.supported.set(true);
     try {
