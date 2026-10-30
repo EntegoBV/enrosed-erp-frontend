@@ -222,7 +222,8 @@ host stays inline):
 - Phone: 44 px bar (`--appbar-h: calc(44px + safe-t)`), large title 34/800
   with the subtitle as caption on root screens (condenses into the glass
   bar, `observeLargeTitle` in `shared/large-title.ts`, shared with
-  app-ios-nav), the glass bar with title over subtitle on detail screens.
+  app-ios-nav), the glass bar with title over subtitle on detail screens
+  (the sales editor's is opaque, over its dark card).
   Back control: none on the five tab roots, else the screen below in the
   history ("‹ Verkoop", history back), without history the parent's label,
   backTo's screen label, or the root of the screen's tab (`phoneTabRootFor`:
@@ -940,8 +941,11 @@ the kit's page colour under a phone page. The native effect draws its own hairli
 at the bar's bottom ("a hard cutoff and dividing line", no API takes it off), so a
 stuck band stands under that line, tone against tone within a level. The PWA's own
 condensed nav and sub-bars are glass in the page colour (workspace-kit.scss,
-`--ios-glass`), and so is the phone bar of the lists that still use
-`app-page-header` (shell.scss `.appbar::before`).
+`--ios-glass`), and so is every phone bar of `app-page-header` (shell.scss
+`.appbar::before`), except over a near-black card, where 72 % of the page colour
+reads grey (about 188): the sales editor's standing bar (`app-sales-editor
+.appbar::before`) stays main's opaque `--ios-bg`, the glass took the customer name
+under its title to 2.6:1.
 
 *The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
 which in the host put the black status text and the native title on near-black.
