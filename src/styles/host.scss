@@ -6,8 +6,8 @@
    - the ERP tab bar stays in the DOM, invisible: the bridge reads its computed display, so every existing hide rule
      (editors, catalogue studio, the PO dock, workspace pages) keeps deciding when the native tab bar hides;
    - the bars of app-page-header and app-ios-nav become transparent spacers as high as the top inset (status bar +
-     native bar), so observeLargeTitle keeps its line and the large titles stay web content; [below] sub-bars stick
-     under the native bar;
+     native bar), so observeLargeTitle keeps its line and the large titles stay web content; [below] sub-bars and the
+     other sticky bands of the phone pages stick flush under the native bar as glass in the page colour;
    - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock, the product editor's header
      and dock, the save buttons of the editors' docks and the Duo status paint go: the host has them as items.
    Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.

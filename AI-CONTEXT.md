@@ -157,7 +157,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 956.73 kB (186.80 kB transfer, 12 files; main 951.05 kB in 9): the baseline from now on.
+initial total is 958.18 kB (186.91 kB transfer, 12 files; 956.73 kB before the glass bands, the home rows and the large-title hysteresis of 2026-10-30; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -456,7 +456,13 @@ or `left + right + max-width + margin-inline: auto`, never a transform
 (trap rule). The long-press menu reads the bar's rect when it opens, so it
 follows on its own; it closes on a resize (a fold) as on a scroll. The
 large title's observer rebuilds when the bar's height changes
-(`observeLargeTitle`, a ResizeObserver on the bar).
+(`observeLargeTitle`, a ResizeObserver on the bar). Since 2026-10-30 the
+flip has hysteresis: two IntersectionObservers, the title condensing the
+moment its sentinel passes under the bar's line and releasing only once
+the sentinel is 24 px below it again, so a sentinel resting on the line (a
+scroll that stops there, a rubber-band, the native shell's bar) no longer
+flickers the bar, the small title or the host's native title (Emre:
+"wanneer ik te snel scrol flikkert alles").
 
 **Sheets and toasts as cards.** Every phone `.overlay > .sheet` keeps clear
 of the side insets; on the wide phone it is a floating card: 16 px off the
@@ -475,9 +481,13 @@ tiles); rows, forms, groups and cells keep the phone's layout; stretched
 segmented controls are capped at 480 px, left at the inset. Two columns only
 where two independent blocks sit side by side and the desk already proves
 the split, from 800 px (`(min-width: 800px) and (max-width: 1023.98px) and
-(hover: none)`): the home (Kas + Te doen beside Agenda + Cijfers, the
-8 px gutter on the hinge; `.home-phone__body` / `__col` wrappers,
-blocks on narrower phones, never `display: contents`, the '+' stays a
+(hover: none)`): the home (rows of two since 2026-10-30: Kas | Agenda,
+Te doen | Cijfers, Meer cijfers across both on a subgrid with its search
+card left and its rows right; cells top-aligned, each row as high as its
+taller cell, so both columns end together and nothing sits on the hinge;
+the 8 px gutter on the hinge; the `.home-phone__body` / `__col` wrappers
+are blocks on narrower phones and `display: contents` only inside this
+query, the sections placed by `grid-column` / `grid-row`; the '+' stays a
 direct child of `.home-phone`) and Analyses (the desk's own `.an-col`
 pair). No list, document, form or sheet goes two-column.
 
@@ -587,7 +597,11 @@ the strip as an inset) the split stands on the hinge, 475.5 pt from the
 page's left edge, not in the page's middle: the lane made the page
 narrower than the display and put the second column on the fold (Emre,
 2026-10-29). The right column takes the smaller share (311.5 px at 867,
-cards 279.5; 384 at 951). The website text editor's bar steps aside while
+cards 279.5; 384 at 951). The same split holds inside the native host
+(`:root[data-host][data-host-device='duo']`, since 2026-10-30: App skips
+the rail and the Duo status bar there, so neither `data-duo` nor
+`data-nav-rail` is set, and the Duo's page spans the 951 pt display with
+the strip as its right inset). The website text editor's bar steps aside while
 typing only at the bottom; the rail stays in its lane. Screens only: a
 printout gets no lane.
 
@@ -643,10 +657,13 @@ enrosed-erp-ios`, brief `docs/implementation-brief.md` there), publishes a
 **page descriptor** for the screen on view and the shell draws the tab bar,
 the navigation bar, the back button and the toolbar items from it (on an
 iPhone Duo in the side strip, on a Pro Max as horizontal bars). Host mode
-is invisible without a host: the PWA must stay pixel-identical (the pixel
-diff below), so every host style lives under `:root[data-host]` and every
-message behind `HostBridge.present`. Web changes for it go to production
-`main` only (no test environment for this work).
+is invisible without a host: a host-only change keeps the PWA
+pixel-identical (the pixel diff below), so every host style lives under
+`:root[data-host]` and every message behind `HostBridge.present`; a change
+meant for both (the glass bands and the home rows of 2026-10-30) may differ
+on exactly those shots and nowhere else, and the desk (1280×800) stays
+identical. Web changes for it go to production `main` only (no test
+environment for this work).
 
 **Detection and start** (`core/platform/host.ts`, pure): `window.enrosedHost`
 (the shell's document-start script) or the user-agent suffix
@@ -693,15 +710,19 @@ signals); its `bind` and `start` load `host-bridge-impl.ts`
 through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
-total is 956.73 kB against main's 951.05 kB (host.scss and the
-facade), well under the 1 MB error budget: the baseline to track.
+total was 956.73 kB against main's 951.05 kB (host.scss and the
+facade) and is 958.18 kB since the glass bands, the home rows and the
+large-title hysteresis of 2026-10-30, well under the 1 MB error budget:
+the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
   publish for every page that has one: title, subtitle, the back control
   (`back {label, url}`; url empty when the web's own back decides, as on a
   workspace root or a folder level), `largeTitle` and `condensed` (from
-  `observeLargeTitle`, unchanged), `titleEditable`, the stack and either
+  `observeLargeTitle`, with its 24 px release hysteresis since 2026-10-30,
+  so the `scroll` message no longer flips on a sentinel resting at the
+  line), `titleEditable`, the stack and either
   the page's explicit **`[host]`** input (`HostPageInput`: `primary`,
   `actions`, `menu`, `accessory`, `titleMenu: 'auto'`, `workspaceTabs`,
   `tabBar`, `guardsBack`, `refreshable`, and `title`/`subtitle`/`back`
@@ -802,10 +823,23 @@ and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`,
 `.appbar` and `.ios-nav` bars become transparent spacers of height
 `--safe-t` (the native status bar + navigation bar, since the shell sets
 `contentInsetAdjustmentBehavior = .never`), their children hidden, the
-large titles and `[hero]` / `[below]` blocks kept (`.ios-subbar` sticks at
-`--safe-t`); the editors' docks lose their buttons and keep step and
-status (the PO save bar keeps its fill meter). Sheets and toasts already
-follow `--safe-b`.
+large titles and `[hero]` / `[below]` blocks kept; the editors' docks lose
+their buttons and keep step and status (the PO save bar keeps its fill
+meter). Sheets and toasts already follow `--safe-b`. The sticky bands
+(2026-10-30, Emre's "T" on Documenten: the clear native bar over an opaque
+beige sub-bar, beside the beige strip next to the white rows): every
+`.ios-subbar` sticks flush under the bar (`top: --safe-t`, no gap) as
+glass in the page colour (the kit's `--ios-glass`: 72 % `--ios-bg` on a
+20 px blur, the blur on the `::before` only) with a .5 px `--ios-sep`
+hairline once the title has condensed (`.ios-nav--condensed ~ .ios-subbar`:
+the sentinel sits right above the sub-bar, so condensed means stuck); the
+Agenda's folded week slot (`.home-agenda__fold`) sticks at `--safe-t` too;
+the product editor's phone tabs (`.product-editor-page > .subnav`), which
+stuck 44 px below the bar under the hidden `.product-mobile-header` with the
+form scrolling past in that gap, stick flush under the bar with a glass
+`::before` across the page (`inset: 0 -14px`, the editor's lighter page
+colour). The PWA's own condensed nav and sub-bars are the same glass since
+that day (workspace-kit.scss), so the two modes read alike.
 
 **Checking** (headless, no device needed): `node tools/check-host.mjs --out
 <dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
