@@ -163,9 +163,14 @@
   @media (min-width: 800px) and (max-width: 927.98px) and (hover: none) {
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
     /* The wrappers may stay display: contents: the sections then follow in document order, one column. Meer cijfers
-       drops its subgrid (without a grid parent it would open an implicit second column). */
+       drops its subgrid (without a grid parent it would open an implicit second column); the Cijfers blocks go back
+       to the kit's two columns (the gutter track and its ::before, the blocks' margins and the wide span undone). */
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__body { display: block; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__col > .home-phone__more { display: block; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; margin-bottom: 16px; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets::before { display: none; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets .ios-widget { margin-bottom: 0; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets .ios-widget--wide { grid-column: 1 / -1; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) app-analyses-page .ios-page.an-phone { max-width: var(--page-col, 760px); }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .an-phone :is(.an-cols, .an-col) { display: contents; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .an-phone :is(.an-kpis--5, .an-kpis--6) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -176,12 +181,15 @@
      page starts at the display's edge; the same when the strip arrives as an inset). The page is 867 pt wide and
      the rail's lane makes it narrower still, so a split in the page's middle put the second column on the fold
      (Emre, 2026-10-29). The split stands on the hinge instead: the home's 8 px gap and the cards' 16 px insets
-     centre on it, Analyses' two columns meet on it (no gap, 16 px card margins); the right column takes the
-     smaller share (about 312 px at 867, 384 at 951). From 860 px, so the 867 page splits too. Inside the native
-     host (host.scss; no rail, no data-duo: App skips both there) the shell reports the device, and the Duo's page
-     spans the 951 pt display with the strip as its right inset, so the same split stands on its hinge. */
+     centre on it (home-phone.scss reads the left track from --home-col-1, for its two columns and for the quarter
+     tracks of the Cijfers blocks, whose middle gutter is the same 40 px on the hinge), Analyses' two columns meet on
+     it (no gap, 16 px card margins); the right column takes the smaller share (about 312 px at 867, 384 at 951).
+     From 860 px, so the 867 page splits too. Inside the native host (host.scss; no rail, no data-duo: App skips both
+     there) the shell reports the device, and the Duo's page spans the 951 pt display with the strip as its right
+     inset, so the same split stands on its hinge. */
   @media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
-    :root:is([data-duo][data-nav-rail], [data-host][data-host-device='duo']) .home-phone__body { grid-template-columns: calc(475.5px - var(--safe-l) - 4px) minmax(0, 1fr); }
+    :root:is([data-duo][data-nav-rail], [data-host][data-host-device='duo']) .home-phone__body { --home-col-1: calc(475.5px - var(--safe-l) - 4px); }
+    :root:is([data-duo][data-nav-rail], [data-host][data-host-device='duo']) .home-phone__figures > .ios-widgets { --home-w: calc((var(--home-col-1) - 42px) / 2); }
     :root:is([data-duo][data-nav-rail], [data-host][data-host-device='duo']) .an-phone .an-cols { grid-template-columns: calc(475.5px - var(--safe-l)) minmax(0, 1fr); }
   }
 }

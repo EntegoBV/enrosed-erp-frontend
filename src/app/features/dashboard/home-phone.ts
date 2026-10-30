@@ -80,8 +80,9 @@ const MENU: ContextMenuItem[] = [
         }
       </app-ios-nav>
 
-      <!-- The wide phone (home-phone.scss): from 800 px the body is two columns, Kas + Te doen beside Agenda + Cijfers.
-           The '+' below stays outside this body: a slide on the body (nav-motion) would trap the fixed accessory. -->
+      <!-- The wide phone (home-phone.scss): from 800 px the body is two columns, Kas over Te doen beside the Agenda, then
+           Cijfers (four blocks a row) and Meer cijfers across both. The '+' below stays outside this body: a slide on the
+           body (nav-motion) would trap the fixed accessory. -->
       <div class="home-phone__body">
       <div class="home-phone__col">
       <app-home-kas variant="phone" />
