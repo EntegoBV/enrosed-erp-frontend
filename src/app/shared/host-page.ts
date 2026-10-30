@@ -1,9 +1,10 @@
-import { DestroyRef, Directive, ElementRef, inject, input, output, signal } from '@angular/core';
+import { DestroyRef, Directive, ElementRef, afterNextRender, inject, input, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { HostBridge } from '../core/platform/host-bridge';
 import type { HostActionEvent, HostMirror, HostPageInput } from '../core/platform/host-bridge';
 import type { HostAction, HostMenuItem, HostTab } from '../core/platform/host';
 import { cleanLabel } from '../core/platform/host';
+import { observeLargeTitle } from './large-title';
 
 /**
  * The native host's chrome for a page without a header: the login page,
@@ -34,6 +35,32 @@ export class HostPage {
         else this.hostAction.emit({ id: 'back', finish: () => undefined });
       },
     });
+  }
+}
+
+/**
+ * A sticky band of its own (the product editor's tabs), for a page without
+ * app-ios-nav's sub-bar: in the native host it is plain at rest and glass once
+ * it stands on its line (styles/host.scss), so this sets .is-stuck from a
+ * sentinel right above it and the band's own computed top, with the large
+ * title's hysteresis. Without a host nothing happens and nothing renders.
+ */
+@Directive({ selector: '[hostStickyBand]' })
+export class HostStickyBand {
+  constructor() {
+    if (!inject(HostBridge).present) return;
+    const band = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    let sentinel: HTMLElement | null = null;
+    let stop: (() => void) | null = null;
+    afterNextRender(() => {
+      sentinel = band.ownerDocument.createElement('div');
+      sentinel.className = 'ios-large__sentinel';
+      sentinel.setAttribute('aria-hidden', 'true');
+      band.before(sentinel);
+      stop = observeLargeTitle(band, sentinel, (stuck) => band.classList.toggle('is-stuck', stuck),
+        () => Math.round(parseFloat(getComputedStyle(band).top) || 0));
+    });
+    inject(DestroyRef).onDestroy(() => { stop?.(); sentinel?.remove(); });
   }
 }
 

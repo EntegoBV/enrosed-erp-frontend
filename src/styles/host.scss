@@ -14,9 +14,26 @@
      them as items; the room the pages kept for them at their end goes with them.
    Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.
    ========================================================================== */
+@mixin host-band {
+  border-bottom: .5px solid var(--ios-sep);
+  background: var(--host-band);
+  opacity: 0;
+  pointer-events: none;
+  backdrop-filter: blur(0px) saturate(1);
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  transition: opacity .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), top 0s linear .25s;
+}
+@mixin host-band-stuck {
+  opacity: 1;
+  pointer-events: auto;
+  backdrop-filter: var(--ios-glass-filter);
+  -webkit-backdrop-filter: var(--ios-glass-filter);
+}
+
 @media screen {
   :root[data-host] {
     --tabbar-h: 0px;
+    --host-band: color-mix(in srgb, rgb(251 248 245) 85%, transparent);
     /* Where a sticky band stands: flush under the native bar. --appbar-h feeds every sticky rule of the partials. */
     --host-stick-t: var(--safe-t);
     --appbar-h: var(--host-stick-t);
@@ -38,6 +55,8 @@
   }
   :root[data-host][data-host-strip][data-host-bar='large'] { --safe-t: 24px; }
   :root[data-host][data-host-strip][data-host-bar='inline'] { --safe-t: 82px; }
+  /* The kit's --ios-glass-filter is none then (workspace-kit.scss): the band's tone without the blur. */
+  @media (prefers-reduced-transparency: reduce) { :root[data-host] { --host-band: rgb(251 248 245); } }
   /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
      A bottom toolbar (Documenten's selection) still stands at the bottom and keeps its room. */
   :root[data-host] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
@@ -58,19 +77,29 @@
   :root[data-host] .ios-nav::before { display: none; }
   :root[data-host] .ios-nav > :is(.ios-nav__lead, .ios-nav__title, .ios-nav__trail) { display: none; }
 
-  /* The sticky bands under the native bar (Emre, 2026-10-30: the clear native bar over an opaque beige sub-bar and
-     the beige beside the white rows drew a "T"). Every band sticks flush under the bar (top: --host-stick-t, no gap) and
-     is glass in the page colour: 72 % --ios-bg on a 20 px blur (workspace-kit.scss --ios-glass, the PWA's own bands
-     since the same day), so the rows scroll through it as they do through the bar's scroll-edge blur, and a .5 px
-     hairline closes it once the title has condensed (the bar is stuck by then: the sentinel sits right above it).
-     The blur stays on the ::before (trap rule). */
+  /* The sticky bands flow into the native band (Emre, 2026-10-30: "die boven header is mooi en dan die sticky is grijs
+     ... gelijk een T"). The band under the native bar is the web scroll view's top edge effect: clear at the top, glass
+     as soon as content runs under it, reading rgb(251 248 245) over the page colour (measured on the simulators). Every
+     band sticks flush under it (--host-stick-t). At rest it is plain, just the page; once stuck its ::before is a glass
+     in the native band's tone (--host-band) that fades in with a .5 px hairline at its bottom, and it runs across the
+     whole window: under the side strip and beyond the 760 px page column of a wide phone, so the header reads as one
+     piece and no T is left. The -100vw needs the clip on .shell, which spans the window: clip, not hidden, because a
+     clip is no scroll container, so the bands keep sticking to the page, and no containing block for the fixed sheets.
+     The blur stays on the ::before (trap rule). The hit area of the invisible ::before goes with it.
+     IosNav says stuck from the sentinel right above the sub-bar and the sub-bar's own top. A sub-bar under an inline bar
+     has no sentinel: it stands on its line from the start. */
+  :root[data-host] .shell { overflow-x: clip; }
   :root[data-host] .ios-subbar { top: var(--host-stick-t); }
-  :root[data-host] .ios-subbar::before {
-    background: var(--ios-glass);
-    backdrop-filter: var(--ios-glass-filter);
-    -webkit-backdrop-filter: var(--ios-glass-filter);
+  :root[data-host] .ios-subbar::before { inset: 0 -100vw; @include host-band; }
+  :root[data-host] :is(.ios-nav--stuck, .ios-nav:not(.ios-nav--large)) ~ .ios-subbar::before,
+  :root[data-host] .home-agenda__fold.is-folded .ios-subbar::before { @include host-band-stuck; }
+  /* A strip pose beside a large title: the bar has no title yet and is only 24 px high, so above the band stuck at 82 px
+     the rows would slide by until the title comes: the glass reaches up to the top of the screen. It lets go a moment
+     after the title has come (the native band then covers that row), so no row shows in between. */
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav--stuck:not(.ios-nav--condensed) ~ .ios-subbar::before {
+    top: calc(-1 * var(--host-stick-t));
+    transition-delay: 0s;
   }
-  :root[data-host] .ios-nav--condensed ~ .ios-subbar::before { border-bottom: .5px solid var(--ios-sep); }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
   :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
   /* The sales document's section pill too (styles.scss stands it at --safe-t). */
@@ -82,10 +111,9 @@
      2026-10-30: "bij product bewerken is het zelfs erger"). Here --product-header-h is the top inset alone and the
      header is the same spacer as .appbar and .ios-nav (its back control, title and Acties are the host's), so the
      identity row and the form start under the native bar, the tabs stick flush under it through the partial's own
-     top and the scroll margins follow. The tabs' band is glass across the page (the page is 14 px in from the
-     column's edges) in the editor's lighter page colour; the pill itself stays opaque, as in the PWA. The 116 px the
-     page kept at its end for the hidden dock are the kit page's 28 px. The partial's phone query, so a desk-sized web
-     view keeps the editor's toolbar, which pads the inset itself. */
+     top and the scroll margins follow. The tabs' band is the same band as above (HostStickyBand says .is-stuck); the
+     pill itself stays opaque, as in the PWA. The 116 px the page kept at its end for the hidden dock are the kit page's
+     28 px. The partial's phone query, so a desk-sized web view keeps the editor's toolbar, which pads the inset itself. */
   @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
     :root[data-host] #product-editor-workspace { --product-header-h: var(--host-stick-t); }
     :root[data-host] #product-editor-workspace .product-mobile-header {
@@ -103,13 +131,14 @@
     :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav::before {
       content: '';
       position: absolute;
-      inset: 0 -14px;
+      inset: 0 -100vw;
       z-index: -1;
-      background: color-mix(in srgb, color-mix(in srgb, var(--bg) 65%, var(--surface)) 72%, transparent);
-      backdrop-filter: var(--ios-glass-filter);
-      -webkit-backdrop-filter: var(--ios-glass-filter);
+      @include host-band;
     }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck::before { @include host-band-stuck; }
     :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
+    /* The editor's lighter page colour runs on under the side strip: without it the strip stood beige beside it. */
+    :root[data-host] .shell:has(#product-editor-workspace) { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
   }
 
   /* The purchase pages (purchase-phone.scss): the read view's dock and the editor's save bar are the host's items

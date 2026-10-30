@@ -27,7 +27,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { stockCellEdit, type BookingKind } from './stock-booking';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
-import { HostPage, menuRows } from '../../shared/host-page';
+import { HostPage, HostStickyBand, menuRows } from '../../shared/host-page';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -100,7 +100,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList, HostPage],
+    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList, HostPage, HostStickyBand],
   template: `
     @if (!desktop.active()) {
       <header class="product-mobile-header" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
@@ -333,7 +333,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     </div>
 
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
-      <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+      <nav class="subnav erp-workspace__nav" hostStickyBand aria-label="Productonderdelen">
         @if (!desktop.active()) {
           <div class="product-mobile-tabs" role="group" aria-label="Bewerkonderdeel">
             @for (tab of mobilePrimaryTabs; track tab.id) {
