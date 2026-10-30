@@ -191,6 +191,7 @@ export interface PageHeaderParent {
 })
 export class PageHeader {
   readonly desktop = inject(DesktopViewport);
+  private readonly hosted = inject(HostBridge).present;
   private readonly history = inject(NavHistory);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -407,7 +408,8 @@ export class PageHeader {
   /** Folds the chrome one step while the title text is cut; it unfolds only when the room grows. */
   private fit(): void {
     const fold = this.fold();
-    if (fold === 'none') return;
+    /* Inside the host the web bar is a box of no size (styles/host.scss): nothing to fit, and everything in it reads as cut. */
+    if (fold === 'none' || this.hosted) return;
     const text = this.titleText()?.nativeElement;
     if (!text || !textCut(text)) return;
     if (this.crumb()) {

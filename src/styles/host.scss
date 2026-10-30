@@ -77,19 +77,45 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
 
   /* Hidden, not removed: the bridge's probe reads the ERP bar's display, the mirror reads the '+' and the kit's tab bar. */
   :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) { visibility: hidden !important; pointer-events: none !important; }
-  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .safe-paint) {
-    display: none !important;
+  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .safe-paint) { display: none !important; }
+  /* The web chrome that can hold a sheet or a menu is a box of no size that paints nothing, never display: none: with that
+     the bell's sheet in .appbar__actions had no box at all while overlay open:true went to the shell, so its bars and tab bar
+     went and nothing stood on screen, with no way out. The mirror's clicks still reach the controls in the box. What opens
+     inside gets out of it: position: fixed ignores the box's clip and size (none of these ever has a transform, a filter or a
+     contain: the trap rule) and it turns visible again below. No z-index of its own, so a sheet stays in .main's stacking context. */
+  :root[data-host] :is(.shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .appbar > .appbar__back, .appbar > .appbar__lead, .appbar > .appbar__actions, .ios-nav > .ios-nav__lead, .ios-nav > .ios-nav__title, .ios-nav > .ios-nav__trail) {
+    position: absolute !important;
+    inset: auto !important;
+    z-index: auto !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: clip !important;
+    visibility: hidden !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    contain: none !important;
+    animation: none !important;
+    transition: none !important;
   }
+  :root[data-host] :is(.shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .appbar__back, .appbar__lead, .appbar__actions, .ios-nav__lead, .ios-nav__title, .ios-nav__trail, .product-mobile-header, .tabbar, .fab, .ios-tabbar, .ios-accessory) :is(.overlay, .cm, .cm__backdrop) { visibility: visible; }
+  :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) :is(app-sheet:not(.mo-leaving) > .overlay, .cm, .cm__backdrop) { pointer-events: auto; }
+  /* A bar with a sheet in it stands above what the page raises (the kit's nav is only 30: .ios-large and the like came over it). */
+  :root[data-host] :is(.appbar, .ios-nav):has(.overlay) { z-index: 100; }
 
   /* The legacy header: the sticky bar is a spacer; the large title below it is content. */
   :root[data-host] .appbar { height: var(--safe-t); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; }
   :root[data-host] .appbar::before { display: none; }
-  :root[data-host] .appbar > :is(.appbar__back, .appbar__lead, .appbar__actions) { display: none; }
 
   /* The kit's nav: the same spacer; [hero] blocks and [below] sub-bars stay. */
   :root[data-host] .ios-nav { display: block; height: var(--safe-t); padding: 0; }
   :root[data-host] .ios-nav::before { display: none; }
-  :root[data-host] .ios-nav > :is(.ios-nav__lead, .ios-nav__title, .ios-nav__trail) { display: none; }
 
   /* The sticky bands flow into the native band (Emre, 2026-10-30: "die boven header is mooi en dan die sticky is grijs
      ... gelijk een T"). The band under the native bar is the web scroll view's top edge effect: clear at the top, glass
