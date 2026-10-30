@@ -14,23 +14,26 @@
      them as items; the room the pages kept for them at their end goes with them.
    Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.
    ========================================================================== */
-@mixin host-band {
-  border-bottom: .5px solid var(--ios-sep);
-  background: var(--host-band);
-  opacity: 0;
+/* A band at rest is the page's own colour ($rest), opaque, with nothing to see on the plain page: in a fast scroll the rows
+   reach it before the page's script says stuck, and a band that only faded in then let them run through the search field
+   and the tabs for a moment (Emre: "wanneer ik te snel scrol flikkert ook alles"; seen frame by frame in a screen recording).
+   Stuck it turns to the glass with its hairline. */
+$host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), background-color .2s var(--ease-out, ease) .15s;
+@mixin host-band($rest) {
+  border-bottom: .5px solid transparent;
+  background: $rest;
   pointer-events: none;
   backdrop-filter: blur(0px) saturate(1);
   -webkit-backdrop-filter: blur(0px) saturate(1);
-  transition: opacity .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), background-color .2s var(--ease-out, ease) .15s;
+  transition: $host-band-transition;
 }
 @mixin host-band-stuck {
-  opacity: 1;
+  border-bottom-color: var(--ios-sep);
+  background: var(--host-band);
   pointer-events: auto;
   backdrop-filter: var(--ios-glass-filter);
   -webkit-backdrop-filter: var(--ios-glass-filter);
 }
-
-@keyframes host-band-reach { from, to { top: calc(-1 * var(--host-stick-t)); } }
 
 @media screen {
   :root[data-host] {
@@ -86,32 +89,34 @@
   /* The sticky bands flow into the native band (Emre, 2026-10-30: "die boven header is mooi en dan die sticky is grijs
      ... gelijk een T"). The band under the native bar is the web scroll view's top edge effect: clear at the top, glass
      as soon as content runs under it, reading rgb(251 248 245) over the page colour (measured on the simulators). Every
-     band sticks flush under it (--host-stick-t). At rest it is plain, just the page; once stuck its ::before is a glass
+     band sticks flush under it (--host-stick-t). At rest its ::before is plain, just the page; once stuck it is a glass
      in the native band's tone (--host-band) that fades in with a .5 px hairline at its bottom, and it runs across the
      whole window: under the side strip and beyond the 760 px page column of a wide phone, so the header reads as one
      piece and no T is left. The -100vw needs the clip on .shell, which spans the window: clip, not hidden, because a
      clip is no scroll container, so the bands keep sticking to the page, and no containing block for the fixed sheets.
-     The blur stays on the ::before (trap rule). The hit area of the invisible ::before goes with it.
+     The blur stays on the ::before (trap rule). The hit area of the plain ::before goes with it.
      IosNav says stuck from the sentinel right above the sub-bar and the sub-bar's own top. A sub-bar under an inline bar
      has no sentinel: it stands on its line from the start. */
   :root[data-host] .shell { overflow-x: clip; }
   :root[data-host] .ios-subbar { top: var(--host-stick-t); }
-  :root[data-host] .ios-subbar::before { inset: 0 -100vw; @include host-band; }
+  :root[data-host] .ios-subbar::before { inset: 0 -100vw; @include host-band(var(--ios-bg)); }
   :root[data-host] :is(.ios-nav--stuck, .ios-nav:not(.ios-nav--large)) ~ .ios-subbar::before,
   :root[data-host] .home-agenda__fold.is-folded .ios-subbar::before { @include host-band-stuck; }
-  /* A strip pose beside a large title: the sub-bar stands on its line long before the title has gone, and the bar has no
-     title and so no band yet. Only that title is above the sub-bar there, so the band stays the plain page colour, opaque
-     for the rows that go under it: glass beside the plain page was a step, and glass up to the top of the screen blurred
-     the title away. It turns to glass when the title has gone, as late as the native band comes (the shell shows the
-     flip 150 ms later, TabModel.requestCondensed). */
-  :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav--stuck:not(.ios-nav--condensed) ~ .ios-subbar::before {
+  /* A strip pose beside a large title (a plain one: a [hero] condenses long before its sub-bar comes). The sub-bar stands on
+     its line long before the title has gone, and the bar has no title and so no band yet. So the band reaches up to the top
+     of the screen, in the plain page colour, under the title, which stands above it: the title slides away sharp, the rows
+     that go under the sub-bar never show above it, however fast the scroll, and the sub-bar has no glass beside the plain
+     page. When the title has gone the band turns to glass and lets go of the top a moment later, as late as the native band
+     comes (the shell shows the flip 150 ms later, TabModel.requestCondensed, and fades it in), and at once when it comes back. */
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large { position: relative; z-index: 30; }
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large ~ .ios-subbar::before { transition: $host-band-transition, top 0s linear .45s; }
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav:not(.ios-nav--condensed) ~ .ios-large ~ .ios-subbar::before {
+    top: calc(-1 * var(--host-stick-t));
     background: var(--ios-bg);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    transition: $host-band-transition;
   }
-  /* The moment the title has gone, nothing shows above the band yet: the bar's title and with it the native band come a
-     little later, and a fast scroll would show rows up there. The band reaches to the top of the screen for that moment. */
-  :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav--stuck.ios-nav--condensed ~ .ios-subbar::before { animation: host-band-reach .45s linear; }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
   :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
   /* The sales document's steps, the view's and the editor's (styles.scss stands them at --safe-t and 8 px under the bar):
@@ -129,7 +134,7 @@
       position: absolute;
       inset: -1px -100vw;
       z-index: -1;
-      @include host-band;
+      @include host-band(transparent);
     }
     :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck {
       border-color: transparent;
@@ -174,7 +179,7 @@
       position: absolute;
       inset: 0 -100vw;
       z-index: -1;
-      @include host-band;
+      @include host-band(color-mix(in srgb, var(--bg) 65%, var(--surface)));
     }
     :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck::before { @include host-band-stuck; }
     :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
