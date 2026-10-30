@@ -60,6 +60,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
     .lightbox {
       position: fixed; inset: 0; z-index: 200;
       display: flex; flex-direction: column;
+      padding-inline: var(--safe-l) var(--safe-r);
       background: rgb(20 14 12 / 94%);
       backdrop-filter: blur(10px);
       animation: lightbox-in 0.18s ease-out;

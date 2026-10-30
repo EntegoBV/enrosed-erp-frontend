@@ -79,6 +79,7 @@ import { Ui } from '../../shared/ui';
       z-index: 210;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
+      padding-inline: var(--safe-l) var(--safe-r);
       background: rgb(20 14 12/0.96);
       backdrop-filter: blur(10px);
       animation: agreement-viewer-in 0.16s ease-out;
