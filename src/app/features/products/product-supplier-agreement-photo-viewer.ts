@@ -92,7 +92,7 @@ import { Ui } from '../../shared/ui';
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+      padding: calc(10px + var(--safe-t)) 12px 10px;
       color: #fff;
     }
     .spacer {

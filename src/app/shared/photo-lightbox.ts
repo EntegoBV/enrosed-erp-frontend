@@ -67,7 +67,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
     @keyframes lightbox-in { from { opacity: 0; } }
     .lightbox__bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-      padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+      padding: calc(10px + var(--safe-t)) 14px 10px;
     }
     .lightbox__count { color: #cfc4bf; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
     .lightbox__meta {

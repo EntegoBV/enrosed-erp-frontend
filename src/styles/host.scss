@@ -6,9 +6,9 @@
    - the ERP tab bar stays in the DOM, invisible: the bridge reads its computed display, so every existing hide rule
      (editors, catalogue studio, the PO dock, workspace pages) keeps deciding when the native tab bar hides;
    - the bars of app-page-header, app-ios-nav and the product editor's phone header become transparent spacers as
-     high as the top inset (status bar + native bar), so observeLargeTitle keeps its line and the large titles stay
-     web content; [below] sub-bars and the other sticky bands of the phone pages stick flush under the native bar as
-     glass in the page colour;
+     high as the top inset (--safe-t: status bar + native bar), so observeLargeTitle keeps its line and the large
+     titles stay web content; [below] sub-bars and the other sticky bands of the phone pages stick flush under the
+     native bar (--host-stick-t) as glass in the page colour;
    - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock and the PO editor's save bar,
      the product editor's dock, the save buttons of the sales editor's dock and the Duo status paint go: the host has
      them as items; the room the pages kept for them at their end goes with them.
@@ -17,8 +17,27 @@
 @media screen {
   :root[data-host] {
     --tabbar-h: 0px;
-    --appbar-h: var(--safe-t);
+    /* Where a sticky band stands: flush under the native bar. --appbar-h feeds every sticky rule of the partials. */
+    --host-stick-t: var(--safe-t);
+    --appbar-h: var(--host-stick-t);
   }
+  /* The iPhone Duo's strip poses (folded upright, folded sideways, unfolded sideways; data-host-strip from the window's
+     insets, data-host-bar from the published page, core/platform/host-bridge-impl.ts). The native bar there is 24 pt
+     without a title and 82 pt with one (with or without a subtitle; both measured on the iPhone Duo simulator, iOS 27.1,
+     2026-10-30), and the web view's env(safe-area-inset-top) follows it. The title comes and goes with the large title,
+     so env() moved the whole page 58 px at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So on a strip
+     pose nothing reads env() any more: --safe-t is the constant of the page's kind, 24 px beside a large title (the bar's
+     title comes when it has gone), 82 px when the bar's title is always on, and a band always sticks at 82 px, under where
+     the title is or will be. The flip then changes no layout at all. Without chrome (the login page) and in the bars
+     poses (every iPhone, the Duo unfolded upright: a constant inset, title or no title) env() stays. --ios-nav-h is the
+     step from the spacer to that line, so the partials' "--safe-t + --ios-nav-h" (minimum heights, scroll padding) end
+     on it too; in the bars poses they keep today's value. */
+  :root[data-host][data-host-strip][data-host-bar] {
+    --host-stick-t: 82px;
+    --ios-nav-h: calc(var(--host-stick-t) - var(--safe-t));
+  }
+  :root[data-host][data-host-strip][data-host-bar='large'] { --safe-t: 24px; }
+  :root[data-host][data-host-strip][data-host-bar='inline'] { --safe-t: 82px; }
   /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
      A bottom toolbar (Documenten's selection) still stands at the bottom and keeps its room. */
   :root[data-host] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
@@ -40,12 +59,12 @@
   :root[data-host] .ios-nav > :is(.ios-nav__lead, .ios-nav__title, .ios-nav__trail) { display: none; }
 
   /* The sticky bands under the native bar (Emre, 2026-10-30: the clear native bar over an opaque beige sub-bar and
-     the beige beside the white rows drew a "T"). Every band sticks flush under the bar (top: --safe-t, no gap) and is
-     glass in the page colour: 72 % --ios-bg on a 20 px blur (workspace-kit.scss --ios-glass, the PWA's own bands
+     the beige beside the white rows drew a "T"). Every band sticks flush under the bar (top: --host-stick-t, no gap) and
+     is glass in the page colour: 72 % --ios-bg on a 20 px blur (workspace-kit.scss --ios-glass, the PWA's own bands
      since the same day), so the rows scroll through it as they do through the bar's scroll-edge blur, and a .5 px
      hairline closes it once the title has condensed (the bar is stuck by then: the sentinel sits right above it).
      The blur stays on the ::before (trap rule). */
-  :root[data-host] .ios-subbar { top: var(--safe-t); }
+  :root[data-host] .ios-subbar { top: var(--host-stick-t); }
   :root[data-host] .ios-subbar::before {
     background: var(--ios-glass);
     backdrop-filter: var(--ios-glass-filter);
@@ -53,7 +72,9 @@
   }
   :root[data-host] .ios-nav--condensed ~ .ios-subbar::before { border-bottom: .5px solid var(--ios-sep); }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
-  :root[data-host] .home-agenda__fold { top: var(--safe-t); }
+  :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
+  /* The sales document's section pill too (styles.scss stands it at --safe-t). */
+  :root[data-host] app-sales-view .erp-workspace__section-nav { top: var(--host-stick-t); }
 
   /* The product editor (product-editor-workspace.scss, phone rules under #product-editor-workspace). Its own header
      carried the top inset and the tabs stuck under it: hidden, it left the identity row under the native bar on a
@@ -66,7 +87,7 @@
      page kept at its end for the hidden dock are the kit page's 28 px. The partial's phone query, so a desk-sized web
      view keeps the editor's toolbar, which pads the inset itself. */
   @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
-    :root[data-host] #product-editor-workspace { --product-header-h: var(--safe-t); }
+    :root[data-host] #product-editor-workspace { --product-header-h: var(--host-stick-t); }
     :root[data-host] #product-editor-workspace .product-mobile-header {
       position: static;
       display: block;

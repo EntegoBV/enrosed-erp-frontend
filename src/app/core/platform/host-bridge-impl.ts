@@ -4,6 +4,7 @@ import { NavigationCancel, NavigationCancellationCode, NavigationEnd, Navigation
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { HOST_VERSION, cleanLabel } from './host';
+import { stripSide } from './nav-rail';
 import { resolveSymbol, workspaceOf } from './host-symbols';
 import type {
   HostAction, HostCommand, HostMenuItem, HostNavDirection, HostPage, HostStackEntry, HostTheme, HostTitleRow, HostWindow,
@@ -193,8 +194,20 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     this.owner = owner;
     owner.page = page;
     this.pending = page;
+    this.markBar(page);
     this.cancelFallback();
     this.scheduleFlush();
+  }
+
+  /**
+   * What the native bar does on this page, for host.scss: `large` when the web shows the large title (the bar's title
+   * comes and goes with it), `inline` when the bar's title is always on, nothing without chrome (the login page). With
+   * data-host-strip it sets the top offsets of a strip pose, which then no longer follow the bar's title.
+   */
+  private markBar(page: HostPage): void {
+    const root = this.document.documentElement;
+    if (page.chrome) root.setAttribute('data-host-bar', page.largeTitle ? 'large' : 'inline');
+    else root.removeAttribute('data-host-bar');
   }
 
   private scheduleFlush(): void {
@@ -251,6 +264,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       };
       if (contribution?.workspaceTabs) page.workspaceTabs = contribution.workspaceTabs;
       this.pending = page;
+      this.markBar(page);
       this.flush();
     }, FALLBACK_MS);
   }
@@ -277,11 +291,14 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       case 'insets': {
         const { top, right, bottom, left } = command;
         this.bridge.insets.set({ top, right, bottom, left });
-        const style = this.document.documentElement.style;
+        const root = this.document.documentElement;
+        const style = root.style;
         style.setProperty('--host-safe-t', `${top}px`);
         style.setProperty('--host-safe-r', `${right}px`);
         style.setProperty('--host-safe-b', `${bottom}px`);
         style.setProperty('--host-safe-l', `${left}px`);
+        /* The window's insets, so the shell's own BarLayout thresholds: a Duo pose with the bars in the side strip. */
+        root.toggleAttribute('data-host-strip', stripSide({ top, right, bottom, left }) !== null);
         break;
       }
       case 'sessionCheck': this.injector.get(Auth).recheckSession(); break;

@@ -114,7 +114,7 @@ export class HostBridge {
   readonly present = this.info !== null;
   /** The device class the host reports: the iPhone Duo or another iPhone. */
   readonly device = this.info?.device ?? null;
-  /** The native safe-area insets as the host last reported them (informational: the page trusts env()). */
+  /** The window's safe-area insets as the host last reported them; the bridge marks the Duo's strip poses from them (data-host-strip). */
   readonly insets = signal<{ top: number; right: number; bottom: number; left: number } | null>(null);
   /** Open phone sheets; read by the implementation's compose. */
   readonly overlays = signal(0);

@@ -1076,7 +1076,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .shero-edit { padding:8px 16px;border-radius:999px;background:#fff;color:#1a1614;font-size:12.5px;font-weight:750;text-decoration:none }
     .shero-edit:active { opacity:.8 }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
-      .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + env(safe-area-inset-top, 0px)) 16px 15px }
+      .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + var(--safe-t)) 16px 15px }
       .sales-hero__top { flex-direction:column;align-items:center;gap:9px;text-align:center }
       .sales-hero__identity { display:flex;flex-direction:column;align-items:center }
       .sales-hero__top .sales-hero__badges { justify-content:center }
