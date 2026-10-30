@@ -55,6 +55,10 @@
   }
   :root[data-host][data-host-strip][data-host-bar='large'] { --safe-t: 24px; }
   :root[data-host][data-host-strip][data-host-bar='inline'] { --safe-t: 82px; }
+  /* A large title without a caption ends above that line (24 + 50 px). A sub-bar under it (Documenten & media) would stand
+     stuck from the first frame, pushed 8 px over the first rows, its band over the title: the title's block reaches past
+     the line, as one with a caption does. */
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large { min-height: calc(var(--host-stick-t) - var(--safe-t) + 4px); }
   /* The kit's --ios-glass-filter is none then (workspace-kit.scss): the band's tone without the blur. */
   @media (prefers-reduced-transparency: reduce) { :root[data-host] { --host-band: rgb(251 248 245); } }
   /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
