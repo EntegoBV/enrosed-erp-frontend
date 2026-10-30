@@ -127,7 +127,7 @@
     :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav::before {
       content: '';
       position: absolute;
-      inset: 0 -100vw;
+      inset: -1px -100vw;
       z-index: -1;
       @include host-band;
     }
@@ -139,8 +139,11 @@
       -webkit-backdrop-filter: none;
     }
     :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck::before { @include host-band-stuck; }
-    /* HostStickyBand's sentinel stands between the margins, which no longer collapse: the rest position stays main's. */
-    :root[data-host] :is(app-sales-view, app-sales-editor) .ios-large__sentinel + .workflow-nav { margin-top: 0; }
+    /* HostStickyBand's sentinel stands right above them and the rest position stays main's: in the view it stands between
+       margins that no longer collapse, in the editor it takes a row of the grid and with it a 14 px gap. */
+    :root[data-host] app-sales-view .ios-large__sentinel + .workflow-nav { margin-top: 0; }
+    :root[data-host] app-sales-editor .workflow-layout > .ios-large__sentinel { position: relative; top: 12px; }
+    :root[data-host] app-sales-editor .workflow-layout > .ios-large__sentinel + .workflow-nav { margin-top: -2px; }
   }
 
   /* The product editor (product-editor-workspace.scss, phone rules under #product-editor-workspace). Its own header
