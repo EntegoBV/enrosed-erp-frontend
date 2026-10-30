@@ -198,6 +198,10 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
      page's 28 px, and the focus scroll padding at the bottom follows. */
   :root[data-host] :is(.mpo-phone--view, .mpo-phone--edit) { padding-bottom: calc(var(--safe-b) + 28px); }
   :root[data-host]:has(app-purchase-view .mpo-phone, app-purchase-editor .mpo-phone) { scroll-padding-bottom: calc(var(--safe-b) + 28px); }
+  /* Folded sideways the page column is 594 px in a 678 px window, so the wide phone's three-up figures leave the fill cell
+     too little room: "15,180 m³ vrij" ran out of the card. There the text goes under the meter when it does not fit. */
+  :root[data-host][data-host-strip] .mpo-fillrow__line { flex-wrap: wrap; gap: 4px 10px; }
+  :root[data-host][data-host-strip] .mpo-fillrow__meter { flex-basis: 40px; }
   /* The sales document view: its hero bar is the host's and a phone has no dock on it, so the 128 px styles.scss keeps
      at its end for the tab bar and a dock are the kit page's 28 px. The sales editor keeps its dock (the step and its
      arrows; the host has Opslaan and the step's button) and so its room. */

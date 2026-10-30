@@ -174,7 +174,7 @@ app-purchase-view .mpo-costs__foot{display:block;margin-top:24px}
 .mpo-sheet__seg{margin:0 16px 10px}
 /* Inkoop redesign I5 (2026-10-17): the Vulling row across the figures, the iOS receive, issue and document sheets. */
 .mpo-fillrow{align-content:start}
-.mpo-fillrow__line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;min-width:0}
+.mpo-fillrow__line{display:flex;align-items:center;gap:10px;min-width:0}
 .mpo-fillrow__line>strong{flex:none}
 .mpo-fillrow__line>small{flex:none;white-space:nowrap}
 .mpo-fillrow__meter{flex:1;min-width:40px;height:5px}
