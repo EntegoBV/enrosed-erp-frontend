@@ -157,7 +157,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 958.18 kB (186.91 kB transfer, 12 files; 956.73 kB before the glass bands, the home rows and the large-title hysteresis of 2026-10-30; main 951.05 kB in 9): the baseline from now on.
+initial total is 958.21 kB (186.95 kB transfer, 12 files; 956.73 kB before the glass bands, the home rows and the large-title hysteresis of 2026-10-30; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -711,7 +711,7 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 958.18 kB since the glass bands, the home rows and the
+facade) and is 958.21 kB since the glass bands, the home rows and the
 large-title hysteresis of 2026-10-30, well under the 1 MB error budget:
 the baseline to track.
 
