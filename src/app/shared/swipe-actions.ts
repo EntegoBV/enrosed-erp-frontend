@@ -50,6 +50,7 @@ const GHOST_CLICK_MS = 350;
   host: {
     '[style.--swipe-start-n]': 'swipeStart()',
     '[style.--swipe-end-n]': 'swipeEnd()',
+    '[class.is-open]': 'open() !== null',
     '(pointerdown)': 'onPointerDown($event)',
     '(pointermove)': 'onPointerMove($event)',
     '(pointerup)': 'onPointerUp($event)',
