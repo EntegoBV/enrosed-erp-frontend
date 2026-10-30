@@ -178,6 +178,8 @@
     /* The editor's lighter page colour runs on under the side strip: without it the strip stood beige beside it. */
     :root[data-host] .shell:has(#product-editor-workspace) { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
   }
+  /* The same seam on Website beheren: its shell and main are the desk's lighter tones (styles.scss), its phone pages the kit's. */
+  :root[data-host] .shell--website:has(.ios-page), :root[data-host] .shell--website:has(.ios-page) > .main { background: var(--ios-bg); }
 
   /* The purchase pages (purchase-phone.scss): the read view's dock and the editor's save bar are the host's items
      (Bewerken and the step's button, Opslaan; the save bar's state text and its fill hairline go with it, the summary
