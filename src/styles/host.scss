@@ -55,8 +55,9 @@
   /* The product editor's phone tabs (product-editor-workspace.scss): they stuck under the now hidden
      .product-mobile-header, 44 px below the bar, with the form scrolling past in that gap and beside the pill.
      Flush under the bar, glass across the page (the page is 14 px in from the column's edges), in the editor's own
-     lighter page colour. The pill itself stays opaque, as it is in the PWA. */
-  :root[data-host] .product-editor-page > .subnav.erp-workspace__nav { top: var(--safe-t); isolation: isolate; }
+     lighter page colour. The pill itself stays opaque, as it is in the PWA. The id: the editor's phone rules sit
+     under #product-editor-workspace (1,3,0), so the top needs it to win. */
+  :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav { top: var(--safe-t); isolation: isolate; }
   :root[data-host] .product-editor-page > .subnav.erp-workspace__nav::before {
     content: '';
     position: absolute;
