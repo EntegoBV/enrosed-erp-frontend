@@ -27,9 +27,9 @@
 /* The nav's buttons and the stuck tabs sit inside that padding while always in view: their scroll area moves down
    past the part of it they sit in (nav + tabs for a nav button, the tabs for a tab), the same height so it never
    inverts. A Tab or Shift+Tab onto them, or a sheet handing focus back to its button, leaves the page and the stuck
-   bar where they are. Tabs only once stuck (the nav has condensed by then): lower down they are plain content. */
+   bar where they are. Tabs only once stuck: lower down they are plain content. */
 .mpo-phone .ios-nav :is(a,button){scroll-margin:calc(-1 * (var(--ios-nav-h) + var(--mpo-tabs-h))) 0 calc(var(--ios-nav-h) + var(--mpo-tabs-h))}
-.mpo-phone .ios-nav--condensed~.mpo-tabs [role="tab"]{scroll-margin:calc(-1 * var(--mpo-tabs-h)) 0 var(--mpo-tabs-h)}
+.mpo-phone .ios-nav--stuck~.mpo-tabs [role="tab"]{scroll-margin:calc(-1 * var(--mpo-tabs-h)) 0 var(--mpo-tabs-h)}
 :is(app-purchase-view,app-purchase-editor) .mpo-wrap{overflow:visible;overflow-wrap:anywhere;text-overflow:clip;white-space:normal}
 /* The supplier's address in the Order pane wraps instead of ending in an ellipsis (it was cut at 360 px). */
 app-purchase-editor .mpo-address,app-purchase-editor .mpo-address .supplier-address.supplier-address--inline,app-purchase-editor .mpo-address .supplier-address.supplier-address--inline span{min-width:0;overflow:visible;text-overflow:clip;white-space:normal}

@@ -27,7 +27,15 @@ import { observeMirror } from './host-page';
  * as a segmented filter (wrap it in <div class="ios-subbar">). The host is
  * display:contents, so the bar and the subbar stick against the page.
  * With customLarge, [hero] replaces the large title with the screen's own
- * block; the bar condenses once it has scrolled away.
+ * block; the bar condenses once the block's own h1 has gone under it (the
+ * block can be tall: the small title used to come only after all of it), or
+ * once the whole block has when it has no h1.
+ *
+ * Two states: `condensed` (the title is gone, the bar has taken it over) and
+ * `stuck` (the [below] sub-bar stands on its sticky line: the sentinel right
+ * above it has passed that line, the sub-bar's own computed top, which in the
+ * native host is not always the bar's height). The bar carries them as
+ * ios-nav--condensed and ios-nav--stuck, with ios-nav--large on a large title.
  *
  * backLabel null shows no back button, '' a glass circle with a chevron,
  * any text a glass capsule. With backUrl the button navigates there;
@@ -39,12 +47,19 @@ import { observeMirror } from './host-page';
  * the screen's explicit `[host]` items (delivered through `(hostAction)`)
  * or a mirror of the projected [lead]/[trail] buttons.
  */
+/** Where the [below] sub-bar sticks (the sentinel's next sibling): its own computed top; the bar's height without one. */
+function stickLine(sentinel: HTMLElement, bar: HTMLElement): number {
+  const below = sentinel.nextElementSibling;
+  const top = below ? parseFloat(getComputedStyle(below).top) : NaN;
+  return Math.round(Number.isNaN(top) ? bar.getBoundingClientRect().height : top);
+}
+
 @Component({
   selector: 'app-ios-nav',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon],
   template: `
-    <header #bar class="ios-nav" [class.ios-nav--condensed]="condensed() || !large">
+    <header #bar class="ios-nav" [class.ios-nav--large]="large" [class.ios-nav--condensed]="condensed() || !large" [class.ios-nav--stuck]="stuck()">
       <div class="ios-nav__lead">
         @if (backLabel() === '') {
           <button class="ios-circle" type="button" [attr.aria-label]="backAriaLabel()" (click)="goBack()">
@@ -96,6 +111,9 @@ export class IosNav {
   private readonly condensedState = signal(false);
   /** True once the large title has scrolled under the bar. */
   readonly condensed = this.condensedState.asReadonly();
+  private readonly stuckState = signal(false);
+  /** True once the [below] sub-bar has reached its sticky line. */
+  readonly stuck = this.stuckState.asReadonly();
 
   private readonly bar = viewChild.required<ElementRef<HTMLElement>>('bar');
   private readonly sentinel = viewChild<ElementRef<HTMLElement>>('sentinel');
@@ -105,8 +123,8 @@ export class IosNav {
   constructor() {
     const destroyRef = inject(DestroyRef);
     const bridge = inject(HostBridge);
+    const element = inject<ElementRef<HTMLElement>>(ElementRef);
     if (bridge.present) {
-      const element = inject<ElementRef<HTMLElement>>(ElementRef);
       const mirror = observeMirror(element, destroyRef, {
         scopes: () => Array.from(element.nativeElement.querySelectorAll('.ios-nav__lead, .ios-nav__trail')),
         /* The back control is the host's own; a projected [lead] capsule is not. */
@@ -131,13 +149,16 @@ export class IosNav {
         onBack: () => this.goBack(),
       });
     }
-    let stop: (() => void) | null = null;
+    const stops: (() => void)[] = [];
     afterNextRender(() => {
       const sentinel = this.sentinel()?.nativeElement;
       if (!sentinel) return;
-      stop = observeLargeTitle(this.bar().nativeElement, sentinel, (condensed) => this.condensedState.set(condensed));
+      const bar = this.bar().nativeElement;
+      const heroTitle = this.custom ? element.nativeElement.querySelector<HTMLElement>('[hero] h1') : null;
+      stops.push(observeLargeTitle(bar, heroTitle ?? sentinel, (condensed) => this.condensedState.set(condensed)));
+      stops.push(observeLargeTitle(bar, sentinel, (stuck) => this.stuckState.set(stuck), () => stickLine(sentinel, bar)));
     });
-    destroyRef.onDestroy(() => stop?.());
+    destroyRef.onDestroy(() => stops.forEach((stop) => stop()));
   }
 
   /** largeTitle() at the first render, kept from then on. */
