@@ -2019,7 +2019,7 @@ export class ProductEditor implements OnDestroy {
     const toProduct = !isNew && ready;
     return {
       title: ready ? (draft.name || 'Nieuw product') : 'Product laden',
-      subtitle: this.dockPhotoNote() ? 'Foto’s worden meteen bewaard' : busy ? this.saveActionLabel() : dirty ? 'Wijzigingen klaar' : isNew ? 'Nieuw product' : 'Alles opgeslagen',
+      subtitle: this.dockPhotoNote() ? 'Foto’s worden meteen bewaard' : busy ? this.saveActionLabel() : dirty ? 'Wijzigingen klaar' : isNew ? (draft.name ? 'Nieuw product' : '') : 'Alles opgeslagen',
       back: { label: toProduct ? 'Product' : 'Producten', url: toProduct ? `/products/${draft.id}` : '/products' },
       primary: { id: 'save', label: isNew ? 'Aanmaken' : 'Opslaan', symbol: isNew ? 'plus' : 'checkmark', disabled: busy || !dirty },
       actions: [],
