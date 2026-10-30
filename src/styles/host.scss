@@ -165,6 +165,23 @@
   }
   :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }
 
+  /* Sheets on a phone (Emre, 2026-10-30: "de popups dichtgeklapt zijn niet correct alsook niet mooi"): a floating card,
+     as iOS 26 draws them and as the wide phone already does (styles.scss, workspace-kit.scss; 16 and 12 px there): 8 px
+     off the sides of the content area (the strip stays outside it), 8 px above the home indicator, every corner round,
+     its top clear of the bar. The overlay carries the insets, so the card pads nothing and nothing stands under the
+     home indicator. The grab, the head drag and mo-sheet-in stay as they are. */
+  @media (max-width: 599.98px) {
+    :root[data-host] .overlay { padding: 0 calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px); }
+    :root[data-host] .sheet { max-height: min(92dvh, calc(100dvh - var(--safe-t) - var(--safe-b) - 16px)); border-radius: var(--r-lg); padding-bottom: 0; }
+    /* The sheet clips nothing (a clip would cut focus rings): the foot's background takes the corners. */
+    :root[data-host] .overlay .sheet__foot { padding-bottom: 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+    :root[data-host] .sheet.sheet--ios { border-radius: 26px; }
+    :root[data-host] .sheet--ios .sheet__foot { padding-bottom: 12px; }
+    :root[data-host] .sheet--ios .sheet__foot, :root[data-host] .sheet--ios .sheet__foot::before { border-radius: 0 0 26px 26px; }
+    /* Without a foot the scrolling body is the card's end: its rows clip on the corners. */
+    :root[data-host] .sheet--ios:has(.sheet__foot:empty) .sheet__body { padding-bottom: 16px; border-radius: 0 0 26px 26px; }
+  }
+
   /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
   :root[data-host] body:not(:has(.ios-toolbar)) .ios-page { padding-bottom: calc(var(--safe-b) + 28px); }
   :root[data-host] .home-phone { --ios-tabbar-h: 0px; }
