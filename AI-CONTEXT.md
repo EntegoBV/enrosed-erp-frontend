@@ -157,7 +157,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 958.21 kB (186.95 kB transfer, 12 files; 956.73 kB before the glass bands, the home rows and the large-title hysteresis of 2026-10-30; main 951.05 kB in 9): the baseline from now on.
+initial total is 959.02 kB (187.00 kB transfer, 12 files; 958.21 kB before the detail screens' host rules of 2026-10-30, 956.73 kB before the glass bands, the home rows and the large-title hysteresis of that day; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -711,9 +711,9 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 958.21 kB since the glass bands, the home rows and the
-large-title hysteresis of 2026-10-30, well under the 1 MB error budget:
-the baseline to track.
+facade) and is 959.02 kB since the glass bands, the home rows, the
+large-title hysteresis and the detail screens' host rules of 2026-10-30,
+well under the 1 MB error budget: the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -818,28 +818,37 @@ Opslaan).
 **host.scss** (`styles/host.scss`, loaded last, every selector under
 `:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--safe-t)`; `.tabbar`,
 `.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the probe
-and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`,
-`.product-mobile-header`, `.product-editor-dock`, `.safe-paint` gone; the
-`.appbar` and `.ios-nav` bars become transparent spacers of height
+and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`, the
+PO editor's whole `.mpo-savebar` (its state text and fill hairline with it;
+the summary card's Lading tile has the fill), `.product-editor-dock`,
+`.safe-paint` gone; the `.appbar` and `.ios-nav` bars and the product
+editor's `.product-mobile-header` become transparent spacers of height
 `--safe-t` (the native status bar + navigation bar, since the shell sets
-`contentInsetAdjustmentBehavior = .never`), their children hidden, the
-large titles and `[hero]` / `[below]` blocks kept; the editors' docks lose
-their buttons and keep step and status (the PO save bar keeps its fill
-meter). Sheets and toasts already follow `--safe-b`. The sticky bands
-(2026-10-30, Emre's "T" on Documenten: the clear native bar over an opaque
-beige sub-bar, beside the beige strip next to the white rows): every
-`.ios-subbar` sticks flush under the bar (`top: --safe-t`, no gap) as
-glass in the page colour (the kit's `--ios-glass`: 72 % `--ios-bg` on a
-20 px blur, the blur on the `::before` only) with a .5 px `--ios-sep`
-hairline once the title has condensed (`.ios-nav--condensed ~ .ios-subbar`:
-the sentinel sits right above the sub-bar, so condensed means stuck); the
-Agenda's folded week slot (`.home-agenda__fold`) sticks at `--safe-t` too;
-the product editor's phone tabs (`.product-editor-page > .subnav`), which
-stuck 44 px below the bar under the hidden `.product-mobile-header` with the
-form scrolling past in that gap, stick flush under the bar with a glass
-`::before` across the page (`inset: 0 -14px`, the editor's lighter page
-colour). The PWA's own condensed nav and sub-bars are the same glass since
-that day (workspace-kit.scss), so the two modes read alike.
+`contentInsetAdjustmentBehavior = .never`; the editor's `--product-header-h`
+is `--safe-t` there, so its tabs' top and its scroll margins follow), their
+children hidden, the large titles and `[hero]` / `[below]` blocks kept; the
+sales editor's dock loses Opslaan and the primary button and keeps the step
+and its arrows. The room the phone pages kept at their end for the ERP tab
+bar and their docks is the kit page's `--safe-b + 28px` (`.ios-page`,
+`.mpo-phone--view` / `--edit` with the purchase root's scroll-padding-bottom,
+`app-sales-view .content.erp-workspace`, `.content.product-editor-page`);
+the sales editor keeps its 128 px for its dock. Sheets and toasts already
+follow `--safe-b`. The sticky bands (2026-10-30, Emre's "T" on Documenten:
+the clear native bar over an opaque beige sub-bar, beside the beige strip
+next to the white rows): every `.ios-subbar` sticks flush under the bar
+(`top: --safe-t`, no gap) as glass in the page colour (the kit's
+`--ios-glass`: 72 % `--ios-bg` on a 20 px blur, the blur on the `::before`
+only) with a .5 px `--ios-sep` hairline once the title has condensed
+(`.ios-nav--condensed ~ .ios-subbar`: the sentinel sits right above the
+sub-bar, so condensed means stuck); the Agenda's folded week slot
+(`.home-agenda__fold`) sticks at `--safe-t` too; the product editor's phone
+tabs (`.product-editor-page > .subnav`), which stuck 44 px below the bar
+under the hidden `.product-mobile-header` with the form scrolling past in
+that gap (and the identity row under the bar on a Pro Max, until the header
+became the spacer), stick flush under the bar with a glass `::before` across
+the page (`inset: 0 -14px`, the editor's lighter page colour). The PWA's own
+condensed nav and sub-bars are the same glass since that day
+(workspace-kit.scss), so the two modes read alike.
 
 **Checking** (headless, no device needed): `node tools/check-host.mjs --out
 <dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
