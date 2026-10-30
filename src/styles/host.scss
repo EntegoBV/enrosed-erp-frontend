@@ -36,7 +36,36 @@
   :root[data-host] .ios-nav { display: block; height: var(--safe-t); padding: 0; }
   :root[data-host] .ios-nav::before { display: none; }
   :root[data-host] .ios-nav > :is(.ios-nav__lead, .ios-nav__title, .ios-nav__trail) { display: none; }
+
+  /* The sticky bands under the native bar (Emre, 2026-10-30: the clear native bar over an opaque beige sub-bar and
+     the beige beside the white rows drew a "T"). Every band sticks flush under the bar (top: --safe-t, no gap) and is
+     glass in the page colour: 72 % --ios-bg on a 20 px blur (workspace-kit.scss --ios-glass, the PWA's own bands
+     since the same day), so the rows scroll through it as they do through the bar's scroll-edge blur, and a .5 px
+     hairline closes it once the title has condensed (the bar is stuck by then: the sentinel sits right above it).
+     The blur stays on the ::before (trap rule). */
   :root[data-host] .ios-subbar { top: var(--safe-t); }
+  :root[data-host] .ios-subbar::before {
+    background: var(--ios-glass);
+    backdrop-filter: var(--ios-glass-filter);
+    -webkit-backdrop-filter: var(--ios-glass-filter);
+  }
+  :root[data-host] .ios-nav--condensed ~ .ios-subbar::before { border-bottom: .5px solid var(--ios-sep); }
+  /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
+  :root[data-host] .home-agenda__fold { top: var(--safe-t); }
+  /* The product editor's phone tabs (product-editor-workspace.scss): they stuck under the now hidden
+     .product-mobile-header, 44 px below the bar, with the form scrolling past in that gap and beside the pill.
+     Flush under the bar, glass across the page (the page is 14 px in from the column's edges), in the editor's own
+     lighter page colour. The pill itself stays opaque, as it is in the PWA. */
+  :root[data-host] .product-editor-page > .subnav.erp-workspace__nav { top: var(--safe-t); isolation: isolate; }
+  :root[data-host] .product-editor-page > .subnav.erp-workspace__nav::before {
+    content: '';
+    position: absolute;
+    inset: 0 -14px;
+    z-index: -1;
+    background: color-mix(in srgb, color-mix(in srgb, var(--bg) 65%, var(--surface)) 72%, transparent);
+    backdrop-filter: var(--ios-glass-filter);
+    -webkit-backdrop-filter: var(--ios-glass-filter);
+  }
 
   /* The editors' docks keep their step and status; the host has Opslaan and the step's button. */
   :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }

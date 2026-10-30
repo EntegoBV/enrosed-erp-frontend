@@ -39,8 +39,9 @@
 :root{--wk-bg:#f7f5f2;--wk-bar-h:52px;--wk-head-h:32px;--wk-row-h:40px;--wk-status-h:30px;--wk-inspector-w:360px;--wk-gap:12px;--wk-pad-x:16px;--wk-radius:9px;--wk-focus:0 0 0 3px color-mix(in srgb,var(--rose) 22%,transparent);
  --wk-side-bg:#171311;--wk-side-ink:rgb(255 255 255/72%);--wk-side-muted:rgb(255 255 255/40%);--wk-side-line:rgb(255 255 255/10%);--wk-side-hover:rgb(255 255 255/7%);--wk-side-active-bg:color-mix(in srgb,var(--rose-mid) 26%,transparent);--wk-side-active-ink:color-mix(in srgb,var(--rose-mid) 40%,#fff);
  --ios-bg:#f2efeb;--ios-sep:rgb(60 50 45/16%);--ios-radius:22px;--ios-inset:16px;--ios-row:52px;--ios-nav-h:44px;--ios-tabbar-h:60px;
+ --ios-glass:color-mix(in srgb,var(--ios-bg) 72%,transparent);--ios-glass-filter:blur(20px) saturate(1.6);
  --glass-bg:color-mix(in srgb,var(--surface) 72%,transparent);--glass-bg-strong:color-mix(in srgb,var(--surface) 86%,transparent);--glass-filter:blur(24px) saturate(1.6);--glass-edge:rgb(255 255 255/60%);--glass-shadow:0 8px 28px rgb(26 22 20/14%),0 1px 2px rgb(26 22 20/6%);--glass-highlight:inset 0 1px 0 rgb(255 255 255/75%)}
-@media (prefers-reduced-transparency:reduce){:root{--glass-bg:var(--surface);--glass-bg-strong:var(--surface);--glass-filter:none}}
+@media (prefers-reduced-transparency:reduce){:root{--glass-bg:var(--surface);--glass-bg-strong:var(--surface);--glass-filter:none;--ios-glass:var(--ios-bg);--ios-glass-filter:none}}
 /* The wide phone (600-1023 px, hover: none): an unfolded iPhone Duo (669 upright, 951 sideways), a landscape iPhone,
    an upright iPad. Two numbers: the page column that .content, .ios-page and the phone purchase order centre on, and
    the width of every floating bar (the ERP tab bar, the kit bars, the '+' beside them, the docks, the toasts).
@@ -253,11 +254,14 @@ body:has(.ios-page){background:var(--ios-bg)}
 
 /* ================= PHONE (ios-*) ================= */
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
-/* The status area, condensed title and sticky controls share the page canvas.
-   Keep glass on controls only: translucent bands change colour as cards pass underneath. */
+/* The condensed bar and the sticky sub-bar are glass in the page colour (iOS 26: the rows show through, blurred;
+   Emre, 2026-10-30, after the native shell's clear bar sat over an opaque beige sub-bar). The tint is 72 % --ios-bg
+   on a 20 px blur, so over the beige canvas a band is the canvas and over cards it lightens a shade. The blur sits on
+   the ::before only (trap rule) and fades in with the tint. The small title and the segment stay readable over it
+   (checked at 382 and 390 px). */
 .ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) 8px 0}
-.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg);opacity:0;transition:opacity var(--dur-2,.18s) var(--ease-out,ease)}
-.ios-nav--condensed::before{opacity:1}
+.ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-glass);opacity:0;backdrop-filter:blur(0px) saturate(1);-webkit-backdrop-filter:blur(0px) saturate(1);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),backdrop-filter var(--dur-2,.18s) var(--ease-out,ease),-webkit-backdrop-filter var(--dur-2,.18s) var(--ease-out,ease)}
+.ios-nav--condensed::before{opacity:1;backdrop-filter:var(--ios-glass-filter);-webkit-backdrop-filter:var(--ios-glass-filter)}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
 .ios-nav__title{min-width:0;max-width:100%;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed .ios-nav__title{opacity:1;transform:none}
@@ -265,12 +269,12 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-large__title{margin:0;color:var(--ink);font-size:34px;font-weight:800;letter-spacing:-.03em;line-height:1.12;overflow-wrap:anywhere}
 .ios-large__sub{margin:3px 0 0;color:var(--muted);font-size:13px;line-height:1.35}.ios-large__sentinel{height:1px;margin-top:-1px}
 .ios-subbar{position:sticky;top:calc(var(--ios-nav-h) + var(--safe-t));z-index:29;padding:6px var(--ios-inset) 10px}
-.ios-subbar::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-bg)}
+.ios-subbar::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-glass);backdrop-filter:var(--ios-glass-filter);-webkit-backdrop-filter:var(--ios-glass-filter)}
 /* The wide phone: a kit page is one centred column (the two pages that go two-column, the home and Analyses, lift this
    cap in their own partials). The sticky nav, the large title and every group move with it; its fixed children
    (.ios-accessory, .ios-tabbar, .ios-float) are viewport-positioned and unaffected - no transform, filter or container
-   may ever be added to .ios-page. The nav's ::before is opaque --ios-bg, the same beige as the body, so a
-   column-wide bar reads as full width. */
+   may ever be added to .ios-page. The nav's glass is --ios-bg over the beige body beside the column, so a column-wide
+   bar reads as full width. */
 @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .ios-page{max-width:var(--page-col,760px);margin-inline:auto} }
 /* glass buttons: 44px hit area, 36px visual */
 .ios-circle{position:relative;isolation:isolate;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
