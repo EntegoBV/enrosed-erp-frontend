@@ -8,15 +8,19 @@
  *        [--routes /dashboard,/sales,...] [--poses 951x669@0.84.34.0,...] [--chrome <binary>]
  *        [--contract tools/host-contract.json] [--no-interact]
  *
- * Per pose (WxH@top.right.bottom.left safe-area insets, as the Duo's strip
- * poses give them) it installs, before any script of the page, a stub of
- * what the Swift shell injects: window.enrosedHost (receive/on/ready) and
- * window.webkit.messageHandlers.enrosed / enrosedAsk, which log every
- * message into window.__hostLog; the user agent carries the EnrosedHost/1
- * suffix. Per route: screenshot, the log dumped, every message validated
- * against tools/host-contract.json, the web chrome checked hidden and the
- * content checked clear of the strip. On the first pose a few commands are
- * exercised (a title-menu row, back, tabRoot, refresh).
+ * Per pose (WxH@top.right.bottom.left safe-area insets, as the web view gets
+ * them: a Duo strip pose has 24 on top, a Pro Max 116) it installs, before any
+ * script of the page, a stub of what the Swift shell injects: window.enrosedHost
+ * (receive/on/ready) and window.webkit.messageHandlers.enrosed / enrosedAsk,
+ * which log every message into window.__hostLog; the user agent carries the
+ * EnrosedHost/1 suffix. The stub answers ready with the `insets` command as the
+ * shell does: the window's insets, so top 0 on a strip pose. Per route:
+ * screenshot, the log dumped, every message validated against
+ * tools/host-contract.json, the web chrome checked hidden, the content checked
+ * clear of the strip and the spacer checked: the top inset, on a strip pose the
+ * constant of styles/host.scss (24 beside a large title, 82 with the bar's title
+ * always on). On the first pose a few commands are exercised (a title-menu row,
+ * back, tabRoot, refresh).
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -36,7 +40,7 @@ const DEVICE = arg('--device', 'duo');
 const CONTRACT = JSON.parse(fs.readFileSync(path.resolve(arg('--contract', path.join(here, 'host-contract.json'))), 'utf8'));
 const ROUTES = arg('--routes', '/dashboard,/sales,/purchasing,/products,/more,/settings,/settings?sectie=device,/costs,/files,/website,/analyses/overview,/customers,/products/new,/login')
   .split(',').map((s) => s.trim()).filter(Boolean);
-const POSES = arg('--poses', '951x669@0.84.34.0,466x678@0.84.34.0,678x466@0.0.34.84,440x956@59.0.117.0,669x951@106.0.117.0').split(',').map((s) => {
+const POSES = arg('--poses', '951x669@24.84.34.0,466x678@24.84.34.0,678x466@24.0.34.84,440x956@116.0.83.0,669x951@116.0.83.0').split(',').map((s) => {
   const [size, ins] = s.split('@');
   const [w, h] = size.split('x').map(Number);
   const insets = (ins ?? '0.0.0.0').split('.').map(Number);
@@ -48,6 +52,8 @@ const QUIET_MS = 1200;
 const LOAD_TIMEOUT_MS = 20000;
 
 const poseTag = (p) => `${p.width}x${p.height}-in${p.insets.top}-${p.insets.right}-${p.insets.bottom}-${p.insets.left}`;
+/* The shell's BarLayout, read from the side insets (the web view's top inset is the bar's, the window's is 0 there). */
+const isStrip = ({ right, left }) => (right >= 72 && left <= 16) || (left >= 72 && right <= 16);
 const slug = (route) => route.replace(/^\//, '').replace(/[^a-z0-9]+/gi, '-').replace(/-$/, '') || 'root';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 fs.mkdirSync(OUT, { recursive: true });
@@ -65,7 +71,12 @@ const STUB = `(() => {
       if (handler) handler(command); else queue.push(command);
     },
     on(type, fn) { handlers[type] = fn; },
-    ready() { window.__hostReady = (window.__hostReady || 0) + 1; for (const command of queue.splice(0)) host.receive(command); },
+    ready() {
+      window.__hostReady = (window.__hostReady || 0) + 1;
+      for (const command of queue.splice(0)) host.receive(command);
+      const insets = window.__hostInsets;
+      if (insets) setTimeout(() => host.receive(JSON.stringify(insets)), 0);
+    },
   };
   window.__hostAskReplies = [];
   window.webkit = { messageHandlers: {
@@ -236,6 +247,9 @@ class Page {
     return false;
   }
   async pose({ width, height, insets }) {
+    if (this.insetsScript) await this.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: this.insetsScript });
+    const windowInsets = { type: 'insets', ...insets, top: isStrip(insets) ? 0 : insets.top };
+    this.insetsScript = (await this.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__hostInsets = ${JSON.stringify(windowInsets)};` })).identifier;
     await this.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: true, screenWidth: width, screenHeight: height });
     await this.send('Emulation.setSafeAreaInsetsOverride', { insets });
     await this.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
@@ -346,10 +360,11 @@ const summarise = (page) => page ? {
       row.page = summarise(last);
       row.pagesForUrl = pages.filter((p) => p.url === m.path).length;
       for (const msg of log) for (const err of validateMessage(msg)) row.contract.push(`${msg.type}: ${err}`);
+      const spacerWanted = isStrip(pose.insets) && last?.chrome ? (last.largeTitle ? 24 : 82) : pose.insets.top;
       row.checks = {
         stubSeen: !!m.log, hostMarked: m.host === 'ios', ready: (m.ready ?? 0) >= 1, readyMessage: log.some((msg) => msg.type === 'ready'),
         pageForUrl: !!last && last.url === m.path, webChromeHidden: !!m.webChrome?.allHidden, contentClear: Array.isArray(m.over) && m.over.length === 0,
-        spacerIsInset: !m.spacer || m.spacer.h === m.insetTop, noOverflowX: m.overflowX === false, noErrors: page.entries.filter((e) => e.kind === 'exception' || e.kind === 'console.error').length === 0,
+        spacerIsInset: !m.spacer || m.spacer.h === spacerWanted, noOverflowX: m.overflowX === false, noErrors: page.entries.filter((e) => e.kind === 'exception' || e.kind === 'console.error').length === 0,
       };
       row.webChrome = m.webChrome; row.over = m.over; row.spacer = m.spacer;
       row.console = page.entries.filter((e) => e.kind === 'exception' || e.kind === 'console.error').map((e) => e.text.slice(0, 200));
