@@ -182,6 +182,10 @@
     :root[data-host] .sheet--ios:has(.sheet__foot:empty) .sheet__body { padding-bottom: 16px; border-radius: 0 0 26px 26px; }
   }
 
+  /* A swipe row: the row is a composited layer that snaps to whole device pixels, so the coloured buttons behind it peeked
+     out under its last pixel, a blue and an orange line under Documenten's rows (seen in the simulators). */
+  :root[data-host] .ios-swipe__actions { bottom: 1px; }
+
   /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
   :root[data-host] body:not(:has(.ios-toolbar)) .ios-page { padding-bottom: calc(var(--safe-b) + 28px); }
   :root[data-host] .home-phone { --ios-tabbar-h: 0px; }
