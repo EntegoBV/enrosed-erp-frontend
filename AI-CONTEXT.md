@@ -965,8 +965,16 @@ limited to `100dvh - --safe-t - --safe-b - 16px`, the foot's bottom padding 12 p
 and its corners with the card, a foot-less body clips its rows on the corners.
 Grab, head drag and `mo-sheet-in` are untouched. The native band goes while a sheet
 is open (its glass stood out above the dim), so in the bars poses on a page with a
-bar `.overlay::before` keeps the top inset the plain page under the dim, no rows under
-the clock. Voorraad boeken's select keeps no room for a chevron the phone's rows do
+bar one stripe (`:has(.overlay) .main::before`, fixed, as high as the top inset) keeps
+the top inset the plain page, no rows under the clock. It stands under every dim
+(z-index 59: above the rows, under the header's stacking context of 60, which holds the
+bell's sheet, and the overlay's 100), so it dims with the page at rest, while a sheet is
+dragged (`Sheet.placeSheet` lightens the overlay) and under a sheet on a sheet (92 87 85
+both on /stock's Voorraad boeken); it is there from the sheet's first frame and goes when
+its leave has ended, it does not fade. On the product editor it is the editor's lighter
+page colour (`--ios-bg` left a straight seam across the window, 145 against 149 under the
+dim). Under a stuck band it stays the plain page, 4 levels under the dim against the
+band's lighter tone (145 against 149 on Documenten). Voorraad boeken's select keeps no room for a chevron the phone's rows do
 not draw: "Magazijn Lokeren (288 stuks)" fits the 366 px card. Folded sideways the
 purchase order's fill line wraps (`[data-host-strip] .mpo-fillrow__line`): the column
 is 594 px in a 678 px window and "15,180 m³ vrij" ran out of the card.

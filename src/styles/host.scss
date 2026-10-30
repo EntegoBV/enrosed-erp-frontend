@@ -193,6 +193,8 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
     :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
     /* The editor's lighter page colour runs on under the side strip: without it the strip stood beige beside it. */
     :root[data-host] .shell:has(#product-editor-workspace) { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
+    /* The plain top under a sheet (below) is that colour too: --ios-bg stood a straight seam across the window. */
+    :root[data-host][data-host-bar]:not([data-host-strip]):has(.overlay) .shell:has(#product-editor-workspace) .main::before { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
   }
   /* The same seam on Website beheren: its shell and main are the desk's lighter tones (styles.scss), its phone pages the kit's. */
   :root[data-host] .shell--website:has(.ios-page), :root[data-host] .shell--website:has(.ios-page) > .main { background: var(--ios-bg); }
@@ -261,15 +263,17 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
   }
 
   /* Scrolled, the native band goes while a sheet is open (WebSession.setSheetOpen: its glass stood out above the dim), so in
-     the bars poses the rows ran on under the status bar, the clock over their text. The top inset stays the plain page under
-     the dim, as at the top of a page. A strip pose has nothing over the page up there, a page without chrome no bar. */
-  :root[data-host][data-host-bar]:not([data-host-strip]) .overlay::before {
+     the bars poses the rows ran on under the status bar, the clock over their text. The top inset stays the plain page, as at
+     the top of a page: one stripe under every dim, so it dims with the page while a sheet is dragged (Sheet.placeSheet lightens
+     the overlay) and under a sheet on a sheet. Its 59 is above the rows and under the header's stacking context (60, it holds the
+     bell's sheet) and the overlay's 100. A strip pose has nothing over the page up there, a page without chrome no bar. */
+  :root[data-host][data-host-bar]:not([data-host-strip]):has(.overlay) .main::before {
     content: '';
-    position: absolute;
+    position: fixed;
     inset: 0 0 auto;
-    z-index: -1;
+    z-index: 59;
     height: var(--safe-t);
-    background: color-mix(in srgb, rgb(26 22 20) 45%, var(--ios-bg));
+    background: var(--ios-bg);
   }
   /* The location in Voorraad boeken: a select cannot wrap, and without its chevron (the phone's plain rows) it needs no room
      for one: "Magazijn Lokeren (288 stuks)" was cut on the narrower card. */
