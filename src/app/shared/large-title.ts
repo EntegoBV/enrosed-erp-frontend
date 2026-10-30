@@ -18,6 +18,13 @@
  */
 const RELEASE_PX = 24;
 
+/**
+ * The observers' root runs on this far below the viewport. An observer only speaks when the intersection changes: a
+ * sentinel below the fold at the top of the page (the sales steps at 678 px high) that a jump takes past the line, or a
+ * jump takes back, would never have intersected a root that ends at the viewport's bottom, and the state stayed wrong.
+ */
+const BELOW_FOLD_PX = 100000;
+
 /** The host's marks on <html> that move the strip poses' top offsets without resizing a bar (styles/host.scss). */
 const HOST_LINE_MARKS = ['data-host-strip', 'data-host-bar'];
 
@@ -66,17 +73,17 @@ export function observeLargeTitle(
     const atTop = Math.floor(sentinel.getBoundingClientRect().bottom + (sentinel.ownerDocument.defaultView?.scrollY ?? 0)) - height - 1;
     release = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) set(false);
-    }, { rootMargin: `-${height + Math.max(0, Math.min(RELEASE_PX, atTop))}px 0px 0px 0px`, threshold: 0 });
+    }, { rootMargin: `-${height + Math.max(0, Math.min(RELEASE_PX, atTop))}px 0px ${BELOW_FOLD_PX}px 0px`, threshold: 0 });
     release.observe(sentinel);
   };
   const start = (): void => {
     condense?.disconnect();
     height = measure();
     /* Gone under the line: the sentinel has left the root that starts there, upwards (touching that edge still counts
-       as intersecting; below the viewport it is not condensed either). */
+       as intersecting). */
     condense = new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting && entry.boundingClientRect.top < height) set(true);
-    }, { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 });
+    }, { rootMargin: `-${height}px 0px ${BELOW_FOLD_PX}px 0px`, threshold: 0 });
     condense.observe(sentinel);
     armRelease();
   };
