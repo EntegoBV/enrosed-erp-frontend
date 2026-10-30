@@ -2339,6 +2339,8 @@ export class ProductEditor implements OnDestroy {
   private readonly savedProductFamilyId = signal<number | null>(null);
   private productLoadVersion = 0;
   private activeProductId: number | null = null;
+  /** On its way from a new product's entry to the product that entry already created: nothing here to ask about. */
+  private openingCreatedProduct = false;
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
@@ -2774,6 +2776,12 @@ export class ProductEditor implements OnDestroy {
           this.productLoading.set(false);
           this.productLoadError.set(null);
           this.activeProductId = null;
+          /* A reload of, or a return to, a new product's entry that already got its id (rememberCreatedProduct): that product. */
+          const created = (this.location.getState() as { createdProductId?: unknown } | null)?.createdProductId;
+          if (typeof created === 'number') {
+            this.openingCreatedProduct = true;
+            queueMicrotask(() => void this.router.navigate(['/products', created, 'edit'], { replaceUrl: true, queryParamsHandling: 'preserve' }));
+          }
         }
       });
     });
@@ -3795,7 +3803,8 @@ export class ProductEditor implements OnDestroy {
       }
       this.savedHere.set(true);
       if (saved.id !== null) { void this.loadStockHistory(saved.id); void this.loadStockLevels(saved.id); }
-      if (wasNew && saved.id !== null) {
+      /* Also a later try of a new product whose first save only got half way: until now it stood on /products/new. */
+      if (saved.id !== null && (!this.id() || this.id() === 'new')) {
         await this.router.navigate(['/products', saved.id, 'edit'],
           { replaceUrl: true, state: { savedHere: true } });
       }
@@ -3926,7 +3935,7 @@ export class ProductEditor implements OnDestroy {
       websiteStatus: product.websiteStatus,
       orderAppStatus: product.orderAppStatus,
     });
-    if (created.id !== null) this.replaceNewProductUrl(created.id);
+    if (created.id !== null) this.rememberCreatedProduct(created.id);
 
     if (created.id !== null && !await this.flushPendingPhotos(photoManager, created.id, true)) {
       return null;
@@ -3984,12 +3993,15 @@ export class ProductEditor implements OnDestroy {
     return false;
   }
 
-  /** Keep the assigned id on refresh without destroying the local photo queue. */
-  private replaceNewProductUrl(productId: number): void {
-    const currentUrl = this.location.path(true);
-    const queryStart = currentUrl.indexOf('?');
-    const query = queryStart < 0 ? '' : currentUrl.slice(queryStart + 1);
-    this.location.replaceState(`/products/${productId}/edit`, query);
+  /**
+   * Keep the assigned id on refresh without destroying the local photo queue: it goes with this history entry (the effect
+   * in the constructor reads it) and the URL stays the router's. The address bar with the new id left the router on
+   * /products/new, so a refused back, which comes forward to this entry again, was a navigation to another screen: the
+   * leave question a second time, and Niet opslaan reopened the product instead of leaving. save() navigates when all went well.
+   */
+  private rememberCreatedProduct(productId: number): void {
+    const [path, query = ''] = this.location.path(true).split('?');
+    this.location.replaceState(path, query, { ...(this.location.getState() as object | null), createdProductId: productId });
   }
 
   remove(): void {
@@ -4014,6 +4026,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    if (this.openingCreatedProduct) return true;
     const channelPrices = this.channelPrices?.();
     if (channelPrices?.saving()) return false;
     if (channelPrices?.dirty()) return channelPrices.canDeactivate().then(allowed => allowed ? this.canDeactivate() : false);

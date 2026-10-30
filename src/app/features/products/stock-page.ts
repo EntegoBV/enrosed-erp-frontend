@@ -647,7 +647,7 @@ export class StockPage {
       const search = parts.join('&');
       untracked(() => {
         const [path, current = ''] = this.location.path().split('?');
-        if (path === '/stock' && current !== search) this.location.replaceState('/stock', search);
+        if (path === '/stock' && current !== search) this.location.replaceState('/stock', search, this.location.getState());
       });
     });
     void this.load();

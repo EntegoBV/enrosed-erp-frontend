@@ -1,8 +1,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Location } from '@angular/common';
-import { NavigationEnd, NavigationStart, Router } from '@angular/router';
+import { Location, ViewportScroller } from '@angular/common';
+import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, Router, Scroll } from '@angular/router';
 import {
-  currentNavEntry, emptyNavStack, hostStack, lastUrlFor, recordNavigation, screenBelow, screensBelow, upTarget,
+  currentNavEntry, emptyNavStack, hostStack, lastUrlFor, navPath, recordNavigation, screenBelow, screensBelow, upTarget,
 } from './nav-history';
 import type { NavRecord } from './nav-history';
 import { screenLabel } from './return-label';
@@ -28,8 +28,11 @@ import { screenLabel } from './return-label';
 export class NavHistory {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
+  private readonly scroller = inject(ViewportScroller);
   private readonly stack = signal(emptyNavStack());
   private pending: Omit<NavRecord, 'url'> | null = null;
+  /** A back the guard refused: where the page stood, until its way forward again has passed the router's scroller. */
+  private refused: { path: string; position: [number, number] } | null = null;
 
   readonly current = computed(() => currentNavEntry(this.stack())?.url ?? null);
   private readonly screenBelow = computed(() => screenBelow(this.stack()));
@@ -51,14 +54,34 @@ export class NavHistory {
           replace: !!(extras?.replaceUrl || extras?.skipLocationChange),
           restoredId: event.restoredState?.navigationId ?? null,
         };
+        if (event.navigationTrigger !== 'popstate') this.refused = null;
       } else if (event instanceof NavigationEnd) {
         const pending = this.pending?.id === event.id
           ? this.pending
           : { id: event.id, trigger: 'imperative' as const, replace: false, restoredId: null };
         this.pending = null;
         this.stack.update((stack) => recordNavigation(stack, { ...pending, url: event.urlAfterRedirects }));
+      } else if (event instanceof NavigationCancel) {
+        if (event.code === NavigationCancellationCode.GuardRejected && this.pending?.id === event.id && this.pending.trigger === 'popstate') {
+          this.refused = { path: navPath(this.router.url), position: this.scroller.getScrollPosition() };
+        }
+      } else if (event instanceof Scroll) {
+        this.keepRefusedPosition();
       }
     });
+  }
+
+  /**
+   * A refused back goes forward again (canceledNavigationResolution 'computed', app.config.ts) and the router's scroller
+   * sends that navigation to the top like any other: Annuleren on the leave question jumped to the top of the form. This
+   * event reaches us before the scroller's own listener, so the position goes back right after it, before a paint.
+   */
+  private keepRefusedPosition(): void {
+    const refused = this.refused;
+    this.refused = null;
+    if (refused && navPath(this.router.url) === refused.path) {
+      queueMicrotask(() => this.scroller.scrollToPosition(refused.position, { behavior: 'instant' }));
+    }
   }
 
   /** The last full URL seen for a path (with its query), or null. */

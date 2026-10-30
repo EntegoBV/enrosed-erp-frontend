@@ -1,7 +1,7 @@
 import { ApplicationConfig, ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import {
-  TitleStrategy, provideRouter, withComponentInputBinding, withInMemoryScrolling, withNavigationErrorHandler,
+  TitleStrategy, provideRouter, withComponentInputBinding, withInMemoryScrolling, withNavigationErrorHandler, withRouterConfig,
 } from '@angular/router';
 
 import { routes } from './app.routes';
@@ -42,6 +42,11 @@ export const appConfig: ApplicationConfig = {
       routes,
       withComponentInputBinding(),
       withInMemoryScrolling({ scrollPositionRestoration: 'top' }),
+      /* A back the guard refuses (the leave question's Annuleren) goes forward again to the entry it left. The default,
+         'replace', stays one entry lower and writes the editor's URL over that entry: NavHistory's steps no longer fit, so
+         the next back is dead or lands one screen too far. Every entry needs its ɵrouterPageId for this: a location.replaceState
+         of our own passes this.location.getState() along. */
+      withRouterConfig({ canceledNavigationResolution: 'computed' }),
       withNavigationErrorHandler((event) => {
         if (isStaleChunkError(event.error)) reloadForNewBuild();
       }),

@@ -672,7 +672,7 @@ export class ProductList implements ProductListTableHost {
     const [path, current = ''] = this.location.path().split('?');
     if (path !== '/products' || !this.router.url.startsWith('/products')) return;
     if ((current ? `?${current}` : '') === search) return;
-    this.location.replaceState('/products', search.slice(1));
+    this.location.replaceState('/products', search.slice(1), this.location.getState());
   }
 
   setQuery(value: string): void {
