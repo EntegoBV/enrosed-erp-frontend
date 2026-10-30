@@ -196,9 +196,13 @@
 
 /* ------------------------------------------------------------ phone header
    iOS 26: a 44 px bar. Root screens: transparent over a large title that
-   condenses into the canvas-coloured bar (the IosNav behaviour). Detail screens: the
+   condenses into the glass bar (the IosNav behaviour). Detail screens: the
    same bar from the start, title over subtitle. Glass capsules and
-   circles for back, actions and the bell. */
+   circles for back, actions and the bell. The bar's glass is the kit's
+   (workspace-kit.scss .ios-nav::before: --ios-glass, the page colour at
+   72 % on a 20 px blur, the blur on the ::before only, trap rule), so the
+   lists that still use app-page-header condense like the kit pages do; a
+   large title fades it in, the blur with it. */
 @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
   :root { --appbar-h: calc(44px + var(--safe-t)); }
   .appbar {
@@ -206,10 +210,16 @@
     padding: var(--safe-t) 8px 0;
   }
   .appbar::before {
-    background: var(--ios-bg);
-    transition: opacity var(--dur-2, .2s) var(--ease-out, ease);
+    background: var(--ios-glass);
+    backdrop-filter: var(--ios-glass-filter);
+    -webkit-backdrop-filter: var(--ios-glass-filter);
+    transition: opacity var(--dur-2, .2s) var(--ease-out, ease), backdrop-filter var(--dur-2, .2s) var(--ease-out, ease), -webkit-backdrop-filter var(--dur-2, .2s) var(--ease-out, ease);
   }
-  .appbar--large:not(.appbar--condensed)::before { opacity: 0; }
+  .appbar--large:not(.appbar--condensed)::before {
+    opacity: 0;
+    backdrop-filter: blur(0px) saturate(1);
+    -webkit-backdrop-filter: blur(0px) saturate(1);
+  }
   .appbar__back { flex: none; }
   .appbar__lead { flex: 1 1 auto; align-items: center; justify-content: center; padding: 0 4px; }
   .appbar__titles { flex: 0 1 auto; max-width: 100%; align-items: center; gap: 1px; text-align: center; }
