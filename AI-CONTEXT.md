@@ -157,7 +157,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 959.02 kB (187.00 kB transfer, 12 files; 958.21 kB before the detail screens' host rules of 2026-10-30, 956.73 kB before the glass bands, the home rows and the large-title hysteresis of that day; main 951.05 kB in 9): the baseline from now on.
+initial total is 960.01 kB (187.05 kB transfer, 12 files; 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -481,15 +481,24 @@ tiles); rows, forms, groups and cells keep the phone's layout; stretched
 segmented controls are capped at 480 px, left at the inset. Two columns only
 where two independent blocks sit side by side and the desk already proves
 the split, from 800 px (`(min-width: 800px) and (max-width: 1023.98px) and
-(hover: none)`): the home (rows of two since 2026-10-30: Kas | Agenda,
-Te doen | Cijfers, Meer cijfers across both on a subgrid with its search
-card left and its rows right; cells top-aligned, each row as high as its
-taller cell, so both columns end together and nothing sits on the hinge;
-the 8 px gutter on the hinge; the `.home-phone__body` / `__col` wrappers
-are blocks on narrower phones and `display: contents` only inside this
-query, the sections placed by `grid-column` / `grid-row`; the '+' stays a
-direct child of `.home-phone`) and Analyses (the desk's own `.an-col`
-pair). No list, document, form or sheet goes two-column.
+(hover: none)`): the home (since 2026-10-30, twice that day: Kas with
+Te doen right under it on the left, the Agenda beside them spanning both
+rows, the second row `1fr` so the Agenda's surplus height lands there and
+not half in the Kas row (a spanning item spreads its height over every
+intrinsic row it crosses), the shorter column simply ending earlier; then
+Cijfers across both columns, four blocks a row on five tracks: two
+quarter tracks per column (215 px at 951) around a 20 px gutter track that
+a `::before` keeps free in every row, so with the 10 px gaps beside it the
+blocks keep the other rows' 16 + 8 + 16 px gutter on the hinge (wide
+blocks span 2 there, the rows carry no gap of their own and the blocks a
+10 px bottom margin, since an empty spanned row would still open a gap);
+then Meer cijfers across both on a subgrid with its search card left and
+its rows right; cells top-aligned, nothing on the hinge; the
+`.home-phone__body` / `__col` wrappers are blocks on narrower phones and
+`display: contents` only inside this query, the sections placed by
+`grid-column` / `grid-row`; the '+' stays a direct child of
+`.home-phone`) and Analyses (the desk's own `.an-col` pair). No list,
+document, form or sheet goes two-column.
 
 **Hover gates.** WebKit keeps `:hover` on the last tapped element, so
 `:hover` rules a finger reaches sit in `@media (hover: hover)`; their
@@ -589,15 +598,18 @@ the upright poses (about 124 pt unfolded, 170 pt folded); folded sideways
 the status bar is hidden and native bars start 24 pt from the top, so the
 rail may reach up there. Two columns from 800 px (the home, Analyses)
 assume an 800 px page: with the lane and no strip they wait until 928 px
-(a sideways iPhone at 852 or 896 keeps one column), except on a Duo. On
+(a sideways iPhone at 852 or 896 keeps one column, the home's Cijfers
+blocks back in the kit's two columns), except on a Duo. On
 the unfolded Duo held sideways (`data-duo` and `(hover: none) and
 (orientation: landscape) and (min-width: 860px) and (max-width: 960px)
 and (min-height: 560px)`: the 867 px page beside the strip, or 951 with
 the strip as an inset) the split stands on the hinge, 475.5 pt from the
 page's left edge, not in the page's middle: the lane made the page
 narrower than the display and put the second column on the fold (Emre,
-2026-10-29). The right column takes the smaller share (311.5 px at 867,
-cards 279.5; 384 at 951). The same split holds inside the native host
+2026-10-29); nav-rail.scss sets the home's left track as `--home-col-1`,
+which the body and the Cijfers quarter tracks read (home-phone.scss),
+and Analyses' columns directly. The right column takes the smaller share
+(311.5 px at 867, cards 279.5; 384 at 951). The same split holds inside the native host
 (`:root[data-host][data-host-device='duo']`, since 2026-10-30: App skips
 the rail and the Duo status bar there, so neither `data-duo` nor
 `data-nav-rail` is set, and the Duo's page spans the 951 pt display with
@@ -660,10 +672,10 @@ iPhone Duo in the side strip, on a Pro Max as horizontal bars). Host mode
 is invisible without a host: a host-only change keeps the PWA
 pixel-identical (the pixel diff below), so every host style lives under
 `:root[data-host]` and every message behind `HostBridge.present`; a change
-meant for both (the glass bands and the home rows of 2026-10-30) may differ
-on exactly those shots and nowhere else, and the desk (1280×800) stays
-identical. Web changes for it go to production `main` only (no test
-environment for this work).
+meant for both (the glass bands, the home rows and the legacy bar's glass
+of 2026-10-30) may differ on exactly those shots and nowhere else, and the
+desk (1280×800) stays identical. Web changes for it go to production
+`main` only (no test environment for this work).
 
 **Detection and start** (`core/platform/host.ts`, pure): `window.enrosedHost`
 (the shell's document-start script) or the user-agent suffix
@@ -711,9 +723,10 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 959.02 kB since the glass bands, the home rows, the
-large-title hysteresis and the detail screens' host rules of 2026-10-30,
-well under the 1 MB error budget: the baseline to track.
+facade) and is 960.01 kB since the glass bands, the home rows (then the
+four-block Cijfers row), the large-title hysteresis, the detail screens'
+host rules and the legacy bar's glass of 2026-10-30, well under the 1 MB
+error budget: the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -848,7 +861,11 @@ that gap (and the identity row under the bar on a Pro Max, until the header
 became the spacer), stick flush under the bar with a glass `::before` across
 the page (`inset: 0 -14px`, the editor's lighter page colour). The PWA's own
 condensed nav and sub-bars are the same glass since that day
-(workspace-kit.scss), so the two modes read alike.
+(workspace-kit.scss), and so is the phone bar of the lists that still use
+`app-page-header` (shell.scss `.appbar::before`: `--ios-glass` with the
+blur, fading in with the large title, standing from the start on detail
+screens; it condensed opaque `--ios-bg` before), so the two modes and the
+two kinds of page read alike.
 
 **Checking** (headless, no device needed): `node tools/check-host.mjs --out
 <dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
