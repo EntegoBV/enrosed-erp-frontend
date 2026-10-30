@@ -160,7 +160,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 963.20 kB (187.44 kB transfer, 12 files; 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of 2026-10-30, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
+initial total is 967.09 kB (187.79 kB transfer, 12 files; 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -733,11 +733,11 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 963.20 kB since the glass bands, the home rows (then the
+facade) and is 967.09 kB since the glass bands, the home rows (then the
 four-block Cijfers row), the large-title hysteresis, the detail screens'
-host rules, the legacy bar's glass and the strip offsets, stuck bands, sales
-card and sheet cards of 2026-10-30, well under the 1 MB error budget: the
-baseline to track.
+host rules, the legacy bar's glass, the strip offsets, stuck bands, sales card
+and sheet cards and the bands' opaque rest, the sales steps' band and the card
+covers of 2026-10-30, well under the 1 MB error budget: the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -878,36 +878,62 @@ partials' `--safe-t + --ios-nav-h` (minimum heights, scroll padding) end on that
 line too. The flip changes no layout at all: not one rect in the shell moves
 when env() steps 24 → 82 → 24 at a scroll past it. Without chrome env() stays.
 Everything sticky takes the line: `.ios-subbar`, `.home-agenda__fold`, the
-sales view's section pill, the product editor's tabs (`--product-header-h`) and
-every `--appbar-h` consumer; what measures it in code reads the band's computed
-top, not the bar's height (`phoneStickPoint`, the agenda's fold, IosNav's
-`stuck`). The last direct readers of the top inset (the sales hero, the two
-photo lightboxes) go through `--safe-t`, the same value without a host.
+sales view's and editor's steps, the product editor's tabs
+(`--product-header-h`) and every `--appbar-h` consumer; what measures it in code
+reads the band's computed top, not the bar's height (`phoneStickPoint`, the
+agenda's fold, IosNav's `stuck`). A large title without a caption ends above that
+line (24 + 50 px), so above a sub-bar its block reaches 4 px past it
+(`.ios-large:has(~ .ios-subbar)`): Documenten's sub-bar stood stuck from the first
+frame otherwise. The last direct readers of the top inset (the sales hero, the two
+photo lightboxes) go through `--safe-t`, the same value without a host. The loading
+state of a screen with a `[hero]` (`app-ios-nav [heroLoading]`: purchase view and
+editor, product view) publishes the kind of page that is coming, `largeTitle` with
+no bar title: a title that comes with the push stays until the push has ended, also
+when the data is there at once, and on a strip pose it stood over the hero's first
+row for half a second, and the offsets jumped 58 px from the loading state to the page.
 
 *The bands* (Emre on Documenten: "die boven header is mooi en dan die sticky is
 grijs ... gelijk een T"). The band under the native bar is the web scroll view's
 top edge effect (`.hard`, hidden until the offset passes 8 pt, WebSession.swift):
 clear at scroll 0, full-height glass as soon as content runs under it, reading
-rgb(251 248 245) over the page colour. A `.ios-subbar` and the product editor's
-tabs are plain at rest, just the page. Once stuck (`.ios-nav--stuck ~ .ios-subbar`,
-`.home-agenda__fold.is-folded .ios-subbar`, `.subnav.is-stuck`, set by the
+rgb(251 248 245) over the page colour. A `.ios-subbar`, the product editor's tabs
+and the sales document's steps (view and editor) carry a `::before` that at rest
+is the page's own colour, opaque and invisible on the plain page: in a fast scroll
+the rows reach a band before the script says stuck, and a band that only faded in
+let them run through the search field for some frames (a screen recording of a
+fling on Documenten, frame by frame). Once stuck (`.ios-nav--stuck ~ .ios-subbar`,
+`.home-agenda__fold.is-folded .ios-subbar`, `.is-stuck`, set by the
 `hostStickyBand` directive in `shared/host-page.ts`; a sub-bar under an inline
-bar has no sentinel and always stands on its line) the `::before` is `--host-band`:
-85 % of that tone on `--ios-glass-filter`, fading in over .2 s, with a .5 px
-`--ios-sep` hairline at its bottom; under `prefers-reduced-transparency` the tone
-without the blur. It runs across the whole window (`inset: 0 -100vw`, clipped by
-`overflow-x: clip` on `.shell`, which spans the window: clip is no scroll
-container, so the bands keep sticking, and no containing block for the fixed
-sheets), under the side strip and beyond the 760 px column of a wide phone, so
-`scrollWidth` stays `innerWidth` on every pose. On a strip pose beside a large
-title, stuck but not yet condensed, the glass also reaches up to the top of the
-screen, because the bar is only 24 px high until its title comes; it lets go
-.25 s after the title has come. The blur stays on the `::before` (trap rule); the
-invisible `::before` has no hit area. The editor's lighter page colour runs on
-under the strip (`.shell:has(#product-editor-workspace)`). The PWA's own condensed
-nav and sub-bars are glass in the page colour (workspace-kit.scss, `--ios-glass`),
-and so is the phone bar of the lists that still use `app-page-header` (shell.scss
-`.appbar::before`).
+bar has no sentinel and always stands on its line) it turns to `--host-band` over
+.2 s: 85 % of that tone on `--ios-glass-filter`, with a .5 px `--ios-sep` hairline
+at its bottom; under `prefers-reduced-transparency` the tone without the blur.
+Stuck has no hysteresis (`observeLargeTitle`'s release 0): it flips nothing native,
+and held on the way back a band hung below the bar with page in the gap. The
+observers' roots run on far below the viewport, so a jump past a sentinel below the
+fold (the sales steps at 678 px high) still flips. The product editor's grey tray
+and the sales steps' pill (main's look at rest, also its blur) go while stuck, so
+the tabs read as one piece with the band; the steps stand on the line, the editor's
+no longer 8 px under it, and the sentinel leaves their rest position as main's. The
+band runs across the whole window (`inset: 0 -100vw`, clipped by `overflow-x: clip`
+on `.shell`, which spans the window: clip is no scroll container, so the bands keep
+sticking, and no containing block for the fixed sheets), under the side strip and
+beyond the 760 px column of a wide phone, so `scrollWidth` stays `innerWidth` on
+every pose. On a strip pose beside a plain large title (a `[hero]` condenses long
+before its sub-bar comes) the bar has no title and so no band while the sub-bar
+already stands on its line: the `::before` reaches up to the top of the screen in
+the plain page colour, under the title (`.ios-large` stands above it, z-index 30),
+so the title slides away sharp and no row ever shows above the sub-bar. When the
+title has gone it turns to glass .15 s later and lets go of the top .45 s later, as
+late as the native band comes; it reaches up again at once when the title comes
+back. The blur stays on the `::before` (trap rule); the plain `::before` has no hit
+area. The lighter page colours run on under the strip: the editor's
+(`.shell:has(#product-editor-workspace)`), and Website beheren's shell and main take
+the kit's page colour under a phone page. The native effect draws its own hairline
+at the bar's bottom ("a hard cutoff and dividing line", no API takes it off), so a
+stuck band stands under that line, tone against tone within a level. The PWA's own
+condensed nav and sub-bars are glass in the page colour (workspace-kit.scss,
+`--ios-glass`), and so is the phone bar of the lists that still use
+`app-page-header` (shell.scss `.appbar::before`).
 
 *The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
 which in the host put the black status text and the native title on near-black.
@@ -915,7 +941,13 @@ In the host it is at every phone width the card `sales-phone.scss` draws from
 600 px: `margin: var(--safe-t) 0 4px`, 22 px corners, on the page colour. The
 card is 24 px narrower than the bleed, so `.hero-details b` wraps instead of
 ending in an ellipsis and below 600 px the facts' columns are `.9fr .72fr 1.2fr`
-("verkoopeenheden" stays in its cell at 382 px).
+("verkoopeenheden" stays in its cell at 382 px). Scrolled, the near-black card of the
+view and of the editor ran under the native band, whose glass read grey over it
+(rgb(210 207 201) against 251 248 245, for as long as the card passes): a `::before`
+on the card, a sticky float that takes no room and is clipped to the card
+(`overflow: clip`, because a hidden box would be the sticky's own scroller), covers
+the part under the bar in the page colour. Home's Kas card and the Bank hero keep the
+native look, they pass in a moment and Home is the band Emre named as the reference.
 
 *Sheets.* Below 600 px a sheet is a floating card too (Emre: "de popups
 dichtgeklapt zijn niet correct alsook niet mooi"; the wide phone's own card:
@@ -923,7 +955,13 @@ dichtgeklapt zijn niet correct alsook niet mooi"; the wide phone's own card:
 and `--safe-b + 8px`, every corner round (26 px on the iOS variant), the height
 limited to `100dvh - --safe-t - --safe-b - 16px`, the foot's bottom padding 12 px
 and its corners with the card, a foot-less body clips its rows on the corners.
-Grab, head drag and `mo-sheet-in` are untouched.
+Grab, head drag and `mo-sheet-in` are untouched. The native band goes while a sheet
+is open (its glass stood out above the dim), so in the bars poses on a page with a
+bar `.overlay::before` keeps the top inset the plain page under the dim, no rows under
+the clock. Voorraad boeken's select keeps no room for a chevron the phone's rows do
+not draw: "Magazijn Lokeren (288 stuks)" fits the 366 px card. Folded sideways the
+purchase order's fill line wraps (`[data-host-strip] .mpo-fillrow__line`): the column
+is 594 px in a 678 px window and "15,180 m³ vrij" ran out of the card.
 
 A swipe row is a composited layer that snaps to whole device pixels and the
 group rounds its corners, so in WKWebView the coloured buttons behind it showed at
@@ -958,7 +996,10 @@ hostflow step `{"safeArea":[t,r,b,l]}`) at a scroll past the flip, comparing eve
 rect in the shell (none moved on /dashboard, /files, /purchasing/1, /products/1,
 /sales/1, /products/1/edit), and in the simulators from the shell's own metrics:
 the sentinel at scroll 300 and 900 is exactly the distance apart while env() goes
-from 24 to 82.
+from 24 to 82. What moves in a fling or a push only shows frame by frame: `xcrun simctl
+io <udid> recordVideo` during a probe of the shell (`scripts/probe.sh --probe script`
+in enrosed-erp-ios: pushes, pops, scrolls, a fling, rotations), frames pulled with
+`AVAssetImageGenerator`.
 
 ## Analyses (2026-10-17 redesign)
 
