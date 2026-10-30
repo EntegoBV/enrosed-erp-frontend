@@ -48,7 +48,7 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
      without a title and 82 pt with one (with or without a subtitle; both measured on the iPhone Duo simulator, iOS 27.1,
      2026-10-30), and the web view's env(safe-area-inset-top) follows it. The title comes and goes with the large title,
      so env() moved the whole page 58 px at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So on a strip
-     pose nothing reads env() any more: --safe-t is the constant of the page's kind, 24 px beside a large title (the bar's
+     pose the page no longer reads env(): --safe-t is the constant of the page's kind, 24 px beside a large title (the bar's
      title comes when it has gone), 82 px when the bar's title is always on, and a band always sticks at 82 px, under where
      the title is or will be. The flip then changes no layout at all. Without chrome (the login page) and in the bars
      poses (every iPhone, the Duo unfolded upright: a constant inset, title or no title) env() stays. --ios-nav-h is the
@@ -60,6 +60,11 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
   }
   :root[data-host][data-host-strip][data-host-bar='large'] { --safe-t: 24px; }
   :root[data-host][data-host-strip][data-host-bar='inline'] { --safe-t: 82px; }
+  /* A fixed full-screen viewer publishes no overlay (only a sheet does), so the native bar and its title stay above it and
+     its header has to clear the bar as it is at that moment: on the constant 24 px Downloaden, Sluiten and the file name lay
+     under the title's glass. It keeps env() and the kit's 44 px step (the inherited --ios-nav-h is already the computed
+     step, it does not follow --safe-t). Standing over the page, it moves nothing there. */
+  :root[data-host][data-host-strip] :is(.files-ql, .agreement-viewer, .lightbox) { --safe-t: env(safe-area-inset-top, 0px); --ios-nav-h: 44px; }
   /* A large title without a caption ends above that line (24 + 50 px). A sub-bar under it (Documenten & media) would stand
      stuck from the first frame, pushed 8 px over the first rows, its band over the title: the title's block reaches past
      the line, as one with a caption does. */

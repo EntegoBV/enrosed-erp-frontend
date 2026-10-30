@@ -871,7 +871,7 @@ inset is 24 pt without a native title and 82 pt with one, with or without a
 subtitle (measured on the iPhone Duo simulator, iOS 27.1, 2026-10-30), and the
 title comes and goes with the large title, so env() moved the whole page 58 px
 at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So there
-nothing reads env() any more: with `data-host-strip` and `data-host-bar`,
+the page no longer reads env(): with `data-host-strip` and `data-host-bar`,
 `--safe-t` is 24 px on a `large` page and 82 px on an `inline` one and
 `--host-stick-t` is 82 px, and `--ios-nav-h` is the step between them, so the
 partials' `--safe-t + --ios-nav-h` (minimum heights, scroll padding) end on that
@@ -885,7 +885,14 @@ agenda's fold, IosNav's `stuck`). A large title without a caption ends above tha
 line (24 + 50 px), so above a sub-bar its block reaches 4 px past it
 (`.ios-large:has(~ .ios-subbar)`): Documenten's sub-bar stood stuck from the first
 frame otherwise. The last direct readers of the top inset (the sales hero, the two
-photo lightboxes) go through `--safe-t`, the same value without a host. The loading
+photo lightboxes) go through `--safe-t`, the same value without a host. A fixed
+full-screen viewer publishes no overlay (only a sheet does), so the native bar and its
+title stay above it: Quick Look, the agreement photos and the photo lightbox put
+`--safe-t` back on env() and `--ios-nav-h` on 44 px on themselves
+(`[data-host-strip] :is(.files-ql, .agreement-viewer, .lightbox)`; the inherited step is
+already computed and would not follow), so their header clears the bar as it is at that
+moment (Downloaden at y 92 with the title, 34 without) and moves over a page that stays
+put. The loading
 state of a screen with a `[hero]` (`app-ios-nav [heroLoading]`: purchase view and
 editor, product view) publishes the kind of page that is coming, `largeTitle` with
 no bar title: a title that comes with the push stays until the push has ended, also
