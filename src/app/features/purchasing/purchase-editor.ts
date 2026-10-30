@@ -1321,7 +1321,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
     } @else {
       <div class="mpo-phone mpo-phone--edit">
-        <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()" />
+        <app-ios-nav title="Inkoop" [largeTitle]="false" [heroLoading]="!loadError()" backLabel="" backAriaLabel="Terug naar de container" (back)="goBack()" />
         @if (loadError(); as error) {
           <div class="mpo-loading"><app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" /></div>
         } @else {

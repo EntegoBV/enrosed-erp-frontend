@@ -789,7 +789,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
       }
     } @else {
       <div class="mpo-phone mpo-phone--view">
-        <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
+        <app-ios-nav title="Inkoop" [largeTitle]="false" [heroLoading]="!loadError()" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
         @if (loadError(); as error) {
           <div class="mpo-loading"><app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" /></div>
         } @else {

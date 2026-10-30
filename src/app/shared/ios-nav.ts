@@ -37,6 +37,13 @@ import { observeMirror } from './host-page';
  * native host is not always the bar's height). The bar carries them as
  * ios-nav--condensed and ios-nav--stuck, with ios-nav--large on a large title.
  *
+ * heroLoading says this is the loading state of a screen whose [hero] is yet
+ * to come. The native host then keeps the bar's title off, as it will be
+ * beside the hero, and the strip pose's offsets on the loaded page's: a bar's
+ * title that comes with the push stays until the push has ended, also when the
+ * data is there at once, and on a strip pose it stood over the hero's first row
+ * for half a second. It changes nothing without a host.
+ *
  * backLabel null shows no back button, '' a glass circle with a chevron,
  * any text a glass capsule. With backUrl the button navigates there;
  * without it the (back) output lets the screen decide.
@@ -98,6 +105,8 @@ export class IosNav {
   readonly largeTitle = input(true);
   /** Read once like largeTitle: the screen projects its own [hero] block in place of the large title. */
   readonly customLarge = input(false);
+  /** The native host's page while a [hero] screen loads (see above). */
+  readonly heroLoading = input(false);
   readonly backLabel = input<string | null>(null);
   readonly backUrl = input<string | null>(null);
   readonly backAriaLabel = input('Terug');
@@ -141,7 +150,7 @@ export class IosNav {
           if (label === null) return null;
           return { label: label || this.backAriaLabel().replace(/^Terug naar /, '') || 'Terug', url: this.backUrl() ?? '' };
         },
-        largeTitle: () => this.large,
+        largeTitle: () => this.large || this.heroLoading(),
         condensed: () => this.condensed(),
         input: () => this.host(),
         mirror: () => mirror(),

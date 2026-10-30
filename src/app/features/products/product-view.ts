@@ -603,7 +603,7 @@ export type { ReceivedContainer } from './received-containers';
       </div>
     } @else {
       <div class="ios-page pd-phone">
-        <app-ios-nav title="Product" [largeTitle]="false" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
+        <app-ios-nav title="Product" [largeTitle]="false" [heroLoading]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
         <div class="pph-loading" role="status" aria-live="polite" aria-label="Product laden">
           <app-skeleton kind="card" [rows]="1" />
           <app-skeleton kind="group" [rows]="4" />
