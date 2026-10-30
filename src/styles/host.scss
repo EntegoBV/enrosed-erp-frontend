@@ -140,6 +140,10 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
       inset: -1px -100vw;
       z-index: -1;
       @include host-band(transparent);
+      /* Not the mixin's blur(0): inside the pill's own backdrop root even that composites the pill's paint a second time,
+         across the whole band (the tray whiter, its shadow doubled and ending on hard edges). */
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
     }
     :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck {
       border-color: transparent;

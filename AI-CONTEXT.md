@@ -923,6 +923,9 @@ fold (the sales steps at 678 px high) still flips. The product editor's grey tra
 and the sales steps' pill (main's look at rest, also its blur) go while stuck, so
 the tabs read as one piece with the band; the steps stand on the line, the editor's
 no longer 8 px under it, and the sentinel leaves their rest position as main's. The
+steps' `::before` has no backdrop-filter at rest: inside the pill's own backdrop root
+even a `blur(0)` composites the pill's paint a second time across the whole band (a
+whiter tray, its shadow doubled and ending on hard edges). The
 band runs across the whole window (`inset: 0 -100vw`, clipped by `overflow-x: clip`
 on `.shell`, which spans the window: clip is no scroll container, so the bands keep
 sticking, and no containing block for the fixed sheets), under the side strip and
