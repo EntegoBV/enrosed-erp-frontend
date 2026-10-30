@@ -151,6 +151,18 @@
      at its end for the tab bar and a dock are the kit page's 28 px. The sales editor keeps its dock (the step and its
      arrows; the host has Opslaan and the step's button) and so its room. */
   :root[data-host] app-sales-view .content.erp-workspace { padding-bottom: calc(var(--safe-b) + 28px); }
+  /* Its hero: on a phone it runs edge to edge under the status bar in the PWA, which in the host put the black status
+     text and the native title on near-black. Here it is the card the wide phone already has (sales-phone.scss, only
+     from 600 px): it starts under the bar, on the page colour, 22 px corners all round. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] app-sales-view .sales-hero.sales-hero { margin: var(--safe-t) 0 4px; border-radius: 22px; padding: 16px 16px 15px; }
+    /* The card is 24 px narrower than the bleed: the payment term wraps instead of ending in an ellipsis, ... */
+    :root[data-host] app-sales-view .hero-details.hero-details b { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+  }
+  /* ... and below the wide phone's own layout "verkoopeenheden" keeps inside its cell at 382 px. */
+  @media (max-width: 599.98px) {
+    :root[data-host] app-sales-view .hero-facts.hero-facts { grid-template-columns: .9fr .72fr 1.2fr; }
+  }
   :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }
 
   /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
