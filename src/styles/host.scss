@@ -231,6 +231,9 @@
     height: var(--safe-t);
     background: color-mix(in srgb, rgb(26 22 20) 45%, var(--ios-bg));
   }
+  /* The location in Voorraad boeken: a select cannot wrap, and without its chevron (the phone's plain rows) it needs no room
+     for one: "Magazijn Lokeren (288 stuks)" was cut on the narrower card. */
+  :root[data-host] app-stock-booking-sheet select.bk-field__control { padding-inline-end: 0; }
 
   /* A swipe row: the row is a composited layer that snaps to whole device pixels and the group rounds its corners, so in
      WKWebView the coloured buttons behind it showed at the row's last pixel and in the corners, a blue and an orange line
