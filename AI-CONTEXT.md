@@ -945,7 +945,10 @@ condensed nav and sub-bars are glass in the page colour (workspace-kit.scss,
 `.appbar::before`), except over a near-black card, where 72 % of the page colour
 reads grey (about 188): the sales editor's standing bar (`app-sales-editor
 .appbar::before`) stays main's opaque `--ios-bg`, the glass took the customer name
-under its title to 2.6:1.
+under its title to 2.6:1, and so does the nav of a page with a dark hero
+(`.ios-page:has(.ios-hero) .ios-nav::before`: Home, Bank, Kasprognose), which on a
+wide phone also stood as a box in the 760 px column and under the Duo's status paint
+as a seam. Only the PWA's bars: the host hides them.
 
 *The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
 which in the host put the black status text and the native title on near-black.
@@ -959,7 +962,8 @@ view and of the editor ran under the native band, whose glass read grey over it
 on the card, a sticky float that takes no room and is clipped to the card
 (`overflow: clip`, because a hidden box would be the sticky's own scroller), covers
 the part under the bar in the page colour. Home's Kas card and the Bank hero keep the
-native look, they pass in a moment and Home is the band Emre named as the reference.
+native look, they pass in a moment and Home is the band Emre named as the reference;
+whether they get the cover too is his call, still open.
 
 *Sheets.* Below 600 px a sheet is a floating card too (Emre: "de popups
 dichtgeklapt zijn niet correct alsook niet mooi"; the wide phone's own card:

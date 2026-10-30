@@ -256,12 +256,14 @@ body:has(.ios-page){background:var(--ios-bg)}
 .ios-page{display:block;min-height:100dvh;padding-bottom:calc(var(--ios-tabbar-h) + var(--safe-b) + 28px);background:var(--ios-bg)}.ios-page--bare{padding-bottom:calc(var(--safe-b) + 24px)}
 /* The condensed bar and the sticky sub-bar are glass in the page colour (iOS 26: the rows show through, blurred;
    Emre, 2026-10-30, after the native shell's clear bar sat over an opaque beige sub-bar). The tint is 72 % --ios-bg
-   on a 20 px blur, so over the beige canvas a band is the canvas and over cards it lightens a shade. The blur sits on
-   the ::before only (trap rule) and fades in with the tint. The small title and the segment stay readable over it
-   (checked at 382 and 390 px). */
+   on a 20 px blur, so over the beige canvas a band is the canvas, over light cards it lightens a shade and over a
+   near-black card it reads grey (about 188, and a box on a wide phone): a page with a dark .ios-hero (Home, Bank,
+   Kasprognose) keeps the opaque bar. The blur sits on the ::before only (trap rule) and fades in with the tint. The
+   small title and the segment stay readable over it (checked at 382 and 390 px). */
 .ios-nav{position:sticky;top:0;z-index:30;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;height:calc(var(--ios-nav-h) + var(--safe-t));padding:var(--safe-t) 8px 0}
 .ios-nav::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-glass);opacity:0;backdrop-filter:blur(0px) saturate(1);-webkit-backdrop-filter:blur(0px) saturate(1);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),backdrop-filter var(--dur-2,.18s) var(--ease-out,ease),-webkit-backdrop-filter var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed::before{opacity:1;backdrop-filter:var(--ios-glass-filter);-webkit-backdrop-filter:var(--ios-glass-filter)}
+.ios-page:has(.ios-hero) .ios-nav::before{background:var(--ios-bg);backdrop-filter:none;-webkit-backdrop-filter:none}
 .ios-nav__lead{display:flex;align-items:center;justify-self:start;gap:4px;min-width:0}.ios-nav__trail{display:flex;align-items:center;justify-self:end;gap:4px;min-width:0}
 .ios-nav__title{min-width:0;max-width:100%;overflow:hidden;font-size:17px;font-weight:650;letter-spacing:-.01em;text-align:center;text-overflow:ellipsis;white-space:nowrap;opacity:0;transform:translateY(4px);transition:opacity var(--dur-2,.18s) var(--ease-out,ease),transform var(--dur-2,.18s) var(--ease-out,ease)}
 .ios-nav--condensed .ios-nav__title{opacity:1;transform:none}
@@ -273,8 +275,8 @@ body:has(.ios-page){background:var(--ios-bg)}
 /* The wide phone: a kit page is one centred column (the two pages that go two-column, the home and Analyses, lift this
    cap in their own partials). The sticky nav, the large title and every group move with it; its fixed children
    (.ios-accessory, .ios-tabbar, .ios-float) are viewport-positioned and unaffected - no transform, filter or container
-   may ever be added to .ios-page. The nav's glass is --ios-bg over the beige body beside the column, so a column-wide
-   bar reads as full width. */
+   may ever be added to .ios-page. The nav's glass is --ios-bg over the beige body beside the column, so over the canvas
+   a column-wide bar reads as full width. */
 @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none) { .ios-page{max-width:var(--page-col,760px);margin-inline:auto} }
 /* glass buttons: 44px hit area, 36px visual */
 .ios-circle{position:relative;isolation:isolate;display:grid;flex:none;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
