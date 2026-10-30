@@ -19,18 +19,34 @@ app-home-add-sheet { display: contents; }
   .shell--home > .tabbar { right: calc(var(--safe-r) + 12px + var(--tabbar-h)); }
 }
 .home-phone { --ios-tabbar-h: var(--tabbar-h); }
-/* ---- the wide phone. From 800 px (the sideways iPhone Duo at 951, an upright iPad) the body is two columns: Kas + Te
-   doen beside Agenda + Cijfers. Each column is a large phone (471 px at 951, cells 439), so every phone rule holds
-   (widgets 215 px, agenda days 58 px), and the 16 + 8 + 16 px gutter is centred on the Duo's hinge. The page lifts
-   the shell's column cap (workspace-kit.scss .ios-page): its two columns use the whole width. The wrappers are
-   blocks on narrower phones, not display: contents (nav-motion animates the children of .ios-page; a contents box
-   has nothing to animate); the grid starts below app-ios-nav (a sticky item inside a grid is confined to its own
-   area); the '+' (.ios-accessory) stays a direct child of .home-phone. Never grid-template-areas over the flat
-   section list: a row-spanning section spreads its height over the shared rows and opens gaps. */
+/* ---- the wide phone. From 800 px (the sideways iPhone Duo at 951, an upright iPad) the body is two columns in
+   three rows: Kas | Agenda, Te doen | Cijfers, then Meer cijfers across both (its search card left, its rows right).
+   Each column is a large phone (471 px at 951, cells 439), so every phone rule holds (widgets 215 px, agenda days
+   58 px), and the 16 + 8 + 16 px gutter is centred on the Duo's hinge (nav-rail.scss). The page lifts the shell's
+   column cap (workspace-kit.scss .ios-page): its two columns use the whole width. Rows, not two independent columns
+   (Emre, 2026-10-30: the right column ran far below the left one): the two .home-phone__col wrappers give way here
+   (display: contents) and the sections take their cells, top-aligned, each row as high as its taller cell, so both
+   columns end together and nothing sits on the fold. The wrappers are blocks on narrower phones, not display:
+   contents (nav-motion animates the children of .ios-page; a contents box has nothing to animate); the grid starts
+   below app-ios-nav (a sticky item inside a grid is confined to its own area); the '+' (.ios-accessory) stays a
+   direct child of .home-phone. app-home-kas is display: contents (home-widgets.scss), so its .home-kas-hero is the
+   grid item. Never grid-template-areas over the flat section list: a row-spanning section spreads its height over
+   the shared rows and opens gaps; the one spanning section, Meer cijfers, has the last row to itself. */
 .home-phone__body, .home-phone__col { display: block; min-width: 0; }
 @media (min-width: 800px) and (max-width: 1023.98px) and (hover: none) {
   .ios-page.home-phone { max-width: none; }
   .home-phone__body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; align-items: start; }
+  .home-phone__col { display: contents; }
+  .home-phone__col > .home-kas-hero { grid-column: 1; grid-row: 1; }
+  .home-phone__col > .home-todo { grid-column: 1; grid-row: 2; }
+  .home-phone__col > .home-phone__agenda { grid-column: 2; grid-row: 1; }
+  .home-phone__col > .home-phone__figures { grid-column: 2; grid-row: 2; }
+  /* Meer cijfers: the whole last row, laid out on the parent's two tracks (subgrid), so its search card and its rows
+     keep to their columns, with the gutter between them on the hinge. */
+  .home-phone__col > .home-phone__more { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: subgrid; align-items: start; }
+  .home-phone__more > .ios-section__head { grid-column: 1 / -1; }
+  .home-phone__more > .home-phone__search { grid-column: 1; margin-bottom: 0; }
+  .home-phone__more > .ios-group { grid-column: 2; }
 }
 /* The bell lives at page-host level; the nav shows a proxy button (G14). */
 /* The page's own bell (the phone and desk homes, Open punten) only hosts the sheet the "Klanten wachten" row opens;
