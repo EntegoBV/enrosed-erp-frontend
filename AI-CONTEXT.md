@@ -608,7 +608,8 @@ the status bar is hidden and native bars start 24 pt from the top, so the
 rail may reach up there. Two columns from 800 px (the home, Analyses)
 assume an 800 px page: with the lane and no strip they wait until 928 px
 (a sideways iPhone at 852 or 896 keeps one column, the home's Cijfers
-blocks back in the kit's two columns), except on a Duo. On
+blocks back in the kit's two columns, Meer cijfers' search card with its
+12 px above the rows), except on a Duo. On
 the unfolded Duo held sideways (`data-duo` and `(hover: none) and
 (orientation: landscape) and (min-width: 860px) and (max-width: 960px)
 and (min-height: 560px)`: the 867 px page beside the strip, or 951 with

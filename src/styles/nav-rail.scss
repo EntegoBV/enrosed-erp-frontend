@@ -163,10 +163,12 @@
   @media (min-width: 800px) and (max-width: 927.98px) and (hover: none) {
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .ios-page.home-phone { max-width: var(--page-col, 760px); }
     /* The wrappers may stay display: contents: the sections then follow in document order, one column. Meer cijfers
-       drops its subgrid (without a grid parent it would open an implicit second column); the Cijfers blocks go back
-       to the kit's two columns (the gutter track and its ::before, the blocks' margins and the wide span undone). */
+       drops its subgrid (without a grid parent it would open an implicit second column) and its search card gets back
+       the 12 px above the rows; the Cijfers blocks go back to the kit's two columns (the gutter track and its ::before,
+       the blocks' margins and the wide span undone). */
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__body { display: block; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__col > .home-phone__more { display: block; }
+    :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__more > .home-phone__search { margin-bottom: 12px; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 10px; margin-bottom: 16px; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets::before { display: none; }
     :root[data-nav-rail='right']:not([data-side-strip]):not([data-duo]) .home-phone__figures > .ios-widgets .ios-widget { margin-bottom: 0; }
