@@ -40,6 +40,7 @@ import { OrderPallet,
   MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { HostStickyBand } from '../../shared/host-page';
 import type { HostAction, HostMenuItem } from '../../core/platform/host';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
@@ -87,7 +88,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -468,7 +469,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
         }
 
         <div class="workflow-layout erp-workspace__layout">
-        <nav class="workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van de offerte">
+        <nav class="workflow-nav erp-workspace__section-nav" hostStickyBand aria-label="Onderdelen van de offerte">
           @for (item of workflowSections; track item.id; let number = $index) {
             <!-- On the phone, Status lives inside the Controle step; an
                  invoice has no send step at all. -->

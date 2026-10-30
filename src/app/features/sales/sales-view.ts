@@ -44,7 +44,7 @@ import { SalesOrder,
 import { HostBridge } from '../../core/platform/host-bridge';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import type { HostAction, HostMenuItem } from '../../core/platform/host';
-import { HostPage } from '../../shared/host-page';
+import { HostPage, HostStickyBand } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -75,7 +75,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage],
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand],
   template: `
     @if (view(); as data) {
       @if (cancelSheet()) {
@@ -392,7 +392,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         <!-- The four-stop rail walks a phone through the document; a desk
              shows every section at once and needs no such bar. -->
         @if (!desktop.active()) {
-        <nav class="sales-section-nav workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
+        <nav class="sales-section-nav workflow-nav erp-workspace__section-nav" hostStickyBand aria-label="Onderdelen van het verkoopdocument">
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-products'"
                   [class.workflow-nav__active]="activeDetailSection() === 'sales-products'"

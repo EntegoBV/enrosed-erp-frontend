@@ -109,8 +109,34 @@
   }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
   :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
-  /* The sales document's section pill too (styles.scss stands it at --safe-t). */
-  :root[data-host] app-sales-view .erp-workspace__section-nav { top: var(--host-stick-t); }
+  /* The sales document's steps, the view's and the editor's (styles.scss stands them at --safe-t and 8 px under the bar):
+     narrower than the band above them they were the T again, with the rows running by beside them. At rest they are
+     main's pill; once stuck (HostStickyBand) the pill dissolves in the same band as above, so they read as one piece with
+     the bar, as the purchase order's tabs do. Its own blur goes with it: it would make the pill the backdrop root of the
+     ::before, and the band would blur nothing. The partial's phone query: a desk-sized web view keeps the desk's rail. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav {
+      top: var(--host-stick-t);
+      transition: background-color .2s var(--ease-out, ease), border-color .2s var(--ease-out, ease), box-shadow .2s var(--ease-out, ease);
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav::before {
+      content: '';
+      position: absolute;
+      inset: 0 -100vw;
+      z-index: -1;
+      @include host-band;
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck {
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck::before { @include host-band-stuck; }
+    /* HostStickyBand's sentinel stands between the margins, which no longer collapse: the rest position stays main's. */
+    :root[data-host] :is(app-sales-view, app-sales-editor) .ios-large__sentinel + .workflow-nav { margin-top: 0; }
+  }
 
   /* The product editor (product-editor-workspace.scss, phone rules under #product-editor-workspace). Its own header
      carried the top inset and the tabs stuck under it: hidden, it left the identity row under the native bar on a
