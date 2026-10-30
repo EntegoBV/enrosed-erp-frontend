@@ -63,7 +63,7 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
   /* A large title without a caption ends above that line (24 + 50 px). A sub-bar under it (Documenten & media) would stand
      stuck from the first frame, pushed 8 px over the first rows, its band over the title: the title's block reaches past
      the line, as one with a caption does. */
-  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large { min-height: calc(var(--host-stick-t) - var(--safe-t) + 4px); }
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large:has(~ .ios-subbar) { min-height: calc(var(--host-stick-t) - var(--safe-t) + 4px); }
   /* The kit's --ios-glass-filter is none then (workspace-kit.scss): the band's tone without the blur. */
   @media (prefers-reduced-transparency: reduce) { :root[data-host] { --host-band: rgb(251 248 245); } }
   /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
@@ -182,6 +182,9 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
       @include host-band(color-mix(in srgb, var(--bg) 65%, var(--surface)));
     }
     :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck::before { @include host-band-stuck; }
+    /* Its grey tray on that band was the "opeens grijs" that was left: stuck it goes, as the purchase order's tabs have none. */
+    :root[data-host] #product-editor-workspace .product-mobile-tabs { transition: background-color .2s var(--ease-out, ease); }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck .product-mobile-tabs { background: transparent; }
     :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
     /* The editor's lighter page colour runs on under the side strip: without it the strip stood beige beside it. */
     :root[data-host] .shell:has(#product-editor-workspace) { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
