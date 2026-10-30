@@ -14,7 +14,9 @@
  * is at least RELEASE_PX below that line again. A sentinel resting on the
  * line (a scroll that stops there, a rubber-band, the host's own bar) no
  * longer flips the bar, the small title and the native title on every
- * jitter.
+ * jitter. A band that only says it stands on its line passes `release` 0: it
+ * flips nothing native, and held on the way back it hung below the bar with
+ * the page showing through the gap.
  */
 const RELEASE_PX = 24;
 
@@ -51,6 +53,7 @@ export function observeLargeTitle(
   sentinel: HTMLElement,
   onChange: (condensed: boolean) => void,
   line?: () => number,
+  release_px = RELEASE_PX,
 ): () => void {
   if (typeof IntersectionObserver === 'undefined') return () => {};
   const measure = line ?? ((): number => Math.round(bar.getBoundingClientRect().height));
@@ -65,7 +68,7 @@ export function observeLargeTitle(
     if (next) armRelease();
     onChange(next);
   };
-  /* Back in view: the sentinel is inside the root that starts RELEASE_PX under the line, or less where its place at the
+  /* Back in view: the sentinel is inside the root that starts release_px under the line, or less where its place at the
      top of the page lies nearer than that (a small title under the line of a strip pose): at the top it always comes
      back. Between the two lines neither observer speaks, so the state holds. */
   const armRelease = (): void => {
@@ -73,7 +76,7 @@ export function observeLargeTitle(
     const atTop = Math.floor(sentinel.getBoundingClientRect().bottom + (sentinel.ownerDocument.defaultView?.scrollY ?? 0)) - height - 1;
     release = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) set(false);
-    }, { rootMargin: `-${height + Math.max(0, Math.min(RELEASE_PX, atTop))}px 0px ${BELOW_FOLD_PX}px 0px`, threshold: 0 });
+    }, { rootMargin: `-${height + Math.max(0, Math.min(release_px, atTop))}px 0px ${BELOW_FOLD_PX}px 0px`, threshold: 0 });
     release.observe(sentinel);
   };
   const start = (): void => {

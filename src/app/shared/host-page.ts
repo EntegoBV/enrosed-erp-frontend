@@ -42,8 +42,8 @@ export class HostPage {
  * A sticky band of its own (the product editor's tabs), for a page without
  * app-ios-nav's sub-bar: in the native host it is plain at rest and glass once
  * it stands on its line (styles/host.scss), so this sets .is-stuck from a
- * sentinel right above it and the band's own computed top, with the large
- * title's hysteresis. Without a host nothing happens and nothing renders.
+ * sentinel right above it and the band's own computed top. Without a host
+ * nothing happens and nothing renders.
  */
 @Directive({ selector: '[hostStickyBand]' })
 export class HostStickyBand {
@@ -58,7 +58,7 @@ export class HostStickyBand {
       sentinel.setAttribute('aria-hidden', 'true');
       band.before(sentinel);
       stop = observeLargeTitle(band, sentinel, (stuck) => band.classList.toggle('is-stuck', stuck),
-        () => Math.round(parseFloat(getComputedStyle(band).top) || 0));
+        () => Math.round(parseFloat(getComputedStyle(band).top) || 0), 0);
     });
     inject(DestroyRef).onDestroy(() => { stop?.(); sentinel?.remove(); });
   }

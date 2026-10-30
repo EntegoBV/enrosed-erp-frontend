@@ -156,7 +156,7 @@ export class IosNav {
       const bar = this.bar().nativeElement;
       const heroTitle = this.custom ? element.nativeElement.querySelector<HTMLElement>('[hero] h1') : null;
       stops.push(observeLargeTitle(bar, heroTitle ?? sentinel, (condensed) => this.condensedState.set(condensed)));
-      stops.push(observeLargeTitle(bar, sentinel, (stuck) => this.stuckState.set(stuck), () => stickLine(sentinel, bar)));
+      stops.push(observeLargeTitle(bar, sentinel, (stuck) => this.stuckState.set(stuck), () => stickLine(sentinel, bar), 0));
     });
     destroyRef.onDestroy(() => stops.forEach((stop) => stop()));
   }
