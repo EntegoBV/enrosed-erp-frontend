@@ -257,8 +257,8 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
 
   /* Scrolled, the native band goes while a sheet is open (WebSession.setSheetOpen: its glass stood out above the dim), so in
      the bars poses the rows ran on under the status bar, the clock over their text. The top inset stays the plain page under
-     the dim, as at the top of a page. A strip pose has nothing over the page up there. */
-  :root[data-host]:not([data-host-strip]) .overlay::before {
+     the dim, as at the top of a page. A strip pose has nothing over the page up there, a page without chrome no bar. */
+  :root[data-host][data-host-bar]:not([data-host-strip]) .overlay::before {
     content: '';
     position: absolute;
     inset: 0 0 auto;
