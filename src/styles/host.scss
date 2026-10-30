@@ -206,7 +206,24 @@ $host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .
      text and the native title on near-black. Here it is the card the wide phone already has (sales-phone.scss, only
      from 600 px): it starts under the bar, on the page colour, 22 px corners all round. */
   @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
-    :root[data-host] app-sales-view .sales-hero.sales-hero { margin: var(--safe-t) 0 4px; border-radius: 22px; padding: 16px 16px 15px; }
+    :root[data-host] app-sales-view .sales-hero.sales-hero { margin: var(--safe-t) 0 4px; border-radius: 22px; padding: 16px 16px 15px; overflow: clip; }
+    /* Scrolled, the near-black card ran under the native band, whose glass read grey over it (rgb(210 207 201) against 251 248
+       245, the whole bar for as long as the card passes). The page colour covers the part of the card under the bar, so the
+       band keeps its tone: a sticky block that starts right above the card, stays on the bar's area and is clipped to the
+       card. A float, so it takes no room in the card; the negative end margin lets it stay until the card has gone. The clip
+       instead of main's hidden: a hidden box is the sticky's own scroller. */
+    :root[data-host] app-sales-view .sales-hero.sales-hero::before {
+      content: '';
+      float: left;
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      width: calc(100% + 32px);
+      height: var(--safe-t);
+      margin: calc(-16px - var(--safe-t)) -16px calc(-31px - var(--safe-t));
+      background: var(--ios-bg);
+      pointer-events: none;
+    }
     /* The card is 24 px narrower than the bleed: the payment term wraps instead of ending in an ellipsis, ... */
     :root[data-host] app-sales-view .hero-details.hero-details b { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
   }
