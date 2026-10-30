@@ -5,11 +5,13 @@
    and drops its own chrome:
    - the ERP tab bar stays in the DOM, invisible: the bridge reads its computed display, so every existing hide rule
      (editors, catalogue studio, the PO dock, workspace pages) keeps deciding when the native tab bar hides;
-   - the bars of app-page-header and app-ios-nav become transparent spacers as high as the top inset (status bar +
-     native bar), so observeLargeTitle keeps its line and the large titles stay web content; [below] sub-bars and the
-     other sticky bands of the phone pages stick flush under the native bar as glass in the page colour;
-   - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock, the product editor's header
-     and dock, the save buttons of the editors' docks and the Duo status paint go: the host has them as items.
+   - the bars of app-page-header, app-ios-nav and the product editor's phone header become transparent spacers as
+     high as the top inset (status bar + native bar), so observeLargeTitle keeps its line and the large titles stay
+     web content; [below] sub-bars and the other sticky bands of the phone pages stick flush under the native bar as
+     glass in the page colour;
+   - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock and the PO editor's save bar,
+     the product editor's dock, the save buttons of the sales editor's dock and the Duo status paint go: the host has
+     them as items; the room the pages kept for them at their end goes with them.
    Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.
    ========================================================================== */
 @media screen {
@@ -23,7 +25,7 @@
 
   /* Hidden, not removed: the bridge's probe reads the ERP bar's display, the mirror reads the '+' and the kit's tab bar. */
   :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) { visibility: hidden !important; pointer-events: none !important; }
-  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .shero-bar, .mpo-dock, .product-mobile-header, .product-editor-dock, .safe-paint) {
+  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .safe-paint) {
     display: none !important;
   }
 
@@ -52,25 +54,54 @@
   :root[data-host] .ios-nav--condensed ~ .ios-subbar::before { border-bottom: .5px solid var(--ios-sep); }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
   :root[data-host] .home-agenda__fold { top: var(--safe-t); }
-  /* The product editor's phone tabs (product-editor-workspace.scss): they stuck under the now hidden
-     .product-mobile-header, 44 px below the bar, with the form scrolling past in that gap and beside the pill.
-     Flush under the bar, glass across the page (the page is 14 px in from the column's edges), in the editor's own
-     lighter page colour. The pill itself stays opaque, as it is in the PWA. The id: the editor's phone rules sit
-     under #product-editor-workspace (1,3,0), so the top needs it to win. */
-  :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav { top: var(--safe-t); isolation: isolate; }
-  :root[data-host] .product-editor-page > .subnav.erp-workspace__nav::before {
-    content: '';
-    position: absolute;
-    inset: 0 -14px;
-    z-index: -1;
-    background: color-mix(in srgb, color-mix(in srgb, var(--bg) 65%, var(--surface)) 72%, transparent);
-    backdrop-filter: var(--ios-glass-filter);
-    -webkit-backdrop-filter: var(--ios-glass-filter);
+
+  /* The product editor (product-editor-workspace.scss, phone rules under #product-editor-workspace). Its own header
+     carried the top inset and the tabs stuck under it: hidden, it left the identity row under the native bar on a
+     Pro Max and the tabs 44 px below the bar, with the form scrolling past in that gap and beside the pill (Emre,
+     2026-10-30: "bij product bewerken is het zelfs erger"). Here --product-header-h is the top inset alone and the
+     header is the same spacer as .appbar and .ios-nav (its back control, title and Acties are the host's), so the
+     identity row and the form start under the native bar, the tabs stick flush under it through the partial's own
+     top and the scroll margins follow. The tabs' band is glass across the page (the page is 14 px in from the
+     column's edges) in the editor's lighter page colour; the pill itself stays opaque, as in the PWA. The 116 px the
+     page kept at its end for the hidden dock are the kit page's 28 px. The partial's phone query, so a desk-sized web
+     view keeps the editor's toolbar, which pads the inset itself. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] #product-editor-workspace { --product-header-h: var(--safe-t); }
+    :root[data-host] #product-editor-workspace .product-mobile-header {
+      position: static;
+      display: block;
+      height: var(--safe-t);
+      min-height: 0;
+      padding: 0;
+      overflow: hidden;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    :root[data-host] #product-editor-workspace .product-mobile-header::before { display: none; }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav { isolation: isolate; }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav::before {
+      content: '';
+      position: absolute;
+      inset: 0 -14px;
+      z-index: -1;
+      background: color-mix(in srgb, color-mix(in srgb, var(--bg) 65%, var(--surface)) 72%, transparent);
+      backdrop-filter: var(--ios-glass-filter);
+      -webkit-backdrop-filter: var(--ios-glass-filter);
+    }
+    :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
   }
 
-  /* The editors' docks keep their step and status; the host has Opslaan and the step's button. */
+  /* The purchase pages (purchase-phone.scss): the read view's dock and the editor's save bar are the host's items
+     (Bewerken and the step's button, Opslaan; the save bar's state text and its fill hairline go with it, the summary
+     card's Lading tile has the fill), so the 108 and 112 px both pages kept at their end above the inset are the kit
+     page's 28 px, and the focus scroll padding at the bottom follows. */
+  :root[data-host] :is(.mpo-phone--view, .mpo-phone--edit) { padding-bottom: calc(var(--safe-b) + 28px); }
+  :root[data-host]:has(app-purchase-view .mpo-phone, app-purchase-editor .mpo-phone) { scroll-padding-bottom: calc(var(--safe-b) + 28px); }
+  /* The sales document view: its hero bar is the host's and a phone has no dock on it, so the 128 px styles.scss keeps
+     at its end for the tab bar and a dock are the kit page's 28 px. The sales editor keeps its dock (the step and its
+     arrows; the host has Opslaan and the step's button) and so its room. */
+  :root[data-host] app-sales-view .content.erp-workspace { padding-bottom: calc(var(--safe-b) + 28px); }
   :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }
-  :root[data-host] .mpo-savebar :is(.mpo-savebar__btn, .mpo-savebar__state) { display: none; }
 
   /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
   :root[data-host] body:not(:has(.ios-toolbar)) .ios-page { padding-bottom: calc(var(--safe-b) + 28px); }
