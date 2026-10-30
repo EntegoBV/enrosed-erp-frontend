@@ -21,7 +21,7 @@
   pointer-events: none;
   backdrop-filter: blur(0px) saturate(1);
   -webkit-backdrop-filter: blur(0px) saturate(1);
-  transition: opacity .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), top 0s linear .25s;
+  transition: opacity .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), background-color .2s var(--ease-out, ease) .15s;
 }
 @mixin host-band-stuck {
   opacity: 1;
@@ -97,12 +97,15 @@
   :root[data-host] .ios-subbar::before { inset: 0 -100vw; @include host-band; }
   :root[data-host] :is(.ios-nav--stuck, .ios-nav:not(.ios-nav--large)) ~ .ios-subbar::before,
   :root[data-host] .home-agenda__fold.is-folded .ios-subbar::before { @include host-band-stuck; }
-  /* A strip pose beside a large title: the bar has no title yet and is only 24 px high, so above the band stuck at 82 px
-     the rows would slide by until the title comes: the glass reaches up to the top of the screen. It lets go a moment
-     after the title has come (the native band then covers that row), so no row shows in between. */
+  /* A strip pose beside a large title: the sub-bar stands on its line long before the title has gone, and the bar has no
+     title and so no band yet. Only that title is above the sub-bar there, so the band stays the plain page colour, opaque
+     for the rows that go under it: glass beside the plain page was a step, and glass up to the top of the screen blurred
+     the title away. It turns to glass when the title has gone, as late as the native band comes (the shell shows the
+     flip 150 ms later, TabModel.requestCondensed). */
   :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav--stuck:not(.ios-nav--condensed) ~ .ios-subbar::before {
-    top: calc(-1 * var(--host-stick-t));
-    transition-delay: 0s;
+    background: var(--ios-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
   /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
   :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
