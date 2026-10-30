@@ -94,7 +94,10 @@ the workspaces. All CSS lives in one global partial,
   label so five view tabs fit 360px), `app-ios-nav` (large title that
   condenses into a glass bar; [lead] [trail] [caption] [below] slots;
   `customLarge` + [hero] put the screen's own block in place of the large
-  title), `app-ios-tabbar`
+  title and the bar condenses when the block's own h1 has gone under it, not
+  when all of the block has; two states on the bar: `ios-nav--condensed` and
+  `ios-nav--stuck`, the [below] sub-bar on its sticky line; `ios-nav--large`
+  on a large title), `app-ios-tabbar`
   (floating tab bar plus accessory button; tabs use replaceUrl),
   `[appSwipeActions]` (multi-action swipe rows, geometry in row-actions.ts),
   `app-wk-side-foot` (sidebar foot with "Terug naar …" and the account),
@@ -157,7 +160,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 960.01 kB (187.05 kB transfer, 12 files; 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
+initial total is 963.20 kB (187.44 kB transfer, 12 files; 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of 2026-10-30, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -462,7 +465,13 @@ moment its sentinel passes under the bar's line and releasing only once
 the sentinel is 24 px below it again, so a sentinel resting on the line (a
 scroll that stops there, a rubber-band, the native shell's bar) no longer
 flickers the bar, the small title or the host's native title (Emre:
-"wanneer ik te snel scrol flikkert alles").
+"wanneer ik te snel scrol flikkert alles"). The release is bounded by where
+the sentinel stands at the top of the page, so a small title under a high
+line still comes back at the top. The line is the bar's height unless a
+getter names another (IosNav's `stuck`: the sub-bar's own computed top), and
+in a host it is read again when `data-host-strip` or `data-host-bar` changes,
+two frames later too (`onHostLineChange`: under reduced motion a computed top
+is one frame in flight, motion.scss).
 
 **Sheets and toasts as cards.** Every phone `.overlay > .sheet` keeps clear
 of the side insets; on the wide phone it is a floating card: 16 px off the
@@ -673,7 +682,8 @@ is invisible without a host: a host-only change keeps the PWA
 pixel-identical (the pixel diff below), so every host style lives under
 `:root[data-host]` and every message behind `HostBridge.present`; a change
 meant for both (the glass bands, the home rows and the legacy bar's glass
-of 2026-10-30) may differ on exactly those shots and nowhere else, and the
+of 2026-10-30, the earlier small title of the purchase order and the product
+view of that day, only once scrolled) may differ on exactly those shots and nowhere else, and the
 desk (1280×800) stays identical. Web changes for it go to production
 `main` only (no test environment for this work).
 
@@ -723,10 +733,11 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 960.01 kB since the glass bands, the home rows (then the
+facade) and is 963.20 kB since the glass bands, the home rows (then the
 four-block Cijfers row), the large-title hysteresis, the detail screens'
-host rules and the legacy bar's glass of 2026-10-30, well under the 1 MB
-error budget: the baseline to track.
+host rules, the legacy bar's glass and the strip offsets, stuck bands, sales
+card and sheet cards of 2026-10-30, well under the 1 MB error budget: the
+baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -735,7 +746,8 @@ error budget: the baseline to track.
   workspace root or a folder level), `largeTitle` and `condensed` (from
   `observeLargeTitle`, with its 24 px release hysteresis since 2026-10-30,
   so the `scroll` message no longer flips on a sentinel resting at the
-  line), `titleEditable`, the stack and either
+  line; on a [hero] page from the hero's own h1, so the native title comes
+  when that has gone), `titleEditable`, the stack and either
   the page's explicit **`[host]`** input (`HostPageInput`: `primary`,
   `actions`, `menu`, `accessory`, `titleMenu: 'auto'`, `workspaceTabs`,
   `tabBar`, `guardsBack`, `refreshable`, and `title`/`subtitle`/`back`
@@ -797,8 +809,12 @@ error budget: the baseline to track.
   `--ios-bg`, the URL), `auth` on `Auth.isLoggedIn()` changes, `badges`
   (`actionCount` → sales and bell, `loginRequestCount` → more), `theme` on
   palette changes. `sessionCheck` → `Auth.recheckSession()` (the storage
-  event may not cross WKWebViews). `insets` is informational: the page
-  trusts `env()`; the bridge also sets `--host-safe-t/r/b/l` on `<html>`.
+  event may not cross WKWebViews). `insets` (the window's insets, so top 0
+  on a strip pose) sets `--host-safe-t/r/b/l` on `<html>` and toggles
+  `data-host-strip` with `stripSide` (nav-rail.ts, the thresholds of the
+  shell's BarLayout: top <= 16, one side >= 72, the other <= 16). Publishing a
+  page sets `data-host-bar`: `large` with chrome and a large title, `inline`
+  with chrome and without one, nothing without chrome (the login page).
 - `Ui.confirm` asks the host (plain-text message, destructive flag, the
   secondary button) and falls back to the web sheet when the host has no
   ask handler; `Ui.toast` sends a `haptic` (success/error); every `app-sheet`
@@ -829,43 +845,92 @@ Meer and Instellingen rely on the mirror (the bell, a dirty editor's
 Opslaan).
 
 **host.scss** (`styles/host.scss`, loaded last, every selector under
-`:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--safe-t)`; `.tabbar`,
-`.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the probe
-and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`, the
+`:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--host-stick-t)`;
+`.tabbar`, `.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the
+probe and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`, the
 PO editor's whole `.mpo-savebar` (its state text and fill hairline with it;
 the summary card's Lading tile has the fill), `.product-editor-dock`,
 `.safe-paint` gone; the `.appbar` and `.ios-nav` bars and the product
 editor's `.product-mobile-header` become transparent spacers of height
 `--safe-t` (the native status bar + navigation bar, since the shell sets
-`contentInsetAdjustmentBehavior = .never`; the editor's `--product-header-h`
-is `--safe-t` there, so its tabs' top and its scroll margins follow), their
-children hidden, the large titles and `[hero]` / `[below]` blocks kept; the
-sales editor's dock loses Opslaan and the primary button and keeps the step
-and its arrows. The room the phone pages kept at their end for the ERP tab
-bar and their docks is the kit page's `--safe-b + 28px` (`.ios-page`,
-`.mpo-phone--view` / `--edit` with the purchase root's scroll-padding-bottom,
-`app-sales-view .content.erp-workspace`, `.content.product-editor-page`);
-the sales editor keeps its 128 px for its dock. Sheets and toasts already
-follow `--safe-b`. The sticky bands (2026-10-30, Emre's "T" on Documenten:
-the clear native bar over an opaque beige sub-bar, beside the beige strip
-next to the white rows): every `.ios-subbar` sticks flush under the bar
-(`top: --safe-t`, no gap) as glass in the page colour (the kit's
-`--ios-glass`: 72 % `--ios-bg` on a 20 px blur, the blur on the `::before`
-only) with a .5 px `--ios-sep` hairline once the title has condensed
-(`.ios-nav--condensed ~ .ios-subbar`: the sentinel sits right above the
-sub-bar, so condensed means stuck); the Agenda's folded week slot
-(`.home-agenda__fold`) sticks at `--safe-t` too; the product editor's phone
-tabs (`.product-editor-page > .subnav`), which stuck 44 px below the bar
-under the hidden `.product-mobile-header` with the form scrolling past in
-that gap (and the identity row under the bar on a Pro Max, until the header
-became the spacer), stick flush under the bar with a glass `::before` across
-the page (`inset: 0 -14px`, the editor's lighter page colour). The PWA's own
-condensed nav and sub-bars are the same glass since that day
-(workspace-kit.scss), and so is the phone bar of the lists that still use
-`app-page-header` (shell.scss `.appbar::before`: `--ios-glass` with the
-blur, fading in with the large title, standing from the start on detail
-screens; it condensed opaque `--ios-bg` before), so the two modes and the
-two kinds of page read alike.
+`contentInsetAdjustmentBehavior = .never`), their children hidden, the large
+titles and `[hero]` / `[below]` blocks kept; the sales editor's dock loses
+Opslaan and the primary button and keeps the step and its arrows. The room the
+phone pages kept at their end for the ERP tab bar and their docks is the kit
+page's `--safe-b + 28px` (`.ios-page`, `.mpo-phone--view` / `--edit` with the
+purchase root's scroll-padding-bottom, `app-sales-view .content.erp-workspace`,
+`.content.product-editor-page`); the sales editor keeps its 128 px for its
+dock. Toasts follow `--safe-b`.
+
+*The top offsets.* `--safe-t` is the spacer's height, `--host-stick-t` the line
+a sticky band stands on. In the bars poses (every iPhone, the Duo unfolded
+upright: the web view's top inset is constant, title or no title, 116 pt on a
+Pro Max upright and 78 in landscape) both are `env(safe-area-inset-top)`. On the
+Duo's strip poses (folded upright, folded sideways, unfolded sideways) the top
+inset is 24 pt without a native title and 82 pt with one, with or without a
+subtitle (measured on the iPhone Duo simulator, iOS 27.1, 2026-10-30), and the
+title comes and goes with the large title, so env() moved the whole page 58 px
+at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So there
+nothing reads env() any more: with `data-host-strip` and `data-host-bar`,
+`--safe-t` is 24 px on a `large` page and 82 px on an `inline` one and
+`--host-stick-t` is 82 px, and `--ios-nav-h` is the step between them, so the
+partials' `--safe-t + --ios-nav-h` (minimum heights, scroll padding) end on that
+line too. The flip changes no layout at all: not one rect in the shell moves
+when env() steps 24 → 82 → 24 at a scroll past it. Without chrome env() stays.
+Everything sticky takes the line: `.ios-subbar`, `.home-agenda__fold`, the
+sales view's section pill, the product editor's tabs (`--product-header-h`) and
+every `--appbar-h` consumer; what measures it in code reads the band's computed
+top, not the bar's height (`phoneStickPoint`, the agenda's fold, IosNav's
+`stuck`). The last direct readers of the top inset (the sales hero, the two
+photo lightboxes) go through `--safe-t`, the same value without a host.
+
+*The bands* (Emre on Documenten: "die boven header is mooi en dan die sticky is
+grijs ... gelijk een T"). The band under the native bar is the web scroll view's
+top edge effect (`.hard`, hidden until the offset passes 8 pt, WebSession.swift):
+clear at scroll 0, full-height glass as soon as content runs under it, reading
+rgb(251 248 245) over the page colour. A `.ios-subbar` and the product editor's
+tabs are plain at rest, just the page. Once stuck (`.ios-nav--stuck ~ .ios-subbar`,
+`.home-agenda__fold.is-folded .ios-subbar`, `.subnav.is-stuck`, set by the
+`hostStickyBand` directive in `shared/host-page.ts`; a sub-bar under an inline
+bar has no sentinel and always stands on its line) the `::before` is `--host-band`:
+85 % of that tone on `--ios-glass-filter`, fading in over .2 s, with a .5 px
+`--ios-sep` hairline at its bottom; under `prefers-reduced-transparency` the tone
+without the blur. It runs across the whole window (`inset: 0 -100vw`, clipped by
+`overflow-x: clip` on `.shell`, which spans the window: clip is no scroll
+container, so the bands keep sticking, and no containing block for the fixed
+sheets), under the side strip and beyond the 760 px column of a wide phone, so
+`scrollWidth` stays `innerWidth` on every pose. On a strip pose beside a large
+title, stuck but not yet condensed, the glass also reaches up to the top of the
+screen, because the bar is only 24 px high until its title comes; it lets go
+.25 s after the title has come. The blur stays on the `::before` (trap rule); the
+invisible `::before` has no hit area. The editor's lighter page colour runs on
+under the strip (`.shell:has(#product-editor-workspace)`). The PWA's own condensed
+nav and sub-bars are glass in the page colour (workspace-kit.scss, `--ios-glass`),
+and so is the phone bar of the lists that still use `app-page-header` (shell.scss
+`.appbar::before`).
+
+*The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
+which in the host put the black status text and the native title on near-black.
+In the host it is at every phone width the card `sales-phone.scss` draws from
+600 px: `margin: var(--safe-t) 0 4px`, 22 px corners, on the page colour. The
+card is 24 px narrower than the bleed, so `.hero-details b` wraps instead of
+ending in an ellipsis and below 600 px the facts' columns are `.9fr .72fr 1.2fr`
+("verkoopeenheden" stays in its cell at 382 px).
+
+*Sheets.* Below 600 px a sheet is a floating card too (Emre: "de popups
+dichtgeklapt zijn niet correct alsook niet mooi"; the wide phone's own card:
+"Sheets and toasts as cards"): `.overlay` pads `--safe-r + 8px`, `--safe-l + 8px`
+and `--safe-b + 8px`, every corner round (26 px on the iOS variant), the height
+limited to `100dvh - --safe-t - --safe-b - 16px`, the foot's bottom padding 12 px
+and its corners with the card, a foot-less body clips its rows on the corners.
+Grab, head drag and `mo-sheet-in` are untouched.
+
+A swipe row is a composited layer that snaps to whole device pixels and the
+group rounds its corners, so in WKWebView the coloured buttons behind it showed at
+its last pixel and in the corners (a blue and an orange line under Documenten's
+rows): `.ios-swipe__actions` has opacity 0 unless the row moves or is open
+(`.is-dragging`, `.is-open` from `SwipeActions`) or a keyboard's focus is on one,
+and stays .25 s while the row slides shut.
 
 **Checking** (headless, no device needed): `node tools/check-host.mjs --out
 <dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
@@ -873,11 +938,13 @@ session's scratchpad, a development build in its `dist`). It installs the
 shell's stub (`window.enrosedHost`, the two message handlers logging into
 `window.__hostLog`) via `Page.addScriptToEvaluateOnNewDocument`, sets the
 user-agent suffix, applies `Emulation.setSafeAreaInsetsOverride` per pose
-(951×669 r84/b34, 466×678 r84/b34, 678×466 l84/b34, 440×956 t59/b117,
-669×951 t106/b117), screenshots every main route, dumps the messages,
-validates each against the contract and checks the web chrome hidden, the
-content clear of the strip and the spacer as high as the top inset; on the
-first pose it drives `action`, `back`, `open`, `tabRoot`, `refresh`,
+(951×669 t24/r84/b34, 466×678 t24/r84/b34, 678×466 t24/l84/b34, 440×956
+t116/b83, 669×951 t116/b83: what the web view really gets), answers `ready`
+with the `insets` command as the shell does (top 0 on a strip pose),
+screenshots every main route, dumps the messages, validates each against the
+contract and checks the web chrome hidden, the content clear of the strip and
+the spacer as high as the top inset, on a strip pose the constant of its kind;
+on the first pose it drives `action`, `back`, `open`, `tabRoot`, `refresh`,
 `insets`, `sessionCheck`, a sheet's `overlay` and `Ui.confirm` through the
 ask channel. Before pushing: the same routes WITHOUT the stub at 390×780,
 382×700, 669×900 and 951×669 must be pixel-identical (`pngdiff.mjs --dir`)
@@ -885,7 +952,13 @@ between a build of `main` and the branch. The 2026-10-29 review's seven
 fixes (the lazy split, the bell, `leaveTo`, the refused navigation, the
 costs refresh row, the push direction, the login root) were checked the
 same way, with a probe of those six behaviours next to the checker
-(scratchpad `fix-verify/probe.mjs`).
+(scratchpad `fix-verify/probe.mjs`). The strip offsets of 2026-10-30 were proven
+by stepping env() with `Emulation.setSafeAreaInsetsOverride` (the harness's
+hostflow step `{"safeArea":[t,r,b,l]}`) at a scroll past the flip, comparing every
+rect in the shell (none moved on /dashboard, /files, /purchasing/1, /products/1,
+/sales/1, /products/1/edit), and in the simulators from the shell's own metrics:
+the sentinel at scroll 300 and 900 is exactly the distance apart while env() goes
+from 24 to 82.
 
 ## Analyses (2026-10-17 redesign)
 
@@ -2707,11 +2780,12 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   `jumpToSection` and `scrollToCard` switch the tab first. A switch with the
   bar stuck starts the new pane at its top under it; tapping the open tab
   goes back to its top (`purchase-phone-scroll.ts`; the stick point puts
-  the nav's 1px sentinel wholly above the nav, so the nav has condensed on
-  arrival). The root's scroll-padding (nav + tabs above, dock or save bar
+  the nav's 1px sentinel wholly above the tabs' sticky line, their own computed
+  top, so the nav says stuck on arrival; the small title comes earlier, when the
+  summary card's h1 has gone under the bar). The root's scroll-padding (nav + tabs above, dock or save bar
   below) keeps a focused field and scrollIntoView clear of the bars; the
   purchase-* sections keep no scroll-margin of their own. The nav's buttons
-  and the tabs once stuck (nav condensed) move their scroll area down past
+  and the tabs once stuck (`.ios-nav--stuck`) move their scroll area down past
   that padding (negative top, equal positive bottom scroll-margin), so focus
   on them, by keyboard or a sheet handing it back, never scrolls the page
   or unsticks the bar. Warn dots: Producten
@@ -3283,8 +3357,9 @@ contract `redesign/products/design.md` + `critique.md`).
 - **Product page, phone** (`product-view.ts`): `app-ios-nav customLarge`
   with the product as its hero card (`pph-card`, 2 × 2 figures), the page
   root `.ios-page.pd-phone` with the bar and every sheet as direct
-  children; back from `NavHistory` (capsule, a circle when condensed;
-  Bewerken becomes a pencil circle then); inset sections incl. a read-only
+  children; back from `NavHistory` (capsule, a circle when condensed, which
+  is when the card's h1 has gone under the bar; Bewerken becomes a pencil
+  circle then); inset sections incl. a read-only
   Website & publicatie (`publication-groups.ts`). No Bewerken dock. Ids
   `product-overview`, `stock-card`, `product-core`, `product-packaging`,
   `product-media`, `product-agreements`, `product-publication`,
