@@ -220,6 +220,18 @@
     :root[data-host] .sheet--ios:has(.sheet__foot:empty) .sheet__body { padding-bottom: 16px; border-radius: 0 0 26px 26px; }
   }
 
+  /* Scrolled, the native band goes while a sheet is open (WebSession.setSheetOpen: its glass stood out above the dim), so in
+     the bars poses the rows ran on under the status bar, the clock over their text. The top inset stays the plain page under
+     the dim, as at the top of a page. A strip pose has nothing over the page up there. */
+  :root[data-host]:not([data-host-strip]) .overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: -1;
+    height: var(--safe-t);
+    background: color-mix(in srgb, rgb(26 22 20) 45%, var(--ios-bg));
+  }
+
   /* A swipe row: the row is a composited layer that snaps to whole device pixels and the group rounds its corners, so in
      WKWebView the coloured buttons behind it showed at the row's last pixel and in the corners, a blue and an orange line
      under Documenten's rows (seen in the simulators). They stand behind the row only while it moves or is open, and stay
