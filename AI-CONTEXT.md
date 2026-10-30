@@ -160,7 +160,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 967.09 kB (187.79 kB transfer, 12 files; 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
+initial total is 967.77 kB (187.87 kB transfer, 12 files; 967.09 kB before the review's fixes of 2026-10-30, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -735,11 +735,12 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 967.09 kB since the glass bands, the home rows (then the
+facade) and is 967.77 kB since the glass bands, the home rows (then the
 four-block Cijfers row), the large-title hysteresis, the detail screens'
 host rules, the legacy bar's glass, the strip offsets, stuck bands, sales card
-and sheet cards and the bands' opaque rest, the sales steps' band and the card
-covers of 2026-10-30, well under the 1 MB error budget: the baseline to track.
+and sheet cards, the bands' opaque rest, the sales steps' band and the card
+covers and the review's fixes of 2026-10-30, well under the 1 MB error budget:
+the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -946,12 +947,12 @@ stuck band stands under that line, tone against tone within a level. The PWA's o
 condensed nav and sub-bars are glass in the page colour (workspace-kit.scss,
 `--ios-glass`), and so is every phone bar of `app-page-header` (shell.scss
 `.appbar::before`), except over a near-black card, where 72 % of the page colour
-reads grey (about 188): the sales editor's standing bar (`app-sales-editor
-.appbar::before`) stays main's opaque `--ios-bg`, the glass took the customer name
-under its title to 2.6:1, and so does the nav of a page with a dark hero
-(`.ios-page:has(.ios-hero) .ios-nav::before`: Home, Bank, Kasprognose), which on a
-wide phone also stood as a box in the 760 px column and under the Duo's status paint
-as a seam. Only the PWA's bars: the host hides them.
+reads grey (about 188). So two kinds of bar stay main's opaque `--ios-bg`: the sales
+editor's standing bar (`app-sales-editor .appbar::before`; the glass took the customer
+name under its title to 2.6:1) and the nav of a page with a dark hero
+(`.ios-page:has(.ios-hero) .ios-nav::before`: Home, Bank, Kasprognose; on a wide phone
+the glass also stood as a box in the 760 px column and as a seam under the Duo's status
+paint). Only the PWA's bars: the host hides them.
 
 *The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
 which in the host put the black status text and the native title on near-black.
@@ -985,8 +986,9 @@ both on /stock's Voorraad boeken); it is there from the sheet's first frame and 
 its leave has ended, it does not fade. On the product editor it is the editor's lighter
 page colour (`--ios-bg` left a straight seam across the window, 145 against 149 under the
 dim). Under a stuck band it stays the plain page, 4 levels under the dim against the
-band's lighter tone (145 against 149 on Documenten). Voorraad boeken's select keeps no room for a chevron the phone's rows do
-not draw: "Magazijn Lokeren (288 stuks)" fits the 366 px card. Folded sideways the
+band's lighter tone (145 against 149 on Documenten). Voorraad boeken's select keeps no
+room for a chevron the phone's rows do not draw: "Magazijn Lokeren (288 stuks)" fits the
+366 px card. Folded sideways the
 purchase order's fill line wraps (`[data-host-strip] .mpo-fillrow__line`): the column
 is 594 px in a 678 px window and "15,180 m³ vrij" ran out of the card.
 
