@@ -160,7 +160,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 967.77 kB (187.87 kB transfer, 12 files; 967.09 kB before the review's fixes of 2026-10-30, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
+initial total is 969.33 kB (188.28 kB transfer, 12 files; 967.77 kB before the refused back and the hidden boxes of 2026-10-30, 967.09 kB before the review's fixes of that day, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -716,10 +716,12 @@ requested URL; when the router settles on another URL (a redirect) a
 second one with `replace` and the final URL follows, and when the
 navigation never happens (NavigationCancel other than a redirect or a
 superseding navigation, NavigationError: a guard refused it, a dirty
-editor's leave question answered Annuleren) one with `replace` and the
-current URL follows and the page goes out again, so the shell's
-stale-descriptor guard (a `page` whose `url` differs from the latest URL
-it knows is dropped) never drops a real page. The direction: `pop` on
+editor's leave question answered Annuleren; NavigationSkipped with a
+navigation still pending: one to the URL the router is already on cancels
+the earlier one as superseded and brings no NavigationStart of its own) one
+with `replace` and the current URL follows and the page goes out again, so
+the shell's stale-descriptor guard (a `page` whose `url` differs from the
+latest URL it knows is dropped) never drops a real page. The direction: `pop` on
 popstate, `replace` for replaceUrl (a named `tab` stays `tab`), else
 navDirection's answer with `tab` mapped to `push`, and a same-path query
 step that shows another screen (the agenda's day pick) is a `push` too:
@@ -735,12 +737,12 @@ through `import()` once inside a host, and that chunk alone imports
 `host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
 the workspace tab bars import it too, lazily). So the production initial
 total was 956.73 kB against main's 951.05 kB (host.scss and the
-facade) and is 967.77 kB since the glass bands, the home rows (then the
+facade) and is 969.33 kB since the glass bands, the home rows (then the
 four-block Cijfers row), the large-title hysteresis, the detail screens'
 host rules, the legacy bar's glass, the strip offsets, stuck bands, sales card
 and sheet cards, the bands' opaque rest, the sales steps' band and the card
-covers and the review's fixes of 2026-10-30, well under the 1 MB error budget:
-the baseline to track.
+covers and the review's fixes of 2026-10-30 (967.77 kB before the refused back
+and the hidden boxes), well under the 1 MB error budget: the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -828,6 +830,32 @@ the baseline to track.
   Instellingen › Dit toestel says notifications come from the home-screen
   app.
 
+**A refused back** (`app.config.ts`: `withRouterConfig({ canceledNavigationResolution:
+'computed' })`, 2026-10-30, for the PWA's back too). The router's default,
+`replace`, left the browser one entry lower with the editor's URL written over
+that entry, while NavHistory's index stayed: after the leave question's Annuleren
+the next back was dead without a message (`/sales`, `/sales/1/edit`: nothing below
+to go to, and the editor hides the tab bar, so no way out) or landed a screen too far
+(`/purchasing/1/edit`: Annuleren, back, Niet opslaan ended on `/purchasing`).
+`computed` goes forward again to the entry it left, so the steps keep fitting; that
+way forward is a same-URL navigation (NavigationSkipped, nothing for the shell), and
+the shell sees `nav.willChange pop`, `nav.willChange replace` with the current URL, the
+page again, the same stack. It holds on three things. Every entry needs its
+`ɵrouterPageId`, so a `location.replaceState` of our own always passes
+`this.location.getState()` (the product list, the stock page, `replaceTabInUrl`; the
+product view's hash keeps `window.history.state`), which also keeps NavHistory's id: a
+filtered list no longer restarts the stack when you return to it. Only the query may
+differ from the router's URL: such an entry (`?tab=` on the purchase editor) comes
+forward as a real navigation without a guard, a `pop` and a page at the same depth; another
+path would be another screen and the question a second time. So a new product whose
+save got half way keeps its id in its entry's state (`createdProductId`,
+`rememberCreatedProduct`), not in the address bar: a reload of that entry or a return
+to it goes to `/products/:id/edit` by replace without asking, and a later save that
+succeeds navigates there too. And the router's scroller sends that way forward to the
+top like any other navigation, so NavHistory puts the page back where it stood
+(`refused`, `keepRefusedPosition`): `Scroll` reaches `router.events` before the
+scroller's own listener, so a microtask comes after it and before a paint.
+
 **Explicit `[host]` descriptors** exist for: Home (`+` Toevoegen, bell,
 the "…" rows, refreshable), the Verkoop/Inkoop/Producten lists (`+` and
 `titleMenu: 'auto'` from `tabMenuFor` with the queue's counts; Producten
@@ -850,15 +878,36 @@ Opslaan).
 **host.scss** (`styles/host.scss`, loaded last, every selector under
 `:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--host-stick-t)`;
 `.tabbar`, `.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the
-probe and the mirror read them); `.tabbar-menu*`, `.shero-bar`, `.mpo-dock`, the
-PO editor's whole `.mpo-savebar` (its state text and fill hairline with it;
-the summary card's Lading tile has the fill), `.product-editor-dock`,
-`.safe-paint` gone; the `.appbar` and `.ios-nav` bars and the product
-editor's `.product-mobile-header` become transparent spacers of height
+probe and the mirror read them); `.tabbar-menu*` and `.safe-paint` gone;
+`.shero-bar`, `.mpo-dock`, the PO editor's whole `.mpo-savebar` (its state text
+and fill hairline with it; the summary card's Lading tile has the fill) and
+`.product-editor-dock` hidden boxes (below); the `.appbar` and `.ios-nav` bars and the
+product editor's `.product-mobile-header` become transparent spacers of height
 `--safe-t` (the native status bar + navigation bar, since the shell sets
-`contentInsetAdjustmentBehavior = .never`), their children hidden, the large
+`contentInsetAdjustmentBehavior = .never`), their children hidden boxes, the large
 titles and `[hero]` / `[below]` blocks kept; the sales editor's dock loses
-Opslaan and the primary button and keeps the step and its arrows. The room the
+Opslaan and the primary button and keeps the step and its arrows.
+
+*The hidden containers rule.* Nothing that can hold a sheet or a menu is ever
+`display: none` in the host: the header's bell sheet on every page with
+`app-page-header` lives in `.appbar__actions`, and with that display it had rect 0,0,0,0
+while `overlay open:true` went to the shell, so its bars and tab bar went and nothing stood
+on screen, with no way out. These containers (`.appbar__back/__lead/__actions`,
+`.ios-nav__lead/__title/__trail`, the docks above) are a box of no size: absolute, 0 x 0,
+`overflow: clip` (their laid-out children add no scrollable overflow), `visibility: hidden`,
+no z-index, and none of a transform, a filter, a backdrop-filter or a contain, so
+`position: fixed` escapes the box and a sheet stays in `.main`'s stacking context. The
+mirror's clicks reach the controls as before. An `.overlay` or `.cm` inside turns
+`visibility: visible` again (and takes taps inside the four `pointer-events: none`
+elements above), and `.appbar` or `.ios-nav` with a sheet in it stands at z-index 100,
+above what the page raises (the kit's nav is only 30). `PageHeader.fit` does nothing in the
+host: everything in the box reads as cut. Proven by a sweep on the harness's stub
+(2026-10-30): every id of `primary`, `actions`, `menu` and `accessory` of 93 phone routes,
+343 ids, one at a time on a fresh load at 466x678 and 440x956: every overlay visible and on
+top at five points of its sheet, its cross closes it, and no `overlay open:true` without a
+sheet. After the bell's rows nothing was left to fix.
+
+The room the
 phone pages kept at their end for the ERP tab bar and their docks is the kit
 page's `--safe-b + 28px` (`.ios-page`, `.mpo-phone--view` / `--edit` with the
 purchase root's scroll-padding-bottom, `app-sales-view .content.erp-workspace`,
@@ -895,7 +944,9 @@ title stay above it: Quick Look, the agreement photos and the photo lightbox put
 (`[data-host-strip] :is(.files-ql, .agreement-viewer, .lightbox)`; the inherited step is
 already computed and would not follow), so their header clears the bar as it is at that
 moment (Downloaden at y 92 with the title, 34 without) and moves over a page that stays
-put. The loading
+put. The agreement viewer's stage has definite tracks (`minmax(0, 1fr)` both ways): in an
+auto row the photo's max-height had nothing to go by and ran over the caption at the
+title's height, and its mark wraps instead of ending in an ellipsis below 560 px. The loading
 state of a screen with a `[hero]` (`app-ios-nav [heroLoading]`: purchase view and
 editor, product view) publishes the kind of page that is coming, `largeTitle` with
 no bar title: a title that comes with the push stays until the push has ended, also
@@ -3497,6 +3548,9 @@ contract `redesign/products/design.md` + `critique.md`).
   sheet decides "no customers yet → add form" only after loading -
   deciding on an in-flight empty list opened the wrong flow.
 - Never trust `sessionStorage` auth outside `api.config.ts` helpers.
+- `Location.replaceState(path, query)` without a third argument wipes the entry's
+  router state: pass `this.location.getState()` (see "A refused back"), and never write
+  another path than the router's into the address bar.
 
 ## Jaarinventaris (2026-10-09)
 
