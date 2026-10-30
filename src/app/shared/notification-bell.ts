@@ -213,8 +213,9 @@ import { notificationTarget } from './notification-target';
     .bell--ios .bell-row__tile { width: 30px; height: 30px; }
     .bell--ios .bell-row__title { font-size: 16px; font-weight: 600; }
     .bell--ios :is(.bell-row__meta, .bell-row__detail) { font-size: 13px; }
-    /* The customer's own words: two lines on the phone (no hover title on touch), one with the title on the desk. */
-    .bell--ios .bell-row__detail { display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    /* Whole on the phone, the customer's own words too (no hover title on touch): texts wrap, a label never ends in an ellipsis. One line with the title on the desk. */
+    .bell--ios .bell-row__sub { flex-wrap: wrap; }
+    .bell--ios :is(.bell-row__title, .bell-row__meta, .bell-row__detail) { white-space: normal; overflow-wrap: anywhere; }
     .bell--ios .bell-row__x { width: 44px; height: 44px; }
   `,
 })
