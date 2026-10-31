@@ -18,7 +18,7 @@ import { Ui } from '../../shared/ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Icon, LoadError, PageHeader, RouterLink, Skeleton],
   template: `
-    <app-page-header title="Voorraadradar" subtitle="iPhone Duo · 256 GB · Sterrenwit">
+    <app-page-header title="Voorraadradar" subtitle="iPhone Duo · Sterrenwit · 256 en 512 GB">
       <button class="btn btn--sm btn--icon-mobile" type="button" (click)="checkAll()" [disabled]="busy()"
         aria-label="Alle winkels nu controleren" title="Alle winkels nu controleren">
         <app-icon name="refresh" [size]="17" /><span class="sr-desk-label">Nu controleren</span>
@@ -56,13 +56,15 @@ import { Ui } from '../../shared/ui';
           @if (availableRows().length > 0) {
             <div class="sr-hero-links">
               @for (row of availableRows(); track row.key) {
-                <a class="btn btn--primary" [href]="row.foundUrl || row.orderUrl" target="_blank" rel="noopener">{{ row.name }} · bestellen <app-icon name="external" [size]="15" /></a>
+                <a class="btn btn--primary" [href]="row.foundUrl || row.orderUrl" target="_blank" rel="noopener">{{ row.name }} · {{ row.model }} <app-icon name="external" [size]="15" /></a>
               }
             </div>
           }
         </section>
-        <div class="sr-grid" aria-label="Gecontroleerde winkels">
-          @for (row of data.stores; track row.key) {
+        @for (model of models(); track model.label) {
+        <h2 class="sr-model">{{ model.label }}</h2>
+        <div class="sr-grid" [attr.aria-label]="'Gecontroleerde winkels voor ' + model.label">
+          @for (row of model.rows; track row.key) {
             <article class="sr-card" [class.sr-card--on]="row.available === true" [class.sr-card--err]="!!row.lastError && row.available !== true">
               <header class="sr-card-head">
                 <div><h3>{{ row.name }}</h3><p class="sr-kind">{{ row.kindLabel }}</p></div>
@@ -85,7 +87,8 @@ import { Ui } from '../../shared/ui';
             </article>
           }
         </div>
-        <p class="sr-foot">Apple-artikelnummer {{ data.applePart }} · beschikbaar = nu op voorraad met levering of afhaling binnen {{ data.maxDeliveryDays }} dagen · dit scherm ververst elke minuut.</p>
+        }
+        <p class="sr-foot">Apple-artikelnummers {{ data.applePart }} · beschikbaar = nu op voorraad met levering of afhaling binnen {{ data.maxDeliveryDays }} dagen · dit scherm ververst elke minuut.</p>
       }
     </div>
   `,
@@ -96,6 +99,7 @@ import { Ui } from '../../shared/ui';
     .sr-hero-meta{margin:10px 0 0;font-size:13px;line-height:1.6;color:var(--muted)}.sr-hero-meta strong{color:var(--ink);font-weight:600}.sr-hero-links{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.sr-hero-links .btn{display:inline-flex;align-items:center;gap:6px}
     .sr-hero-tests{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}.sr-hero-tests .btn{display:inline-flex;align-items:center;gap:6px}.sr-test-note{font-size:12px;line-height:1.5;color:var(--muted);overflow-wrap:anywhere}
     .sr-warn{color:var(--danger,#b4232c);font-weight:600}.sr-muted{color:var(--muted)}
+    .sr-model{margin:22px 2px 10px;font-size:15px;font-weight:700}.sr-hero+.sr-model{margin-top:6px}
     .sr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
     .sr-card{display:flex;flex-direction:column;gap:10px;border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:16px 18px}.sr-card--on{border-color:color-mix(in srgb,var(--ok) 60%,var(--line));box-shadow:inset 3px 0 var(--ok)}.sr-card--err{border-color:color-mix(in srgb,var(--danger,#b4232c) 45%,var(--line))}
     .sr-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.sr-card-head h3{margin:0;font-size:15px;font-weight:700;line-height:1.3}.sr-kind{margin:2px 0 0;font-size:11px;color:var(--muted)}
@@ -119,6 +123,16 @@ export class StockRadarPage {
   readonly loadError = signal<string | null>(null);
   readonly lastTest = signal<{ ok: boolean; text: string } | null>(null);
   readonly availableRows = computed(() => (this.feed()?.stores ?? []).filter((row) => row.available === true));
+  /** The shops per model, in the backend's order. */
+  readonly models = computed(() => {
+    const groups: { label: string; rows: StockRadarRow[] }[] = [];
+    for (const row of this.feed()?.stores ?? []) {
+      const group = groups.find((candidate) => candidate.label === row.model);
+      if (group) group.rows.push(row);
+      else groups.push({ label: row.model, rows: [row] });
+    }
+    return groups;
+  });
   private request = 0;
 
   constructor() {

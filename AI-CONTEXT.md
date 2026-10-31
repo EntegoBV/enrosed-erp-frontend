@@ -4306,7 +4306,7 @@ A personal screen for Emre at `/voorraadradar` (`features/stock-radar/stock-rada
 `core/api/stock-radar-api.ts`): the backend's stock radar for the iPhone Duo
 (see the backend AI-CONTEXT). One responsive component: a hero with the verdict
 ("Nu beschikbaar bij N winkels" / "Nergens binnen 3 dagen te krijgen") and the
-Testpush and Testmail buttons, then a card per shop (status pill, last text,
+Testpush and Testmail buttons, then per model (256 GB, 512 GB) a card per shop (status pill, last text,
 price, promised date, last check, rhythm, last notification with push/mail
 status, "Open winkel", "Nu controleren"). The header has "Nu controleren".
 Refreshes itself every minute while visible, the shops' own rhythm.

@@ -7,6 +7,8 @@ import { api } from './api.config';
 export interface StockRadarRow {
   key: string;
   name: string;
+  /** The model this row watches: "256 GB" or "512 GB". */
+  model: string;
   kindLabel: string;
   method: 'http' | 'browser' | 'chrome';
   url: string;
