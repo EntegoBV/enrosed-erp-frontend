@@ -47,6 +47,7 @@ export function returnLabel(url: string): string {
   if (under(path, '/suppliers')) return 'Leveranciers';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';
+  if (under(path, '/voorraadradar')) return 'Voorraadradar';
   if (under(path, '/website')) return 'Website';
   if (under(path, '/more')) return 'Meer';
   if (under(path, '/dashboard')) return 'Dashboard';
@@ -122,6 +123,7 @@ export function screenLabel(url: string): string {
   if (path === '/settings') return settingsViewLabel(url) ?? 'Instellingen';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';
+  if (under(path, '/voorraadradar')) return 'Voorraadradar';
   if (under(path, '/analyses')) return 'Analyses';
   if (under(path, '/more')) return 'Meer';
   if (under(path, '/costs')) return 'Kosten & bank';
