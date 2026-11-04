@@ -389,8 +389,12 @@ export class ShippingPlanner {
   readonly autoShown = computed(() => this.autoRows().length > 0 && palletCount(this.autoRows()) === this.autoCount());
   readonly handRows = computed(() => handPallets(this.view(), this.lines(), this.spec()));
   readonly placed = computed(() => placements(this.order(), this.lines()));
-  /** Palletberekening's mix one tap away, only where Automatisch does not mix already. */
-  readonly mixed = computed<MixedLayout | null>(() => (this.palletsMode() && !this.manual() && this.autoShown() && this.rule() === 'STRICT'
+  /**
+   * Palletberekening's mix one tap away, only where Automatisch does not mix already and only on a
+   * concept: a document that left concept keeps the count and freight it was sent with.
+   */
+  readonly mixed = computed<MixedLayout | null>(() => (this.palletsMode() && !this.manual() && this.autoShown()
+    && this.rule() === 'STRICT' && this.view().order.status === 'CONCEPT'
     ? mixedLayout(this.lines(), this.spec(), this.autoCount()) : null));
   /** Per product, the automatic pallets it stands on. */
   readonly palletsOf = computed(() => {

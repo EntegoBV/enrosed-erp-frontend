@@ -4527,7 +4527,7 @@ are tiles, hand pallets are cards edited in place.
   "Indeling opnieuw maken" (after a pallet type change) run the same copy, so
   the server must send `autoPallets` with a hand layout present too.
 - **The mixed offer** "Gemengd: m pallets · k minder · Indelen" shows only under
-  STRICT (or on an older server), when the planner can edit and `mixedLayout`
+  STRICT (or on an older server), on a concept the planner can edit, and when `mixedLayout`
   (the frontend's `planPallets`, skipped above 200 separate pallets) needs fewer
   pallets than the automatic count. It patches a hand layout, which then counts
   for the freight.
