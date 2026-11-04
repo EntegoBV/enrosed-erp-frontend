@@ -1,4 +1,4 @@
-import type { CartonDto, PalletProfile, Product } from '../../core/api/models';
+import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/api/models';
 
 /**
  * The arithmetic of Palletberekening (pallet-calculator-page.ts), free of
@@ -203,6 +203,22 @@ export function productUnits(product: Pick<Product, 'packaging' | 'carton'>): Pr
 /** How many of a unit one omdoos holds; null when the product has no such unit. */
 export function unitsPerCarton(unit: CalcUnit, units: ProductUnits): number | null {
   return unit === 'carton' ? 1 : unit === 'display' ? units.displaysPerCarton : units.piecesPerCarton;
+}
+
+/**
+ * The unit a new row starts in: what the customer orders per ("Klant
+ * bestelt per", the step as effectiveOrderStep reads it). Per display gives
+ * displays when the omdoos holds whole ones; per unit gives displays on a
+ * display basis, else pieces; per omdoos, or a unit the omdoos cannot count,
+ * gives omdozen.
+ */
+export function startUnit(step: OrderStep, units: ProductUnits, displayBasis: boolean): CalcUnit {
+  if (step === 'PACKAGE') return units.displaysPerCarton ? 'display' : 'carton';
+  if (step === 'UNIT') {
+    if (displayBasis) return units.displaysPerCarton ? 'display' : 'carton';
+    return units.piecesPerCarton ? 'piece' : 'carton';
+  }
+  return 'carton';
 }
 
 /** Whole cartons for a typed quantity; a started carton is a full one. */
