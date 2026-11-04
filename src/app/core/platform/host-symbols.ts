@@ -17,7 +17,7 @@ export const HOST_SYMBOLS: Readonly<Record<string, string>> = {
   customers: 'person.2', suppliers: 'truck.box', truck: 'truck.box', tag: 'tag', search: 'magnifyingglass', info: 'info.circle',
   tick: 'checkmark.circle', list: 'list.bullet', folder: 'folder', barcode: 'barcode', grid: 'square.grid.2x2',
   download: 'square.and.arrow.down', pdf: 'doc.richtext', document: 'doc', book: 'book', trash: 'trash',
-  layers: 'square.stack.3d.up', globe: 'globe', plus: 'plus', refresh: 'arrow.clockwise', camera: 'camera',
+  layers: 'square.stack.3d.up', pallet: 'square.stack.3d.up', globe: 'globe', plus: 'plus', refresh: 'arrow.clockwise', camera: 'camera',
   calendar: 'calendar', check: 'checkmark', filter: 'line.3.horizontal.decrease', recent: 'clock', archive: 'archivebox',
   restore: 'arrow.uturn.backward', share: 'square.and.arrow.up', upload: 'arrow.up.circle', image: 'photo', eye: 'eye',
   pencil: 'pencil', chevron: 'chevron.right', 'chevron-left': 'chevron.left', 'chevron-right': 'chevron.right',

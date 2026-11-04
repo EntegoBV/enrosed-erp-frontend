@@ -69,6 +69,13 @@ export const routes: Routes = [
     loadComponent: () => import('./features/tica/tica-page').then((m) => m.TicaPage),
   },
   {
+    path: 'palletberekening',
+    title: 'Palletberekening',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/sales/pallet-calculator-page').then((m) => m.PalletCalculatorPage),
+  },
+  {
     path: 'sales/:id/edit',
     title: 'Verkooporder',
     canActivate: [authGuard],

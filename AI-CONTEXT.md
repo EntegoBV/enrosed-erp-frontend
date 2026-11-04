@@ -4318,3 +4318,42 @@ sidebar (`App.sidebarItems`) and on Meer (`meerItems(group, username)`). The
 backend answers 404 to other users anyway. No `[host]` descriptor: the native
 shell relies on the mirror, as on Logboek. Push needs the installed web app
 (no web push in the native shell).
+
+## Palletberekening (2026-11-04)
+
+Emre (2026-11-04): a Verkoop item to see at the fair how much of one product, or of
+several together, fits on a pallet and in a 20ft or 40ft, in omdozen, displays and
+pieces. `/palletberekening` (`features/sales/pallet-calculator-page.ts`), the second
+row of the Verkoop group (`nav-items.ts`, icon `pallet`, native symbol
+`square.stack.3d.up`), so it is also on the long-press Verkoop tab menu and on Meer.
+Frontend only: it reads `GET /api/products` (active, not demo) and the unit names,
+and keeps the picks, pallet type and height in localStorage
+(`enrosed.palletCalculator`); nothing goes to the server.
+
+- **The numbers** live in `pallet-calculator-model.ts` (pure). `palletFit` mirrors
+  the backend's `PalletCalculator.fit` exactly (guillotine rows in both pallet
+  directions, layers under the total height with the 14.4 cm wood, then 700 kg) on
+  the `PalletProfile` footprints and the `SalesSettings` defaults, which production
+  does not override; keep the two in step when the backend changes.
+  `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
+- **A mix** stacks every product in layers of its own, a started layer as high as a
+  full one (the pallet planner's `estimatePalletHeightCm` model): full pallets of one
+  product first, then the rests layer by layer on the first mixed pallet with room,
+  in pick order. Deliberately conservative ("freight never too low"): cartons of
+  two products never share a layer, so a nearly full mixed pallet plus one carton
+  shows a last pallet with one carton. "Nog plaats op pallet N" (`roomOn`) adds the
+  empty places of started layers plus new layers, within the weight; its buttons
+  add those omdozen. "Verdeel 1 pallet" (`shareOnePallet`) hands out whole layers to
+  the product with the least height so far.
+- **Containers** take loose cartons per product: 20ft = the confirmed count, else
+  28 m³ by volume, else the 40ft HC count × 28/68 (the product screen's "Per 20ft
+  GP"); 40ft HC = the hand count, else 68 m³ ("Per 40' HC"); 40ft = scaled from a
+  hand count, else 58 m³ (ContainerType). A mix is the sum of cartons ÷ each
+  product's own capacity.
+- **Units**: `carton.piecesPerCarton` counts sales units (displays for a display
+  basis); a display column shows only when the omdoos holds whole displays of 2+.
+  A typed quantity in displays or pieces rounds up to whole omdozen and says so
+  ("Afgerond: 4 omdozen (…)"); the steppers move one omdoos in the chosen unit.
+- Layout: phone = search, result, cards; desk (`@container pc` ≥ 760 px) = cards
+  left, sticky result right. Initial bundle 970.70 kB after this (the page is a lazy
+  chunk; only the nav row, the icon and the symbol are in the first screen).

@@ -83,9 +83,11 @@ export const NAV_HOME: NavItem = {
 export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'verkoop', label: 'Verkoop', icon: 'sales', tone: 'accent',
-    hint: 'Wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
+    hint: 'Palletberekening, wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
     items: [
       { id: 'sales', label: 'Verkooporders', short: 'Verkoop', icon: 'sales', link: '/sales', countKey: 'actionCount', railMain: true, tabRoot: true },
+      { id: 'pallet-calculator', label: 'Palletberekening', icon: 'pallet', link: '/palletberekening',
+        hint: 'Wat er op een pallet en in een 20ft of 40ft gaat', newUntil: '2027-01-01' },
       { id: 'tica', label: 'TICA verkopen', short: 'TICA', icon: 'receipt', link: '/tica',
         hint: 'Verkopen per vestiging, automatische import en meldingen' },
       { id: 'revisions', label: 'Wijzigingen', icon: 'pencil', link: '/revisions', countKey: 'revisionCount', groupCount: false,
