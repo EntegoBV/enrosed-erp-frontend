@@ -1630,63 +1630,6 @@ table.data tfoot td {
 .collapse > .collapse__inner { overflow: hidden; min-height: 0; }
 .collapse--open > .collapse__inner { overflow: visible; }
 
-/* ------------------------------------------------------------- pallets */
-.pallet {
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  margin-bottom: 10px;
-  background: var(--surface);
-  animation: pallet-in 0.25s ease;
-}
-@keyframes pallet-in { from { opacity: 0; transform: translateY(4px); } }
-.pallet__head {
-  display: flex; align-items: center; gap: 2px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-}
-.pallet__label {
-  flex: 1; min-width: 0;
-  border: 0; background: transparent;
-  font: inherit; font-weight: 700; font-size: 14px; color: var(--ink);
-  padding: 4px 2px;
-}
-.pallet__label:focus { outline: none; border-bottom: 1px dashed var(--accent); }
-.pallet__empty {
-  padding: 8px 12px; font-size: 12.5px; color: var(--muted);
-}
-.pallet__count { font-size: 12px; color: var(--muted); white-space: nowrap; }
-.pallet__tool {
-  border: 0; background: transparent; color: var(--muted);
-  min-width: 32px; min-height: 32px; border-radius: 8px;
-  font-size: 14px; cursor: pointer;
-}
-.pallet__tool:active { background: var(--surface-2); }
-.pallet__tool:disabled { opacity: 0.3; }
-.pallet__item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px;
-  border-bottom: 1px solid var(--line);
-  font-size: 13.5px;
-}
-.pallet__item:last-child { border-bottom: 0; }
-.pallet__item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pallet__cartons {
-  width: 64px; text-align: right;
-  border: 1px solid var(--line-strong); border-radius: 8px;
-  padding: 5px 8px; font: inherit; font-size: 13.5px;
-  font-variant-numeric: tabular-nums;
-}
-.pallet__add { padding: 8px 10px; }
-.pallet-warn {
-  background: var(--warn-soft, #fdf3e2);
-  border: 1px solid #f0dcbc;
-  color: var(--warn, #a85e10);
-  border-radius: var(--r-sm);
-  padding: 9px 12px;
-  font-size: 13px;
-  margin-bottom: 10px;
-}
-
 /* ------------------------------------------------------ motion language */
 /* The rise for opt-in blocks (.anim-rise, .anim-stagger, inline editors).
    Page changes fade instead (styles/motion.scss). */
@@ -1741,19 +1684,6 @@ a.kpi--dark { color: #fff; }
 .rate-row .field { margin: 0; }
 .rate-row label { font-size: 11px; white-space: nowrap; }
 
-.pallet__sub {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-2);
-}
-.pallet__type {
-  border: 1px solid var(--line-strong); border-radius: 8px;
-  background: var(--surface); color: var(--ink);
-  font: inherit; font-size: 12.5px; padding: 5px 8px;
-  max-width: 200px;
-}
-
 /* Inline "adjust" affordance inside a stat row. */
 .linklike {
   border: 0; background: none; padding: 0 2px;
@@ -1786,41 +1716,6 @@ a.kpi--dark { color: #fff; }
 }
 .per-toggle button.on { background: var(--surface); color: var(--ink);
   box-shadow: 0 1px 2px rgb(26 22 20 / 10%); }
-
-/* Pallet item: name left, stepper right, one aligned baseline. */
-.pallet__item {
-  display: grid;
-  grid-template-columns: 1fr auto auto;
-  align-items: center;
-  gap: 10px;
-}
-.pallet__item-name { white-space: normal; line-height: 1.35; }
-.pallet__item-unit { font-size: 11.5px; color: var(--muted); }
-.pallet__step {
-  display: inline-flex; align-items: stretch;
-  border: 1px solid var(--line-strong); border-radius: 10px;
-  overflow: hidden; background: var(--surface);
-}
-.pallet__step-btn {
-  border: 0; background: transparent; color: var(--ink);
-  width: 34px; font-size: 16px; cursor: pointer;
-}
-.pallet__step-btn:active { background: var(--surface-2); }
-.pallet__step-btn:disabled { opacity: 0.3; }
-.pallet__step-input {
-  width: 46px; text-align: center; border: 0;
-  border-inline: 1px solid var(--line);
-  font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums;
-  -moz-appearance: textfield;
-}
-.pallet__step-input::-webkit-outer-spin-button,
-.pallet__step-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.pallet__height {
-  width: 68px; text-align: right;
-  border: 1px solid var(--line-strong); border-radius: 8px;
-  padding: 5px 8px; font: inherit; font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
 
 /* Hairline progress toward the minimum order value, on the floating bar. */
 .action-bar__meter {
@@ -2004,10 +1899,9 @@ a.kpi-list__row:hover { background: var(--surface-2); }
 
 /* ------------------------------------------------ touch behaviour (iOS) */
 /* Avoid delayed/double-tap activation while preserving browser pinch zoom. */
-button, .btn, .pallet__step-btn, .pallet__tool, input, select {
+button, .btn, input, select {
   touch-action: manipulation;
 }
-.pallet__step-btn, .pallet__tool { user-select: none; -webkit-user-select: none; }
 
 /* A single, visible keyboard-focus language across the whole application. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
@@ -2024,8 +1918,6 @@ button, .btn, .pallet__step-btn, .pallet__tool, input, select {
   .sheet__close,
   .input--sm,
   .portal__select,
-  .pallet__tool,
-  .pallet__step-btn,
   .delivery__edit,
   .photo__btn,
   .lightbox__btn,
@@ -2402,8 +2294,6 @@ app-product-view .website-copy small {
   font-size: 10px;
 }
 
-/* Breathing room between the pallet explainer and its two start options. */
-.pallet-intro { margin: 0 0 16px; line-height: 1.55; }
 
 
 
