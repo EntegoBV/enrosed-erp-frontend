@@ -10,9 +10,11 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   screen therefore says what a quote says.
  * - Several products share pallets the way the pallet planner estimates a
  *   hand-built pallet (pallet-stack.ts): each product in layers of its own,
- *   a started layer as high as a full one. The layers go tallest first onto
- *   the first pallet with room (planPallets), so one product alone still
- *   gets exactly its cartonsPerPallet per pallet.
+ *   a started layer as high as a full one. The products go tallest carton
+ *   first, each layer onto the first pallet with room (planPallets, the
+ *   backend's PalletCalculator.mixedPallets step for step), so one product
+ *   alone still gets exactly its cartonsPerPallet per pallet and a mix never
+ *   needs more pallets than every product on pallets of its own.
  * - A container takes loose cartons: each product's own capacity (the hand
  *   count where one was confirmed, else full cartons on the practical
  *   volumes of the backend's ContainerType), a mix as the sum of the shares.
@@ -343,13 +345,30 @@ interface Stack { parts: PalletPart[]; heightCm: number; weightKg: number }
 
 const EPSILON = 1e-9;
 
+/** Omdozen that fit a pallet, as the backend's Load.placeable; the rest drops out of every count. */
 function placeable(line: PlanLine): boolean {
-  return line.cartons > 0 && line.fit.cartonsPerPallet > 0 && line.cartonHeightCm > 0;
+  return line.cartons > 0 && line.fit.cartonsPerPallet > 0 && line.fit.perLayer > 0 && line.cartonHeightCm > 0;
 }
 
-/** Every product on pallets of its own: what a quote counts, and the bound on what the plan works out. */
+/** Every product on pallets of its own, the strict count: the most a plan ever gives, and the bound on what it works out. */
 export function separatePallets(lines: readonly PlanLine[]): number {
   return lines.filter(placeable).reduce((sum, line) => sum + Math.ceil(line.cartons / line.fit.cartonsPerPallet), 0);
+}
+
+/** The pallets of that count, in line order: a product's full pallets, then its rest (the backend's separatePallets). */
+function separateLayout(lines: readonly PlanLine[]): Stack[] {
+  const stacks: Stack[] = [];
+  for (const line of lines) {
+    for (let left = line.cartons; left > 0; left -= line.fit.cartonsPerPallet) {
+      const cartons = Math.min(line.fit.cartonsPerPallet, left);
+      const layers = Math.ceil(cartons / line.fit.perLayer);
+      stacks.push({
+        parts: [{ key: line.key, cartons, layers }],
+        heightCm: layers * line.cartonHeightCm, weightKg: cartons * line.cartonWeightKg,
+      });
+    }
+  }
+  return stacks;
 }
 
 /** Cartons of a line that the weight still allows on a pallet. */
@@ -367,46 +386,47 @@ function place(stack: Stack, line: PlanLine, cartons: number): void {
 }
 
 /**
- * The pallets for these cartons. Every product goes in whole layers of its
- * own (the last one may be short), the tallest layers first, each on the
- * first pallet where it still goes under the height and the weight
- * (first-fit decreasing). Where the weight takes only part of a layer, that
- * part stays and the rest looks further, so one product alone gets exactly
- * its cartonsPerPallet per pallet. Lines that fit no pallet are left out.
+ * The pallets for these cartons: the backend's PalletCalculator.mixedPallets
+ * step for step, keep the two identical. The products go tallest carton
+ * first, ties in line order, each in whole layers of its own (the last one
+ * may be short); every layer goes on the first pallet where it still goes
+ * under the height and the weight takes at least one carton (first-fit
+ * decreasing). Where the weight takes only part of a layer, the cartons left
+ * behind join the product's next layer, so one product alone gets exactly
+ * its cartonsPerPallet per pallet. A plan that still needs more pallets than
+ * every product on pallets of its own is that layout instead (separateLayout),
+ * so a mix never counts more than the strict rule. Lines that fit no pallet
+ * are left out.
  */
 export function planPallets(lines: readonly PlanLine[], pallet: PalletSpec): PlannedPallet[] {
   const usable = pallet.maxHeightCm - pallet.baseHeightCm;
   const placed = lines.filter(placeable);
-  const layers: { line: PlanLine; cartons: number; order: number }[] = [];
-  placed.forEach((line, order) => {
-    for (let rest = line.cartons; rest > 0; rest -= line.fit.perLayer) {
-      layers.push({ line, cartons: Math.min(line.fit.perLayer, rest), order });
-    }
-  });
-  layers.sort((left, right) => right.line.cartonHeightCm - left.line.cartonHeightCm || left.order - right.order);
+  const tallestFirst = placed.map((line, order) => ({ line, order }))
+    .sort((left, right) => right.line.cartonHeightCm - left.line.cartonHeightCm || left.order - right.order);
 
-  const stacks: Stack[] = [];
-  for (const layer of layers) {
-    const { line } = layer;
-    let cartons = layer.cartons;
-    while (cartons > 0) {
+  let stacks: Stack[] = [];
+  for (const { line } of tallestFirst) {
+    let rest = line.cartons;
+    while (rest > 0) {
+      const layer = Math.min(line.fit.perLayer, rest);
       let target: Stack | null = null;
       let fits = 0;
       for (const stack of stacks) {
         if (stack.heightCm + line.cartonHeightCm > usable + EPSILON) continue;
-        fits = Math.min(cartons, weightRoom(stack.weightKg, line, pallet));
+        fits = Math.min(layer, weightRoom(stack.weightKg, line, pallet));
         if (fits > 0) { target = stack; break; }
       }
       if (!target) {
         /* An empty pallet always takes a layer: cartonsPerPallet > 0 means one layer is under the height and one carton under the weight. */
         target = { parts: [], heightCm: 0, weightKg: 0 };
         stacks.push(target);
-        fits = Math.min(cartons, weightRoom(0, line, pallet));
+        fits = Math.min(layer, weightRoom(0, line, pallet));
       }
       place(target, line, fits);
-      cartons -= fits;
+      rest -= fits;
     }
   }
+  if (stacks.length > separatePallets(placed)) stacks = separateLayout(placed);
 
   /* Unrounded: the room search counts on these; the screen rounds when it writes them. */
   return stacks.map((stack) => {
@@ -426,7 +446,8 @@ export function planPallets(lines: readonly PlanLine[], pallet: PalletSpec): Pla
 /**
  * How many more omdozen of one product still go on without an extra pallet:
  * the largest number up to one full pallet of it for which a fresh plan
- * keeps the count. Every try is a whole re-plan, so an offer never promises
+ * keeps the count. Every try is a whole re-plan, the cap to pallets of their
+ * own included, and only a tried number is kept, so an offer never promises
  * room the plan then does not find.
  */
 export function roomWithoutExtraPallet(lines: readonly PlanLine[], key: number, pallet: PalletSpec, count: number): number {

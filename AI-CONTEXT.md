@@ -4413,17 +4413,33 @@ adds, the answer stays in sight.
   `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
 - **A mix** stacks every product in layers of its own, a started layer as high as a
   full one (the pallet planner's `estimatePalletHeightCm` model). `planPallets` is
-  first-fit decreasing over all layers: tallest first, each on the first pallet that
-  still takes it under the height and the weight; where the weight takes only part
-  of a layer, the rest looks further, so one product alone gets exactly its
-  `cartonsPerPallet` per pallet. Deliberately conservative ("freight never too
-  low"): cartons of two products never share a layer. The backend's MIXED rule
-  counts a concept's automatic pallets with this same algorithm (see "Pallet
-  planner"), so both screens give one answer. "Past nog bij, zonder extra
-  pallet" (`roomWithoutExtraPallet`) is the largest extra per product (up to one
-  full pallet of it) for which a fresh plan keeps the count, found by re-planning
-  (binary search), so a "+ N omdozen" button never adds a pallet; worked out for
-  plans of at most 30 pallets. "Verdeel 1 pallet" (`shareOnePallet`) hands out
+  first-fit decreasing and identical, step for step, to the backend's
+  `PalletCalculator.mixedPallets` (change both or neither): the lines whose omdozen
+  fit a pallet (`placeable`) go tallest carton first, ties in line order; each
+  takes its omdozen a layer at a time (`min(perLayer, rest)`) to the first pallet,
+  in the order the pallets were made, where that layer stays under the height
+  (1e-9 tolerance) and the weight still takes one omdoos, and puts there as many as
+  700 kg allows; with no such pallet a new one takes the layer (up to 700 kg). The
+  omdozen a weight split leaves behind join the product's next layer instead of
+  starting a short one of their own, so one product alone gets exactly its
+  `cartonsPerPallet` per pallet: 238 omdozen of 40×40×50 cm at 30.7 kg on a
+  Europallet at 260 cm make 11 pallets, the strict count (the first version made
+  12, 22/20/22/20…; money review 2026-11-04). A plan that still needs more pallets
+  than every product on pallets of its own (`separatePallets`) becomes that layout
+  (`separateLayout`: per line its full pallets, then its rest; a pallet's layers
+  `ceil(omdozen / perLayer)`, its height the wood plus those layers, its weight the
+  omdozen's), so a mix never counts more than STRICT. With exact sizes and weights
+  that cap never acts (a product's own new pallets each take its
+  `cartonsPerPallet`); it catches the planner's carton weight (a line's rounded
+  weight over its omdozen) when that comes out a hair heavier. Deliberately
+  conservative ("freight never too low"): cartons of two products never share a
+  layer. The backend's MIXED rule counts a concept's automatic pallets with this
+  same algorithm (see "Pallet planner"), so both screens give one answer. "Past
+  nog bij, zonder extra pallet" (`roomWithoutExtraPallet`) is the largest extra
+  per product (up to one full pallet of it) for which a fresh plan, the cap
+  included, keeps the count, found by re-planning (a binary search that keeps only
+  an extra it re-planned), so a "+ N omdozen" button never adds a pallet; worked
+  out for plans of at most 30 pallets. "Verdeel 1 pallet" (`shareOnePallet`) hands out
   whole layers to the product with the least height so far; its layers make one
   stack, so the plan puts them on one pallet. Above 200 pallets counted per
   product (`separatePallets`, a seven-digit typo) the plan is skipped: "Meer dan
@@ -4500,7 +4516,8 @@ are tiles, hand pallets are cards edited in place.
 - **Automatisch is the server's** count and layout, which the freight follows
   (`PricedOrder.totals`, optional for an older server): `palletRule` MIXED
   stacks the products together with Palletberekening's `planPallets` (new and
-  concept documents; Emre 2026-11-04 "Ja, gemengd tellen"), STRICT keeps every
+  concept documents; Emre 2026-11-04 "Ja, gemengd tellen"; never more pallets
+  than STRICT, a plan that would is the separate layout), STRICT keeps every
   product on pallets of its own (documents past concept keep the count and the
   freight they were sent with); `palletsAutomatic` is the count freight, the
   PDF, the portal and the website quote use without a hand layout; `autoPallets`
