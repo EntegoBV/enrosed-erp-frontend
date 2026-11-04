@@ -61,6 +61,7 @@ import { salesDocumentKind } from './partner-settlement';
 import { salesLineSections } from './sales-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { SalesPdfChoice, SalesPdfSheet } from './sales-pdf-sheet';
+import { shippedPallets } from './pallet-stack';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -2073,7 +2074,7 @@ export class SalesView {
   }
 
   palletCount(data: SalesOrderView): number {
-    return data.priced.totals.palletsManual || data.priced.totals.palletsStrict;
+    return shippedPallets(data.priced.totals);
   }
 
   isLooseCartons(data: SalesOrderView): boolean {

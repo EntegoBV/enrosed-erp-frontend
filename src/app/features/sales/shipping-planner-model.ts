@@ -3,7 +3,7 @@ import type {
 } from '../../core/api/models';
 import {
   MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
-  planPallets, separatePallets, type PalletSpec, type PlanLine,
+  planPallets, roomWithoutExtraPallet, separatePallets, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
   PALLET_PRODUCT_COLOURS, PALLET_TYPES, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
@@ -12,8 +12,9 @@ import { salesLineUnavailable } from './sales-line-availability';
 
 /**
  * What the pallet planner shows, worked out from the priced order without
- * Angular: the pallets of the automatic count (every product on pallets of
- * its own, the backend's palletsStrict), the hand-built pallets with their
+ * Angular: the pallets of the automatic count (the server's layout under
+ * its palletRule; on an older server every product on pallets of its own,
+ * palletsStrict, laid out here), the hand-built pallets with their
  * estimated height and weight, the mixed layout Palletberekening would
  * make, and where every omdoos stands. The backend stays the one that
  * counts fits, m³ and freight; this only lays its answer out.
@@ -57,9 +58,9 @@ export interface PlannerLine {
   /** Layers of a full pallet. */
   fullLayers: number;
   weightLimited: boolean;
-  /** Pallets of its own (the automatic count). */
+  /** Pallets of its own (the strict count). */
   pallets: number;
-  /** Omdozen that still go on its last pallet. */
+  /** Omdozen that still go on its own last pallet. */
   room: number;
   /** Why it fits no pallet, in Palletberekening's words; null when it fits. */
   problem: string | null;
@@ -151,7 +152,46 @@ function weightShare(weightKg: number, spec: PlannerSpec): number {
   return spec.maxWeightKg > 0 ? weightKg / spec.maxWeightKg : 0;
 }
 
-/** The automatic count, laid out the way "Zelf indelen" copies it: per product, its full pallets, then the rest. */
+/**
+ * The server's automatic layout (totals.autoPallets, under its palletRule),
+ * numbered the way "Zelf indelen" copies it, with the server's height and
+ * weight per pallet; a run of equal full pallets of one product reads as
+ * one row ("Pallet 1–2"). Null on an older server, which sends no layout.
+ */
+export function serverPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec): PalletVm[] | null {
+  const pallets = view.priced.totals.autoPallets;
+  if (!pallets) return null;
+  const byId = new Map(lines.map((line) => [line.productId, line]));
+  const rows: PalletVm[] = [];
+  pallets.forEach((pallet, index) => {
+    const parts = pallet.items.map((item) => {
+      const line = byId.get(item.productId);
+      return { productId: item.productId, name: line?.name ?? 'Verwijderd product', colour: line?.colour ?? 'var(--muted-2)',
+        photoUrl: line?.photoUrl ?? null, cartons: item.cartons };
+    });
+    const cartons = pallet.items.reduce((sum, item) => sum + item.cartons, 0);
+    const only = pallet.items.length === 1 ? byId.get(pallet.items[0].productId) : undefined;
+    const fill = Math.min(1, Math.max((pallet.heightCm - spec.baseHeightCm) / spec.usableCm, weightShare(pallet.weightKg, spec)));
+    const full = (!!only && only.perPallet > 0 && cartons >= only.perPallet) || fill >= 0.995;
+    const run = rows.at(-1);
+    if (full && only && run?.full && run.parts.length === 1 && run.parts[0].productId === only.productId
+        && run.cartons === cartons && run.heightCm === pallet.heightCm && run.weightKg === pallet.weightKg) {
+      run.to = index + 1;
+      run.label = `Pallet ${run.from}–${run.to}`;
+      return;
+    }
+    rows.push({
+      index, from: index + 1, to: index + 1, label: `Pallet ${index + 1}`, contents: contents(parts), parts, cartons,
+      heightCm: pallet.heightCm, measured: false, weightKg: pallet.weightKg, fill: full ? 1 : fill, full,
+      over: false, heavy: false, status: full ? 'vol' : 'pct',
+      blocks: pallet.items.map((item) => block(byId.get(item.productId), item.layers, spec)),
+      type: null, typeNote: null,
+    });
+  });
+  return rows;
+}
+
+/** An older server's automatic count, laid out the way "Zelf indelen" copies it: per product, its full pallets, then the rest. */
 export function autoPallets(lines: readonly PlannerLine[], spec: PlannerSpec): PalletVm[] {
   const rows: PalletVm[] = [];
   let next = 0;
@@ -261,6 +301,17 @@ export interface MixedLayout {
   blocks: GlyphBlock[];
 }
 
+/** The products that fit a pallet, as Palletberekening plans them; null when a layer's height is unknown (an older server). */
+function planLines(lines: readonly PlannerLine[], spec: PlannerSpec): PlanLine[] | null {
+  const fitting = lines.filter((line) => !line.problem && line.perPallet > 0 && line.cartons > 0);
+  if (fitting.some((line) => line.cartonHeightCm === null)) return null;
+  return fitting.map((line) => ({
+    key: line.productId, cartons: line.cartons, cartonHeightCm: line.cartonHeightCm!, cartonWeightKg: line.cartonWeightKg,
+    fit: { perLayer: line.perLayer, layers: line.fullLayers, cartonsPerPallet: line.perPallet,
+      heightCm: spec.baseHeightCm + line.cartonHeightCm! * line.fullLayers, limitedBy: null, problem: null },
+  }));
+}
+
 /**
  * Palletberekening's mix for these products (planPallets: whole layers of
  * one product, tallest first, under the height and 700 kg), offered only
@@ -268,17 +319,11 @@ export interface MixedLayout {
  * not say how high a layer is gets no offer.
  */
 export function mixedLayout(lines: readonly PlannerLine[], spec: PlannerSpec, autoCount: number): MixedLayout | null {
-  const fitting = lines.filter((line) => !line.problem && line.perPallet > 0 && line.cartons > 0);
-  if (fitting.length < 2 || fitting.some((line) => line.cartonHeightCm === null)) return null;
-  const plan: PlanLine[] = fitting.map((line) => ({
-    key: line.productId, cartons: line.cartons, cartonHeightCm: line.cartonHeightCm!, cartonWeightKg: line.cartonWeightKg,
-    fit: { perLayer: line.perLayer, layers: line.fullLayers, cartonsPerPallet: line.perPallet,
-      heightCm: spec.baseHeightCm + line.cartonHeightCm! * line.fullLayers, limitedBy: null, problem: null },
-  }));
-  if (separatePallets(plan) > MAX_PLANNED_PALLETS) return null;
+  const plan = planLines(lines, spec);
+  if (!plan || plan.length < 2 || separatePallets(plan) > MAX_PLANNED_PALLETS) return null;
   const planned = planPallets(plan, spec);
   if (!planned.length || planned.length >= autoCount) return null;
-  const byId = new Map(fitting.map((line) => [line.productId, line]));
+  const byId = new Map(lines.map((line) => [line.productId, line]));
   const widest = planned.reduce((best, pallet) => (pallet.parts.length > best.parts.length ? pallet : best), planned[0]);
   const type = palletTypeLabel(spec.profile);
   return {
@@ -290,6 +335,21 @@ export function mixedLayout(lines: readonly PlannerLine[], spec: PlannerSpec, au
     })),
     blocks: widest.parts.map((part) => block(byId.get(part.key), part.layers, spec)),
   };
+}
+
+/** Every room hint is a re-plan per product: beyond this many pallets there are none (Palletberekening's bound). */
+const ROOM_PLAN_LIMIT = 30;
+
+/**
+ * Under the mixed rule, how many more omdozen of each product still go on
+ * the same pallets: Palletberekening's roomWithoutExtraPallet on this
+ * screen's plan, and only while that plan gives the server's count, so a
+ * hint never promises room the pallets on screen do not have.
+ */
+export function mixedRoom(lines: readonly PlannerLine[], spec: PlannerSpec, count: number): Map<number, number> {
+  const plan = planLines(lines, spec);
+  if (!plan?.length || count <= 0 || count > ROOM_PLAN_LIMIT || planPallets(plan, spec).length !== count) return new Map();
+  return new Map(plan.map((line) => [line.key, roomWithoutExtraPallet(plan, line.key, spec, count)]));
 }
 
 /** What still keeps a hand layout from being complete. */

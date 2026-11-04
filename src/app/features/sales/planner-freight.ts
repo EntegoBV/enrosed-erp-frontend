@@ -3,6 +3,7 @@ import type { Carrier, CarrierShipQuote, FreightPricingStrategy, SalesOrderView 
 import { SalesApi } from '../../core/api/sales-api';
 import { Icon } from '../../shared/icon';
 import { CbmPipe, EurPipe, PctPipe } from '../../shared/pipes';
+import { shippedPallets } from './pallet-stack';
 import { freightGap, freightStrategy, strategyLabel } from './shipping-planner-model';
 import type { ShippingOrderPatch } from './shipping-planner';
 
@@ -210,7 +211,7 @@ export class PlannerFreight {
     const profile = data.order.palletProfile;
     return JSON.stringify({
       carrierId, country: data.order.countryCode, postcode: this.customerPostcode(),
-      pallets: totals.palletsManual || totals.palletsStrict, weightKg: totals.weightKg ?? null,
+      pallets: shippedPallets(totals), weightKg: totals.weightKg ?? null,
       palletType: profile === 'BLOCK_120X100' ? 'BLOCK' : profile === 'HALF_80X60' ? 'HALF' : 'EURO',
     });
   });

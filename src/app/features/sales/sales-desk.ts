@@ -208,7 +208,7 @@ interface JourneyStep {
                 <strong>{{ data.priced.totals.cbm | cbm }}</strong>
                 <span>losse dozen</span>
               } @else {
-                <strong>{{ palletFigure(data) }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}</strong>
+                <strong>{{ palletFigure(data) }} {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}</strong>
                 <span>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatisch' }} · {{ data.priced.totals.cbm | cbm }}</span>
               }
             </button>
@@ -828,7 +828,7 @@ interface JourneyStep {
                     <dl class="desk-facts">
                       <div><dt>Lading</dt><dd>
                         @if (isLooseCartons(data)) { {{ data.priced.totals.cartons | num }} losse dozen · {{ data.priced.totals.cbm | cbm }} }
-                        @else { {{ palletFigure(data) }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
+                        @else { {{ palletFigure(data) }} {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
                       </dd></div>
                       <div><dt>Vracht</dt><dd>
                         @if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">nog te bepalen</span><small>de klant ziet geen bedrag</small> }

@@ -14,6 +14,8 @@ export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
+/** How the automatic pallets count: products stacked together, or every product on pallets of its own. */
+export type PalletRule = 'STRICT' | 'MIXED';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
 /** A quote proposes, an invoice claims, a credit note reduces an invoice's claim (positive lines, the sign in the type). */
 export type DocumentType = 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA';
@@ -1923,6 +1925,15 @@ export interface OrderPallet {
   items: { productId: number; cartons: number }[];
 }
 
+/** One pallet of the server's automatic layout: bottom to top, each product in whole layers of its own. */
+export interface AutoPallet {
+  items: { productId: number; cartons: number; layers: number }[];
+  /** Loaded height, the wood included. */
+  heightCm: number;
+  /** 0 when a weight is unknown. */
+  weightKg: number;
+}
+
 export type SalesPurpose = 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT';
 export type SalesPaymentPlan = 'FULL' | 'THIRD_TWO_THIRDS_PRODUCTION';
 /** Why a credit note exists; printed under 'Reden' on the document. */
@@ -2066,6 +2077,13 @@ export interface PricedOrder {
     pieces: number; cartons: number; palletsStrict: number; palletsOptimised: number;
     /** Hand-built pallets (0 = calculated stacking) and cartons on no pallet. */
     palletsManual: number; unassignedCartons: number;
+    /**
+     * The automatic count and its pallets, what the freight, the PDF and the portal follow without a
+     * hand layout: MIXED stacks products together (new and concept documents), STRICT keeps every
+     * product on pallets of its own (documents past concept keep the count they were sent with).
+     * Absent from older servers, which count palletsStrict.
+     */
+    palletRule?: PalletRule; palletsAutomatic?: number; autoPallets?: AutoPallet[];
     /** Effective server settings used for this calculation. */
     palletBaseHeightCm?: number; palletMaxHeightCm?: number;
     cbm: number; weightKg: number;

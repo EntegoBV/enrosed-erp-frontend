@@ -60,7 +60,9 @@ import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
 import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
-import { nextPalletLabel, palletTypeLabel, relabelPallets, trimPallets } from './pallet-stack';
+import {
+  automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
+} from './pallet-stack';
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
@@ -220,8 +222,7 @@ function layoutKey(order: SalesOrder): string {
               } @else {
                 <strong>{{ palletFigure(data) }}</strong>
                 <span>
-                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1
-                      ? 'pallet' : 'pallets' }}
+                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
                 </span>
               }
             </div>
@@ -726,7 +727,7 @@ function layoutKey(order: SalesOrder): string {
                     @if (!lineUnavailable(line.productId)) { <span>
                       {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
                       @if (!isLooseCartons(data) && !data.order.pallets.length) {
-                        {{ line.pallets }} {{ line.pallets === 1 ? 'pallet' : 'pallets' }} ·
+                        {{ linePallets(data, line) }} {{ linePallets(data, line) === 1 ? 'pallet' : 'pallets' }} ·
                       }
                       {{ line.cbm | cbm }}
                     </span> }
@@ -1016,7 +1017,7 @@ function layoutKey(order: SalesOrder): string {
                   <small>{{ data.priced.totals.cbm | cbm }} · {{ data.priced.totals.weightKg | num: 0 }} kg</small>
                 } @else {
                   {{ palletFigure(data) }}
-                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}
+                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
                   <small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.cbm | cbm }}</small>
                 }
               </dd></div>
@@ -4390,7 +4391,7 @@ export class SalesEditor {
         + `${new CbmPipe().transform(totals.cbm)} · los geladen`;
     }
     if (!totals.palletsManual) {
-      return `automatisch · ${this.countLabel(totals.palletsStrict, 'pallet', 'pallets')}`;
+      return `automatisch · ${this.countLabel(automaticPallets(totals), 'pallet', 'pallets')}`;
     }
     const rest = totals.unassignedCartons > 0
         ? ` · ${this.countLabel(totals.unassignedCartons, 'doos', 'dozen')} los` : '';
@@ -4507,7 +4508,7 @@ export class SalesEditor {
     const totals = data.priced.totals;
     return totals.palletsManual > 0
       ? `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig`
-      : this.countLabel(totals.palletsStrict, 'pallet', 'pallets');
+      : this.countLabel(automaticPallets(totals), 'pallet', 'pallets');
   }
 
   private countLabel(count: number, singular: string, plural: string): string {
@@ -4540,10 +4541,20 @@ export class SalesEditor {
     return !!data.priced.validation.productsWithoutPalletFit?.length || !this.layoutOk();
   }
 
+  /** The pallets the order ships on: the hand layout, else the automatic count. */
+  palletTotal(data: SalesOrderView): number {
+    return shippedPallets(data.priced.totals);
+  }
+
   /** The hero's pallet count: '–' rather than 0 when products fit no pallet. */
   palletFigure(data: SalesOrderView): string {
-    const count = data.priced.totals.palletsManual || data.priced.totals.palletsStrict;
+    const count = this.palletTotal(data);
     return !count && data.priced.validation.productsWithoutPalletFit?.length ? '–' : String(count);
+  }
+
+  /** The automatic pallets one line stands on, products sharing a pallet each counting it. */
+  linePallets(data: SalesOrderView, line: PricedLine): number {
+    return automaticLinePallets(data.priced.totals, line);
   }
 
   private overassigned(): boolean {
@@ -4596,27 +4607,34 @@ export class SalesEditor {
   }
 
   /**
-   * "Zelf indelen" starts from the automatic pallets, one to one: every
-   * product on pallets of its own. A product that fits no pallet stays
-   * loose (the planner lists it under Nakijken); when nothing fits, the
-   * layout starts from one empty pallet, since an empty list is Automatisch
-   * itself. The figures are brought up to date first, so the pallets are
-   * never cut from an older pallet type, height or quantity.
+   * "Zelf indelen" starts from the automatic pallets, one to one: the
+   * server's layout under its rule (products stacked together on a new or
+   * concept document), or on an older server every product on pallets of
+   * its own. A product that fits no pallet stays loose (the planner lists it
+   * under Nakijken); when nothing fits, the layout starts from one empty
+   * pallet, since an empty list is Automatisch itself. The figures are
+   * brought up to date first, so the pallets are never cut from an older
+   * pallet type, height or quantity.
    */
   async autoLayout(): Promise<void> {
     if (!this.canEditShipping() || !(await this.pricingSettled())) return;
     this.enqueueShipping((order) => {
       const type = palletTypeLabel(order.palletProfile);
+      const priced = this.view()?.priced;
       const pallets: OrderPallet[] = [];
-      for (const line of this.view()?.priced.lines ?? []) {
-        const per = line.cartonsPerPallet;
-        if (per <= 0 || salesLineUnavailable(line)) continue;
-        for (let left = line.cartons; left > 0; left -= per) {
-          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null,
-            items: [{ productId: line.productId, cartons: Math.min(per, left) }] });
+      const add = (items: OrderPallet['items']) =>
+        pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null, items });
+      const automatic = priced?.totals.autoPallets;
+      if (priced && automatic && automatic.length === automaticPallets(priced.totals)) {
+        for (const pallet of automatic) add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })));
+      } else {
+        for (const line of priced?.lines ?? []) {
+          const per = line.cartonsPerPallet;
+          if (per <= 0 || salesLineUnavailable(line)) continue;
+          for (let left = line.cartons; left > 0; left -= per) add([{ productId: line.productId, cartons: Math.min(per, left) }]);
         }
       }
-      if (!pallets.length) pallets.push({ id: null, label: 'Pallet 1', type, heightCm: null, items: [] });
+      if (!pallets.length) add([]);
       return { ...order, pallets };
     });
   }

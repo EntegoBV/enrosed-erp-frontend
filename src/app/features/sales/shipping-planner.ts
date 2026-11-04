@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, i
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type {
-  Carrier, FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, SalesOrderView,
+  Carrier, FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, PalletRule, SalesOrderView,
 } from '../../core/api/models';
 import { AuthImage } from '../../core/api/auth-image';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -16,13 +16,13 @@ import { Sheet, Ui } from '../../shared/ui';
 import { clampPalletHeight } from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
-import { normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
+import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { PlannerFreight } from './planner-freight';
 import { PlannerLoad } from './planner-load';
 import { PlannerPallet, omdozen } from './planner-pallet';
 import {
-  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, palletCount,
-  placements, plannerLines, plannerSpec, strategyLabel, type MixedLayout, type PlannerLine,
+  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, palletCount,
+  placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
 } from './shipping-planner-model';
 
 export { normalizeManualPalletType } from './pallet-stack';
@@ -65,12 +65,15 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * wide sheet: the answer first (how many pallets, how full, the freight),
  * then the pallets one by one, the products and the freight.
  *
- * Automatisch is the backend's count, every product on pallets of its own
- * (palletsStrict, which the freight follows); when mixing saves a pallet,
- * Palletberekening's mix is one tap away. Zelf indelen starts from the
- * automatic pallets. The planner only emits patches and pallet actions:
- * the sales editor keeps its serial save queue, and the backend stays the
- * one that calculates fits, m³ and freight.
+ * Automatisch is the backend's count and layout, which the freight follows:
+ * under palletRule MIXED (new and concept documents) the products stack
+ * together the way Palletberekening stacks them; under STRICT (documents
+ * past concept, which keep their count) every product stands on pallets of
+ * its own, and when mixing saves a pallet Palletberekening's mix is one tap
+ * away. An older server sends no layout: its palletsStrict is laid out
+ * here. Zelf indelen starts from the automatic pallets. The planner only
+ * emits patches and pallet actions: the sales editor keeps its serial save
+ * queue, and the backend stays the one that calculates fits, m³ and freight.
  *
  * Overlays (the pallet sheet, Lading, the menus) sit at the root of this
  * template, outside .sp-layout: its container query traps position:fixed.
@@ -107,7 +110,11 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </section>
       @if (!desk() && showSwitch()) { <ng-container [ngTemplateOutlet]="modeSwitch" /> }
       @if (infoOpen() && showSwitch()) {
-        <p class="sp-caption" id="sp-caption">Automatisch zet elk product op eigen pallets en volgt de aantallen; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        @if (rule() === 'MIXED') {
+          <p class="sp-caption" id="sp-caption">Automatisch zet elk product in eigen lagen en stapelt die samen op zo weinig mogelijk pallets; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        } @else {
+          <p class="sp-caption" id="sp-caption">Automatisch zet elk product op eigen pallets en volgt de aantallen; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        }
       }
       @if (!lines().length) { <p class="sp-empty">Voeg producten toe: de pallets verschijnen hier vanzelf.</p> }
 
@@ -135,7 +142,7 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
                 <div class="sp-sec__head"><h4 id="sp-pallets">Pallets</h4>
                   @if (desk() && manual() && canEdit()) {
                     <button class="btn btn--sm" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="14" />Pallet</button>
-                  } @else { <span>{{ manual() ? handRows().length : view().priced.totals.palletsStrict }}</span> }
+                  } @else { <span>{{ manual() ? handRows().length : autoCount() }}</span> }
                 </div>
                 @if (manual()) {
                   <div [class.sp-grid]="desk()" [class.sp-group]="!desk()">
@@ -200,9 +207,11 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
                               (click)="detailFor.set(detailFor() === line.productId ? null : line.productId)">
                         <ng-container [ngTemplateOutlet]="thumb" [ngTemplateOutletContext]="{ $implicit: line }" />
                         <span class="sp-prod__name">{{ line.name }}</span>
-                        <span class="sp-prod__sub">{{ detailFor() === line.productId ? stacking(line) : omdozen(line.cartons) + ' · ' + line.pallets + (line.pallets === 1 ? ' pallet' : ' pallets') }}</span>
-                        @if (line.room > 0 && line.cartonHeightCm !== null) {
-                          <span class="sp-prod__trail"><span class="sp-room" [attr.aria-label]="'Nog ' + line.room + ' omdozen passen zonder extra pallet'">+{{ line.room }} past</span></span>
+                        @let onPallets = palletsOf().get(line.productId) ?? line.pallets;
+                        @let room = roomOf().get(line.productId) ?? 0;
+                        <span class="sp-prod__sub">{{ detailFor() === line.productId ? stacking(line) : omdozen(line.cartons) + ' · ' + onPallets + (onPallets === 1 ? ' pallet' : ' pallets') }}</span>
+                        @if (room > 0) {
+                          <span class="sp-prod__trail"><span class="sp-room" [attr.aria-label]="'Nog ' + room + ' omdozen passen zonder extra pallet'">+{{ room }} past</span></span>
                         }
                       </button>
                     }
@@ -371,13 +380,30 @@ export class ShippingPlanner {
   readonly spec = computed(() => plannerSpec(this.view()));
   readonly lines = computed(() => plannerLines(this.view(), this.spec()));
   readonly problems = computed(() => this.lines().filter((line) => line.problem));
-  readonly autoRows = computed(() => autoPallets(this.lines(), this.spec()));
+  /** How Automatisch counts; an older server knows only every product on pallets of its own. */
+  readonly rule = computed<PalletRule>(() => this.view().priced.totals.palletRule ?? 'STRICT');
+  readonly autoCount = computed(() => automaticPallets(this.view().priced.totals));
+  /** The server's automatic pallets; an older server's strict count is laid out here. */
+  readonly autoRows = computed(() => serverPallets(this.view(), this.lines(), this.spec()) ?? autoPallets(this.lines(), this.spec()));
   /** The rows only when they add up to the server's count: never two different counts on one screen. */
-  readonly autoShown = computed(() => this.autoRows().length > 0 && palletCount(this.autoRows()) === this.view().priced.totals.palletsStrict);
+  readonly autoShown = computed(() => this.autoRows().length > 0 && palletCount(this.autoRows()) === this.autoCount());
   readonly handRows = computed(() => handPallets(this.view(), this.lines(), this.spec()));
   readonly placed = computed(() => placements(this.order(), this.lines()));
-  readonly mixed = computed<MixedLayout | null>(() => (this.palletsMode() && !this.manual() && this.autoShown()
-    ? mixedLayout(this.lines(), this.spec(), this.view().priced.totals.palletsStrict) : null));
+  /** Palletberekening's mix one tap away, only where Automatisch does not mix already. */
+  readonly mixed = computed<MixedLayout | null>(() => (this.palletsMode() && !this.manual() && this.autoShown() && this.rule() === 'STRICT'
+    ? mixedLayout(this.lines(), this.spec(), this.autoCount()) : null));
+  /** Per product, the automatic pallets it stands on. */
+  readonly palletsOf = computed(() => {
+    const counts = new Map<number, number>();
+    for (const row of this.autoShown() ? this.autoRows() : []) {
+      for (const part of row.parts) counts.set(part.productId, (counts.get(part.productId) ?? 0) + row.to - row.from + 1);
+    }
+    return counts;
+  });
+  /** "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same pallets. */
+  readonly roomOf = computed(() => (this.rule() === 'MIXED'
+    ? mixedRoom(this.lines(), this.spec(), this.autoCount())
+    : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]))));
   readonly cells = computed(() => (this.palletsMode() && !this.manual() ? this.lines().filter((line) => !line.problem) : this.lines()));
   readonly heightCm = computed(() => this.order().maxPalletHeightCm ?? Math.round(this.spec().maxHeightCm));
   readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
@@ -399,7 +425,7 @@ export class ShippingPlanner {
   readonly heroTitle = computed(() => {
     if (!this.lines().length) return 'Nog geen producten';
     if (!this.palletsMode()) return omdozen(this.view().priced.totals.cartons);
-    const count = this.manual() ? this.order().pallets.length : this.view().priced.totals.palletsStrict;
+    const count = this.manual() ? this.order().pallets.length : this.autoCount();
     if (!count && this.problems().length) return 'Past niet';
     return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'pallet' : 'pallets'}`;
   });
@@ -411,7 +437,7 @@ export class ShippingPlanner {
     if (!this.palletsMode() || !this.lines().length) return null;
     if (this.manual()) return layoutPill(checkLayout(this.view()));
     const misfits = this.problems().length;
-    return misfits && this.view().priced.totals.palletsStrict > 0 ? { text: `${misfits} past niet`, tone: 'warn' } : null;
+    return misfits && this.autoCount() > 0 ? { text: `${misfits} past niet`, tone: 'warn' } : null;
   });
   readonly factsText = computed(() => {
     const totals = this.view().priced.totals;

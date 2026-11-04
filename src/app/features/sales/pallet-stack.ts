@@ -1,10 +1,29 @@
-import type { OrderPallet, PalletProfile } from '../../core/api/models';
+import type { OrderPallet, PalletProfile, PricedOrder } from '../../core/api/models';
 
 /**
  * The arithmetic behind the pallet planner, kept free of Angular: how high
  * a hand-built pallet stacks, the colour each product keeps across the
- * pallets, and how a hand layout keeps its names and follows the order.
+ * pallets, how a hand layout keeps its names and follows the order, and
+ * which pallet count an order ships on.
  */
+
+type PalletTotals = PricedOrder['totals'];
+
+/** The automatic count: the server's, under its rule; an older server counts every product on pallets of its own. */
+export function automaticPallets(totals: Pick<PalletTotals, 'palletsStrict' | 'palletsAutomatic'>): number {
+  return totals.palletsAutomatic ?? totals.palletsStrict;
+}
+
+/** What the order ships on, and the freight counts: its hand-built pallets, else the automatic count. */
+export function shippedPallets(totals: Pick<PalletTotals, 'palletsManual' | 'palletsStrict' | 'palletsAutomatic'>): number {
+  return totals.palletsManual || automaticPallets(totals);
+}
+
+/** The pallets one product stands on in the automatic layout; an older server sends the line's own count. */
+export function automaticLinePallets(totals: Pick<PalletTotals, 'autoPallets'>, line: { productId: number; pallets: number }): number {
+  const pallets = totals.autoPallets;
+  return pallets ? pallets.filter((pallet) => pallet.items.some((item) => item.productId === line.productId)).length : line.pallets;
+}
 
 /** The type a new pallet of this profile carries (and the pakbon prints). */
 export function palletTypeLabel(profile: PalletProfile | null | undefined): string {
