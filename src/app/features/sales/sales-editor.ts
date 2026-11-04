@@ -1394,7 +1394,7 @@ function layoutKey(order: SalesOrder): string {
             <button class="btn btn--primary sales-mobile-dock__save" type="button" [disabled]="saving() || saveConflict()" (click)="save()">
               {{ saving() ? 'Opslaan…' : 'Opslaan' }}
             </button>
-          } @else if (shippingDirty() || transportSaving()) {
+          } @else if (transportQueued() || transportSaving()) {
             <span class="tiny muted" role="status">{{ saveError() ? 'Niet opgeslagen' : 'Opslaan…' }}</span>
           }
           @if (phoneStep() < 3) {
@@ -3456,17 +3456,24 @@ export class SalesEditor {
       && JSON.stringify(shippingSnapshot(order)) !== JSON.stringify(shippingSnapshot(JSON.parse(this.savedOrder())));
   });
   readonly transportSaving = signal(false);
+  /**
+   * A transport change of its own that no save has taken along yet. A hand
+   * layout that only followed the lines (a removed product, a lowered
+   * quantity) belongs to that edit of the lines: it waits for Opslaan and
+   * the leave question, and no autosave, Klaar or leaving sends it.
+   */
+  readonly transportQueued = signal(false);
   /** A sent document's freight basis that cannot price yet (no rate, no amount): its save waits instead of being refused. */
   readonly transportHold = computed(() => {
     const order = this.view()?.order;
     return order && this.shippingDirty() && !this.canEdit() ? freightGap(order) : null;
   });
-  readonly transportRefused = computed(() => this.shippingDirty() && !!this.saveError());
+  readonly transportRefused = computed(() => this.transportQueued() && this.shippingDirty() && !!this.saveError());
   readonly transportSaveStatus = computed(() => {
     const hold = this.transportHold();
     if (this.transportRefused()) return 'Transport niet opgeslagen';
     if (hold) return `Nog niet opgeslagen · ${hold.charAt(0).toLowerCase()}${hold.slice(1)}`;
-    return this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen';
+    return this.transportQueued() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen';
   });
   /** The draft the figures on screen were priced for (layoutKey). */
   private readonly pricedFor = signal('');
@@ -3498,6 +3505,8 @@ export class SalesEditor {
     this.view.set(view);
     this.savedOrder.set(JSON.stringify(view.order));
     this.pricedFor.set(layoutKey(view.order));
+    /* What the server holds is on screen now; only an autosave still under way keeps its change queued. */
+    if (!this.transportOperation && this.shippingTimer === null) this.transportQueued.set(false);
     this.saveError.set(null);
     this.previewError.set(null);
     this.figuresWaiting.set(false);
@@ -3699,7 +3708,7 @@ export class SalesEditor {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.transportSaving() || this.shippingDirty()) {
+    if (this.transportSaving() || this.transportQueued()) {
       /* A refused transport save keeps nobody in: the leave question offers 'Niet opslaan'. */
       return this.flushTransport().then(saved => saved ? this.canDeactivate() : this.askToLeave());
     }
@@ -4410,6 +4419,7 @@ export class SalesEditor {
     const next = make(data.order);
     if (!next || !this.mobileAcceptsDraft(data, next)) return;
     this.view.set({ ...data, order: next });
+    this.transportQueued.set(true);
     this.saveError.set(null);
     this.schedulePreview();
     if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
@@ -4421,16 +4431,23 @@ export class SalesEditor {
   flushTransport(): Promise<boolean> {
     if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
     if (this.transportOperation) return this.transportOperation;
+    /* Nothing of its own to save: a layout that followed the lines goes with the document's Opslaan. */
+    if (!this.transportQueued()) return Promise.resolve(true);
     const hold = this.transportHold();
     if (hold) { this.saveError.set(hold); return Promise.resolve(false); }
     const operation = (async () => {
       this.transportSaving.set(true);
       try {
-        while (this.shippingDirty()) {
-          if (!(await this.save())) return false;
+        /* Each save takes the queued change along; one made while it is under way queues again. */
+        while (this.transportQueued() && this.shippingDirty()) {
+          this.transportQueued.set(false);
+          if (!(await this.save())) { this.transportQueued.set(true); return false; }
         }
         return true;
-      } finally { this.transportSaving.set(false); }
+      } finally {
+        this.transportSaving.set(false);
+        if (!this.shippingDirty()) this.transportQueued.set(false);
+      }
     })();
     this.transportOperation = operation;
     return operation.finally(() => { if (this.transportOperation === operation) this.transportOperation = null; });
@@ -4443,7 +4460,7 @@ export class SalesEditor {
   closeShipping(): void {
     this.palletSheet.set(false);
     /* A save the server just refused is not sent again on its own; Opnieuw does that. */
-    if (!this.transportRefused()) void this.flushTransport();
+    if (this.transportQueued() && !this.transportRefused()) void this.flushTransport();
   }
 
   /** "Wijzigingen weggooien": the transport as last saved; the rest of the draft stays. */
@@ -4455,6 +4472,7 @@ export class SalesEditor {
     const order: Record<string, unknown> = { ...data.order };
     for (const field of shippingFields) order[field] = saved[field];
     this.view.set({ ...data, order: order as unknown as SalesOrder });
+    this.transportQueued.set(false);
     this.saveError.set(null);
     this.schedulePreview();
   }
