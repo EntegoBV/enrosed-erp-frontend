@@ -160,7 +160,7 @@ Main stood at 951.05 kB before the native host (2026-10-29); the host adds
 only its facade (`HostBridge`: detection, the transport, the signals) and
 host.scss to the first screen, because `host-bridge-impl.ts` and
 `host-symbols.ts` load through `import()` inside a host, and the production
-initial total is 969.33 kB (188.28 kB transfer, 12 files; 967.77 kB before the refused back and the hidden boxes of 2026-10-30, 967.09 kB before the review's fixes of that day, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9): the baseline from now on.
+initial total was 969.33 kB (188.28 kB transfer, 12 files; 967.77 kB before the refused back and the hidden boxes of 2026-10-30, 967.09 kB before the review's fixes of that day, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9) and is 971.61 kB (188.59 kB transfer) since the pallet round of 2026-11-04 (970.8 kB when Palletberekening shipped): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -742,7 +742,8 @@ four-block Cijfers row), the large-title hysteresis, the detail screens'
 host rules, the legacy bar's glass, the strip offsets, stuck bands, sales card
 and sheet cards, the bands' opaque rest, the sales steps' band and the card
 covers and the review's fixes of 2026-10-30 (967.77 kB before the refused back
-and the hidden boxes), well under the 1 MB error budget: the baseline to track.
+and the hidden boxes), well under the 1 MB error budget; 971.61 kB since the
+pallet round of 2026-11-04: the baseline to track.
 
 **Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
 - `app-page-header` and `app-ios-nav` bind themselves to the bridge and
@@ -2221,13 +2222,10 @@ cijfers'.
   "aanpassen" inline panel: TE_BEPALEN or own amount), revision handling
   with two-line buttons (Wijzigen/Overnemen explain themselves, Afwijzen
   quiet), floating action bar with total · pallets · margin (intern).
-- **Pallets**: optional hand layout in a bottom sheet - start from the
-  calculation or empty, steppers per product ([− n +], + disabled when
-  everything is placed), pallet type select (Europallet default,
-  "Anders…" prompt), small height field (cm) echoed in the count line,
-  reorder/rename (pencil affordance)/delete, "indeling compleet" status
-  chip, Herbereken, "Terug naar automatisch". Freight follows manual
-  pallet count when pallets exist; never required for sending.
+- **Pallets**: Transport & levering (`app-shipping-planner`, see "Pallet
+  planner (2026-11-04)"): Automatisch is the server's count and layout
+  (mixed on a concept), Zelf indelen a hand layout that starts from it and
+  that the freight then counts; never required for sending.
 - PDF sheet: quote PDF in any of 8 languages, plus **Pakbon** (packing
   slip, grouped per pallet when laid out).
 - **Save queue**: every mutation goes through `enqueue(make)` - a strict
@@ -4365,10 +4363,48 @@ row of the Verkoop group (`nav-items.ts`, icon `pallet`, native symbol
 Its path is also in `PHONE_TAB_PAGES.sales` (phone-tabs.ts: lights Verkoop, back to
 /sales), the verkoop branch of `sidebarGroupForUrl` (the desk group stays open) and
 return-label.ts: every new nav row needs those three, and no test checks them any more.
-Frontend only: it reads `GET /api/products` (active, not demo) and the unit names,
-and keeps the picks, pallet type and height in localStorage
-(`enrosed.palletCalculator`); nothing goes to the server.
+Frontend only: it reads `GET /api/products` (active, not demo), the categories, the
+product families (CatalogApi's 20 s cache) and the unit names in parallel; failing
+categories or families fall back quietly (the picker's fallback names, only the
+Recent and Alle chips). The picks, pallet type, height and the recent products stay
+in localStorage (`enrosed.palletCalculator`: `profile`, `maxHeightCm`, `rows`,
+`recent`); nothing goes to the server. Built for the fair: photo first, one tap
+adds, the answer stays in sight.
 
+- **Choosing by photo** (`pallet-browser.ts`, `app-pallet-browser`; pure
+  `pallet-browser-model.ts`): photo tiles under chips Recent · Alle · one per
+  category, in `productPickerFamilySections` order (Category.position, then the
+  range's position and name). **One tile is one carton**: each range is split by
+  `cartonSignature`, exactly the inputs of `palletFit`, `productUnits`,
+  `containerCapacity`, the carton m³, the weight and the piece word, so colour
+  variants that share an omdoos fold into one tile (no colour step) and a range
+  with a carton per size gets a tile per carton. Only then a label sits on the
+  photo, the first rule that tells every tile apart: size, "12 per omdoos",
+  colours, omdoos size, SKU. The tile's lead (the range lead when it is in the
+  tile, else its first variant) is the product a new row stores; the photo is
+  `salesPhotoUrl`. Every tile shows its answer for the pallet in use, "48
+  omdozen", or Maten ontbreken / Past niet / Te hoog of zwaar in warn. A tile in
+  the calculation wears a check in its pallet colour; a tap folds the grid and
+  rings its card (900 ms, instant under reduced motion). At 12 products the rest
+  is disabled ("Maximaal 12 producten"). Once there are cards a chip toggles the
+  grid and "Inklappen" folds it.
+- **Search** is the second path: every word in any order, accents folded,
+  category and range names, SKU and barcodes included, an exact SKU or barcode
+  first (`matchPalletTiles`). Phone: the search chip (an icon) swaps the chips
+  for the kit's `ios-search` (focused inside the tap so iOS raises the
+  keyboard; Annuleer or Esc ends it). Desk: the page's toolbar `wk-search`
+  drives the browser's `query` ('/' focuses, Enter adds the first match
+  through `chooseFirst()`, Esc clears, a second Esc leaves the field).
+- **Recents**: newest first, 12 kept (`rememberRecent`), the chip shows 8;
+  written on add only, unknown or inactive ids dropped on load. A stored row
+  of an older colour variant resolves to its range's tile (`tilesByProduct`);
+  two rows in one tile both stay, each title adding its colour.
+- **A new row** goes on top, in the unit the customer orders in (`startUnit`
+  in the model, from `effectiveOrderStep` and the display basis: per display →
+  displays when the omdoos holds whole ones, per unit → displays on a display
+  basis, else pieces; otherwise omdozen), with a haptic, the card's rise and a
+  screen-reader "… toegevoegd". Remove (×) and Wissen give "Ongedaan maken"
+  toasts; the last card gone opens the browser again.
 - **The numbers** live in `pallet-calculator-model.ts` (pure). `palletFit` mirrors
   the backend's `PalletCalculator.fit` exactly (guillotine rows in both pallet
   directions, layers under the total height with the 14.4 cm wood, then 700 kg) on
@@ -4381,7 +4417,9 @@ and keeps the picks, pallet type and height in localStorage
   still takes it under the height and the weight; where the weight takes only part
   of a layer, the rest looks further, so one product alone gets exactly its
   `cartonsPerPallet` per pallet. Deliberately conservative ("freight never too
-  low"): cartons of two products never share a layer. "Past nog bij, zonder extra
+  low"): cartons of two products never share a layer. The backend's MIXED rule
+  counts a concept's automatic pallets with this same algorithm (see "Pallet
+  planner"), so both screens give one answer. "Past nog bij, zonder extra
   pallet" (`roomWithoutExtraPallet`) is the largest extra per product (up to one
   full pallet of it) for which a fresh plan keeps the count, found by re-planning
   (binary search), so a "+ N omdozen" button never adds a pallet; worked out for
@@ -4399,6 +4437,145 @@ and keeps the picks, pallet type and height in localStorage
   basis); a display column shows only when the omdoos holds whole displays of 2+.
   A typed quantity in displays or pieces rounds up to whole omdozen and says so
   ("Afgerond: 4 omdozen (…)"); the steppers move one omdoos in the chosen unit.
-- Layout: phone = search, result, cards; desk (`@container pc` ≥ 760 px) = cards
-  left, sticky result right. Initial bundle 970.83 kB after this (the page is a lazy
-  chunk; only the nav row, the icon and the symbol are in the first screen).
+- **The card**: 52 px photo, range name (plus the label, plus the colour when
+  two rows share a tile), colour dots or the one colour; its facts sit behind
+  an "i" sheet (Omdoos, Gewicht, Inhoud, Volume, Op de pallet, Containers
+  "Geteld: …" / "Op volume: …", Klant bestelt per, Varianten; "Product openen"
+  or "Product aanvullen"). The table: rows Omdoos · Pallet · 20ft · 40ft ·
+  40ft HC ("geteld" where a hand count counts) under Omdozen / Displays / the
+  piece word, the chosen unit's header underlined; then the fit line "8 per
+  laag × 6 lagen · 248 cm · 432 kg" (" · gewicht bepaalt"). Desk cards from
+  600 px (`@container pc-card`) put the quantity beside the table.
+- **The result** ("Resultaat"): the totals, the 20ft / 40ft / 40ft HC tiles,
+  the pallet rows (two lines, coloured counts, the names for screen readers),
+  products that fit no pallet, "Past nog bij" and "Verdeel 1 pallet". The phone
+  leaves it out while empty or with one product without a quantity (the card is
+  the answer); the desk says "Wat past erop?" or "48 omdozen per pallet".
+- **Layout**: `.content.pc` is the size container `pc`. Below 760 px one column
+  in the order settings (narrow desk only) → browser → cards → result
+  (`.pc-side{display:contents}` and `order`); from 760 px cards left and the
+  side (desk pallet panel + result) sticky right. Phone header: the pallet
+  button "Pallet instellen" (one shared settings template, here in an iOS sheet
+  with Klaar; changes apply live) and the trash; the caption is the pallet
+  ("Europallet 120 × 80 · max 260 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
+  the search, Wissen; the settings are a panel.
+- **The capsule** (phone): while there is a plan and the result is out of view
+  (IntersectionObserver, 96 px off the bottom for the tab bar) the kit's glass
+  `ios-float` reads "2 pallets · 20ft 13 %" (the smallest container that takes
+  everything, else "n × 40ft HC", no container part while sizes are missing);
+  a tap scrolls to the result. The sheets and the capsule render after
+  `.content`, outside the size container (trap rule). Still to check in the
+  native host: its placement (`--tabbar-h` is 0 there) and the bottom safe area.
+- Styles: the page 12.9 kB compiled, the browser 4.1 kB (16 kB warning each).
+  Initial bundle 971.61 kB (188.59 kB transfer) after the pallet round of
+  2026-11-04 (the page, the browser and the planner are lazy chunks; only the
+  nav row, the icon and the symbol are in the first screen).
+
+## Pallet planner (2026-11-04)
+
+Verkoop › order › Transport & levering (`app-shipping-planner`), the same
+component in the phone editor's sheet (sales-editor.ts) and the desk's
+(sales-desk.ts), both `<app-sheet [wide]="true" variant="ios">`. The answer
+comes first: a hero with the pallet ("Europallet 120 × 80 · max 260 cm", on the
+phone a button to the Lading sheet), "4 pallets" with fill words and one state
+pill, "102 omdozen · m³ · kg" and the freight (phone: a button to Vracht); then
+the Automatisch | Zelf indelen switch with its "i" caption, Nakijken (products
+that fit no pallet, "Aanvullen"), Pallets, Producten and Vracht. Phone: rows
+(64 px, two lines) and nested iOS sheets. Desk: a hero band, then
+`.sp-layout` (`container: sp / inline-size`) with two columns from 720 px, the
+main column and a 300 px sticky aside with Lading and Vracht; automatic pallets
+are tiles, hand pallets are cards edited in place.
+
+| File | Selector | Role | Styles (raw; 16 kB compiled warning) |
+|---|---|---|---|
+| `shipping-planner.ts` | `app-shipping-planner` | The shell: hero, switch, sections, the mixed offer, all overlays, desk drag. Public API kept: inputs `view`, `canEdit`, `carriers`, `customerPostcode`, `countryName`, `splitFreight`, `pricing`; outputs `patch` (`ShippingOrderPatch`) and `action` (`ShippingPalletAction`); re-exports `normalizeManualPalletType` | 6.9 kB |
+| `shipping-planner-model.ts` | – | Pure: `plannerSpec`, `plannerLines`, `serverPallets` / `autoPallets`, `handPallets`, `placements`, `fillWords`, `mixedLayout`, `mixedRoom`, `checkLayout` / `layoutComplete` / `layoutPill`, `freightStrategy`, `strategyLabel`, `freightGap` | – |
+| `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
+| `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
+| `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm, "Standaard"), "incl. pallet 14,4 cm" | 1.0 kB |
+| `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
+| `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
+
+- **Automatisch is the server's** count and layout, which the freight follows
+  (`PricedOrder.totals`, optional for an older server): `palletRule` MIXED
+  stacks the products together with Palletberekening's `planPallets` (new and
+  concept documents; Emre 2026-11-04 "Ja, gemengd tellen"), STRICT keeps every
+  product on pallets of its own (documents past concept keep the count and the
+  freight they were sent with); `palletsAutomatic` is the count freight, the
+  PDF, the portal and the website quote use without a hand layout; `autoPallets`
+  the pallets (`items` {productId, cartons, layers}, `heightCm` with the wood,
+  `weightKg` 0 when unknown). `serverPallets` shows exactly those, a run of equal
+  full pallets of one product as one row ("Pallet 1–2"). An older server sends
+  none: `autoPallets()` lays out `palletsStrict` here, shown only when it adds up
+  (never two counts on one screen). The "i" caption follows the rule. Producten:
+  "n pallets" are the automatic pallets the product stands on; "+n past" is the
+  room on its own last pallet (STRICT) or `mixedRoom` (MIXED: Palletberekening's
+  `roomWithoutExtraPallet` on this screen's plan, only while that plan gives the
+  server's count and at most 30 pallets).
+- **Every other count** without a hand layout reads `shippedPallets(totals)` =
+  `palletsManual || (palletsAutomatic ?? palletsStrict)`: the desk KPI and
+  Levering rail, the phone hero and step 3 (`palletTotal`, `palletFigure`,
+  `palletSummary`, `freightBasisLabel`), the sales list rows, `SalesView` and the
+  carrier quote. A phone line card counts the automatic pallets the line stands
+  on (`automaticLinePallets`, a shared pallet counting for each of its products).
+- **Zelf indelen** (`SalesEditor.autoLayout`, after `pricingSettled`) copies
+  `autoPallets` one to one ("Pallet n", `palletTypeLabel(profile)`, heightCm
+  null) when it holds `palletsAutomatic` pallets, else the strict derivation;
+  products that fit no pallet stay loose (Nakijken), nothing fits → one empty
+  "Pallet 1". "Indeling bijwerken" (Levering, loose omdozen that fit) and
+  "Indeling opnieuw maken" (after a pallet type change) run the same copy, so
+  the server must send `autoPallets` with a hand layout present too.
+- **The mixed offer** "Gemengd: m pallets · k minder · Indelen" shows only under
+  STRICT (or on an older server), when the planner can edit and `mixedLayout`
+  (the frontend's `planPallets`, skipped above 200 separate pallets) needs fewer
+  pallets than the automatic count. It patches a hand layout, which then counts
+  for the freight.
+- **Undo toasts** instead of window.confirm: "Eigen indeling gewist", "Gemengd
+  ingedeeld", "{label} verwijderd" (an empty pallet goes without one), "Indeling
+  opnieuw gemaakt", each "Ongedaan maken" patching the snapshot back; the
+  planner dismisses its toasts when it goes. An edit made within a toast's
+  window is overwritten by its undo.
+- **Overlays outside `.sp-layout`**: the pallet sheet, the Lading sheet, the
+  "Op welke pallet?" menu and the desk ⋯ card menu render at the root of the
+  planner's template, because the container query traps position:fixed;
+  `PlannerPallet` and `PlannerFreight` render none. Phone sheets nest on
+  Sheet's stack. On the desk a menu is a `.cm` popover inside the sheet's
+  dialog: `Sheet.onKeydown` leaves Escape to an open `.cm` in its dialog, so the
+  first Escape closes the menu and the second the sheet.
+- **Inputs**: `pricing` (the hosts' `pricingStale()`, the figures being worked
+  out again) disables Zelf indelen, Indelen and Indeling opnieuw maken, so no
+  layout is cut from older figures. `splitFreight` (a financially locked split
+  part) shows only "Transport voor dit deel" (patches `manualFreightEur`,
+  "Handling blijft behouden"); the hosts' own field for it is gone.
+- **Saving**: every patch and action goes through the editor's
+  `enqueueShipping` and is autosaved 300 ms later by `flushTransport` (a
+  concept's whole draft through `updateOrder`, a sent document's
+  `updateShipping`). `transportQueued` marks a transport change of its own that
+  no save has taken along yet; each save of the loop clears it, a change made
+  meanwhile queues again, a refused save restores it. A hand layout that only
+  followed the lines (`removeLine` trims its pallets, a lowered quantity
+  `layoutFollowsLines` at the next preview or save) is shipping-dirty without
+  being queued: no autosave, Klaar or leaving sends it; Opslaan and the leave
+  question do (review, 2026-11-04). Klaar, ×, Escape and the backdrop always
+  close the sheet. A refused save (`transportRefused`: queued, dirty and a
+  `saveError`) stays in the Levering card and the desk rail as "Transport niet
+  opgeslagen" with the reason, Opnieuw and "Wijzigingen weggooien"
+  (`discardTransport`: the shipping fields as last saved, the rest of the
+  draft kept); leaving then asks the usual question, where Niet opslaan leaves.
+  On a sent document a freight basis that cannot price yet (`freightGap`: Per
+  m³ without a rate, Vast bedrag without an amount, Landentarief with loose
+  cartons) holds as "Nog niet opgeslagen · vul het tarief per m³ in" instead of
+  being refused. "Losse dozen" on Landentarief or a carrier prefills Vast bedrag
+  with the current freight; straight back to pallets restores the pallet freight.
+- **Styles**: the dead global `.pallet`, `.pallet__*`, `.pallet-warn` and
+  `.pallet-intro` rules and their touch and coarse-pointer entries left
+  styles.scss; each planner component styles only its own classes (`sp-*`,
+  `ps-*`, `fr-*`, `ld-*`, `pg-*` / `st-*`) and sizes kit pieces (segmented,
+  sheet, context menu) without restyling them. Media queries are written out in full (desk
+  `(min-width: 1024px), (min-width: 680px) and (hover: hover)` and the phone
+  pair); the columns follow the container query only. Nothing went into the
+  styles of sales-editor.ts or sales-desk.ts, both about 18.7 kB compiled and
+  over the 16 kB warning since before this round.
+- Seen only in headless Chrome so far: the nested phone sheets in iOS Safari
+  and the native host, and the desk drag (synthetic pointer events).
