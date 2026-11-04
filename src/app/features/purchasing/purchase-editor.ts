@@ -31,6 +31,8 @@ import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { purchaseNacalc } from './purchase-nacalc-metrics';
 import { landedUnit, landedUnitText, purchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { PurchasePaymentSheet, type PurchasePaymentDraft } from './purchase-payment-sheet';
+import { PurchaseBankLinkSheet } from './purchase-bank-link-sheet';
+import { orderTransactions } from './purchase-bank-transactions';
 import { splitTransfer } from './purchase-transfer-split';
 import {
   inspectionRestOffered, invoiceDocumentKind, invoiceNumberKey, invoicesOf, paymentRoundOnServer, primaryInvoice, resolveInvoice,
@@ -44,6 +46,7 @@ import type { InvoiceRequest } from './purchase-payment-workbench';
 import { bankTransactionDay } from '../../shared/bank-transaction-options';
 import { BankAccountsStore } from '../../core/api/bank-accounts';
 import { BankingApi, type BankStatementLine } from '../../core/api/banking-api';
+import { BankUnlink } from '../finance/bank-unlink';
 import { lineMarkers } from '../finance/bank-markers';
 import { clearanceSuggestion } from '../finance/vat-return';
 import { containerPayables } from '../finance/payables';
@@ -169,7 +172,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
             IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
@@ -761,7 +764,8 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                 (remove)="requestRemove($event)" (save)="save()" (refresh)="refreshPaymentState()" (openCosts)="jumpToSection('purchase-result-section')"
                 (credit)="requestCredit($event)" (invoice)="requestInvoice($event)" (invoiceFile)="openDocumentFile($event)" (assignInvoice)="assignInvoiceToAll($event)"
-                (inspectionVia)="setInspectionVia($event)" />
+                (inspectionVia)="setInspectionVia($event)" (linkBank)="requestBankLink()" [transactions]="orderTransactions()"
+                (unlinkTransaction)="unlinkOrderLine($event)" (openTransaction)="openBankLine($event)" />
             </section>
 
             <!-- Money in: a partner who co-finances the container. -->
@@ -1096,6 +1100,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (originChanged)="refreshPaymentState()" (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
+      }
+      @if (bankLinking()) {
+        <app-purchase-bank-link-sheet [orderId]="data.order.id" [orderLineIds]="orderLineIds()" (closed)="bankLinking.set(false)" (linked)="afterBankLink()" />
       }
       @if (invoicing(); as invoiceAction) {
         <app-purchase-invoice-sheet [action]="invoiceAction" [invoices]="data.invoices ?? []" [agreed]="agreedByPayee()"
@@ -1959,6 +1966,7 @@ export class PurchaseEditor {
 
   /* ---- the bank lines of the order screen, and which payments already sit on the bank */
   private readonly banking = inject(BankingApi);
+  private readonly unlinks = inject(BankUnlink);
   private readonly bankAccounts = inject(BankAccountsStore);
   /** Every bank line, once per order screen: the text markers of lines older than the hard link. */
   readonly bankLines = signal<BankStatementLine[] | null>(null);
@@ -2280,33 +2288,27 @@ export class PurchaseEditor {
       ...(root.id !== current.id ? { inspectionSplit: null, inspectionSplitInput: '' } : {}) } : current);
   }
 
-  /** 'Losmaken' in the sheet: the bank transaction comes off at once (every payment on it), the sheet stays on the payment. */
-  unlinkSheetLine(line: BankStatementLine): void {
+  /**
+   * 'Losmaken' in the sheet: one question names everything the transaction
+   * carries and what happens to it (bank-unlink.ts), then it comes off
+   * cleanly: its part leaves the payment or goes back into the open part,
+   * Transactiekosten on it go. The sheet stays on what is left of the payment.
+   */
+  async unlinkSheetLine(line: BankStatementLine): Promise<void> {
     const data = this.view();
     const pay = this.paying();
     if (!data || !pay?.id || this.payingBusy()) return;
-    const part = this.payingParts().find(item => item.bankStatementLineId === line.id);
-    const day = bankTransactionDay(line).split('-').reverse().join('/');
-    const more = part && Math.round(Math.abs(line.amountEur) * 100) - Math.round(part.amountEur * 100) > 2
-      ? ' Ook de andere betalingen op deze transactie worden losgemaakt.' : '';
     const ids = pay.groupIds ?? [pay.id];
-    this.ui.confirm({ title: 'Banktransactie losmaken', message: `Banktransactie van ${day} (${formatEur(Math.abs(line.amountEur))}) losmaken? Dit gebeurt meteen.${more}`,
-      confirmLabel: 'Losmaken' }, async () => {
-      if (this.payingBusy() || this.view()?.order.id !== data.order.id) return;
-      this.payingBusy.set(true);
-      try {
-        await this.banking.unlinkPayments(line.id);
-        await this.refreshPaymentState(data.order.id);
-        await this.reloadBankLines();
-        if (this.view()?.order.id !== data.order.id) return;
-        this.rebindPaying(ids);
-        this.ui.toast('Banktransactie losgemaakt', 'ok');
-      } catch (failure: unknown) {
-        this.ui.toast(messageOf(failure, 'Losmaken mislukt'), 'err');
-      } finally {
-        this.payingBusy.set(false);
-      }
-    });
+    const done = await this.unlinks.run(line, (on) => this.payingBusy.set(on));
+    if (!done || this.view()?.order.id !== data.order.id) return;
+    this.payingBusy.set(true);
+    try {
+      await Promise.all([this.refreshPaymentState(data.order.id), this.loadDocuments(data.order.id), this.reloadBankLines()]);
+      if (this.view()?.order.id !== data.order.id) return;
+      this.rebindPaying(ids);
+    } finally {
+      this.payingBusy.set(false);
+    }
   }
 
   /** 'Deel verwijderen': one unlinked transfer of a payment paid in parts goes at once. */
@@ -3253,6 +3255,53 @@ export class PurchaseEditor {
   requestMove(payment: PurchasePayment, payee: Payee): void { this.whenSaved(() => this.movePayment(payment, payee)); }
 
   requestRemove(payment: PurchasePayment): void { this.whenSaved(() => this.removePayment(payment)); }
+
+  /**
+   * 'Transactie koppelen' (Emre, 2026-11-04: "betalingen kunnen koppelen en
+   * splitsen ook op inkoop order"): one bank transaction shared over this
+   * container's parts from Betalingen itself (purchase-bank-link-sheet.ts),
+   * after a dirty order is saved (the payments rewrite its diary).
+   */
+  readonly bankLinking = signal(false);
+  requestBankLink(): void { this.whenSaved(() => { if (this.view() && !this.payingBusy()) this.bankLinking.set(true); }); }
+  /** The lines this order's payments already sit on: the picker leaves them out. */
+  readonly orderLineIds = computed(() => [...new Set((this.payments() ?? []).map(payment => payment.bankStatementLineId)
+    .filter((id): id is number => id != null))]);
+  async afterBankLink(): Promise<void> {
+    const id = this.view()?.order.id;
+    this.bankLinking.set(false);
+    if (id == null) return;
+    await Promise.all([this.refreshPaymentState(id), this.reloadBankLines(), this.loadPaymentRows(id, true)]);
+  }
+
+  /** 'Op de bank': every transaction that paid this container, with who got what and the other containers it paid. */
+  readonly orderTransactions = computed(() => {
+    const data = this.view(), rows = this.paymentRows();
+    return data ? orderTransactions(data.order.id, this.payments() ?? [], this.bankLines(), rows?.orderId === data.order.id ? rows.rows : null) : [];
+  });
+  /** The other containers on this order's transactions: the rows load once the order and its payments are in. */
+  private readonly loadTransactionRows = effect(() => {
+    const id = this.view()?.order.id;
+    if (id != null && (this.payments() ?? []).some(payment => payment.bankStatementLineId != null)) untracked(() => void this.loadPaymentRows(id));
+  });
+  /** A transaction's 'Losmaken…' on Betalingen: the payment sheet's question and clean unlink (bank-unlink.ts). */
+  unlinkOrderLine(lineId: number): void {
+    this.whenSaved(async () => {
+      const data = this.view();
+      const transaction = this.orderTransactions().find(item => item.lineId === lineId);
+      if (!data || !transaction || this.payingBusy()) return;
+      const done = await this.unlinks.run(transaction.line ?? { id: lineId, amountEur: -transaction.amountEur }, on => this.payingBusy.set(on));
+      if (!done || this.view()?.order.id !== data.order.id) return;
+      this.payingBusy.set(true);
+      try {
+        await Promise.all([this.refreshPaymentState(data.order.id), this.loadDocuments(data.order.id), this.reloadBankLines(), this.loadPaymentRows(data.order.id, true)]);
+      } finally {
+        this.payingBusy.set(false);
+      }
+    });
+  }
+  /** The transaction in Kosten & bank (its detail opens on the line). */
+  openBankLine(lineId: number): void { void this.router.navigate(['/costs'], { queryParams: { line: lineId } }); }
 
   /** Afrekenen: one existing payment gets the settles mark; no money moves. */
   readonly settling = signal<{ payee: Payee; scope: 'GROUP' | 'TERM'; due: Due | null; paymentId: number | null } | null>(null);

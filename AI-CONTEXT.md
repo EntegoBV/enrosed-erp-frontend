@@ -2006,6 +2006,42 @@ cijfers'.
   uit Kosten'. Never 'Raming'. Code identifiers (`begrootEur`,
   `UNBUDGETED`, `BUDGET`) keep their names.
 
+- Koppelen en splitsen op de inkooporder (Emre, 2026-11-04: "betalingen
+  kunnen koppelen en splitsen ook op inkoop order, niet persee altijd via
+  bank en kosten"; "als ik 1 vd 2 transactie verwijder popup … alles
+  dekoppelen").
+  - 'Transactie koppelen' (desk bar button, phone '+' menu "Toevoegen", the
+    phone 'Op de bank' group; the read view hands it to the editor with
+    `?section=link`, which returns to `?section=ledger` like a payment):
+    `app-purchase-bank-link-sheet` = the shared picker (`fixed`, `note`)
+    then Kosten & bank's own split (`ContainerSplit`) with a `source`
+    (`SplitSource` in container-split.ts; FinanceState is the default
+    source and has exactly those members). This container starts ticked on
+    the open payment or term of the line's amount, else (a counterparty
+    that is not the supplier) its Douane & transport. Booked through the
+    same calls (POST …/purchase-payment; …/purchase-share once an open
+    payment is a part). '+ Deel' with a rest of at most € 100 starts as
+    Transactiekosten of that rest (both places).
+  - 'Op de bank' (desk table `.pw-banktx` above Alle betalingen, phone
+    group above it): per bank transaction that paid this container, who got
+    what (a pill per part in the payee tones, other containers in grey from
+    GET /purchase-payments, 'elders € x' for what neither explains), ⋯ /
+    sheet with 'Openen in Kosten & bank' and 'Losmaken…'. Pure:
+    purchase-bank-transactions.ts.
+  - Losmaken everywhere (payment sheet, Op de bank, Kosten & bank 'Koppeling
+    losmaken'; not 'Splitsing aanpassen', which keeps the payments to link
+    them again): `BankUnlink.run` (finance/bank-unlink.ts) reads GET
+    …/unlink-plan, asks one question naming every part and what happens to
+    it (a part of a payment in parts leaves it or goes back into its open
+    part, Transactiekosten and a Bankkosten/Koersverschil difference cost
+    go, the rest stays noted), 'Bedrag houden' when a part would leave its
+    payment, then POST …/unlink with the plan's `expected`. A server without
+    the plan (404/405) keeps the old question and DELETE …/links. The
+    native host shows the same question as plain text.
+  - The payment sheet shows Betaalbron only for transfers not on the bank
+    (a linked one was always 'Eigen bankrekening', locked, once per
+    transfer) and its summary line reads the whole payment in parts.
+
 ## Screens and their scenarios
 
 ### Dashboard (home, `features/dashboard/`)

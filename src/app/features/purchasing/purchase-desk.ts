@@ -18,6 +18,7 @@ import { PurchasePaymentWorkbench } from './purchase-payment-workbench';
 import { PurchaseNacalcWorkbench } from './purchase-nacalc-workbench';
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import { PurchasePaymentSheet } from './purchase-payment-sheet';
+import { PurchaseBankLinkSheet } from './purchase-bank-link-sheet';
 import { PurchaseInvoiceSheet } from './purchase-invoice-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
@@ -107,7 +108,7 @@ export class PurchaseDeskStyles {}
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseTracking, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseTracking, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -274,7 +275,8 @@ export class PurchaseDeskStyles {}
                   (invoice)="requestInvoice($event)" (removeInvoice)="removeInvoice($event)" (invoiceFile)="openDocumentFile($event)" (inspectionVia)="setInspectionVia($event)" (assignInvoice)="assignInvoiceToAll($event)"
                   (settle)="requestSettle($event)" (undoSettle)="requestUndoSettle($event.payee, $event.due)" (planChange)="openPaymentPlan()"
                   (move)="requestMove($event.payment, $event.payee)" (remove)="requestRemove($event)" (refresh)="refreshPaymentState()"
-                  (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)" />
+                  (save)="save()" (exportPdf)="downloadPaymentsPdf()" (openCosts)="$event === 'plan' ? showCosts() : showNacalculatie()" (openPartner)="openPartner()" (credit)="requestCredit($event)"
+                  [transactions]="orderTransactions()" (linkBank)="requestBankLink()" (unlinkTransaction)="unlinkOrderLine($event)" (openTransaction)="openBankLine($event)" />
               </div>
             } @else if (mainView() === 'nacalc') {
               <div class="pdk-pane pdk-card">
@@ -1224,6 +1226,9 @@ export class PurchaseDeskStyles {}
           (patch)="paying.set({ ...pay, ...$event })" (amountInput)="setPaymentAmount($event)" (amountEurInput)="setPaymentAmountEur($event)" (payeeChange)="setPaymentPayee($event)"
           (partInput)="setPaymentPart($event.part, $event.raw)" (confirm)="confirmPayment()" (cancel)="closePayment()" (remove)="removeEditing($event)"
           (originChanged)="refreshPaymentState()" (unlinkLine)="unlinkSheetLine($event)" (removeProof)="removeSheetProof($event)" (removePart)="removeSheetPart($event)" (openDocument)="openDocumentFile({ documentId: $event, name: null })" />
+      }
+      @if (bankLinking()) {
+        <app-purchase-bank-link-sheet [orderId]="data.order.id" [orderLineIds]="orderLineIds()" (closed)="bankLinking.set(false)" (linked)="afterBankLink()" />
       }
       @if (invoicing(); as invoiceAction) {
         <app-purchase-invoice-sheet [action]="invoiceAction" [invoices]="data.invoices ?? []" [agreed]="agreedByPayee()"

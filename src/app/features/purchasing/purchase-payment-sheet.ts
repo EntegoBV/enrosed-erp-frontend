@@ -404,8 +404,11 @@ let nextSheetId = 0;
           </section>
         }
         @if (!creditOffset()) {
+          <!-- Betaalbron only where it can differ: a transfer on our own bank is paid from it (one locked select per transfer read twice). -->
           @for (part of parts(); track part.id) {
-            <app-purchase-payment-origin-editor [payment]="part.payment" [disabled]="busy() || !!pay.bankLinkPending || !!pay.pendingLines?.length" (changed)="originChanged.emit()" />
+            @if (part.payment.bankStatementLineId == null) {
+              <app-purchase-payment-origin-editor [payment]="part.payment" [disabled]="busy() || !!pay.bankLinkPending || !!pay.pendingLines?.length" (changed)="originChanged.emit()" />
+            }
           }
         }
         @if (pay.bankLinkError) { <p class="pay-sheet__note pay-sheet__note--warn" role="alert">{{ pay.bankLinkError }}</p> }
@@ -1235,10 +1238,12 @@ export class PurchasePaymentSheet {
     const others = (pay.alsoParts ?? []).length;
     const sharing = others > 0 && ((!pay.id && this.alsoOffered() && !!pay.alsoOpen) || pay.surplus === 'SHARE');
     const picked = pay.id ? this.pendingLine() : pay.bankTransaction ?? null;
-    return purchaseSheetSummary(pay, {
+    /* A payment in parts reads as the whole payment, not its first transfer. */
+    const whole = pay.id && this.grouped() ? { ...pay, amount: this.parts().reduce((sum, part) => sum + Math.round(part.amount * 100), 0) / 100 } : pay;
+    return purchaseSheetSummary(whole, {
       payeeLabel: PAYEE_LABEL[pay.payee],
       termLabel: pay.instalmentDue ? this.instalmentOptions().find(option => option.due === pay.instalmentDue)?.label ?? null : null,
-      amountEur: pay.currency === 'EUR' ? null : pay.amountEur ?? (this.transferEur() > 0 ? this.transferEur() : null),
+      amountEur: pay.currency === 'EUR' ? null : whole !== pay ? this.groupTotal() : pay.amountEur ?? (this.transferEur() > 0 ? this.transferEur() : null),
       share: sharing ? { totalEur: pay.id ? this.pendingLineEur() : this.alsoTotal(), containers: others + 1 } : null,
       bank: picked ? { day: picked.bookedAt } : pay.id && this.bankLinked() ? 'linked' : null,
     });

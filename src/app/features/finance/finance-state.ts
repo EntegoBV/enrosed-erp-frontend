@@ -28,6 +28,7 @@ import { bankAllocationTargets } from './bank-allocation-targets';
 import { changePreview } from './bank-change-preview';
 import type { KeepAs, LinkTarget } from './bank-change-preview';
 import { runLink, undoLink } from './bank-link-actions';
+import { BankUnlink } from './bank-unlink';
 import type { LinkOutcome } from './bank-link-actions';
 import { lineSuggestions } from './bank-suggestions';
 import type { LineSuggestion } from './bank-suggestions';
@@ -203,6 +204,7 @@ const byLabel = (left: Fair, right: Fair): number => left.label.localeCompare(ri
 export class FinanceState {
   private readonly finance = inject(FinanceApi);
   private readonly banking = inject(BankingApi);
+  private readonly unlinks = inject(BankUnlink);
   private readonly cash = inject(CashForecastApi);
   private readonly sales = inject(SalesApi);
   private readonly sourcing = inject(SourcingApi);
@@ -2545,10 +2547,18 @@ export class FinanceState {
     }
   }
 
-  /** "Koppeling losmaken" of a linked line (the payments stay; a receipt the link created goes). */
-  unlinkLine(line: BankStatementLine): void {
+  /**
+   * "Koppeling losmaken" of a linked line. An outgoing line asks with
+   * everything it carries and comes off it cleanly (bank-unlink.ts: a part of
+   * a payment in parts goes back or leaves, Transactiekosten and a difference
+   * cost go). `keepPayments` (Splitsing aanpassen, which links the same
+   * payments again) and a receipt keep the old unlink: the payments stay; a
+   * receipt the link created goes.
+   */
+  unlinkLine(line: BankStatementLine, keepPayments = false): void {
     if (this.linking() !== null) return;
     const receipt = line.salesPaymentId != null;
+    if (!receipt && !keepPayments) { void this.unlinkWithPlan(line); return; }
     this.ui.confirm({ title: 'Koppeling losmaken',
       message: receipt && line.allocationCreatedPayment ? 'Koppeling losmaken? De ontvangst die bij het koppelen werd aangemaakt, wordt verwijderd.' : 'Koppeling losmaken? De betalingen blijven staan.',
       confirmLabel: 'Koppeling losmaken', danger: true }, async () => {
@@ -2564,6 +2574,13 @@ export class FinanceState {
         this.linking.set(null);
       }
     });
+  }
+
+  private async unlinkWithPlan(line: BankStatementLine): Promise<void> {
+    const done = await this.unlinks.run(line, (on) => this.linking.set(on ? line.id : null));
+    if (!done) return;
+    await Promise.all([this.refreshBank(), this.reload(['costs', 'payments', 'containers'])]);
+    this.flash(line.id);
   }
 
   /** "Ongedaan maken" of "Boeken als…" (both legs of a transfer or cancellation). */

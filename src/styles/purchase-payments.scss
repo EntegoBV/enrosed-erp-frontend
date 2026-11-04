@@ -63,6 +63,16 @@ app-purchase-payment-workbench{display:block;min-width:0;outline:none;scroll-mar
 .pw-payees .wk-th{line-height:1.2;white-space:normal}
 /* Datum · Ontvanger · Omschrijving · Bedrag · In euro · Afrekening · Bewijs · Acties */
 .pw-ledger{--wk-cols:92px 100px minmax(0,1.6fr) minmax(104px,1fr) minmax(100px,1fr) minmax(0,1.1fr) 140px 110px}
+/* Op de bank (2026-11-04): Datum · Transactie · Verdeling (a pill per part, other containers in grey) · Bedrag · ⋯ */
+.pw-banktx{--wk-cols:92px minmax(0,1fr) minmax(0,1.7fr) 120px 40px;border:1px solid var(--line)}
+.pw-banktx .wk-td>.wk-td__sub{white-space:normal}
+.pw-banktx .wk-td--actions{opacity:1}
+.pw-banktx__name{display:block;overflow:hidden;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.pw-banktx__split{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;white-space:normal}
+.pw-banktx__split>.wk-pill{white-space:nowrap;font-variant-numeric:tabular-nums}
+.pw-banktx__other{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pw-banktx__sub{overflow-wrap:anywhere}
+.pw-bank-empty{padding:2px 0 4px}
 .pw-desc{display:block;white-space:normal;overflow-wrap:anywhere}
 .pw-desc__payee{margin-right:6px;vertical-align:1px}
 /* term · invoice · who: wraps between the parts only, so 'CI-2026-118' or '70% bij vertrek' never breaks inside */
@@ -145,6 +155,8 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
  .pw-content{grid-template-columns:minmax(0,1fr) 300px;align-items:start}
  .pw-side{position:sticky;top:calc(var(--appbar-h,62px) + var(--wk-bar-h) + 12px);max-height:calc(100dvh - var(--appbar-h,62px) - var(--wk-bar-h) - 24px);overflow-y:auto;scrollbar-width:thin}}
 @container pw (min-width:760px) and (max-width:1099.98px){.pw-side{grid-template-columns:1fr 1fr;align-items:start}}
+/* the bar's tools (Betaling, Transactie koppelen, Afrekenen, Betaalplan) keep the title whole below 1100: the hint and the sub line go */
+@container pw (max-width:1099.98px){.pw-bar__sub,.pw-bar__hint{display:none}}
 /* a narrow desk (a Fold, a small window): four figures in a 2×2 grid and the formula in words */
 @container pw (max-width:759.98px){
  .pw-bar__sub,.pw-bar__hint,.pw-op,.pw-strip__wide,.pw-keys{display:none}
@@ -167,7 +179,8 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
  .pw-payees,.pw-payees--diff{--wk-cols:28px minmax(0,1.5fr) repeat(3,minmax(0,1fr)) minmax(0,1.3fr) 28px}
  .pw-payees--diff .pw-comp-row>.pw-comp__label{grid-column:2/5}
  .pw-payees--diff .pw-comp-row>.pw-comp__amount{grid-column:5/6}
- .pw-ledger{--wk-cols:88px minmax(0,1fr) 112px 120px 32px}}
+ .pw-ledger{--wk-cols:88px minmax(0,1fr) 112px 120px 32px}
+ .pw-banktx{--wk-cols:88px minmax(0,1fr) 112px 32px}}
 /* tiny: the status pill moves under the name */
 @container pw-main (max-width:599.98px){
  .pw [data-pw-hide~=tiny]{display:none}.pw .pw-when-tiny{display:block;margin-top:2px}
@@ -177,6 +190,8 @@ app-purchase-desk :is(.desk-kpi--button,.desk-kpi--total) span{white-space:norma
 .purchase-payments-plain{--ios-inset:0px}
 @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {section.card.purchase-payments-plain{padding:0;border:0;background:transparent;box-shadow:none;overflow:visible}}
 app-purchase-payment-overview{display:block;min-width:0}
+/* Op de bank: who got what may take a second line (a split), never more */
+.pp-tx .ios-cell__sub{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;white-space:normal}
 app-purchase-payment-overview app-sheet,app-purchase-payee-sheet{--ios-inset:16px}
 .pp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:6px 0 14px}
 .pp-content.is-loading{opacity:.5}
@@ -467,3 +482,37 @@ app-purchase-reconciliation{display:block;min-width:0}
 /* ---- payment sheet: the read-only summary above the buttons (Inkoop redesign §2.5) */
 app-purchase-payment-sheet .sheet__foot{flex-wrap:wrap}
 app-purchase-payment-sheet .pay-sheet__summary{flex-basis:100%;margin:0 0 2px;color:var(--muted);font-size:12.5px;line-height:1.4;font-variant-numeric:tabular-nums}
+
+/* ---- "Transactie koppelen" from an order (2026-11-04): the transaction, then Kosten & bank's split on this order.
+   The split's own rules live under #finance-workspace (bank-cockpit.scss); these repeat them for the sheet. */
+.pbl{display:grid;gap:10px;min-width:0}
+.pbl__line{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.pbl__icon{display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--surface-2);color:var(--muted)}
+.pbl__copy{display:grid;flex:1;gap:2px;min-width:0}.pbl__copy b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pbl__copy small{color:var(--muted);font-size:12px}
+.pbl__amount{flex:none;font-size:15px;font-variant-numeric:tabular-nums}
+.pbl__error{margin:0;color:var(--danger);font-size:13px}
+.pbl .fin-hint{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.pbl .fin-error{margin:0 0 12px;color:var(--danger);font-size:13px;line-height:1.5}
+.pbl .fin-split{display:grid;gap:6px;margin:4px 0}
+.pbl .fin-split__row{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.pbl .fin-split__row.is-on{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 120px;align-items:center;border-color:var(--rose-line);background:var(--rose-soft)}
+.pbl .fin-split__pick{display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer}
+.pbl .fin-split__pick span{display:grid;min-width:0}.pbl .fin-split__pick b{font-size:13.5px}.pbl .fin-split__pick small{color:var(--muted);font-size:12px}
+.pbl .fin-split__row.is-on .fin-split__pick{grid-column:1/-1}
+.pbl .fin-split__warn{color:var(--warn)}
+.pbl .fin-split__term,.pbl .fin-split__amount{min-width:0;width:100%;height:36px;padding-block:0;font-size:13.5px}
+.pbl .fin-split__row.is-on .fin-split__term{grid-column:1/span 2}
+.pbl .fin-split__amount{text-align:right;font-variant-numeric:tabular-nums}
+.pbl .fin-split__effect{grid-column:1/-1;color:var(--muted);font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+.pbl .fin-split__add{grid-column:1/-1;justify-self:start;font-size:13px}
+.pbl .fin-split__search{display:grid;gap:4px;color:var(--muted);font-size:12px}
+.pbl .fin-split__modes{display:flex;flex-wrap:wrap;gap:6px}
+.pbl .fin-split__modes .wk-btn[aria-pressed=true]{border-color:var(--rose);background:var(--rose-soft);color:var(--rose-dark)}
+.pbl .fin-split__total{margin:4px 0;font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums}.pbl .fin-split__total.is-ok{color:var(--ok)}
+.pbl app-container-split{display:grid;gap:8px;min-width:0}
+.pbl app-container-split>.wk-btn--primary{justify-self:start;min-width:140px}
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+ .pbl .fin-split__row.is-on{grid-template-columns:minmax(0,1fr) 132px}
+ .pbl .fin-split__row.is-on .fin-split__term{grid-column:1/2}
+ .pbl .fin-split__term,.pbl .fin-split__amount{height:44px;font-size:16px}
+ .pbl app-container-split>.wk-btn--primary{width:100%;min-height:50px}}
