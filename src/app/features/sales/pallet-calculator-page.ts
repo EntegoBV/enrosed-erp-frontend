@@ -16,8 +16,9 @@ import { Skeleton } from '../../shared/skeleton';
 import { capitalize, productSalesUnit } from '../products/product-sales-unit';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
-  CONTAINERS, PALLET_CHOICES, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampPalletHeight, containerCapacity,
-  containerFill, palletFit, palletSpec, planPallets, productUnits, roomOn, shareOnePallet, unitsPerCarton,
+  CONTAINERS, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampPalletHeight,
+  containerCapacity, containerFill, palletFit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet,
+  separatePallets, shareOnePallet, unitsPerCarton,
   type CalcUnit, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -117,9 +118,10 @@ function storedRow(value: unknown): value is CalcRow {
           </label>
           @if (query().trim() && products()) {
             <ul class="pc-results" aria-label="Zoekresultaten">
+              @if (full()) { <li class="pc-results__none">Maximaal {{ maxRows }} producten: verwijder er eerst een.</li> }
               @for (product of results(); track product.id) {
                 <li>
-                  <button class="pc-result" type="button" (click)="add(product)" [disabled]="added().has(product.id!)">
+                  <button class="pc-result" type="button" (click)="add(product)" [disabled]="added().has(product.id!) || full()">
                     @if (photoOf(product); as photo) { <img class="pc-thumb" [appAuthSrc]="photo" alt="" /> }
                     @else { <span class="pc-thumb pc-thumb--none"><app-icon name="products" [size]="18" /></span> }
                     <span class="pc-result__text"><b>{{ product.name }}</b><small>{{ identity(product) }}</small></span>
@@ -173,14 +175,19 @@ function storedRow(value: unknown): value is CalcRow {
               }
               @case ('choose') {
                 <h2 class="pc-sum__title">Gemengde pallet</h2>
-                <p class="pc-sum__facts">Verdeel één pallet of vul aantallen in.</p>
-                <button class="btn btn--primary btn--sm pc-sum__action" type="button" (click)="share()">
-                  <app-icon name="layers" [size]="16" /><span>Verdeel 1 pallet</span>
-                </button>
+                @if (canShare()) {
+                  <p class="pc-sum__facts">Verdeel één pallet of vul aantallen in.</p>
+                  <button class="btn btn--primary btn--sm pc-sum__action" type="button" (click)="share()">
+                    <app-icon name="layers" [size]="16" /><span>Verdeel 1 pallet</span>
+                  </button>
+                } @else {
+                  <p class="pc-sum__facts pc-warn">Geen van deze omdozen past op deze pallet.</p>
+                }
               }
               @case ('plan') {
                 <h2 class="pc-sum__title">
-                  @if (plan().length === 0) { Past niet }
+                  @if (tooMany()) { Meer dan {{ maxPallets }} pallets }
+                  @else if (plan().length === 0) { Past niet }
                   @else { {{ plan().length }} {{ plan().length === 1 ? 'pallet' : 'pallets' }} }
                   @if (lastFill(); as fill) { <small>{{ fill }}</small> }
                 </h2>
@@ -212,7 +219,7 @@ function storedRow(value: unknown): value is CalcRow {
                 }
                 @if (room().length) {
                   <div class="pc-room">
-                    <h3>Nog plaats op pallet {{ plan().length }}</h3>
+                    <h3>Past nog bij, zonder extra pallet</h3>
                     @for (entry of room(); track entry.line.product.id) {
                       <div class="pc-room__row">
                         <i class="pc-dot" [style.background]="entry.line.colour" aria-hidden="true"></i>
@@ -235,7 +242,7 @@ function storedRow(value: unknown): value is CalcRow {
                     </div>
                   }
                 </div>
-                @if (lines().length > 1) {
+                @if (canShare()) {
                   <button class="btn btn--sm pc-sum__action" type="button" (click)="share()">
                     <app-icon name="layers" [size]="16" /><span>Verdeel 1 pallet</span>
                   </button>
@@ -427,6 +434,8 @@ export class PalletCalculatorPage {
   readonly profile = signal<PalletProfile>('EURO_120X80');
   readonly maxHeight = signal(PALLET_MAX_HEIGHT_CM);
   readonly rows = signal<CalcRow[]>([]);
+  readonly maxRows = MAX_ROWS;
+  readonly maxPallets = MAX_PLANNED_PALLETS;
 
   readonly palletOptions: SegmentOption[] = PALLET_CHOICES.map((choice) =>
     ({ id: choice.id, label: `${choice.short} ${choice.size.replace(/ /g, '')}`, ariaLabel: `${choice.label} ${choice.size} cm` }));
@@ -451,7 +460,11 @@ export class PalletCalculatorPage {
     });
   });
 
-  readonly plan = computed(() => planPallets(this.lines().map((line) => line.plan), this.pallet()));
+  /** Absurd quantities (a typo of seven digits) are not worked out pallet by pallet. */
+  readonly tooMany = computed(() => separatePallets(this.lines().map((line) => line.plan)) > MAX_PLANNED_PALLETS);
+  readonly plan = computed(() => (this.tooMany() ? [] : planPallets(this.lines().map((line) => line.plan), this.pallet())));
+  readonly canShare = computed(() => this.lines().length > 1 && this.lines().some((line) => line.fit.cartonsPerPallet > 0));
+  readonly full = computed(() => this.rows().length >= MAX_ROWS);
   readonly unplaced = computed(() => this.lines().filter((line) => line.cartons > 0 && line.fit.cartonsPerPallet <= 0));
   readonly summaryKind = computed<'empty' | 'capacity' | 'choose' | 'plan'>(() => {
     const lines = this.lines();
@@ -500,13 +513,14 @@ export class PalletCalculatorPage {
     return groups;
   });
 
-  /** On the last pallet when it is a mixed one: how many more omdozen of each product still go on it. */
+  /** How many more omdozen of each product go on without an extra pallet; worked out for small plans only (each is a re-plan). */
   readonly room = computed(() => {
-    const last = this.plan().at(-1);
-    if (!last || last.full) return [];
+    const count = this.plan().length;
+    if (count === 0 || count > 30) return [];
     const pallet = this.pallet();
+    const plan = this.lines().map((line) => line.plan);
     return this.lines()
-      .map((line) => ({ line, cartons: roomOn(last, line.plan, pallet) }))
+      .map((line) => ({ line, cartons: roomWithoutExtraPallet(plan, line.plan.key, pallet, count) }))
       .filter((entry) => entry.cartons > 0);
   });
 
@@ -544,9 +558,8 @@ export class PalletCalculatorPage {
 
   add(product: Product): void {
     const id = product.id;
-    if (id === null || this.added().has(id)) return;
+    if (id === null || this.added().has(id) || this.full()) return;
     this.rows.update((rows) => {
-      if (rows.length >= MAX_ROWS) return rows;
       const used = new Set(rows.map((row) => row.slot % PALLET_PRODUCT_COLOURS.length));
       const slot = PALLET_PRODUCT_COLOURS.findIndex((_, index) => !used.has(index));
       return [...rows, { productId: id, quantity: null, unit: 'carton', slot: slot < 0 ? rows.length : slot }];
@@ -556,6 +569,7 @@ export class PalletCalculatorPage {
 
   addFirst(event: Event): void {
     event.preventDefault();
+    if (!this.query().trim()) return;
     const first = this.results().find((product) => product.id !== null && !this.added().has(product.id));
     if (first) this.add(first);
   }

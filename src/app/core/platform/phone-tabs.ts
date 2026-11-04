@@ -31,7 +31,7 @@ export const PHONE_TAB_ROOTS: Readonly<Record<PhoneTab, string>> = {
  */
 export const PHONE_TAB_PAGES: Readonly<Record<Exclude<PhoneTab, 'more'>, readonly string[]>> = {
   home: ['/dashboard'],
-  sales: ['/sales', '/tica', '/revisions', '/customers', '/klantlogins', '/prospects', '/contactaanvragen', '/countries'],
+  sales: ['/sales', '/palletberekening', '/tica', '/revisions', '/customers', '/klantlogins', '/prospects', '/contactaanvragen', '/countries'],
   purchasing: ['/purchasing', '/suppliers', '/douane'],
   products: ['/products', '/stock', '/stock-locations', '/barcodes', '/categories', '/catalog-export', '/catalog'],
 };

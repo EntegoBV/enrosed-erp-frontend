@@ -4326,6 +4326,9 @@ several together, fits on a pallet and in a 20ft or 40ft, in omdozen, displays a
 pieces. `/palletberekening` (`features/sales/pallet-calculator-page.ts`), the second
 row of the Verkoop group (`nav-items.ts`, icon `pallet`, native symbol
 `square.stack.3d.up`), so it is also on the long-press Verkoop tab menu and on Meer.
+Its path is also in `PHONE_TAB_PAGES.sales` (phone-tabs.ts: lights Verkoop, back to
+/sales), the verkoop branch of `sidebarGroupForUrl` (the desk group stays open) and
+return-label.ts: every new nav row needs those three, and no test checks them any more.
 Frontend only: it reads `GET /api/products` (active, not demo) and the unit names,
 and keeps the picks, pallet type and height in localStorage
 (`enrosed.palletCalculator`); nothing goes to the server.
@@ -4337,14 +4340,20 @@ and keeps the picks, pallet type and height in localStorage
   does not override; keep the two in step when the backend changes.
   `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
 - **A mix** stacks every product in layers of its own, a started layer as high as a
-  full one (the pallet planner's `estimatePalletHeightCm` model): full pallets of one
-  product first, then the rests layer by layer on the first mixed pallet with room,
-  in pick order. Deliberately conservative ("freight never too low"): cartons of
-  two products never share a layer, so a nearly full mixed pallet plus one carton
-  shows a last pallet with one carton. "Nog plaats op pallet N" (`roomOn`) adds the
-  empty places of started layers plus new layers, within the weight; its buttons
-  add those omdozen. "Verdeel 1 pallet" (`shareOnePallet`) hands out whole layers to
-  the product with the least height so far.
+  full one (the pallet planner's `estimatePalletHeightCm` model). `planPallets` is
+  first-fit decreasing over all layers: tallest first, each on the first pallet that
+  still takes it under the height and the weight; where the weight takes only part
+  of a layer, the rest looks further, so one product alone gets exactly its
+  `cartonsPerPallet` per pallet. Deliberately conservative ("freight never too
+  low"): cartons of two products never share a layer. "Past nog bij, zonder extra
+  pallet" (`roomWithoutExtraPallet`) is the largest extra per product (up to one
+  full pallet of it) for which a fresh plan keeps the count, found by re-planning
+  (binary search), so a "+ N omdozen" button never adds a pallet; worked out for
+  plans of at most 30 pallets. "Verdeel 1 pallet" (`shareOnePallet`) hands out
+  whole layers to the product with the least height so far; its layers make one
+  stack, so the plan puts them on one pallet. Above 200 pallets counted per
+  product (`separatePallets`, a seven-digit typo) the plan is skipped: "Meer dan
+  200 pallets".
 - **Containers** take loose cartons per product: 20ft = the confirmed count, else
   28 m³ by volume, else the 40ft HC count × 28/68 (the product screen's "Per 20ft
   GP"); 40ft HC = the hand count, else 68 m³ ("Per 40' HC"); 40ft = scaled from a
@@ -4355,5 +4364,5 @@ and keeps the picks, pallet type and height in localStorage
   A typed quantity in displays or pieces rounds up to whole omdozen and says so
   ("Afgerond: 4 omdozen (…)"); the steppers move one omdoos in the chosen unit.
 - Layout: phone = search, result, cards; desk (`@container pc` ≥ 760 px) = cards
-  left, sticky result right. Initial bundle 970.70 kB after this (the page is a lazy
+  left, sticky result right. Initial bundle 970.83 kB after this (the page is a lazy
   chunk; only the nav row, the icon and the symbol are in the first screen).
