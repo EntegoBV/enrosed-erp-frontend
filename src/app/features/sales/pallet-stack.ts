@@ -1,8 +1,68 @@
+import type { OrderPallet, PalletProfile } from '../../core/api/models';
+
 /**
- * The arithmetic behind the pallet planner, kept free of Angular so the
- * node tests can read it: how high a hand-built pallet stacks, and the
- * colour each product keeps across the pallets.
+ * The arithmetic behind the pallet planner, kept free of Angular: how high
+ * a hand-built pallet stacks, the colour each product keeps across the
+ * pallets, and how a hand layout keeps its names and follows the order.
  */
+
+/** The type a new pallet of this profile carries (and the pakbon prints). */
+export function palletTypeLabel(profile: PalletProfile | null | undefined): string {
+  switch (profile) {
+    case 'BLOCK_120X100': return 'Blokpallet 120×100';
+    case 'HALF_80X60': return 'Halve pallet 80×60';
+    default: return 'Europallet';
+  }
+}
+
+const NUMBERED = /^Pallet \d+$/;
+
+/** A pallet still called "Pallet n" follows its position; a name of its own stays. */
+export function relabelPallets(pallets: OrderPallet[]): OrderPallet[] {
+  return pallets.map((pallet, index) => {
+    const label = `Pallet ${index + 1}`;
+    return NUMBERED.test(pallet.label.trim()) && pallet.label !== label ? { ...pallet, label } : pallet;
+  });
+}
+
+/** "Pallet n" for a pallet added at the end, never a number another pallet already carries. */
+export function nextPalletLabel(pallets: readonly { label: string }[]): string {
+  const taken = new Set(pallets.map((pallet) => pallet.label.trim()));
+  let number = pallets.length + 1;
+  while (taken.has(`Pallet ${number}`)) number++;
+  return `Pallet ${number}`;
+}
+
+/**
+ * The hand layout after the order changed: a product with more omdozen on
+ * pallets than its limit loses the excess from the last pallets first, and
+ * a pallet that this leaves empty goes. Products without a limit stay as
+ * they are; the same list comes back when nothing changes.
+ */
+export function trimPallets(pallets: OrderPallet[], limits: ReadonlyMap<number, number>): OrderPallet[] {
+  const excess = new Map<number, number>();
+  for (const item of pallets.flatMap((pallet) => pallet.items)) {
+    if (limits.has(item.productId)) excess.set(item.productId, (excess.get(item.productId) ?? 0) + item.cartons);
+  }
+  for (const [productId, placed] of excess) excess.set(productId, placed - Math.max(0, limits.get(productId) ?? 0));
+  if (![...excess.values()].some((over) => over > 0)) return pallets;
+  const kept: OrderPallet[] = [];
+  for (let index = pallets.length - 1; index >= 0; index--) {
+    const pallet = pallets[index];
+    let changed = false;
+    const items = pallet.items.flatMap((item) => {
+      const over = excess.get(item.productId) ?? 0;
+      if (over <= 0) return [item];
+      const take = Math.min(over, item.cartons);
+      excess.set(item.productId, over - take);
+      changed = true;
+      return item.cartons > take ? [{ ...item, cartons: item.cartons - take }] : [];
+    });
+    if (!changed) kept.unshift(pallet);
+    else if (items.length) kept.unshift({ ...pallet, items });
+  }
+  return relabelPallets(kept);
+}
 
 /** Canonical B × D labels; also upgrades the two historical D × B values. */
 export function normalizeManualPalletType(value: string): string {
@@ -42,6 +102,13 @@ export function estimatePalletHeightCm(
   }
   return { heightCm: known ? Math.round(height) : null, measured: false };
 }
+
+/** The pallet types the planner offers, with the stored value first. */
+export const PALLET_TYPES = [
+  { value: 'Europallet', label: 'Europallet 120 × 80', short: 'Euro' },
+  { value: 'Blokpallet 120×100', label: 'Blokpallet 120 × 100', short: 'Blok' },
+  { value: 'Halve pallet 80×60', label: 'Halve pallet 80 × 60', short: 'Half' },
+] as const;
 
 /** One colour per product on the pallets, so a mixed pallet reads at a glance. */
 export const PALLET_PRODUCT_COLOURS = [
