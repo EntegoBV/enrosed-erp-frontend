@@ -4571,13 +4571,16 @@ are tiles, hand pallets are cards edited in place.
   `updateShipping`). `transportQueued` marks a transport change of its own that
   no save has taken along yet; each save of the loop clears it, a change made
   meanwhile queues again, a refused save restores it. A hand layout that only
-  followed the lines (`removeLine` trims its pallets, a lowered quantity
-  `layoutFollowsLines` at the next preview or save) is shipping-dirty without
+  followed the lines (`removeLine` trims its pallets, "Tijdelijk niet
+  beschikbaar" prunes them, a lowered quantity `layoutFollowsLines` at the
+  next preview or save) is shipping-dirty without
   being queued: no autosave, Klaar or leaving sends it; Opslaan and the leave
-  question do (review, 2026-11-04). Klaar, ×, Escape and the backdrop always
-  close the sheet. A refused save (`transportRefused`: queued, dirty and a
-  `saveError`) stays in the Levering card and the desk rail as "Transport niet
-  opgeslagen" with the reason, Opnieuw and "Wijzigingen weggooien"
+  question do (review, 2026-11-04), and `transportSaveStatus` reads "Indeling
+  gaat mee met Opslaan" meanwhile instead of "Transport automatisch opgeslagen"
+  (the Levering card, the desk rail and both sheets' foot). Klaar, ×, Escape
+  and the backdrop always close the sheet. A refused save (`transportRefused`:
+  queued, dirty and a `saveError`) stays in the Levering card and the desk rail
+  as "Transport niet opgeslagen" with the reason, Opnieuw and "Wijzigingen weggooien"
   (`discardTransport`: the shipping fields as last saved, the rest of the
   draft kept); leaving then asks the usual question, where Niet opslaan leaves.
   On a sent document a freight basis that cannot price yet (`freightGap`: Per

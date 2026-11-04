@@ -3473,7 +3473,9 @@ export class SalesEditor {
     const hold = this.transportHold();
     if (this.transportRefused()) return 'Transport niet opgeslagen';
     if (hold) return `Nog niet opgeslagen · ${hold.charAt(0).toLowerCase()}${hold.slice(1)}`;
-    return this.transportQueued() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen';
+    if (this.transportQueued() || this.transportSaving()) return 'Transport wordt opgeslagen…';
+    /* Shipping-dirty with nothing queued: a hand layout that followed the lines, which no autosave sends. */
+    return this.shippingDirty() ? 'Indeling gaat mee met Opslaan' : 'Transport automatisch opgeslagen';
   });
   /** The draft the figures on screen were priced for (layoutKey). */
   private readonly pricedFor = signal('');
