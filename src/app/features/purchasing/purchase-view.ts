@@ -15,6 +15,7 @@ import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
+import { orderTransactions } from './purchase-bank-transactions';
 import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
@@ -28,7 +29,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, PartnerFinancing, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
+  Category, OtherCost, PartnerFinancing, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchasePaymentRow, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -548,7 +549,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
                 [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()" [bankLineLabel]="bankLineLabel"
                 (add)="recordPayment($event)" (download)="downloadDocument($event)" (invoiceFile)="openDocumentFile($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
-                (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
+                (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')"
+                [transactions]="orderTransactions()" (linkBank)="linkTransaction()" (openTransaction)="openBankLine($event)" />
             </section>
             <!-- Money in: a partner who co-finances the container. -->
             @if (data.order.partnerCustomerId != null) {
@@ -1152,6 +1154,20 @@ export class PurchaseView {
     return order ? paymentPlanLabel(order, PAYMENT_TERMS) : '';
   });
 
+  /** 'Op de bank': the transactions that paid this container, with who got what (the other containers once the editor loads them). */
+  readonly orderTransactions = computed(() => {
+    const data = this.view();
+    const rows = this.paymentRows();
+    return data ? orderTransactions(data.order.id, this.payments() ?? [], this.bankLines(), rows?.orderId === data.order.id ? rows.rows : null) : [];
+  });
+  /** 'Transactie koppelen…' happens in the editor (?section=link), which returns here once the sheet closes. */
+  linkTransaction(): void {
+    const id = this.view()?.order.id;
+    if (id != null) void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'link' }, replaceUrl: true });
+  }
+  /** The transaction in Kosten & bank. */
+  openBankLine(lineId: number): void { void this.routerNav.navigate(['/costs'], { queryParams: { line: lineId } }); }
+
   /** Recording happens in the editor: it opens on the payment sheet and returns here once it closes. */
   recordPayment(action: PurchasePaymentAction): void {
     const id = this.view()?.order.id;
@@ -1206,9 +1222,19 @@ export class PurchaseView {
     try {
       const list = await this.sourcing.payments(id);
       if (Number(this.id()) === id) this.payments.set(list);
+      if (list.some(payment => payment.bankStatementLineId != null)) void this.loadPaymentRows(id);
     } catch (failure: unknown) {
       if (Number(this.id()) === id) this.paymentsError.set(messageOf(failure, 'De betalingen konden niet worden geladen.'));
     }
+  }
+
+  /** Op de bank names the other containers a transaction paid: every payment as GET /purchase-payments lists it (a hint only). */
+  private readonly paymentRows = signal<{ orderId: number; rows: PurchasePaymentRow[] } | null>(null);
+  private async loadPaymentRows(id: number): Promise<void> {
+    try {
+      const rows = await this.sourcing.purchasePayments();
+      if (Number(this.id()) === id) this.paymentRows.set({ orderId: id, rows });
+    } catch { /* without them a transaction shows this container's parts and what went elsewhere */ }
   }
 
   async downloadDocument(doc: PurchaseDocument): Promise<void> {

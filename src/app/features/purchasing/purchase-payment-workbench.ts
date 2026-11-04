@@ -26,6 +26,9 @@ import { invoiceCoverage, invoiceFileText, invoiceLine, invoiceTermsLine, payeeI
 import { PurchaseNacalcSummaryCard } from './purchase-nacalc-summary';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
 import { paymentOriginLabel } from './purchase-payment-origin';
+import { transactionPartText, type OrderTransaction, type TransactionElsewhere } from './purchase-bank-transactions';
+import { bankTextOf } from '../finance/bank-text';
+import { containerName } from './container-name';
 
 type LedgerFilter = 'ALL' | Payee | 'NO_PROOF';
 type MenuState =
@@ -37,7 +40,8 @@ type MenuState =
   | { kind: 'credit'; point: MenuPoint; credit: LedgerCredit }
   | { kind: 'proofs'; point: MenuPoint; row: LedgerRow }
   | { kind: 'invoice'; point: MenuPoint; payee: PayeeLedger; invoice: PurchaseInvoice }
-  | { kind: 'invoice-file'; point: MenuPoint; payee: PayeeLedger; file: PurchaseInvoiceFile };
+  | { kind: 'invoice-file'; point: MenuPoint; payee: PayeeLedger; file: PurchaseInvoiceFile }
+  | { kind: 'transaction'; point: MenuPoint; transaction: OrderTransaction };
 
 /** What the invoice rows ask of the host: add one, correct one, or fill in the data of an invoice file. */
 export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?: PurchaseInvoiceFile }
@@ -70,6 +74,7 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
             <button class="wk-btn wk-btn--primary" type="button" [disabled]="!actionable()" (click)="addMain()"><app-icon name="plus" [size]="16" />Betaling</button>
             <button class="wk-btn wk-btn--primary" type="button" aria-label="Betaling aan…" [disabled]="!actionable()" (click)="openMenu('payees', $event)"><app-icon name="chevron-down" [size]="14" /></button>
           </div>
+          <button class="wk-btn" type="button" [disabled]="!actionable()" (click)="linkBank.emit()"><app-icon name="bank" [size]="15" />Transactie koppelen</button>
           <button class="wk-btn" type="button" [disabled]="!actionable() || !settleTarget()" [title]="settleHint()" (click)="settleMain()">Afrekenen…</button>
           @if (settleHintVisible()) { <span class="pw-bar__hint">{{ settleHint() }}</span> }
           <button class="wk-btn" type="button" [disabled]="busy()" (click)="planChange.emit()">Betaalplan…</button>
@@ -368,6 +373,48 @@ export interface InvoiceRequest { payee: Payee; invoice?: PurchaseInvoice; file?
                   </div>
                 </section>
 
+                <!-- Op de bank (2026-11-04): each bank transaction that paid this container and who got what of it ("splitsen naar transport en leverancier"). -->
+                <section class="pw-section" aria-labelledby="pw-bank-title">
+                  <div class="pw-section__head">
+                    <h3 class="pw-section__title" id="pw-bank-title">Op de bank@if (transactions().length) { · {{ transactions().length }} }</h3>
+                  </div>
+                  @if (!transactions().length) {
+                    <p class="pw-muted pw-bank-empty">Nog geen banktransactie bij deze container. <button class="wk-link" type="button" [disabled]="!actionable()" (click)="linkBank.emit()">Transactie koppelen</button></p>
+                  } @else {
+                    <div class="wk-table pw-banktx" role="grid" aria-labelledby="pw-bank-title">
+                      <div class="wk-thead" role="row">
+                        <span class="wk-th" role="columnheader">Datum</span>
+                        <span class="wk-th" role="columnheader">Transactie</span>
+                        <span class="wk-th" role="columnheader" data-pw-hide="narrow">Verdeling</span>
+                        <span class="wk-th wk-th--num" role="columnheader">Bedrag</span>
+                        <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
+                      </div>
+                      @for (tx of transactions(); track tx.lineId) {
+                        <div class="wk-tr" role="row" appMenuTrigger (menuTrigger)="menu.set({ kind: 'transaction', point: $event, transaction: tx })">
+                          <span class="wk-td wk-amount" role="gridcell">{{ tx.day | dateNl }}</span>
+                          <span class="wk-td" role="gridcell"><b class="pw-banktx__name">{{ txTitle(tx) }}</b>
+                            @if (txAccount(tx); as account) { <span class="wk-td__sub">{{ account }}</span> }
+                            <span class="wk-td__sub pw-when-narrow pw-banktx__sub">{{ txSplit(tx) }}</span></span>
+                          <span class="wk-td pw-banktx__split" role="gridcell" data-pw-hide="narrow">
+                            @for (part of tx.parts; track part.paymentId) {
+                              <span class="wk-pill" [class]="tone(part.payee)" [title]="partTitle(part)">{{ partShort(part) }} {{ part.amountEur | eur }}</span>
+                            }
+                            @for (other of tx.elsewhere; track other.orderId) {
+                              <span class="pw-banktx__other">{{ otherName(other) }} {{ other.amountEur | eur }}</span>
+                            }
+                            @if (tx.otherEur > 0) { <span class="pw-banktx__other">elders {{ tx.otherEur | eur }}</span> }
+                          </span>
+                          <span class="wk-td wk-td--num wk-amount wk-amount--strong" role="gridcell">{{ tx.amountEur | eur }}</span>
+                          <span class="wk-td wk-td--actions" role="gridcell">
+                            <button class="wk-btn wk-btn--sm wk-btn--icon pw-more" type="button" [attr.aria-label]="'Acties voor transactie ' + txTitle(tx)"
+                                    (click)="$event.stopPropagation(); openTransactionMenu(tx, $event)"><app-icon name="more" [size]="16" /></button>
+                          </span>
+                        </div>
+                      }
+                    </div>
+                  }
+                </section>
+
                 <section class="pw-section" aria-labelledby="pw-ledger-title">
                   <div class="pw-section__head">
                     <h3 class="pw-section__title" id="pw-ledger-title">{{ ledgerTitle() }}</h3>
@@ -542,6 +589,14 @@ export class PurchasePaymentWorkbench {
   readonly roundOnServer = input(false);
   /** '{account label} · {dd/MM}' of a bank line the host has loaded; null shows plain 'op de bank'. */
   readonly bankLineLabel = input<(lineId: number) => string | null>(() => null);
+  /** Op de bank: the transactions that paid this container (purchase-bank-transactions.ts). */
+  readonly transactions = input<readonly OrderTransaction[]>([]);
+  /** 'Transactie koppelen': a transaction shared over this container's parts (purchase-bank-link-sheet.ts). */
+  readonly linkBank = output<void>();
+  /** 'Losmaken…' of a transaction, by its bank line id. */
+  readonly unlinkTransaction = output<number>();
+  /** The transaction in Kosten & bank, by its bank line id. */
+  readonly openTransaction = output<number>();
   /** What the last link changed ('Bedrag en datum gevolgd van de transactie: …'), until it is closed. */
   readonly notice = input<string | null>(null);
   readonly dismissNotice = output<void>();
@@ -865,6 +920,23 @@ export class PurchasePaymentWorkbench {
     this.menu.set({ kind: 'term', point: { x: rect.left, y: rect.bottom + 4 }, term });
   }
 
+  openTransactionMenu(transaction: OrderTransaction, event: MouseEvent): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.menu.set({ kind: 'transaction', point: { x: rect.left, y: rect.bottom + 4 }, transaction });
+  }
+  /** The transaction as Kosten & bank names it (the counterparty, cleaned). */
+  txTitle(transaction: OrderTransaction): string { return transaction.line ? bankTextOf(transaction.line).title : 'Banktransactie'; }
+  txAccount(transaction: OrderTransaction): string | null { return this.bankLineLabel()(transaction.lineId)?.split(' · ')[0] ?? null; }
+  txSplit(transaction: OrderTransaction): string {
+    return [...transaction.parts.map(part => `${this.partShort(part)} ${formatEur(part.amountEur)}`),
+      ...transaction.elsewhere.map(other => `${this.otherName(other)} ${formatEur(other.amountEur)}`),
+      ...(transaction.otherEur > 0 ? [`elders ${formatEur(transaction.otherEur)}`] : [])].join(' · ');
+  }
+  /** A part's pill word: Transactiekosten by name, else the payee's short word. */
+  partShort(part: OrderTransaction['parts'][number]): string { return part.label?.trim() === 'Transactiekosten' ? 'Transactiekosten' : PAYEE_SHORT[part.payee]; }
+  partTitle(part: OrderTransaction['parts'][number]): string { const words = transactionPartText(part); return words.sub ? `${words.title} · ${words.sub}` : words.title; }
+  otherName(other: TransactionElsewhere): string { return containerName({ id: other.orderId, number: other.number, alias: other.alias }); }
+
   /** One proof opens at once; several get a menu listing each file. */
   openProof(row: LedgerRow, event: MouseEvent): void {
     const proofs = row.proofs ?? [];
@@ -884,6 +956,7 @@ export class PurchasePaymentWorkbench {
       case 'credit': return 'Tegoed · ' + open.credit.reasonLabel;
       case 'invoice': return 'Factuur ' + open.invoice.number;
       case 'invoice-file': return open.file.originalFilename;
+      case 'transaction': return this.txTitle(open.transaction);
     }
   }
 
@@ -908,12 +981,21 @@ export class PurchasePaymentWorkbench {
         { id: 'file', label: 'Bestand openen', iconName: 'document' },
         { id: 'fill', label: 'Gegevens invullen', iconName: 'pencil', disabled: busy },
       ];
+      case 'transaction': return [
+        { id: 'open', label: 'Openen in Kosten & bank', iconName: 'bank' },
+        { id: 'unlink', label: 'Losmaken…', iconName: 'unlink', disabled: busy, divider: true },
+      ];
     }
   }
 
   pick(open: MenuState, item: ContextMenuItem): void {
     this.menu.set(null);
     if (open.kind === 'payees') { this.add.emit({ payee: item.id as Payee }); return; }
+    if (open.kind === 'transaction') {
+      if (item.id === 'unlink') this.unlinkTransaction.emit(open.transaction.lineId);
+      else this.openTransaction.emit(open.transaction.lineId);
+      return;
+    }
     if (open.kind === 'more') {
       if (item.id === 'pdf') this.exportPdf.emit();
       else if (item.id === 'costs') this.openCosts.emit('actual');

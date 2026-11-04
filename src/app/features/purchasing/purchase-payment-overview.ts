@@ -21,6 +21,9 @@ import {
 } from './purchase-phone-money';
 import type { InvoiceRequest } from './purchase-payment-workbench';
 import type { PurchaseNacalcSummary } from './purchase-payment-result-metrics';
+import { transactionPartText, transactionSplitText, type OrderTransaction, type TransactionElsewhere } from './purchase-bank-transactions';
+import { bankTextOf } from '../finance/bank-text';
+import { containerName } from './container-name';
 
 export type { PurchasePaymentAction } from './purchase-payment-ledger';
 
@@ -189,6 +192,29 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
               </div>
             </section>
 
+            @if (transactions().length) {
+              <!-- Op de bank (2026-11-04): each transaction that paid this container and who got what of it; tap for the split and Losmaken. -->
+              <section class="ios-section">
+                <div class="ios-section__head"><h2>Op de bank · {{ transactions().length }}</h2></div>
+                <div class="ios-group ios-group--icons">
+                  @for (tx of shownTransactions(); track tx.lineId) {
+                    <button class="ios-cell ios-cell--tall pp-tx" type="button" [attr.aria-label]="txTitle(tx) + ', ' + formatEur(tx.amountEur)" (click)="openTx.set(tx)">
+                      <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-ok"><app-icon name="bank" [size]="17" /></span></span>
+                      <span class="ios-cell__body"><span class="pp-payee__top"><span class="ios-cell__title">{{ txTitle(tx) }}</span><span class="ios-cell__meta">{{ dayShort(tx.day) }}</span></span>
+                        <span class="ios-cell__sub">{{ txSplit(tx) }}</span></span>
+                      <span class="ios-cell__trail"><span class="ios-cell__value ios-cell__value--strong">{{ tx.amountEur | eur }}</span></span>
+                    </button>
+                  }
+                  @if (transactions().length > 4 && !showAllTx()) {
+                    <button class="ios-cell ios-cell--action" type="button" (click)="showAllTx.set(true)">Toon alle {{ transactions().length }} transacties</button>
+                  }
+                  @if (mode() === 'edit') {
+                    <button class="ios-cell ios-cell--action" type="button" [disabled]="busy()" (click)="linkBank.emit()">Transactie koppelen…</button>
+                  }
+                </div>
+              </section>
+            }
+
             <section class="ios-section">
               <div class="ios-section__head"><h2>Alle betalingen · {{ book.rows.length }}</h2></div>
               @if (sum.missingProofCount) {
@@ -315,9 +341,52 @@ export type { PurchasePaymentAction } from './purchase-payment-ledger';
         </div>
       </app-sheet>
     }
+    @if (openTx(); as tx) {
+      <app-sheet title="Transactie" variant="ios" (closed)="openTx.set(null)">
+        <div body>
+          <div class="ios-group pp-detail">
+            <div class="ios-cell"><span class="ios-cell__body">{{ txTitle(tx) }}</span><span class="ios-cell__value ios-cell__value--strong">{{ tx.amountEur | eur }}</span></div>
+            <div class="ios-cell"><span class="ios-cell__body">Datum</span><span class="ios-cell__value">{{ tx.day | dateNl }}</span></div>
+            @if (txBank(tx); as bank) { <div class="ios-cell"><span class="ios-cell__body">Rekening</span><span class="ios-cell__value">{{ bank }}</span></div> }
+          </div>
+          <section class="ios-section">
+            <div class="ios-section__head"><h2>Verdeling</h2></div>
+            <div class="ios-group ios-group--icons">
+              @for (part of tx.parts; track part.paymentId) {
+                @let words = partText(part);
+                <div class="ios-cell">
+                  <span class="ios-cell__lead"><span class="ios-tile" [class]="payeeTone(part.payee)"><app-icon [name]="payeeIcon(part.payee)" [size]="17" /></span></span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ words.title }}</span>@if (words.sub) { <span class="ios-cell__sub">{{ words.sub }}</span> }</span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ part.amountEur | eur }}</span></span>
+                </div>
+              }
+              @for (other of tx.elsewhere; track other.orderId) {
+                <div class="ios-cell">
+                  <span class="ios-cell__lead"><span class="ios-tile ios-tile--soft tone-grey"><app-icon name="purchase" [size]="17" /></span></span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ otherName(other) }}</span><span class="ios-cell__sub">andere container</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ other.amountEur | eur }}</span></span>
+                </div>
+              }
+              @if (tx.otherEur > 0) {
+                <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Elders geboekt</span><span class="ios-cell__sub">kost of verschil</span></span>
+                  <span class="ios-cell__trail"><span class="ios-cell__value">{{ tx.otherEur | eur }}</span></span></div>
+              }
+            </div>
+          </section>
+        </div>
+        <div foot style="display:contents">
+          <button class="btn" type="button" (click)="openTx.set(null); openTransaction.emit(tx.lineId)">Kosten & bank</button>
+          @if (mode() === 'edit') {
+            <button class="btn btn--danger" type="button" [disabled]="busy()" (click)="openTx.set(null); unlinkTransaction.emit(tx.lineId)">Losmaken…</button>
+          } @else {
+            <button class="btn btn--primary" type="button" (click)="openTx.set(null); openEditor.emit()">Bewerken</button>
+          }
+        </div>
+      </app-sheet>
+    }
     @if (payeeMenu()) {
-      <app-context-menu title="Betaling aan…" variant="ios" cancelLabel="Annuleren" [items]="payeeItems()"
-                        (pick)="payeeMenu.set(false); add.emit({ payee: $any($event.id) })" (closed)="payeeMenu.set(false)" />
+      <app-context-menu title="Toevoegen" variant="ios" cancelLabel="Annuleren" [items]="menuItems()"
+                        (pick)="pickMenu($event.id)" (closed)="payeeMenu.set(false)" />
     }
     @if (rowMenu(); as open) {
       <app-context-menu [title]="open.row.title" variant="ios" cancelLabel="Annuleren" [anchor]="open.point"
@@ -368,6 +437,20 @@ export class PurchasePaymentOverview {
   readonly openEditor = output<void>();
   /** Tegoed leverancier (editor): note one, or act on an existing one. */
   readonly credit = output<SupplierCreditAction>();
+  /** Op de bank: the transactions that paid this container (purchase-bank-transactions.ts). */
+  readonly transactions = input<readonly OrderTransaction[]>([]);
+  /** 'Transactie koppelen…': a transaction shared over this container's parts (the read view hands it to the editor). */
+  readonly linkBank = output<void>();
+  /** Editor only: 'Losmaken…' of a transaction, by its bank line id. */
+  readonly unlinkTransaction = output<number>();
+  /** The transaction in Kosten & bank, by its bank line id. */
+  readonly openTransaction = output<number>();
+  readonly openTx = signal<OrderTransaction | null>(null);
+  readonly showAllTx = signal(false);
+  readonly shownTransactions = computed(() => this.showAllTx() ? this.transactions() : this.transactions().slice(0, 4));
+  /** The '+' menu: 'Transactie koppelen…' first, then a payment to each payee. */
+  readonly menuItems = computed<ContextMenuItem[]>(() => [{ id: 'BANK', label: 'Transactie koppelen…', iconName: 'bank' }, ...this.payeeItems()]);
+  readonly formatEur = formatEur;
 
   readonly openPayee = signal<PayeeLedger['payee'] | null>(null);
   readonly detail = signal<LedgerRow | null>(null);
@@ -425,6 +508,20 @@ export class PurchasePaymentOverview {
   });
 
   label(payee: PayeeLedger['payee']): string { return PAYEE_LABEL[payee]; }
+
+  pickMenu(id: string): void {
+    this.payeeMenu.set(false);
+    if (id === 'BANK') this.linkBank.emit();
+    else this.add.emit({ payee: id as PayeeLedger['payee'] });
+  }
+  /** The transaction as Kosten & bank names it (the counterparty, cleaned). */
+  txTitle(tx: OrderTransaction): string { return tx.line ? bankTextOf(tx.line).title : 'Banktransactie'; }
+  txSplit(tx: OrderTransaction): string { return transactionSplitText(tx); }
+  txBank(tx: OrderTransaction): string | null { return this.bankLineLabel()(tx.lineId)?.split(' · ')[0] ?? null; }
+  partText = transactionPartText;
+  payeeTone(payee: PayeeLedger['payee']): string { return PAYEE_TONE[payee]; }
+  payeeIcon(payee: PayeeLedger['payee']): string { return PAYEE_ICON[payee]; }
+  otherName(other: TransactionElsewhere): string { return containerName({ id: other.orderId, number: other.number, alias: other.alias }); }
 
   /** 'Proforma (PI) · PI CULINAN.xlsx', else '{file} · zonder gegevens'. */
   fileText(file: Pick<PurchaseDocument, 'kind' | 'originalFilename'>): string { return invoiceFileText(file); }

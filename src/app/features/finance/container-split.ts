@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import type { BankPurchasePaymentPart, BankPurchaseSharePart, BankStatementLine } from '../../core/api/banking-api';
+import type { PurchaseOrderView, PurchasePaymentRow, Supplier } from '../../core/api/models';
 import { EurPipe } from '../../shared/pipes';
 import { containerName } from '../purchasing/container-name';
 import { containerStanding } from '../purchasing/purchase-also-containers';
@@ -22,6 +23,25 @@ const parse = (text: string): number | null => {
 const amountText = (value: number): string => value.toLocaleString('nl-BE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const PAYEE_WORD: Record<ContainerPayable['payee'], string> = { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten' };
+
+/**
+ * Where the split reads the containers and their payments and how it books:
+ * Kosten & bank's FinanceState (the default, it has exactly these members)
+ * or an Inkoop order's own (purchase-bank-link-sheet.ts, Emre 2026-11-04:
+ * "betalingen kunnen koppelen en splitsen ook op inkoop order"). The two
+ * calls answer the refusal, or '' when booked.
+ */
+export interface SplitSource {
+  suppliers(): readonly Supplier[];
+  purchaseViews(): readonly PurchaseOrderView[];
+  containerPayables(): readonly ContainerPayable[];
+  payments(): readonly PurchasePaymentRow[];
+  linking(): number | null;
+  lineDay(line: Pick<BankStatementLine, 'bookedAt' | 'timeZone'>): string;
+  termPart(line: BankStatementLine, target: { kind: 'term-new'; orderId: number; payable: ContainerPayable; title: string }): BankPurchasePaymentPart;
+  linkContainers(line: BankStatementLine, parts: BankPurchasePaymentPart[], numbers: readonly string[]): Promise<string>;
+  shareContainers(line: BankStatementLine, parts: BankPurchaseSharePart[], rows: readonly { name: string; amountEur: number }[]): Promise<string>;
+}
 
 /** One part of the transaction, by its own id (a container holds several); key: a term's key, 'p:{id}' for an open payment, 'fee' for Transactiekosten. */
 interface Row { id: number; orderId: number; key: string; amountInput: string; }
@@ -86,9 +106,12 @@ type Mode = 'AFSPRAAK' | 'EQUAL' | null;
   `,
 })
 export class ContainerSplit {
-  readonly state = inject(FinanceState);
+  private readonly finance = inject(FinanceState, { optional: true });
   private readonly destroyRef = inject(DestroyRef);
   readonly line = input.required<BankStatementLine>();
+  /** Another source than Kosten & bank's (an Inkoop order's); without it the page's FinanceState. */
+  readonly source = input<SplitSource | null>(null);
+  get state(): SplitSource { return this.source() ?? this.finance!; }
   /** Where the split starts: the container of the best match, else the counterparty's name. */
   readonly hint = input<{ orderId: number | null; counterparty: string; paymentId?: number | null; termKey?: string | null }>({ orderId: null, counterparty: '' });
   readonly done = output<void>();
@@ -205,10 +228,20 @@ export class ContainerSplit {
     if (!start || this.taken(null).includes(start.key)) return;
     this.withMode([...this.rows(), { id: this.nextId++, orderId: container.orderId, key: start.key, amountInput: amountText(start.amountEur) }]);
   }
-  /** '+ Deel': the next part of this container (splitNextPart), on what is left of the transaction. */
+  /**
+   * '+ Deel': the next part of this container (splitNextPart), on what is
+   * left of the transaction. A small rest (up to € 100) with no
+   * Transactiekosten yet is the bank's fee: that part starts as
+   * Transactiekosten of the rest (the other parts keep the remainder).
+   */
   addPart(container: SplitContainer): void {
     const own = this.rowsOf(container.orderId);
     if (!own.length) return;
+    const rest = cents(this.lineEur()) - this.rows().reduce((sum, row) => sum + cents(parse(row.amountInput) ?? 0), 0);
+    if (rest > 0 && rest <= 10000 && !this.rows().some((row) => row.key === SPLIT_FEE_KEY)) {
+      this.withMode([...this.rows(), { id: this.nextId++, orderId: container.orderId, key: SPLIT_FEE_KEY, amountInput: amountText(rest / 100) }]);
+      return;
+    }
     const key = splitNextPart(container, own.map((row) => row.key), this.rows().map((row) => row.key));
     this.withMode([...this.rows(), { id: this.nextId++, orderId: container.orderId, key, amountInput: this.startAmount(container, key, null) }]);
   }
