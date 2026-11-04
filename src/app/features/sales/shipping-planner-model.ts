@@ -250,7 +250,8 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
       weightShare(weightKg, spec)));
     const only = pallet.items.length === 1 ? byId.get(pallet.items[0].productId) : undefined;
     const over = stack.heightCm !== null && stack.heightCm > spec.maxHeightCm;
-    const heavy = weightKg > spec.maxWeightKg + EPSILON;
+    /* At the server's 0.1 kg: a carton here is the line's rounded weight over its omdozen, so a pallet it filled to 700 kg may read 700.04. */
+    const heavy = Math.round(weightKg * 10) / 10 > spec.maxWeightKg;
     /* Past the height or the weight is not full but too much. */
     const full = !over && !heavy && ((!!only && only.perPallet > 0 && pallet.items[0].cartons >= only.perPallet) || fill >= 0.995);
     const broken = pallet.items.some((item) => item.cartons <= 0 || !priced.has(item.productId))

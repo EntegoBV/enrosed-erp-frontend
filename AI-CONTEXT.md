@@ -4543,6 +4543,12 @@ are tiles, hand pallets are cards edited in place.
   "Pallet 1". "Indeling bijwerken" (Levering, loose omdozen that fit) and
   "Indeling opnieuw maken" (after a pallet type change) run the same copy, so
   the server must send `autoPallets` with a hand layout present too.
+- **A hand pallet's weight** (`handPallets`) is its omdozen times the line's
+  weight over its omdozen; the server rounds a line's weight to 0.1 kg, so a
+  pallet it filled to exactly 700 kg can read 700.04 here. "te zwaar" (the
+  pallet's status, the layout pill and Verstuur's "Een pallet weegt meer dan
+  700 kg" through `checkLayout`) therefore compares the weight rounded to
+  0.1 kg (review, 2026-11-04).
 - **The mixed offer** "Gemengd: m pallets · k minder · Indelen" shows only under
   STRICT (or on an older server), on a concept the planner can edit, and when `mixedLayout`
   (the frontend's `planPallets`, skipped above 200 separate pallets) needs fewer
