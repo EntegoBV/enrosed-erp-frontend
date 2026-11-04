@@ -208,7 +208,7 @@ interface JourneyStep {
                 <strong>{{ data.priced.totals.cbm | cbm }}</strong>
                 <span>losse dozen</span>
               } @else {
-                <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}</strong>
+                <strong>{{ palletFigure(data) }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}</strong>
                 <span>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatisch' }} · {{ data.priced.totals.cbm | cbm }}</span>
               }
             </button>
@@ -712,7 +712,7 @@ interface JourneyStep {
               <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Klant</button>
               @if (!isCreditNoteDoc()) {
               <button type="button" role="tab" [class.on]="railTab() === 'delivery'" [attr.aria-selected]="railTab() === 'delivery'" (click)="railTab.set('delivery')">
-                Levering @if (data.order.freight === 'TE_BEPALEN' || data.priced.validation.freightPricingIssue || (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
+                Levering @if (data.order.freight === 'TE_BEPALEN' || data.priced.validation.freightPricingIssue || layoutAttention(data)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
               }
               <button type="button" role="tab" [class.on]="railTab() === 'check'" [attr.aria-selected]="railTab() === 'check'" (click)="railTab.set('check')">
@@ -828,7 +828,7 @@ interface JourneyStep {
                     <dl class="desk-facts">
                       <div><dt>Lading</dt><dd>
                         @if (isLooseCartons(data)) { {{ data.priced.totals.cartons | num }} losse dozen · {{ data.priced.totals.cbm | cbm }} }
-                        @else { {{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
+                        @else { {{ palletFigure(data) }} {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
                       </dd></div>
                       <div><dt>Vracht</dt><dd>
                         @if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">nog te bepalen</span><small>de klant ziet geen bedrag</small> }
@@ -839,8 +839,9 @@ interface JourneyStep {
                       }
                       <div><dt>Levering</dt><dd>{{ deliverySummary(data) }}</dd></div>
                     </dl>
-                    @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
-                      <p class="hint hint--warn">{{ data.priced.totals.unassignedCartons }} dozen zijn nog niet aan een pallet toegewezen.</p>
+                    @if (!isLooseCartons(data) && data.order.pallets.length && (layoutCheck()?.loose ?? 0) > 0) {
+                      <div class="row wrap"><b class="hint hint--warn grow">{{ layoutCheck()!.loose | num }} los</b>
+                        @if (canEditShipping() && layoutCheck()!.looseFitting) { <button class="btn btn--sm" type="button" [disabled]="pricingStale()" (click)="refreshLayout()">Indeling bijwerken</button> }</div>
                     }
                     @if (canEditShipping()) {
                       <button class="btn btn--block" type="button" (click)="palletSheet.set(true)">Transport &amp; levering aanpassen</button>
@@ -1152,12 +1153,10 @@ interface JourneyStep {
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="closeShipping()">
+        <app-sheet title="Transport &amp; levering" [wide]="true" variant="ios" (closed)="closeShipping()">
           <div body>
-            @if (financiallyLocked() && canEdit()) {
-              <div class="field"><label for="split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="split-manual-freight" type="number" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="applyShippingPatch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
-            }
             <app-shipping-planner [view]="data" [canEdit]="canEditShipping() && !financiallyLocked()" [carriers]="carriers()"
+                                  [splitFreight]="financiallyLocked() && canEdit()" [pricing]="pricingStale()"
                                   [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
           </div>

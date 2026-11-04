@@ -59,7 +59,8 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
-import { freightGap } from './shipping-planner-model';
+import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
+import { nextPalletLabel, palletTypeLabel, relabelPallets, trimPallets } from './pallet-stack';
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
@@ -76,6 +77,12 @@ import { StockBatchApi } from '../../core/api/stock-batch-api';
 import type { SalesStockCost } from '../../core/api/stock-batch-models';
 import { batchFormat } from '../../core/api/stock-batch-units';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
+
+/** What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. */
+function layoutKey(order: SalesOrder): string {
+  return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
+    order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line)])]);
+}
 
 /**
  * Sales order and quote.
@@ -211,7 +218,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                   {{ data.priced.totals.cartons === 1 ? 'losse doos' : 'losse dozen' }}
                 </span>
               } @else {
-                <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}</strong>
+                <strong>{{ palletFigure(data) }}</strong>
                 <span>
                   {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1
                       ? 'pallet' : 'pallets' }}
@@ -1008,7 +1015,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                   {{ data.priced.totals.cartons | num }} losse {{ data.priced.totals.cartons === 1 ? 'doos' : 'dozen' }}
                   <small>{{ data.priced.totals.cbm | cbm }} · {{ data.priced.totals.weightKg | num: 0 }} kg</small>
                 } @else {
-                  {{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}
+                  {{ palletFigure(data) }}
                   {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}
                   <small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.cbm | cbm }}</small>
                 }
@@ -1032,9 +1039,12 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                 </dd></div>
               }
             </dl>
-            @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
-              <div class="logistics-option__warning">
-                {{ data.priced.totals.unassignedCartons | num }} dozen zijn nog niet aan een pallet toegewezen.
+            @if (!isLooseCartons(data) && data.order.pallets.length && (layoutCheck()?.loose ?? 0) > 0) {
+              <div class="logistics-option__warning row wrap">
+                <b class="grow">{{ layoutCheck()!.loose | num }} los</b>
+                @if (canEditShipping() && layoutCheck()!.looseFitting) {
+                  <button class="btn btn--sm" type="button" [disabled]="pricingStale()" (click)="refreshLayout()">Indeling bijwerken</button>
+                }
               </div>
             }
             <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditShipping()"
@@ -1487,15 +1497,14 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="closeShipping()">
+        <app-sheet title="Transport &amp; levering" [wide]="true" variant="ios" (closed)="closeShipping()">
           <div body>
-            @if (mobileFinanciallyLocked() && canEdit()) {
-              <div class="field"><label for="mobile-split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="mobile-split-manual-freight" type="number" inputmode="decimal" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="applyShippingPatch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
-            }
             @if (view(); as data) {
               <app-shipping-planner
                 [view]="data"
                 [canEdit]="canEditShipping() && !mobileFinanciallyLocked()"
+                [splitFreight]="mobileFinanciallyLocked() && canEdit()"
+                [pricing]="pricingStale()"
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
@@ -2683,9 +2692,7 @@ export class SalesEditor {
     }
     if (id === 'quote-logistics') {
       if (isAdvanceInvoice(data)) return advancePlanningHint(data) !== 'Nog te bevestigen';
-      return !data.priced.validation.freightPricingIssue
-        && (data.priced.totals.unassignedCartons ?? 0) <= 0
-        && !this.overassigned();
+      return !data.priced.validation.freightPricingIssue && !this.layoutAttention(data);
     }
     if (id === 'quote-check') {
       /* An invoice or a credit note is issued, not sent: the quote's send checklist does not apply. */
@@ -2725,7 +2732,7 @@ export class SalesEditor {
       if (data.order.docType === 'CREDITNOTA') return 'Geen levering · creditnota';
       if (isAdvanceInvoice(data)) return advancePlanningHint(data);
       if (data.priced.validation.freightPricingIssue) return 'Vracht nakijken';
-      if (data.priced.totals.unassignedCartons > 0 || this.overassigned()) return 'Indeling nakijken';
+      if (this.layoutAttention(data)) return 'Indeling nakijken';
       return data.order.freight === 'TE_BEPALEN' ? 'Vracht later' : 'Volledig';
     }
     if (id === 'quote-check') {
@@ -3328,6 +3335,9 @@ export class SalesEditor {
           && (pallet.heightCm < palletBase || pallet.heightCm > palletMax))) {
         issues.push('Controleer de gemeten hoogte van de handmatige pallets');
       }
+      const check = this.layoutCheck();
+      if (check?.tooHigh) issues.push('Een pallet is hoger dan de maximale laadhoogte');
+      if (check?.tooHeavy) issues.push('Een pallet weegt meer dan 700 kg');
     }
     if (data.priced.validation.freightPricingIssue) {
       issues.push(data.priced.validation.freightPricingIssue);
@@ -3457,6 +3467,13 @@ export class SalesEditor {
     if (hold) return `Nog niet opgeslagen · ${hold.charAt(0).toLowerCase()}${hold.slice(1)}`;
     return this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen';
   });
+  /** The draft the figures on screen were priced for (layoutKey). */
+  private readonly pricedFor = signal('');
+  /** The figures are being worked out again: a pallet layout cut from them now would be cut from an older draft. */
+  readonly pricingStale = computed(() => {
+    const order = this.view()?.order;
+    return !!order && (this.figuresWaiting() || layoutKey(order) !== this.pricedFor());
+  });
   private shippingTimer: ReturnType<typeof setTimeout> | null = null;
   private saveOperation: Promise<boolean> | null = null;
   private transportOperation: Promise<boolean> | null = null;
@@ -3479,6 +3496,7 @@ export class SalesEditor {
     }
     this.view.set(view);
     this.savedOrder.set(JSON.stringify(view.order));
+    this.pricedFor.set(layoutKey(view.order));
     this.saveError.set(null);
     this.previewError.set(null);
     this.figuresWaiting.set(false);
@@ -3544,6 +3562,7 @@ export class SalesEditor {
   }
 
   private async preview(): Promise<void> {
+    this.layoutFollowsLines();
     const data = this.view();
     if (!data) return;
     const version = ++this.previewVersion;
@@ -3552,6 +3571,7 @@ export class SalesEditor {
       const current = this.view();
       if (version !== this.previewVersion || !current) return;
       this.view.set({ ...fresh, order: current.order });
+      this.pricedFor.set(layoutKey(data.order));
       this.previewError.set(null);
       this.figuresWaiting.set(false);
       this.syncQuantityFields();
@@ -3598,6 +3618,7 @@ export class SalesEditor {
   }
 
   private async persistOrder(): Promise<boolean> {
+    this.layoutFollowsLines();
     const current = this.view();
     if (!current) return false;
     if (!this.dirty()) return true;
@@ -3909,6 +3930,8 @@ export class SalesEditor {
     this.enqueue((order) => ({
       ...order,
       lines: order.lines.filter((line) => line.productId !== productId),
+      /* Its omdozen leave the hand layout in the same change: a save never sends pallets with a product the order lost. */
+      pallets: trimPallets(order.pallets, new Map([[productId, 0]])),
     }));
   }
 
@@ -4437,7 +4460,7 @@ export class SalesEditor {
 
   handlePalletAction(event: ShippingPalletAction): void {
     switch (event.type) {
-      case 'auto-layout': this.autoLayout(); break;
+      case 'auto-layout': void this.autoLayout(); break;
       case 'add-pallet': this.addPallet(); break;
       case 'clear-layout': this.clearPallets(); break;
       case 'move-pallet': this.movePallet(event.index, event.direction); break;
@@ -4499,19 +4522,28 @@ export class SalesEditor {
         .reduce((sum, item) => sum + item.cartons, 0);
   }
 
-  /** Does the manual layout still match the order's cartons exactly? */
-  layoutOk(): boolean {
+  /** A hand layout as it stands: empty pallets, products gone, too high (estimated too), too heavy, too many or loose omdozen. */
+  readonly layoutCheck = computed(() => {
     const data = this.view();
-    if (!data) return true;
-    const lineIds = new Set(data.priced.lines.map((line) => line.productId));
-    const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
-    const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
-    return data.order.pallets.every((pallet) => pallet.items.length > 0
-        && pallet.items.every((item) => item.cartons > 0 && lineIds.has(item.productId))
-        && (pallet.heightCm == null
-          || (pallet.heightCm >= palletBase && pallet.heightCm <= palletMax)))
-      && data.priced.totals.unassignedCartons === 0
-      && !this.overassigned();
+    return data && !this.isLooseCartons(data) && data.order.pallets.length ? checkLayout(data) : null;
+  });
+
+  /** Does the manual layout still match the order's cartons, the height and the weight? */
+  layoutOk(): boolean {
+    const check = this.layoutCheck();
+    return !check || layoutComplete(check);
+  }
+
+  /** The pallets need a look: a product that fits no pallet, or a hand layout that is not complete. */
+  layoutAttention(data: SalesOrderView): boolean {
+    if (this.isLooseCartons(data)) return false;
+    return !!data.priced.validation.productsWithoutPalletFit?.length || !this.layoutOk();
+  }
+
+  /** The hero's pallet count: '–' rather than 0 when products fit no pallet. */
+  palletFigure(data: SalesOrderView): string {
+    const count = data.priced.totals.palletsManual || data.priced.totals.palletsStrict;
+    return !count && data.priced.validation.productsWithoutPalletFit?.length ? '–' : String(count);
   }
 
   private overassigned(): boolean {
@@ -4563,49 +4595,96 @@ export class SalesEditor {
     }));
   }
 
-  /** Starts from the calculator's strict stacking, ready to rearrange. */
-  autoLayout(): void {
+  /**
+   * "Zelf indelen" starts from the automatic pallets, one to one: every
+   * product on pallets of its own. A product that fits no pallet stays
+   * loose (the planner lists it under Nakijken); when nothing fits, the
+   * layout starts from one empty pallet, since an empty list is Automatisch
+   * itself. The figures are brought up to date first, so the pallets are
+   * never cut from an older pallet type, height or quantity.
+   */
+  async autoLayout(): Promise<void> {
+    if (!this.canEditShipping() || !(await this.pricingSettled())) return;
     this.enqueueShipping((order) => {
-      const lines = this.view()?.priced.lines ?? [];
-      const invalid = lines.find((line) =>
-        line.cartons > 0 && line.cartonsPerPallet <= 0);
-      if (invalid) {
-        this.ui.toast(
-          `Palletindeling niet mogelijk voor ${invalid.description}. `
-            + 'Controleer omdoosafmetingen, gewicht en laadhoogte.',
-          'err',
-        );
-        return null;
-      }
+      const type = palletTypeLabel(order.palletProfile);
       const pallets: OrderPallet[] = [];
-      const type = this.palletTypeForProfile(order.palletProfile);
-      for (const line of lines) {
+      for (const line of this.view()?.priced.lines ?? []) {
         const per = line.cartonsPerPallet;
-        let left = line.cartons;
-        while (left > 0) {
-          const take = Math.min(per, left);
-          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
-              heightCm: null, items: [{ productId: line.productId, cartons: take }] });
-          left -= take;
+        if (per <= 0 || salesLineUnavailable(line)) continue;
+        for (let left = line.cartons; left > 0; left -= per) {
+          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null,
+            items: [{ productId: line.productId, cartons: Math.min(per, left) }] });
         }
       }
+      if (!pallets.length) pallets.push({ id: null, label: 'Pallet 1', type, heightCm: null, items: [] });
       return { ...order, pallets };
     });
   }
 
+  /** "Indeling bijwerken" (Levering): the hand layout made again for the order as it is now, with a way back. */
+  async refreshLayout(): Promise<void> {
+    const before = this.view()?.order.pallets;
+    if (!before?.length) return;
+    const snapshot = structuredClone(before);
+    await this.autoLayout();
+    if (this.view()?.order.pallets === before) return;
+    this.ui.toast('Indeling bijgewerkt', 'ok', { label: 'Ongedaan maken', run: () => this.applyShippingPatch({ pallets: snapshot }) });
+  }
+
+  /** Waits until the figures belong to the draft on screen; says so when they cannot be brought up to date. */
+  private async pricingSettled(): Promise<boolean> {
+    for (let attempt = 0; attempt < 3 && this.pricingStale(); attempt++) {
+      if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+      await this.preview();
+    }
+    if (!this.pricingStale()) return true;
+    this.ui.toast(this.previewError() ?? 'De cijfers worden nog bijgewerkt; probeer het zo opnieuw.', 'err');
+    return false;
+  }
+
+  /**
+   * A lowered quantity takes its omdozen off the hand layout, the last
+   * pallets first, once the quantity counts (it is priced or saved) and
+   * never between two typed digits; a pallet left empty goes.
+   */
+  private layoutFollowsLines(): void {
+    const data = this.view();
+    if (!data || !this.canEdit() || !data.order.pallets.length) return;
+    const limits = new Map<number, number>();
+    for (const item of data.order.pallets.flatMap((pallet) => pallet.items)) {
+      if (limits.has(item.productId)) continue;
+      const line = data.order.lines.find((candidate) => candidate.productId === item.productId);
+      const cartons = line ? this.draftCartons(line) : 0;
+      if (cartons !== null) limits.set(item.productId, cartons);
+    }
+    const pallets = trimPallets(data.order.pallets, limits);
+    if (pallets !== data.order.pallets) this.view.set({ ...data, order: { ...data.order, pallets } });
+  }
+
+  /** The whole omdozen the server will count for a draft line; null when this screen cannot tell. */
+  private draftCartons(line: SalesOrder['lines'][number]): number | null {
+    if (salesLineUnavailable(line)) return 0;
+    const quantity = roundToOrderStep(Math.max(0, Number(line.quantity) || 0), this.unitsPerStep(line.productId));
+    if (quantity <= 0) return 0;
+    const priced = this.view()?.priced.lines.find((candidate) => candidate.productId === line.productId);
+    if (priced && priced.quantity === quantity) return priced.cartons;
+    const perCarton = this.products().find((product) => product.id === line.productId)?.carton?.piecesPerCarton;
+    return perCarton && perCarton > 0 ? Math.ceil(quantity / perCarton) : null;
+  }
+
   addPallet(): void {
     this.mutatePallets((pallets) => {
-      const type = this.palletTypeForProfile(this.view()?.order.palletProfile);
-      pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
-          heightCm: null, items: [] });
+      pallets.push({ id: null, label: nextPalletLabel(pallets), type: palletTypeLabel(this.view()?.order.palletProfile),
+        heightCm: null, items: [] });
       return pallets;
     });
   }
 
+  /* Removing or moving renumbers the pallets still called "Pallet n", so the pakbon never lists a number twice. */
   removePallet(index: number): void {
     this.mutatePallets((pallets) => {
       pallets.splice(index, 1);
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4615,7 +4694,7 @@ export class SalesEditor {
     if (index < 0 || index >= count || target < 0 || target >= count) return;
     this.mutatePallets((pallets) => {
       [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4627,7 +4706,7 @@ export class SalesEditor {
     this.mutatePallets((pallets) => {
       const [moved] = pallets.splice(fromIndex, 1);
       pallets.splice(toIndex, 0, moved);
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4638,7 +4717,7 @@ export class SalesEditor {
     });
   }
 
-  /** New product on a pallet starts with everything that is still loose. */
+  /** A product put on a pallet takes everything that is still loose; already on it, it grows by that. */
   addItem(palletIndex: number, productId: number): void {
     if (!productId) return;
     this.mutatePallets((pallets) => {
@@ -4647,37 +4726,34 @@ export class SalesEditor {
           .filter((item) => item.productId === productId)
           .reduce((sum, item) => sum + item.cartons, 0);
       const remaining = line ? line.cartons - assigned : 0;
-      if (remaining > 0 && pallets[palletIndex]) {
-        pallets[palletIndex].items.push({ productId, cartons: remaining });
+      const pallet = pallets[palletIndex];
+      if (remaining > 0 && pallet) {
+        const item = pallet.items.find((candidate) => candidate.productId === productId);
+        if (item) item.cartons += remaining;
+        else pallet.items.push({ productId, cartons: remaining });
       }
       return pallets;
     });
   }
 
+  /** Never more than the line holds: what the other pallets carry is taken already; 0 takes the product off. */
   setItemCartons(palletIndex: number, productId: number, cartons: number): void {
     this.mutatePallets((pallets) => {
       const items = pallets[palletIndex]?.items ?? [];
       const index = items.findIndex((item) => item.productId === productId);
       if (index < 0) return pallets;
-      if (!cartons || cartons <= 0) {
-        items.splice(index, 1);
-      } else {
-        items[index] = { ...items[index], cartons: Math.floor(cartons) };
-      }
+      const line = this.view()?.priced.lines.find((candidate) => candidate.productId === productId);
+      const elsewhere = pallets.reduce((sum, pallet, at) => at === palletIndex ? sum
+        : sum + pallet.items.filter((item) => item.productId === productId).reduce((total, item) => total + item.cartons, 0), 0);
+      const count = Math.min(Math.max(0, (line?.cartons ?? 0) - elsewhere), Math.max(0, Math.floor(cartons || 0)));
+      if (count <= 0) items.splice(index, 1);
+      else items[index] = { ...items[index], cartons: count };
       return pallets;
     });
   }
 
   clearPallets(): void {
     this.applyShippingPatch({ pallets: [] });
-  }
-
-  private palletTypeForProfile(profile: SalesOrder['palletProfile']): string {
-    switch (profile) {
-      case 'BLOCK_120X100': return 'Blokpallet 120×100';
-      case 'HALF_80X60': return 'Halve pallet 80×60';
-      default: return 'Europallet';
-    }
   }
 
 }
