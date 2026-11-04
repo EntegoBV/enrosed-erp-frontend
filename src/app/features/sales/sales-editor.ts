@@ -33,7 +33,7 @@ import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
-import { mergeOrderAfterSave, shippingSnapshot, withoutShipping } from '../../core/api/sales-shipping';
+import { mergeOrderAfterSave, shippingFields, shippingSnapshot, withoutShipping } from '../../core/api/sales-shipping';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
@@ -59,6 +59,7 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
+import { freightGap } from './shipping-planner-model';
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
@@ -1042,6 +1043,13 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             </button>
             @if (canEditShipping()) {
               <p class="hint" role="status">{{ transportSaveStatus() }}</p>
+              @if (transportRefused()) {
+                <p class="hint hint--warn">{{ saveError() }}</p>
+                <div class="row wrap">
+                  <button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
+                  <button class="btn btn--sm btn--quiet" type="button" [disabled]="transportSaving()" (click)="discardTransport()">Wijzigingen weggooien</button>
+                </div>
+              }
               @if (data.order.sentAt) {
                 <p class="hint">Wijzigingen staan na opslaan in de online offerte en een nieuwe PDF. De eerdere e-mailbijlage blijft gelijk; gebruik ‘Opnieuw versturen’ als je de klant wilt verwittigen.</p>
               }
@@ -1498,11 +1506,11 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
           </div>
           <div foot style="display:contents">
             <div role="status" class="small grow">{{ transportSaveStatus() }}
-              @if (shippingDirty() && saveError()) {
-                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" (click)="flushTransport()">Opnieuw proberen</button>
+              @if (transportRefused()) {
+                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
               }
             </div>
-            <button class="btn btn--primary" type="button" [disabled]="transportSaving()" (click)="closeShipping()">Klaar</button>
+            <button class="btn btn--primary" type="button" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
       }
@@ -3437,9 +3445,18 @@ export class SalesEditor {
       && JSON.stringify(shippingSnapshot(order)) !== JSON.stringify(shippingSnapshot(JSON.parse(this.savedOrder())));
   });
   readonly transportSaving = signal(false);
-  readonly transportSaveStatus = computed(() => this.shippingDirty() && this.saveError()
-    ? 'Transport niet opgeslagen'
-    : this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen');
+  /** A sent document's freight basis that cannot price yet (no rate, no amount): its save waits instead of being refused. */
+  readonly transportHold = computed(() => {
+    const order = this.view()?.order;
+    return order && this.shippingDirty() && !this.canEdit() ? freightGap(order) : null;
+  });
+  readonly transportRefused = computed(() => this.shippingDirty() && !!this.saveError());
+  readonly transportSaveStatus = computed(() => {
+    const hold = this.transportHold();
+    if (this.transportRefused()) return 'Transport niet opgeslagen';
+    if (hold) return `Nog niet opgeslagen · ${hold.charAt(0).toLowerCase()}${hold.slice(1)}`;
+    return this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen';
+  });
   private shippingTimer: ReturnType<typeof setTimeout> | null = null;
   private saveOperation: Promise<boolean> | null = null;
   private transportOperation: Promise<boolean> | null = null;
@@ -3602,6 +3619,9 @@ export class SalesEditor {
         : 'Deze documentversie staat vast. Je lokale wijzigingen blijven in dit scherm staan; ze kunnen niet over de uitgegeven versie worden opgeslagen.');
       return false;
     }
+    /* A sent document's freight must be able to price: the server refuses the basis otherwise, so it is not sent. */
+    const gap = fullDraft ? null : freightGap(current.order);
+    if (gap) { this.saveError.set(gap); return false; }
     const data = { ...current, order: structuredClone(current.order) };
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
@@ -3658,10 +3678,15 @@ export class SalesEditor {
 
   canDeactivate(): boolean | Promise<boolean> {
     if (this.transportSaving() || this.shippingDirty()) {
-      return this.flushTransport().then(saved => saved ? this.canDeactivate() : false);
+      /* A refused transport save keeps nobody in: the leave question offers 'Niet opslaan'. */
+      return this.flushTransport().then(saved => saved ? this.canDeactivate() : this.askToLeave());
     }
     if (this.saving() || this.mobileSplitBusy()) return false;
     if (!this.dirty()) return true;
+    return this.askToLeave();
+  }
+
+  private askToLeave(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       this.ui.confirm(
         {
@@ -4363,13 +4388,17 @@ export class SalesEditor {
     this.view.set({ ...data, order: next });
     this.saveError.set(null);
     this.schedulePreview();
-    if (this.shippingTimer !== null) clearTimeout(this.shippingTimer);
+    if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
+    /* A sent document's freight is saved once its basis can price: a rate still to be typed is not a refusal. */
+    if (this.transportHold()) return;
     this.shippingTimer = setTimeout(() => { this.shippingTimer = null; void this.flushTransport(); }, 300);
   }
 
   flushTransport(): Promise<boolean> {
     if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
     if (this.transportOperation) return this.transportOperation;
+    const hold = this.transportHold();
+    if (hold) { this.saveError.set(hold); return Promise.resolve(false); }
     const operation = (async () => {
       this.transportSaving.set(true);
       try {
@@ -4383,8 +4412,27 @@ export class SalesEditor {
     return operation.finally(() => { if (this.transportOperation === operation) this.transportOperation = null; });
   }
 
-  async closeShipping(): Promise<void> {
-    if (await this.flushTransport()) this.palletSheet.set(false);
+  /**
+   * Klaar, ×, Escape, the backdrop: the sheet always closes. A refused save
+   * stays in the Levering card, with Opnieuw and Wijzigingen weggooien.
+   */
+  closeShipping(): void {
+    this.palletSheet.set(false);
+    /* A save the server just refused is not sent again on its own; Opnieuw does that. */
+    if (!this.transportRefused()) void this.flushTransport();
+  }
+
+  /** "Wijzigingen weggooien": the transport as last saved; the rest of the draft stays. */
+  discardTransport(): void {
+    const data = this.view();
+    if (!data || !this.savedOrder() || this.transportSaving()) return;
+    if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
+    const saved = JSON.parse(this.savedOrder()) as SalesOrder;
+    const order: Record<string, unknown> = { ...data.order };
+    for (const field of shippingFields) order[field] = saved[field];
+    this.view.set({ ...data, order: order as unknown as SalesOrder });
+    this.saveError.set(null);
+    this.schedulePreview();
   }
 
   handlePalletAction(event: ShippingPalletAction): void {

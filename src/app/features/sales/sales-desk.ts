@@ -845,6 +845,11 @@ interface JourneyStep {
                     @if (canEditShipping()) {
                       <button class="btn btn--block" type="button" (click)="palletSheet.set(true)">Transport &amp; levering aanpassen</button>
                       <p class="hint" role="status">{{ transportSaveStatus() }}</p>
+                      @if (transportRefused()) {
+                        <p class="hint hint--warn">{{ saveError() }}</p>
+                        <div class="row wrap"><button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
+                          <button class="btn btn--sm btn--quiet" type="button" [disabled]="transportSaving()" (click)="discardTransport()">Wijzigingen weggooien</button></div>
+                      }
                       @if (data.order.sentAt) {
                         <p class="hint">De online offerte en een nieuwe PDF gebruiken het opgeslagen transport. De eerdere e-mailbijlage blijft gelijk. Gebruik ‘Opnieuw versturen’ om de klant te verwittigen.</p>
                       }
@@ -1158,11 +1163,11 @@ interface JourneyStep {
           </div>
           <div foot style="display:contents">
             <div role="status" class="small grow">{{ transportSaveStatus() }}
-              @if (shippingDirty() && saveError()) {
-                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" (click)="flushTransport()">Opnieuw proberen</button>
+              @if (transportRefused()) {
+                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
               }
             </div>
-            <button class="btn btn--primary" type="button" [disabled]="transportSaving()" (click)="closeShipping()">Klaar</button>
+            <button class="btn btn--primary" type="button" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
       }
