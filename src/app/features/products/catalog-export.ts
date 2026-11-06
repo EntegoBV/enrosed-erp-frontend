@@ -36,7 +36,7 @@ import { Ui } from '../../shared/ui';
 import { palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
 import { CatalogPriceSheet } from './catalog-price-sheet';
 import {
-  changesPrint, printedPrice, recipientSlug, requestOverrides, standardPrice, storedOverride, todayIso,
+  basisChanged, changesPrint, printedPrice, recipientSlug, requestOverrides, standardPrice, storedOverride, todayIso,
 } from './catalog-prices';
 import {
   CatalogBrochureDraft,
@@ -213,7 +213,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                         <span>HS {{ row.hsCode ?? '-' }}</span>
                         <!-- Pallet, 20ft and 40ft always together, in that order, as in the PDF. -->
                         <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
-                        @if (includePrices()) { <strong>{{ row.price }}</strong> }
+                        @if (includePrices()) { <strong [class.is-stale]="row.priceStale">{{ row.price }}</strong> }
                       </div>
                     </div>
                   } @empty {
@@ -556,6 +556,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .compact-sheet__identity b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 8px; font-weight: 650; }
     .compact-sheet__sku, .compact-sheet__ean { font-size: 6px; color: #745c63; }
     .compact-sheet__logistics strong { color: var(--studio-bordeaux); font-size: 8px; }
+    .compact-sheet__logistics .is-stale { color: var(--warn); }
     .compact-sheet--without-photos .compact-sheet__row { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
     .compact-sheet__empty { margin: 18px 0; font-size: 10px; color: #80676d; line-height: 1.5; }
     .compact-sheet__foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: #80676d; font-size: 6px; letter-spacing: .08em; }
@@ -847,7 +848,11 @@ export class CatalogExport {
       /* The PDF's figure: whole omdozen on the pallet times what one omdoos holds, in the unit of 20ft and 40ft. */
       const pallet = palletFit(product.carton, CATALOGUE_PALLET);
       const perCarton = product.carton.piecesPerCarton;
-      const price = printedPrice(product, overrides.get(product.id!), stored.get(product.id!));
+      const override = overrides.get(product.id!);
+      /* A one-off typed on a unit the product has since left is no price at its unit now: it waits to be typed again
+         (the server refuses it, BASIS_CHANGED), as the sheet says. */
+      const priceStale = !!override && basisChanged(product, override);
+      const price = printedPrice(product, override, stored.get(product.id!));
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       return {
         id: product.id,
@@ -866,7 +871,9 @@ export class CatalogExport {
         per20FtHint: gpCapacityHint(gp, product.carton),
         per40Ft: product.carton.hcCapacity ? count.format(product.carton.hcCapacity) : null,
         /* The price names its unit, as the PDF does: per display or per piece is where a ×6 mistake would hide. */
-        price: price === null ? copy.onRequest : `${currency.format(price)} ${unitAfterPrice(product, language, copy)}`,
+        price: priceStale ? 'Prijsbasis gewijzigd · vul opnieuw in'
+          : price === null ? copy.onRequest : `${currency.format(price)} ${unitAfterPrice(product, language, copy)}`,
+        priceStale,
       };
     });
   });
