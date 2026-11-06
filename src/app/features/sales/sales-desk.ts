@@ -1013,7 +1013,7 @@ interface JourneyStep {
                         @if (data.order.status === 'CONCEPT') {
                           <button class="desk-action" type="button" [disabled]="dirty() || saving() || busy() || documentMutationBusy()" (click)="issueCreditNote()"><i aria-hidden="true">✓</i><span><b>Uitreiken</b><small>{{ dirty() ? 'Sla de wijzigingen eerst op' : 'Zet de creditnota vast; er gaat geen e-mail uit' }}</small></span></button>
                         }
-                        @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                        @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                           <button class="desk-action" type="button" [disabled]="sending() || dirty()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Creditnota e-mailen</b><small>PDF met de factuur waarop ze slaat en de stand van het tegoed</small></span></button>
                           <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de creditnota buiten het ERP bezorgde</small></span></button>
                         }
@@ -1036,7 +1036,7 @@ interface JourneyStep {
                           <button class="desk-action" type="button" [disabled]="busy()" (click)="cancelCreditNote()"><i aria-hidden="true">⊘</i><span><b>Creditnota annuleren</b><small>Het nummer blijft gereserveerd; de factuur telt weer volledig</small></span></button>
                         }
                       } @else if (isInvoiceDoc()) {
-                        @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                        @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                           <button class="desk-action" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()"><i aria-hidden="true">✉</i><span><b>Factuur e-mailen</b><small>PDF en betaalgegevens naar de klant</small></span></button>
                           <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || allProductsUnavailable()" (click)="markSent(data)"><i aria-hidden="true">✉</i><span><b>Markeer als verstuurd</b><small>Als je de factuur buiten het ERP bezorgde</small></span></button>
                         }

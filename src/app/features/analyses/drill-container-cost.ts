@@ -1,13 +1,14 @@
 import type { Payee, PurchaseOrderView, PurchaseReconciliation } from '../../core/api/models';
-import type { NacalcUnitMix } from '../purchasing/purchase-payment-result-metrics';
+import type { NacalcUnitMix, PurchasePaymentResult } from '../purchasing/purchase-payment-result-metrics';
 import type { ContainerCostRow, ContainerCostTotals } from '../purchasing/purchase-reconciliation-metrics';
 import type { DrillLink, DrillRow, DrillView } from './drill-model';
 
 /**
  * The drill-downs of Analyses › Inkoop › Containerkost (design/analyses2/design.md
  * §B.7, §C.6): the Afspraak per ontvanger, what is still to pay per container and
- * term, the containers behind each line of "Verschil met de afspraak", and one
- * container's cost per product. Pure with type-only imports (node-tested,
+ * term, the containers behind each line of "Verschil met de afspraak", the Extra
+ * opbrengst per container (Enrosed-kost + betaalresultaat), and one container's
+ * cost per product. Pure with type-only imports (node-tested,
  * tests/analyses-drill-container-cost.test.mts); the component passes the scope
  * line, the container names and the unit mix.
  *
@@ -178,6 +179,53 @@ export function costVarianceView(part: VariancePart, rows: readonly ContainerCos
     /* The largest amount first, also when the line reads minus. */
     sort: { key: 'amount', dir: sign > 0 ? 'desc' : 'asc' },
     empty: 'Geen containers met dit verschil.',
+  };
+}
+
+/** A row of the card as the Extra opbrengst reads it: the container and its payment result (purchasePaymentResult). */
+export interface ExtraRevenueRow {
+  view: PurchaseOrderView;
+  paymentResult: PurchasePaymentResult | null;
+}
+
+/** The card's Extra opbrengst and its two parts (containerPaymentResultTotals over the same rows). */
+export interface ExtraRevenueTotal {
+  internalMarkupEur: number;
+  netResultEur: number;
+  markupWithResultEur: number;
+}
+
+/**
+ * Extra opbrengst (Emre, 2026-11-06): per container the Enrosed-kost, which Enrosed pays to nobody and so earns, plus
+ * the betaalresultaat (minder betaald − meer betaald − extra uitgaven, settled only). The containers the card counts
+ * (eligible, each once, as containerPaymentResultTotals does), the largest first; the total is the card's figure, so
+ * the rows and the two summed parts add up to it.
+ */
+export function costExtraRevenueView(rows: readonly ExtraRevenueRow[], total: ExtraRevenueTotal, context: ContainerCostDrillContext): DrillView {
+  const seen = new Set<number>();
+  const drillRows = rows.flatMap(({ view, paymentResult: result }): DrillRow[] => {
+    if (seen.has(view.order.id)) return [];
+    seen.add(view.order.id);
+    if (!result?.eligible || [result.internalMarkupEur, result.netResultEur].every(isZero)) return [];
+    return [{ key: String(view.order.id), link: order(view, 'payment-result'), cells: {
+      name: context.name(view), state: result.finalized ? 'Afgerekend' : 'Tussenstand',
+      markup: cents(result.internalMarkupEur), result: cents(result.netResultEur), amount: cents(result.markupWithResultEur),
+    } }];
+  }).sort((left, right) => Number(right.cells['amount']) - Number(left.cells['amount']));
+  return {
+    id: 'cost.extra', title: 'Extra opbrengst', scope: context.scope,
+    note: 'De Enrosed-kost betaalt Enrosed aan niemand: die telt als opbrengst, naast wat minder betaald is.',
+    columns: [
+      { key: 'name', label: 'Container', format: 'text', phone: 'title' },
+      { key: 'state', label: 'Afrekening', format: 'text', phone: 'sub' },
+      { key: 'markup', label: 'Enrosed-kost', format: 'eur2', phone: 'none', sum: true },
+      { key: 'result', label: 'Betaalresultaat', format: 'eur2', phone: 'none', sum: true },
+      { key: 'amount', label: 'Extra opbrengst', format: 'eur2', phone: 'value' },
+    ],
+    rows: drillRows, valueKey: 'amount',
+    total: { value: cents(total.markupWithResultEur), format: 'eur2', of: 'sum' },
+    sort: { key: 'amount', dir: 'desc' },
+    empty: 'Geen extra opbrengst voor deze containers.',
   };
 }
 

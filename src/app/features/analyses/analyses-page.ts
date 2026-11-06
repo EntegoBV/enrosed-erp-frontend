@@ -101,7 +101,7 @@ import { categoryView, channelView as resultChannelView, costsView, generalCosts
 import type { ResultDrillContext } from './drill-result';
 import type { PeriodChoice } from './analyses-period';
 import {
-  advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention,
+  advanceTermsSub, dayMonth, dollarValue, extraRevenueLine, monthLabel, marketLines, openContainersLine, overdueSub, plural, rangeLabel, rangeLabelShort, varianceAttention,
   weekdayDayMonth, wholeNumber,
 } from './analyses-words';
 
@@ -502,7 +502,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                     <span class="an-tile tone-amber"><app-icon name="purchase" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Inkoop</span>
                       <span class="an-row__sub">{{ openContainersLine(cd.openCount, cd.totals.provisionalCount) }}</span>
-                      @if (paymentResultLine(cd.payment.netResultEur, cd.payment.eligibleCount); as line) { <span class="an-row__sub">{{ line }}</span> }</span>
+                      @if (extraRevenueLine(cd.payment.markupWithResultEur, cd.payment.eligibleCount); as line) { <span class="an-row__sub">{{ line }}</span> }</span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('inkoop') ? '—' : whole(cd.totals.remainingEur) }}</span>
                       <span class="an-row__meta">nog te betalen</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
@@ -1861,7 +1861,8 @@ export class AnalysesPage {
   readonly whole = (value: number | null | undefined): string => eurWhole(value).replace(/ /g, '\u00a0');
   readonly plural = plural;
   readonly openContainersLine = openContainersLine;
-  readonly paymentResultLine = paymentResultLine;
+  /** "extra opbrengst € x" = Enrosed-kost + betaalresultaat, the Containerkost card's figure (Emre, 2026-11-06). */
+  readonly extraRevenueLine = extraRevenueLine;
   /* Read again on every tab switch: a period picked on Markt (same page instance) shows on Overzicht. */
   private readonly marketMonths = computed(() => { this.section(); return storedMarketMonths(); });
   readonly yearStartDay = computed(() => yearStart(this.today()));
@@ -1876,8 +1877,9 @@ export class AnalysesPage {
   readonly allSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), { today: this.today(), topLimit: 1 }));
   /**
    * The Inkoop digest row: what Containerkost opens on, its default filter "Nog niet volledig afgerekend" (same
-   * helpers, same filter), so the row and the tab it links to show one payment result; "op n" counts those with
-   * something open (D-O2). A settled container's result is on the tab under "Alle containers".
+   * helpers, same filter), so the row and the tab it links to show one Extra opbrengst (Enrosed-kost + betaalresultaat);
+   * "op n" counts those with something open (D-O2); "nog te betalen" never holds the Enrosed-kost (no payee stream). A
+   * settled container's result is on the tab under "Alle containers".
    */
   readonly containerDigest = computed(() => {
     const rows = containerCostRows(this.purchases(), 'open', '').map((row) => ({ ...row, paymentResult: purchasePaymentResult(row.view) }));

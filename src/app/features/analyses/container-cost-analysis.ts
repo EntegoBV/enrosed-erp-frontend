@@ -13,18 +13,20 @@ import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/ui';
 import { containerName } from '../purchasing/container-name';
 import { plural } from './analyses-words';
-import { type ContainerCostDrillContext, type VariancePart, costOpenView, costPayeesView, costUnitView, costVarianceView, varianceLines } from './drill-container-cost';
+import { type ContainerCostDrillContext, type VariancePart, costExtraRevenueView, costOpenView, costPayeesView, costUnitView, costVarianceView, varianceLines } from './drill-container-cost';
 import { AnDrillHost } from './drill-host';
 
 /**
  * Analyses › Inkoop › Containerkost (redesign 2026-10-17, analyses round 2):
  * its own filter row (row 2 of the Inkoop bar; default "Nog niet volledig
  * afgerekend"), four light figures in cents, one card "Verschil met de
- * afspraak" with the payment result under a divider, then the table per
- * container. Afspraak, Nog te betalen, each difference line and a Per eenheid
- * range open the Analyses drill-down (drill-container-cost.ts, design/analyses2
- * §B.7). The phone shows the containers as cells; each opens a sheet with
- * every figure of its row and the Afrekening & PDF (critique B1). Styles live in
+ * afspraak" with the Extra opbrengst (Enrosed-kost + betaalresultaat, Emre
+ * 2026-11-06) under a divider, then the table per container. Afspraak, Nog te
+ * betalen, each difference line, the Extra opbrengst and a Per eenheid range
+ * open the Analyses drill-down (drill-container-cost.ts, design/analyses2
+ * §B.7). Nog te betalen holds no Enrosed-kost: that is no payee stream. The
+ * phone shows the containers as cells; each opens a sheet with every figure of
+ * its row and the Afrekening & PDF (critique B1). Styles live in
  * src/styles/analyses-tabs.scss under app-container-cost-analysis (N4); the
  * round-2 rules sit in this component's own styles (that file is WP1's).
  * Payment reconciliation remains independent of the receipt-quality period.
@@ -101,10 +103,24 @@ import { AnDrillHost } from './drill-host';
             }
             <div class="an-row an-row--nolead cc-total"><span class="an-row__body"><span class="an-row__title">Netto verschil</span></span>
               <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="total.varianceEur > 0 ? 'warn' : total.varianceEur < 0 ? 'ok' : null">{{ signed(total.varianceEur) }}</span></span></div>
+            <!-- Extra opbrengst (Emre, 2026-11-06): Enrosed pays its Enrosed-kost to nobody, so it counts as revenue next to the
+                 betaalresultaat; the row opens its containers (costExtraRevenueView), a zero figure stays a plain row. -->
+            @if (payment.eligibleCount) {
+              <ng-template #extraFigure>
+                <span class="an-row__body"><span class="an-row__title">Extra opbrengst</span>
+                  <span class="an-row__sub">Enrosed-kost {{ payment.internalMarkupEur | eur: 2 }} · betaalresultaat {{ signed(payment.netResultEur) }}</span></span>
+                <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="payment.markupWithResultEur < 0 ? 'warn' : payment.markupWithResultEur > 0 ? 'ok' : null">{{ payment.markupWithResultEur | eur: 2 }}</span>
+                  <span class="an-row__meta" [attr.data-tone]="payment.provisionalCount ? 'warn' : 'ok'">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></span>
+              </ng-template>
+              @if (isZero(payment.internalMarkupEur) && isZero(payment.netResultEur)) {
+                <div class="an-row an-row--nolead cc-extra"><ng-container *ngTemplateOutlet="extraFigure" /></div>
+              } @else {
+                <button type="button" class="an-row an-row--nolead an-row--chev cc-extra" aria-haspopup="dialog" (click)="openExtra()">
+                  <ng-container *ngTemplateOutlet="extraFigure" /><span class="an-row__chev" aria-hidden="true">›</span></button>
+              }
+            }
             <div class="cc-diff__pay">
               @if (payment.eligibleCount) {
-                <p class="cc-diff__sum"><span>Enrosed-kost {{ payment.internalMarkupEur | eur: 2 }} · Betaalresultaat {{ signed(payment.netResultEur) }} = <b>{{ payment.markupWithResultEur | eur: 2 }}</b></span>
-                  <span class="wk-pill" [class.tone-warn]="payment.provisionalCount" [class.tone-ok]="!payment.provisionalCount">{{ payment.provisionalCount ? 'Tussenstand' : 'Afgerekend' }}</span></p>
                 <!-- Its parts count only once settled (purchasePaymentResult), so they can differ from the lines above. -->
                 <p class="cc-diff__note">Betaalresultaat = minder betaald, definitief vereffend {{ payment.settledSavingsEur | eur: 2 }} − meer betaald, definitief vereffend {{ payment.settledOverrunsEur | eur: 2 }}
                   − extra uitgaven {{ payment.additionalCostsEur | eur: 2 }} · {{ plural(payment.eligibleCount, 'container', 'containers') }}, {{ payment.finalizedCount | num }} volledig afgerekend</p>
@@ -122,7 +138,7 @@ import { AnDrillHost } from './drill-host';
           @if (desk.active()) {
             <div class="cc-table" tabindex="0" role="region" aria-label="Kostenvergelijking per container">
               <table>
-                <thead><tr><th>Container</th><th class="cc-col-status">Status</th><th>Afspraak</th><th>Betaald</th><th class="cc-col-fold">Open</th><th>Verwachte kost</th><th>Verschil</th><th>Betaalresultaat</th><th class="cc-col-unit">Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
+                <thead><tr><th>Container</th><th class="cc-col-status">Status</th><th>Afspraak</th><th>Betaald</th><th class="cc-col-fold">Open</th><th>Verwachte kost</th><th>Verschil</th><th>Extra opbrengst</th><th class="cc-col-unit">Per eenheid</th><th><span class="sr-only">Open afrekening</span></th></tr></thead>
                 <tbody>
                   @for (row of rows(); track row.view.order.id) {
                     <tr [class.is-on]="expandedId() === row.view.order.id">
@@ -138,8 +154,9 @@ import { AnDrillHost } from './drill-host';
                       <td>
                         @if (row.paymentResult; as result) {
                           @if (result.eligible) {
-                            <b [class.is-warn]="result.netResultEur < 0" [class.is-ok]="result.netResultEur > 0">{{ result.netResultEur | eur: 2 }}</b>
-                            <small>{{ result.finalized ? 'Afgerekend' : 'Tussenstand' }}</small>
+                            <!-- Enrosed-kost + betaalresultaat; the betaalresultaat stays in the sub, the state in the Status column. -->
+                            <b [class.is-warn]="result.markupWithResultEur < 0" [class.is-ok]="result.markupWithResultEur > 0">{{ result.markupWithResultEur | eur: 2 }}</b>
+                            <small class="cc-extra-sub">betaalresultaat <span>{{ signed(result.netResultEur) }}</span></small>
                           } @else { <span>—</span><small>Niet meegeteld</small> }
                         } @else { <span>—</span><small>Niet beschikbaar</small> }
                       </td>
@@ -207,9 +224,20 @@ import { AnDrillHost } from './drill-host';
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Verwachte kost</span></span><span class="ios-cell__value ios-cell__value--strong">{{ row.reconciliation.totals.forecastExternalEur | eur }}</span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Verschil</span></span>
               <span class="ios-cell__value" [class.is-warn]="row.reconciliation.totals.varianceEur > 0" [class.is-ok]="row.reconciliation.totals.varianceEur < 0">{{ row.reconciliation.totals.varianceEur > 0 ? '+' : '' }}{{ row.reconciliation.totals.varianceEur | eur }}</span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalresultaat</span>
-              <span class="ios-cell__sub">@if (row.paymentResult; as result) { {{ result.eligible ? (result.finalized ? 'Afgerekend' : 'Tussenstand') : 'Niet meegeteld' }} } @else { Niet beschikbaar }</span></span>
-              <span class="ios-cell__value">@if (row.paymentResult?.eligible) { {{ row.paymentResult!.netResultEur | eur: 2 }} } @else { — }</span></div>
+            <!-- Extra opbrengst = Enrosed-kost + betaalresultaat, the card's sum per container. -->
+            @if (row.paymentResult?.eligible) {
+              @let result = row.paymentResult!;
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Enrosed-kost</span><span class="ios-cell__sub">intern, geen betaling</span></span>
+                <span class="ios-cell__value">{{ result.internalMarkupEur | eur: 2 }}</span></div>
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalresultaat</span><span class="ios-cell__sub">{{ result.finalized ? 'Afgerekend' : 'Tussenstand' }}</span></span>
+                <span class="ios-cell__value">{{ result.netResultEur | eur: 2 }}</span></div>
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Extra opbrengst</span><span class="ios-cell__sub">Enrosed-kost + betaalresultaat</span></span>
+                <span class="ios-cell__value ios-cell__value--strong" [class.is-warn]="result.markupWithResultEur < 0" [class.is-ok]="result.markupWithResultEur > 0">{{ result.markupWithResultEur | eur: 2 }}</span></div>
+            } @else {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Extra opbrengst</span>
+                <span class="ios-cell__sub">{{ row.paymentResult ? 'Niet meegeteld' : 'Niet beschikbaar' }}</span></span>
+                <span class="ios-cell__value">—</span></div>
+            }
             <div class="ios-cell cc-unit"><span class="ios-cell__body"><span class="ios-cell__title">Per eenheid</span></span>
               <span class="ios-cell__value"><ng-container *ngTemplateOutlet="unitCell; context: { $implicit: row }" /></span></div>
           </div>
@@ -225,8 +253,12 @@ import { AnDrillHost } from './drill-host';
   styles: [`
     .cc-diff { margin-bottom: var(--an-gap); }
     .cc-diff__pay { display: grid; gap: 6px; padding: 12px 16px 14px; border-top: 1px solid var(--line); }
-    .cc-diff__sum { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; }
-    .cc-diff__sum b { color: var(--ink); font-weight: 700; }
+    .cc-extra { border-top: 1px solid var(--line); }
+    .cc-extra::before { display: none; }
+    .cc-extra + .cc-diff__pay { padding-top: 0; border-top: 0; }
+    /* The sub may wrap after its word when the table runs out of room (1440 with every column shown); the amount stays whole. */
+    .cc-extra-sub { white-space: normal; }
+    .cc-extra-sub span { white-space: nowrap; }
     .cc-diff__pending { margin: 0; color: var(--warn); font-size: 12px; font-weight: 650; }
     .cc-diff__note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
     .cc-range { font-size: inherit; text-align: inherit; }
@@ -284,6 +316,8 @@ export class ContainerCostAnalysis {
   openPayees(): void { this.drill.open([costPayeesView(this.rows(), this.totals(), this.context())]); }
   openRemaining(): void { this.drill.open([costOpenView(this.rows(), this.totals(), this.context())]); }
   openVariance(part: VariancePart): void { this.drill.open([costVarianceView(part, this.rows(), this.totals(), this.context())]); }
+  /** Extra opbrengst: per container the Enrosed-kost plus the betaalresultaat, adding up to the card's figure. */
+  openExtra(): void { this.drill.open([costExtraRevenueView(this.rows(), this.paymentTotals(), this.context())]); }
   /** A Per eenheid range: the container's products; on the phone its sheet closes first (one sheet at a time). */
   openUnit(row: ContainerCostRow): void {
     this.sheetId.set(null);
