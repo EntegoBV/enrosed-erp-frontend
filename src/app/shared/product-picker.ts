@@ -27,6 +27,7 @@ import {
   toggleProductPickerFamilySelection,
 } from './product-picker-family-groups';
 import { salesPhotoUrl } from './sales-photo';
+import { PickerPriceHold } from './picker-price-hold';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -65,7 +66,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe],
+  imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe, PickerPriceHold],
   template: `
     <app-sheet [title]="heading()" [wide]="groupByFamily()" [variant]="variant()" (closed)="cancelled.emit()">
       <div body>
@@ -433,6 +434,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                           <button class="picker-item picker-item--nested" type="button"
                                   [class.picker-item--selected]="isSelected(product)"
                                   [attr.aria-pressed]="mode() === 'multi' ? isSelected(product) : null"
+                                  [appPickerPriceHold]="showPrice() && !!priceMark(product)" (priceHeld)="holdPrice(product)"
                                   (click)="mode() === 'multi' ? toggle(product) : choose(product)">
                             @if (mode() === 'multi') {
                               <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
@@ -463,7 +465,17 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                               }
                             </span>
                             @if (showPrice()) {
-                              <span class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}<small>per {{ salesUnit(product).singular }}</small></span>
+                              <span class="picker-item__end">
+                                <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id">
+                                  @if (priceMark(product); as mark) {
+                                    <span class="picker-price__mark" aria-hidden="true">K</span>
+                                    <span class="picker-price__tip" aria-hidden="true">{{ mark }}</span>
+                                    <span class="sr-only">{{ mark }}</span>
+                                  }
+                                  {{ price(product) | cur: priceCurrency(product) }}
+                                </span>
+                                <small>per {{ salesUnit(product).singular }}</small>
+                              </span>
                             }
                           </button>
                         }
@@ -493,6 +505,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             @for (product of matches(); track product.id) {
               <button class="picker-item" type="button" [class.picker-item--selected]="isSelected(product)"
                       [attr.aria-pressed]="mode() === 'multi' ? isSelected(product) : null"
+                      [appPickerPriceHold]="showPrice() && !!priceMark(product)" (priceHeld)="holdPrice(product)"
                       (click)="mode() === 'multi' ? toggle(product) : choose(product)">
                 @if (mode() === 'multi') {
                   <span class="picker-item__check" aria-hidden="true">{{ isSelected(product) ? '✓' : '' }}</span>
@@ -519,7 +532,17 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                   }
                 </div>
                 @if (showPrice()) {
-                  <div class="picker-item__end">{{ price(product) | cur: priceCurrency(product) }}<small>per {{ salesUnit(product).singular }}</small></div>
+                  <div class="picker-item__end">
+                    <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id">
+                      @if (priceMark(product); as mark) {
+                        <span class="picker-price__mark" aria-hidden="true">K</span>
+                        <span class="picker-price__tip" aria-hidden="true">{{ mark }}</span>
+                        <span class="sr-only">{{ mark }}</span>
+                      }
+                      {{ price(product) | cur: priceCurrency(product) }}
+                    </span>
+                    <small>per {{ salesUnit(product).singular }}</small>
+                  </div>
                 }
               </button>
             } @empty {
@@ -685,6 +708,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
       text-align: left;
       cursor: pointer;
       min-height: 60px;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     .picker-item:active { background: var(--surface-2); }
     .picker-item__body { flex: 1; min-width: 0; }
@@ -694,6 +720,19 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-item__meta { font-size: 12px; color: var(--muted); }
     .picker-item__end { font-weight: 650; font-variant-numeric: tabular-nums; text-align: right; }
     .picker-item__end small { display: block; color: var(--muted); font-size: 10.5px; font-weight: 500; }
+    /* The customer's own price: the quiet K of the sales lines; its note shows on hover (desk) or a long press (phone). */
+    .picker-price { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+    .picker-price__mark { width: 15px; height: 15px; flex: none; display: inline-grid; place-items: center; border-radius: 5px;
+      background: var(--rose-soft); color: var(--rose-dark); font-size: 9px; font-weight: 800; line-height: 1; }
+    .picker-price__tip { position: absolute; top: 50%; right: calc(100% + 8px); z-index: 3; padding: 5px 9px; border-radius: 8px;
+      background: var(--ink); color: var(--surface); font-size: 11.5px; font-weight: 600; line-height: 1.3; white-space: nowrap;
+      transform: translateY(-50%); pointer-events: none; box-shadow: 0 6px 16px rgb(0 0 0 / 16%);
+      visibility: hidden; opacity: 0; transition: opacity .12s ease, visibility 0s linear .12s; }
+    .picker-price--held .picker-price__tip { visibility: visible; opacity: 1; transition: none; }
+    @media (hover: hover) and (pointer: fine) {
+      .picker-item__end:hover .picker-price__tip { visibility: visible; opacity: 1;
+        transition: opacity .12s ease .25s, visibility 0s linear .25s; }
+    }
     /* Stock dot: red empty, orange tight, green ample. Colour alone is not
        enough, so a text always sits next to it. */
     .stock-dot {
@@ -773,6 +812,22 @@ export class ProductPicker implements OnDestroy {
   /** The price to display; the caller decides which one that is. */
   readonly priceOf = input<(product: Product) => number>((product) =>
     product.computedSalesPriceEur);
+  /**
+   * A quiet "K" before a price that is the customer's own agreed price; the
+   * text names the standard price beside it, shown on hover (desk) or a long
+   * press (phone), so nobody forgets the customer pays something else (Emre,
+   * 2026-11-06). Null: a plain price.
+   */
+  readonly priceMarkOf = input<(product: Product) => string | null>(() => null);
+  /** The row whose price note a long press shows; it fades 2.6 s after the finger lifts. */
+  readonly heldPrice = signal<number | null>(null);
+  private heldPriceTimer: ReturnType<typeof setTimeout> | null = null;
+  /* Whether a finger or button is down: a long press fires while it still is, and its note waits for the lift. */
+  private pointerDown = false;
+  private readonly trackPointer = (event: Event): void => {
+    this.pointerDown = event.type === 'pointerdown';
+    if (!this.pointerDown && this.heldPrice() !== null && this.heldPriceTimer === null) this.fadeHeldPrice();
+  };
   /** Sales defaults to EUR; purchasing supplies the product's agreed EXW currency. */
   readonly currencyOf = input<(product: Product) => Currency>(() => 'EUR');
   /**
@@ -1025,8 +1080,14 @@ export class ProductPicker implements OnDestroy {
       name.toLocaleLowerCase('nl-BE') === colour)?.[1] ?? null;
   }
 
+  constructor() {
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel']) document.addEventListener(type, this.trackPointer, true);
+  }
+
   ngOnDestroy(): void {
     this.carton.destroy();
+    if (this.heldPriceTimer !== null) clearTimeout(this.heldPriceTimer);
+    for (const type of ['pointerdown', 'pointerup', 'pointercancel']) document.removeEventListener(type, this.trackPointer, true);
   }
 
   /** Enough stock for what is being asked? */
@@ -1058,6 +1119,27 @@ export class ProductPicker implements OnDestroy {
 
   price(product: Product): number {
     return this.priceOf()(product);
+  }
+
+  priceMark(product: Product): string | null {
+    return this.priceMarkOf()(product);
+  }
+
+  holdPrice(product: Product): void {
+    if (product.id == null) return;
+    if (this.heldPriceTimer !== null) clearTimeout(this.heldPriceTimer);
+    this.heldPriceTimer = null;
+    this.heldPrice.set(product.id);
+    /* The menu key has no finger to lift. */
+    if (!this.pointerDown) this.fadeHeldPrice();
+  }
+
+  private fadeHeldPrice(): void {
+    if (this.heldPriceTimer !== null) clearTimeout(this.heldPriceTimer);
+    this.heldPriceTimer = setTimeout(() => {
+      this.heldPriceTimer = null;
+      this.heldPrice.set(null);
+    }, 2600);
   }
 
   priceCurrency(product: Product): Currency {

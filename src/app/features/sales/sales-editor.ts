@@ -1,4 +1,4 @@
-import { otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
+import { euroText, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
 import { canReopenSalesDocument } from './sales-reopen';
 import { QUANTITY_FIELD_SELECTOR, showServerQuantities } from './sales-quantity-fields';
@@ -23,7 +23,8 @@ import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
 import { LinePriceSource, linePriceState, type LinePriceChoice, type LinePriceState } from './line-price-source';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, HostListener } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, HostListener } from '@angular/core';
+import { CustomerPriceApi } from '../../core/api/customer-price-api';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -1558,6 +1559,7 @@ function layoutKey(order: SalesOrder): string {
           [groupByFamily]="true"
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
+          [priceMarkOf]="priceMarkOf"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -2376,6 +2378,7 @@ export class SalesEditor {
   protected readonly catalog = inject(CatalogApi);
   private readonly stockBatches = inject(StockBatchApi);
   private readonly sourcing = inject(SourcingApi);
+  private readonly customerPriceApi = inject(CustomerPriceApi);
   protected readonly router = inject(Router);
   protected readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
@@ -3425,6 +3428,29 @@ export class SalesEditor {
     return !!order && !isCreditNote(order) && !isPartnerDocument(order) && order.markupMode !== 'CONTAINER_COST';
   });
 
+  /**
+   * Whether a product added here takes the customer's agreed price on save, as the server's
+   * pinsCustomerPrices decides: a regular quote or invoice of a customer, never a credit note, a
+   * partner document, container-cost pricing, an advance invoice or a split part.
+   */
+  private readonly pinsAgreedPrices = computed(() => {
+    const data = this.view();
+    const order = data?.order;
+    return !!data && order?.customerId != null && this.customerPricesApply()
+      && data.advanceBilling?.stage !== 'ADVANCE' && !data.fulfillment;
+  });
+  /** The customer whose agreed prices the picker needs: the draft's, while products can be added; null otherwise. */
+  private readonly agreedPricesCustomer = computed(() =>
+    this.pinsAgreedPrices() && this.canEdit() ? this.view()?.order.customerId ?? null : null);
+  /** The active agreed prices of one customer by product, for the picker. */
+  private readonly agreedPrices = signal<{ customerId: number; byProduct: ReadonlyMap<number, number> } | null>(null);
+  private agreedPricesAsk = 0;
+  private agreedPricesShown = 0;
+  /* Loaded as soon as the customer is known, so the picker shows the agreed price the moment it opens. */
+  private readonly agreedPricesLoader = effect(() => {
+    if (this.agreedPricesCustomer() !== null) untracked(() => this.loadAgreedPrices());
+  });
+
   /** The quiet marker beside a line's price (round 3b); null when the customer has no price for it and the line is not on one. */
   linePriceState(line: PricedLine): LinePriceState | null {
     if (!this.customerPricesApply()) return null;
@@ -4039,18 +4065,56 @@ export class SalesEditor {
 
   openPicker(): void {
     if (!this.mobileCommercialEditable() || this.isCreditNoteDoc()) return;
+    /* Prices changed on the customer sheet in the meantime show too; until the answer the loaded ones stand. */
+    this.loadAgreedPrices();
     this.picking.set(true);
   }
 
-  /** Price the picker shows: what THIS order would charge for that product. */
-  readonly priceOf = (product: Product): number => {
+  /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */
+  readonly priceOf = (product: Product): number => this.agreedPrice(product) ?? this.standardPriceOf(product);
+
+  /** The picker's quiet K on an agreed price: hovering (desk) or a long press (phone) names the standard price beside it. */
+  readonly priceMarkOf = (product: Product): string | null => {
+    if (this.agreedPrice(product) === null) return null;
+    const standard = this.standardPriceOf(product);
+    return standard > 0 ? `Klantprijs · standaard ${euroText(standard)}` : 'Klantprijs · geen standaardprijs';
+  };
+
+  /**
+   * What THIS order charges for the product without an agreed price, as the server's
+   * unitPriceFor: a fixed catalogue price holds under an order markup too.
+   */
+  private standardPriceOf(product: Product): number {
     const order = this.view()?.order;
     if (order?.markupMode === 'CONTAINER_COST') return product.landedCostEur ?? 0;
     if (order?.markupMode !== 'ORDER') return product.computedSalesPriceEur;
+    if ((product.fixedSalesPriceEur ?? 0) > 0) return product.fixedSalesPriceEur!;
     const cost = product.landedCostEur ?? 0;
     const markup = order.orderMarkupPct ?? 0;
     return Math.round(cost * (1 + markup / 100) * 100) / 100;
-  };
+  }
+
+  /** The customer's agreed price a new line of this document takes on save; null where none applies or none is loaded. */
+  private agreedPrice(product: Product): number | null {
+    const known = this.agreedPrices();
+    if (!known || product.id == null || !this.pinsAgreedPrices() || known.customerId !== this.view()?.order.customerId) return null;
+    return known.byProduct.get(product.id) ?? null;
+  }
+
+  /** Quietly (re)loads the active agreed prices of the draft's customer; without them the picker shows the catalogue price. */
+  private loadAgreedPrices(): void {
+    const customerId = untracked(() => this.agreedPricesCustomer());
+    if (customerId === null) return;
+    const ask = ++this.agreedPricesAsk;
+    this.customerPriceApi.list(customerId).then((rows) => {
+      /* An older answer never replaces a newer one; a newer load that fails leaves the last answer standing. */
+      if (ask < this.agreedPricesShown) return;
+      this.agreedPricesShown = ask;
+      const byProduct = new Map<number, number>();
+      for (const row of rows) if (row.status === 'ACTIVE' && row.priceExclVat > 0) byProduct.set(row.productId, row.priceExclVat);
+      this.agreedPrices.set({ customerId, byProduct });
+    }, () => undefined);
+  }
 
   vatLabel(treatment: string): string {
     switch (treatment) {

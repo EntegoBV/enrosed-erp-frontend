@@ -2752,6 +2752,21 @@ pinned price as to a typed one.
   website pinned. Not built: the phone's read view (`sales-view.ts`) shows
   no marker. Checked against a production-code backend jar (2026-11-06,
   desk 1080-1440, phone 375/390), not yet in iOS Safari.
+- Product picker (same evening): "Producten toevoegen" shows what a new line
+  gets. `SalesEditor.pinsAgreedPrices` copies the server's
+  `pinsCustomerPrices` (also no advance invoice, no split part); there
+  `priceOf` gives the draft customer's ACTIVE price from
+  `CustomerPriceApi.list` (loaded once the customer is known and the
+  document editable, again on every open; an older answer never replaces a
+  newer one, a failure keeps the catalogue price), else `standardPriceOf`
+  (the server's `unitPriceFor`: a fixed catalogue price also holds under an
+  ORDER markup). `priceMarkOf` puts the K before that price
+  (`picker-price__mark`); its note "Klantprijs · standaard € x" shows on
+  hover on the desk (CSS, 250 ms delay) and after a long press, right click
+  or menu key (`PickerPriceHold`, a `SalesMenuGesture` per row, active only
+  on rows with a K; the press does not tick the row), fading 2.6 s after
+  the finger lifts. Other picker users pass no `priceMarkOf`; their rows
+  only lost text selection and the touch callout.
 
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
