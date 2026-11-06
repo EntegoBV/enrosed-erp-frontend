@@ -4851,7 +4851,9 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   customer, "Ook bewaren als prijzen van {klant}" first PUTs the typed prices
   (not "Op aanvraag") with source CATALOG_EXPORT: product and price only, plus
   `validUntil` when the PDF has a validity that is not past, so a stored note
-  and end date stay (the backend keeps a field a change leaves out); the
+  and end date stay (the backend keeps a field a change leaves out); without
+  such a validity a stored end date that already passed is sent as null, so
+  the kept price applies again instead of staying "verlopen"; the
   answered list replaces the customer's prices, so the same prices stop being
   one-offs. A display sold per display without its piece count prints "Prijs
   op aanvraag" whatever it is given (the server's printable(),
