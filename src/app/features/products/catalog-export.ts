@@ -26,6 +26,7 @@ import { messageOf } from '../../core/api/errors';
 import { Category, LANGUAGES, LanguageCode, Product, ProductFamily } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
+import { palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
 import {
   CatalogBrochureDraft,
   CatalogBrochureSettings,
@@ -44,6 +45,9 @@ import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
 const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
+
+/** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80, 260 cm loaded with the wood, 700 kg. */
+const CATALOGUE_PALLET = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
   version: 2 | 3;
@@ -70,16 +74,17 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 
 const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
+  pallet: string;
 }> = {
-  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.' },
-  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.' },
-  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.' },
-  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.' },
-  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.' },
-  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.' },
-  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.' },
-  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.' },
-  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.' },
+  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet' },
+  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet' },
+  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette' },
+  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette' },
+  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé' },
+  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta' },
+  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete' },
+  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet' },
+  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα' },
 };
 
 @Component({
@@ -155,7 +160,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                         @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
                         @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
                         <span>HS {{ row.hsCode ?? '-' }}</span>
-                        <span>20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> }</span>
+                        <!-- Pallet, 20ft and 40ft always together, in that order, as in the PDF. -->
+                        <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
                         @if (includePrices()) { <strong>{{ row.price }}</strong> }
                       </div>
                     </div>
@@ -672,10 +678,14 @@ export class CatalogExport {
   readonly compactRows = computed(() => {
     const language = this.language();
     const currency = new Intl.NumberFormat(language.toLowerCase(), { style: 'currency', currency: 'EUR' });
+    const count = new Intl.NumberFormat(language.toLowerCase());
     return this.selectedProducts().slice(0, 4).map(product => {
       const text = product.texts.find(row => row.language === language);
       const photo = cataloguePhoto(product);
       const gp = readGpCapacity(product.carton);
+      /* The PDF's figure: whole omdozen on the pallet times what one omdoos holds, in the unit of 20ft and 40ft. */
+      const pallet = palletFit(product.carton, CATALOGUE_PALLET);
+      const perCarton = product.carton.piecesPerCarton;
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       return {
         id: product.id,
@@ -688,9 +698,11 @@ export class CatalogExport {
         perBox: product.carton.piecesPerCarton,
         ean: product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null,
         hsCode: product.hsCode?.trim() || null,
-        per20Ft: gp.value,
+        perPallet: pallet.cartonsPerPallet > 0 && perCarton ? count.format(pallet.cartonsPerPallet * perCarton) : null,
+        per20Ft: gp.value === null ? null : count.format(gp.value),
         per20FtAuto: isAutoGpCapacity(gp),
         per20FtHint: gpCapacityHint(gp, product.carton),
+        per40Ft: product.carton.hcCapacity ? count.format(product.carton.hcCapacity) : null,
         price: Number.isFinite(product.computedSalesPriceEur) && product.computedSalesPriceEur > 0
           ? currency.format(product.computedSalesPriceEur) : this.compactCopy().onRequest,
       };
