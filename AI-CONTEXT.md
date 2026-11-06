@@ -4674,8 +4674,8 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 | File | Role | Styles (budget size) |
 |---|---|---|
 | `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
-| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup | ~6.0 kB |
-| `catalog-prices.ts` | Pure: `priceBasis`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
+| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup | ~6.3 kB |
+| `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
 | `core/api/catalog-api.ts` | `CatalogExportRequest` + `customerId`, `recipientName`, `pricesValidUntil`, `priceOverrides` (`CatalogPriceOverride`); `CatalogPreflightResult` + `prices`, `priceWarnings`, `recipient`; `CatalogPricesInvalid` | – |
 | `core/api/customer-price-api.ts` | `CustomerPriceApi` (list, save, history, exports, exportDetail), shared with the customer sheet's block | – |
 
@@ -4696,27 +4696,40 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   chosen customer's ACTIVE prices among the selected products, from
   `CustomerPriceApi.list`). n counts the one-off prices the request carries.
   Another choice in the select clears the one-off prices after "Andere klant
-  kiezen?" (Annuleren puts the select back). The action bar reads "Met prijzen
-  · voor {klant}" (the phone drops the language for it); the preview prints
-  "Prijslijst voor {klant}" in the document language on the cover and under
-  the compact title (`COMPACT_PREVIEW_COPY.priceListFor`; the PDF has its own
-  copy keys) and shows the printed price.
+  kiezen?" (Annuleren puts the select back). The prices remember who they
+  were typed for (`pricesFor`: 'c<id>' or 'n:<name>', case and spacing aside,
+  kept in the tab state with them): a free name left by blur or Enter that
+  differs asks the same question, with "Zelfde klant" (keeps them, a
+  corrected spelling) and Annuleren (puts the previous name back); Download
+  and Prijzen aanpassen ask first while a new name is still in the field.
+  Prices typed before any name follow the first name given. The action bar
+  reads "Met prijzen · voor {klant}" (the phone drops the language for it);
+  the preview prints "Prijslijst voor {klant}" in the document language on
+  the cover and under the compact title (`COMPACT_PREVIEW_COPY.priceListFor`;
+  the PDF has its own copy keys) and shows the printed price with its unit
+  ("€ 21,60 per display"; in Dutch the product's own unit, "per stolp", in
+  the other languages `perPiece` / `perDisplay`, the PDF's words).
 - **Never in the device draft**: customer, free name, validity and one-off
   prices live in sessionStorage `enrosed.catalogBuilder.prices.v1` (this tab,
   read back field by field), so the next customer cannot inherit them; the
   builder state in localStorage keeps only `includePrices`. A stored customer
-  that no longer exists is dropped with a toast once the list loads.
+  that no longer exists is dropped with a toast once the list loads, and its
+  one-off prices with it (they must not reach a general price list).
 - **The request** carries the new fields only when set and prices are on, so
   without them it is the request every server knows. One-off prices go for
   selected products only and only when they change what the PDF would print
   (`requestOverrides`); one typed on another unit than the product's now goes
   along so the server names it.
 - **Prijzen aanpassen** (`app-sheet variant="ios"`, wide on the desk): one row
-  per selected product: photo, name · variant, then "SKU · per stolp" (desk;
+  per selected product: photo, name · variant (a size the name already ends
+  with is not repeated), then "SKU · per stolp" (desk;
   Catalogus, Klant and In deze PDF columns, Klant only with a stored customer,
   a stored price that does not apply struck through with "verlopen" or
-  "prijsbasis gewijzigd") or "€ 4,96 per stolp · SKU" with one-word chips
-  (phone: the name has line 1 to itself, the field and the chips line 2). The
+  "prijsbasis gewijzigd") or "€ 4,96 / stolp · SKU" (phone: the name has line
+  1 to itself, the field and the meta line 2; the price and its unit never
+  shrink, the SKU takes only the room left, and the row shows one chip, the
+  most urgent: "onvolledig", "onder kost", else the stored price's "klant",
+  "verlopen" or "nakijken", the customer block's word for a changed basis). The
   field's placeholder is what the PDF prints without a change; "onder kost"
   compares the shown price with `landedCostEur` and stops nothing. Row menu
   (⋯, `app-context-menu` inside the sheet body so the desk popover is above
@@ -4726,9 +4739,15 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   never compounding, whole cents half up), "Alles terug". Nothing applies
   until "Toepassen (n)"; closing with changes asks first. With a stored
   customer, "Ook bewaren als prijzen van {klant}" first PUTs the typed prices
-  (not "Op aanvraag") with source CATALOG_EXPORT and the PDF's validity (when
-  not in the past); the answered list replaces the customer's prices, so the
-  same prices stop being one-offs. A row with an invalid price or a unit
+  (not "Op aanvraag") with source CATALOG_EXPORT: product and price only, plus
+  `validUntil` when the PDF has a validity that is not past, so a stored note
+  and end date stay (the backend keeps a field a change leaves out); the
+  answered list replaces the customer's prices, so the same prices stop being
+  one-offs. A display sold per display without its piece count prints "Prijs
+  op aanvraag" whatever it is given (the server's printable(),
+  `pricePrintable`): its row reads "Op aanvraag" instead of a field, with the
+  chip "onvolledig" and the reason in its title and row menu, and the compact
+  preview says "Prijs op aanvraag". A row with an invalid price or a unit
   changed since it was typed blocks Toepassen until it is typed again or
   reset.
 - **Download**: preflight first. Old-server guard: a request with a customer,
@@ -4742,7 +4761,9 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   not `load()`, which would clear the card). After the PDF, `priceWarnings`
   stay in a card "PDF gemaakt met n opmerkingen" until the request changes.
   The file is `enrosed-prijslijst-<slug>-<lang>.pdf` with a recipient (the
-  preflight's `recipient.name`, else the screen's), the usual names without.
+  preflight's `recipient.name`, else the screen's; the slug as the server's
+  Recipient.fileSlug: NFD, every \p{M} dropped, lower case, other runs one
+  dash, 60 at most, "klant" when empty), the usual names without.
 - **Reference prices** in the selection name the product's own unit ("€ 21,60
   / display", "/ bowl"; `productSalesUnit().singular`); the studio now loads
   the unit names itself.
