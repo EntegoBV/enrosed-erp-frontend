@@ -25,6 +25,7 @@ const ACTION_LABELS: Record<string, string> = {
   CUSTOMER_REJECTED: 'Door klant afgewezen',
   CUSTOMER_CHANGE_REQUESTED: 'Wijziging gevraagd',
   IDENTITY_FINALIZED: 'Identiteit vastgelegd',
+  CATALOG_EXPORTED: 'Catalogus met prijzen gemaakt',
 };
 
 const FINANCE_TYPES = new Set(['COMPANY_COST', 'RECURRING_COST', 'BANK_BALANCE', 'BANK_STATEMENT']);
