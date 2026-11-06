@@ -67,6 +67,19 @@ interface CatalogPriceState {
   recipientName: string;
   pricesValidUntil: string;
   overrides: CatalogPriceOverride[];
+  /** Who the one-off prices were typed for (recipientKey); absent in a tab stored before it existed. */
+  pricesFor?: PricesFor | null;
+}
+
+/** The recipient one-off prices belong to: its key and the name as it was typed. */
+interface PricesFor {
+  key: string;
+  name: string;
+}
+
+/** A free name as a recipient: case and spacing do not make another lead. */
+function nameKey(name: string): string {
+  return `n:${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-BE')}`;
 }
 
 /** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80, 260 cm loaded with the wood, 700 kg. */
@@ -285,7 +298,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                     @if (named()) {
                       <label class="field"><span>Naam op de prijslijst</span>
                         <input class="input" maxlength="120" autocomplete="off" placeholder="Bijvoorbeeld: Bloemen Janssens"
-                               [ngModel]="recipientName()" (ngModelChange)="recipientName.set($event)" />
+                               [ngModel]="recipientName()" (ngModelChange)="recipientName.set($event)"
+                               (change)="confirmRecipientName()" (keydown.enter)="confirmRecipientName()" />
                       </label>
                     }
                   </div>
@@ -715,6 +729,9 @@ export class CatalogExport {
   readonly recipientName = signal('');
   readonly pricesValidUntil = signal('');
   readonly priceOverrides = signal<ReadonlyMap<number, CatalogPriceOverride>>(new Map());
+  /** Who the one-off prices were typed for; another recipient asks before they go (chooseRecipient, confirmRecipientName). */
+  readonly pricesFor = signal<PricesFor | null>(null);
+  private askingRecipient = false;
   /** The chosen customer's stored prices by product; empty without a customer and while they load. */
   readonly customerPrices = signal<ReadonlyMap<number, CustomerPrice>>(new Map());
   readonly customerPricesState = signal<'IDLE' | 'LOADING' | 'READY' | 'ERROR'>('IDLE');
@@ -853,6 +870,15 @@ export class CatalogExport {
   readonly recipientLabel = computed(() => this.targetCustomer()?.name
     ?? (this.includePrices() && this.named() ? this.recipientName().trim().slice(0, 120) : ''));
   readonly recipientValue = computed(() => this.customerId() !== null ? `c${this.customerId()}` : this.named() ? 'name' : '');
+  /** The recipient as one key: 'c12', 'n:bloemen janssens', '' for nobody. */
+  readonly recipientKey = computed(() => this.customerId() !== null ? `c${this.customerId()}`
+    : this.named() ? nameKey(this.recipientName()) : '');
+  /** The free name now differs from the one the one-off prices were typed for (prices typed before any name follow it). */
+  readonly recipientNameChanged = computed(() => {
+    const owner = this.pricesFor();
+    return this.includePrices() && this.named() && this.priceOverrides().size > 0
+      && !!owner && owner.key !== 'n:' && owner.key !== this.recipientKey();
+  });
   readonly recipientLine = computed(() => this.recipientLabel()
     ? this.compactCopy().priceListFor.replace('{name}', this.recipientLabel()) : '');
   readonly requestPriceOverrides = computed(() => this.includePrices()
@@ -905,6 +931,7 @@ export class CatalogExport {
       recipientName: this.recipientName(),
       pricesValidUntil: this.pricesValidUntil(),
       overrides: [...this.priceOverrides().values()],
+      pricesFor: this.pricesFor(),
     }));
 
     effect(() => {
@@ -1013,6 +1040,11 @@ export class CatalogExport {
 
   async download(): Promise<void> {
     if (!this.canExport() || this.busy()) return;
+    /* A name typed and not yet left (the click blurred it): the question comes before a PDF with someone else's prices. */
+    if (this.recipientNameChanged()) {
+      this.confirmRecipientName();
+      return;
+    }
     const request = this.buildRequest();
     const key = JSON.stringify(request);
     this.renderError.set(null);
@@ -1160,6 +1192,7 @@ export class CatalogExport {
       this.customerId.set(value.startsWith('c') ? Number(value.slice(1)) : null);
       this.named.set(value === 'name');
       this.priceOverrides.set(new Map());
+      this.pricesFor.set(null);
     };
     const count = this.overrideCount();
     if (!count) {
@@ -1173,7 +1206,43 @@ export class CatalogExport {
     }, commit, undefined, () => { select.value = previous; });
   }
 
+  /**
+   * A free name left (blur or Enter) that differs from the one the one-off
+   * prices were typed for is another recipient: they go after the same
+   * question as another customer. "Zelfde klant" keeps them for a corrected
+   * spelling; Annuleren puts the previous name back.
+   */
+  confirmRecipientName(): void {
+    if (this.askingRecipient || !this.named()) return;
+    const owner = this.pricesFor();
+    const key = this.recipientKey();
+    if (!this.priceOverrides().size || !owner || owner.key === 'n:') {
+      if (this.priceOverrides().size) this.pricesFor.set({ key, name: this.recipientName().trim() });
+      return;
+    }
+    if (owner.key === key) return;
+    const settle = (change: () => void) => () => { this.askingRecipient = false; change(); };
+    const adopt = () => this.pricesFor.set({ key: this.recipientKey(), name: this.recipientName().trim() });
+    const commit = () => { this.priceOverrides.set(new Map()); this.pricesFor.set(null); };
+    const count = this.overrideCount();
+    if (!count) {
+      commit();
+      return;
+    }
+    this.askingRecipient = true;
+    this.ui.confirm({
+      title: 'Andere klant kiezen?',
+      message: count === 1 ? 'Je aangepaste prijs vervalt.' : `Je ${count} aangepaste prijzen vervallen.`,
+      confirmLabel: 'Andere klant',
+      secondaryLabel: 'Zelfde klant',
+    }, settle(commit), settle(adopt), settle(() => this.recipientName.set(owner.name)));
+  }
+
   openPriceSheet(): void {
+    if (this.recipientNameChanged()) {
+      this.confirmRecipientName();
+      return;
+    }
     if (this.dataReady() && this.selected().size) this.priceSheetOpen.set(true);
   }
 
@@ -1181,10 +1250,12 @@ export class CatalogExport {
   applyPrices(overrides: ReadonlyMap<number, CatalogPriceOverride>): void {
     const products = new Map(this.products().map((product) => [product.id, product]));
     const stored = this.customerPrices();
-    this.priceOverrides.set(new Map([...overrides].filter(([id, price]) => {
+    const kept = new Map([...overrides].filter(([id, price]) => {
       const product = products.get(id);
       return !!product && changesPrint(product, price, standardPrice(product, stored.get(id)));
-    })));
+    }));
+    this.priceOverrides.set(kept);
+    this.pricesFor.set(kept.size ? { key: this.recipientKey(), name: this.recipientName().trim() } : null);
     this.priceSheetOpen.set(false);
   }
 
@@ -1354,6 +1425,10 @@ export class CatalogExport {
           return valid ? [[valid.productId, valid] as const] : [];
         })));
       }
+      const owner = parsed.pricesFor;
+      this.pricesFor.set(owner && typeof owner.key === 'string' && typeof owner.name === 'string'
+        ? { key: owner.key.slice(0, 130), name: owner.name.slice(0, 120) }
+        : this.priceOverrides().size ? { key: this.recipientKey(), name: this.recipientName().trim() } : null);
     } catch {
       /* A damaged or blocked tab store starts without a customer and without one-off prices. */
     }
