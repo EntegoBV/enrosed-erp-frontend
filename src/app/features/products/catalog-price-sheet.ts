@@ -431,13 +431,14 @@ export class CatalogPriceSheet implements OnInit {
     const customer = this.customer();
     const keep = customer && this.keep() ? this.keepable() : [];
     if (customer && keep.length) {
-      /* The PDF's validity goes along, unless it already lies in the past. */
+      /* The PDF's validity goes along unless it already lies in the past; without one, the stored note and end date stay
+         (the server keeps a field the change leaves out). */
       const until = this.validUntil() && this.validUntil() >= todayIso() ? this.validUntil() : null;
       this.busy.set(true);
       try {
         const saved = await this.api.save(customer.id, {
           source: 'CATALOG_EXPORT',
-          changes: keep.map((row) => ({ productId: row.id, priceExclVat: row.price!.priceEur, validUntil: until })),
+          changes: keep.map((row) => ({ productId: row.id, priceExclVat: row.price!.priceEur, ...(until ? { validUntil: until } : {}) })),
         });
         this.saved.emit(saved);
         this.ui.toast(`${keep.length} ${keep.length === 1 ? 'prijs' : 'prijzen'} bewaard voor ${customer.name}`);
