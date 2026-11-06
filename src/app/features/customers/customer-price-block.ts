@@ -105,7 +105,7 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
                   </div>
                   <div class="field cp-note">
                     <label for="cp-note">Notitie <span class="opt"></span></label>
-                    <input class="input" id="cp-note" maxlength="500" autocomplete="off" [disabled]="busy()"
+                    <input class="input" id="cp-note" maxlength="300" autocomplete="off" [disabled]="busy()"
                            [ngModel]="draft()!.note" (ngModelChange)="patchDraft({ note: $event ?? '' })" />
                   </div>
                 </div>
