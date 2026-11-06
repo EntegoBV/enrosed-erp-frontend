@@ -22,8 +22,12 @@ import { productSalesUnit } from './product-sales-unit';
 interface PriceRow {
   id: number;
   product: Product;
-  name: string;
-  variant: string | null;
+  /** "Rozenstolp M · Rood · 20 cm": the row menu's title and the field's name for a screen reader. */
+  label: string;
+  /** The label for a narrow row: the head gives way; the tail (" · Rood · 20 cm", or " 30 cm · Rood" when the name
+      ends with its size) never does, because the rows of one family differ only there. */
+  head: string;
+  tail: string | null;
   sku: string;
   /** "per stolp", "per display": what every amount on the row is for. */
   per: string;
@@ -104,7 +108,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
           @for (row of visibleRows(); track row.id) {
             <li class="cps-row" [class.is-changed]="row.changed" [class.is-wrong]="!!row.message">
               <span class="cps-row__photo">@if (row.photo) {<img [appAuthSrc]="row.photo" appAuthLazy alt="" />}</span>
-              <b class="cps-row__name">{{ row.name }}@if (row.variant) {<span> · {{ row.variant }}</span>}</b>
+              <!-- The rows of one family differ only in colour and size: the name gives way, the variant never. -->
+              <b class="cps-row__name"><span>{{ row.head }}</span>@if (row.tail) {<span class="cps-row__variant">{{ row.tail }}</span>}</b>
               <span class="cps-row__meta">
                 @if (row.message) {
                   <span class="cps-row__text cps-row__message">{{ row.message }}</span>
@@ -137,11 +142,11 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   <span class="cps-row__request" [attr.title]="row.unprintable ? unprintableTitle : null">Op aanvraag</span>
                 } @else {
                   <i aria-hidden="true">€</i>
-                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.name"
+                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.label"
                          [ngModel]="row.price?.priceEur ?? null" (ngModelChange)="setPrice(row.product, $event)" />
                 }
               </span>
-              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.name" (click)="openMenu($event, row)">⋯</button>
+              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.label" (click)="openMenu($event, row)">⋯</button>
             </li>
           } @empty {
             <li class="cps__empty">{{ onlyChanged() && !query().trim() ? 'Nog geen aangepaste prijzen.' : 'Geen producten gevonden.' }}</li>
@@ -149,7 +154,7 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
         </ul>
         <!-- Inside the sheet: its overlay is a stacking context, a desk popover outside it would open under the sheet. -->
         @if (menu(); as open) {
-          <app-context-menu variant="ios" [title]="open.row.name" [items]="menuItems(open.row)" [anchor]="open.anchor"
+          <app-context-menu class="cps-menu" variant="ios" [title]="open.row.label" [items]="menuItems(open.row)" [anchor]="open.anchor"
                             (pick)="pick(open.row, $event)" (closed)="menu.set(null)" />
         }
       </div>
@@ -186,8 +191,9 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .cps-row + .cps-row { border-top: 1px solid var(--line); }
     .cps-row__photo { grid-area: photo; display: grid; width: 40px; height: 44px; place-items: center; overflow: hidden; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
     .cps-row__photo img { width: 100%; height: 100%; padding: 2px; box-sizing: border-box; object-fit: contain; }
-    .cps-row__name { grid-area: name; align-self: end; min-width: 0; overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-    .cps-row__name span { color: var(--rose-dark); }
+    .cps-row__name { grid-area: name; display: flex; align-self: end; min-width: 0; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.3; white-space: nowrap; }
+    .cps-row__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .cps-row__name > .cps-row__variant { flex: none; max-width: 75%; color: var(--rose-dark); }
     .cps-row__meta { grid-area: meta; display: flex; align-self: start; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
     .cps-row__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cps-row__message { color: var(--danger); font-weight: 600; }
@@ -204,6 +210,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .cps-row__field > i { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 14px; font-style: normal; transform: translateY(-50%); pointer-events: none; }
     .cps-row__field .input { min-height: 40px; padding: 6px 10px 6px 24px; border-radius: 10px; text-align: right; font-variant-numeric: tabular-nums; }
     .cps-row__field .input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+    /* The row menu names the whole variant: a long title wraps instead of losing the colour and size. */
+    :host ::ng-deep .cps-menu .cm__head { white-space: normal; overflow-wrap: anywhere; }
     .is-changed .cps-row__field .input { border-color: var(--rose); background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); font-weight: 700; }
     .is-wrong .cps-row__field .input { border-color: var(--danger); }
     .cps-row__request { display: grid; min-height: 40px; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
@@ -243,6 +251,7 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
       .cps-row__cat, .cps-row__own, .cps-row__desk { display: none; }
       .cps-row__field .input { min-height: 38px; font-size: 16px; }
       .cps-row__request { min-height: 38px; }
+      :host ::ng-deep .cps-menu .sheet--ios .sheet__head h2 { white-space: normal; overflow-wrap: anywhere; text-wrap: balance; }
       .cps-foot { display: grid; width: 100%; gap: 10px; }
       .cps-foot__cancel { display: none; }
       .cps-keep { margin: 0; padding: 2px 4px; }
@@ -317,11 +326,16 @@ export class CatalogPriceSheet implements OnInit {
       const cost = product.landedCostEur;
       const photo = cataloguePhoto(product);
       const name = stripColour(product.name?.trim() ?? '', product.colour);
-      /* "Rozenstolp S" and "Hartbox 28 cm" already name their size. */
+      /* "Rozenstolp S" and "Hartbox 28 cm" already name their size: not repeated, but kept whole with the variant. */
       const size = product.variantSize?.trim() || null;
+      const named = !!size && name.endsWith(size);
+      const variant = variantOf({ colour: product.colour, variantSize: named ? null : size });
+      const split = named && name.endsWith(` ${size}`);
       return [{
-        id, product, name,
-        variant: variantOf({ colour: product.colour, variantSize: size && name.endsWith(size) ? null : size }),
+        id, product,
+        label: variant ? `${name} · ${variant}` : name,
+        head: split ? name.slice(0, -size!.length).trimEnd() : name,
+        tail: split ? `\u00a0${size}${variant ? ` · ${variant}` : ''}` : variant ? `\u00a0· ${variant}` : null,
         sku: product.sku || 'Zonder SKU',
         per: unit.isDisplay ? 'per display' : unit.piece.per,
         slash: `/ ${unit.isDisplay ? 'display' : unit.piece.one}`,
