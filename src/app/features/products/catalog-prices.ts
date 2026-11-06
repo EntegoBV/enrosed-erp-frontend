@@ -139,9 +139,9 @@ export function todayIso(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-/** "bloemenatelier-linde": the customer in enrosed-prijslijst-<slug>-<lang>.pdf, as the server names the file. */
+/** "bloemenatelier-linde": the customer in enrosed-prijslijst-<slug>-<lang>.pdf, as the server names the file (Recipient.fileSlug). */
 export function recipientSlug(name: string): string {
-  const slug = name.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const slug = name.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
   return slug || 'klant';
 }
