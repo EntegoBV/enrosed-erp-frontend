@@ -159,8 +159,10 @@ export function layoutLabel(layout: CatalogLayout | string): string {
   return layout === 'SIMPLE' ? 'Compact overzicht' : layout === 'BROCHURE' ? 'Handelscatalogus' : layout;
 }
 
+/** "Nederlands" for 'NL', and for the 'nl' the journal sends. */
 export function languageLabel(language: LanguageCode | string): string {
-  return LANGUAGES.find((entry) => entry.code === language)?.label ?? language;
+  const code = String(language ?? '').trim().toUpperCase();
+  return LANGUAGES.find((entry) => entry.code === code)?.label ?? language;
 }
 
 /** A journal entry's second line: the language, the prices it carried and who made it. */

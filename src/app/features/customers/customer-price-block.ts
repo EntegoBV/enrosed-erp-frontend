@@ -41,7 +41,8 @@ interface PriceEntry {
 
 const ROWS_SHOWN = 6;
 const EXPORTS_SHOWN = 3;
-const EXPORT_LIMIT = 20;
+/** The most the journal answers at once (CatalogExportJournal.MAX_LIMIT): a full answer may leave older ones out. */
+const EXPORT_LIMIT = 100;
 const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
 
 /**
@@ -156,7 +157,7 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
         <div class="cp-head cp-head--sub"><b>Prijslijsten</b></div>
         <p class="cp-none">Niet geladen. <button class="linklike" type="button" (click)="loadExports(customerId())">Opnieuw proberen</button></p>
       } @else if (exports().length) {
-        <div class="cp-head cp-head--sub"><b>Prijslijsten</b><small>{{ exports().length }}</small></div>
+        <div class="cp-head cp-head--sub"><b>Prijslijsten</b><small>{{ exports().length }}@if (exports().length >= exportLimit) {+}</small></div>
         <div class="cp-list">
           @for (entry of shownExports(); track entry.id) {
             <button class="cp-row" type="button" (click)="openExport(entry)">
@@ -353,6 +354,7 @@ export class CustomerPriceBlock {
   readonly exportsError = signal(false);
   readonly allExports = signal(false);
   readonly exportsShown = EXPORTS_SHOWN;
+  readonly exportLimit = EXPORT_LIMIT;
 
   /** The catalogue, for variant names, today's sales unit and the picker; loaded once a row or the picker needs it. */
   readonly products = signal<ReadonlyMap<number, Product> | null>(null);
