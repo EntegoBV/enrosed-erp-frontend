@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -126,7 +126,8 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
           } @else if (entry.row; as row) {
             @let name = parts(row.productId);
             @let facts = metaParts(row);
-            <button class="cp-row" type="button" [class.cp-row--off]="row.status !== 'ACTIVE'" [disabled]="!!draft() || busy()" (click)="edit(row)">
+            <button class="cp-row" type="button" [attr.data-product]="row.productId" [class.cp-row--off]="row.status !== 'ACTIVE'"
+                    [class.cp-row--saved]="justSaved() === row.productId" [disabled]="!!draft() || busy()" (click)="edit(row)">
               <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                 @if (pill(row); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
               <span class="cp-fig">{{ euro(row.priceExclVat) }}</span>
@@ -278,6 +279,9 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
       border: 0; border-top: 1px solid var(--rose-line); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
     .cp-row:disabled { cursor: default; opacity: .5; }
     .cp-row--static { cursor: auto; }
+    /* A price just added: the row it sorted into is marked for a moment (the shadows carry the tint past the text). */
+    .cp-row { transition: background-color var(--dur-3, .32s) var(--ease-out, ease-out), box-shadow var(--dur-3, .32s) var(--ease-out, ease-out); }
+    .cp-row--saved { --cp-mark: color-mix(in srgb, var(--rose) 13%, transparent); background: var(--cp-mark); box-shadow: -8px 0 var(--cp-mark), 8px 0 var(--cp-mark); }
     .cp-name { grid-area: name; display: flex; align-items: center; min-width: 0; font-size: 13.5px; font-weight: 650; }
     .cp-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     /* The rows of one family differ only in colour and size: the name gives way, the variant does not. */
@@ -341,6 +345,9 @@ export class CustomerPriceBlock {
   readonly draft = signal<PriceDraft | null>(null);
   readonly formError = signal<string | null>(null);
   readonly allRows = signal(false);
+  /** The product whose price was just added, marked in the list for a moment. */
+  readonly justSaved = signal<number | null>(null);
+  private savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly exports = signal<CatalogExportSummary[]>([]);
   readonly exportsError = signal(false);
@@ -420,9 +427,11 @@ export class CustomerPriceBlock {
         this.formError.set(null);
         this.allRows.set(false);
         this.allExports.set(false);
+        this.justSaved.set(null);
         void this.load(customerId);
       });
     });
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.savedTimer));
   }
 
   reload(): void {
@@ -672,6 +681,7 @@ export class CustomerPriceBlock {
       this.rows.set(rows);
       this.draft.set(null);
       this.ui.toast('Klantprijs opgeslagen');
+      if (draft.isNew) this.showSaved(draft.productId);
       return true;
     } catch (failure: unknown) {
       if (customerId !== this.customerId()) return false;
@@ -709,6 +719,16 @@ export class CustomerPriceBlock {
     if (!known) void this.ensureProducts();
     const product = fresh.find((candidate) => candidate.id === productId);
     return product ? this.currentPer(product) : null;
+  }
+
+  /** A price just added sorts in by SKU: the list opens as far as its row, which comes into view and is marked for a moment. */
+  private showSaved(productId: number): void {
+    if (this.rows().findIndex((row) => row.productId === productId) >= ROWS_SHOWN) this.allRows.set(true);
+    clearTimeout(this.savedTimer);
+    this.justSaved.set(productId);
+    setTimeout(() => this.host.nativeElement.querySelector(`.cp-row[data-product="${productId}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    this.savedTimer = setTimeout(() => this.justSaved.set(null), 2400);
   }
 
   remove(row: CustomerPrice): void {
