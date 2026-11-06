@@ -2559,6 +2559,54 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
   through the esbuild bundle its header names; in the plain node run it is
   one of the known failing files.
 
+### Klantprijzen on the customer (round 3, 2026-11-06)
+One agreed price per customer and product: EUR excl. VAT on the product's
+own sales unit (per display when sold per display), like the catalogue
+price. A catalogue PDF made for the customer prints it while it is ACTIVE;
+quotes, invoices, the portal and the website never use it (round 3,
+decision 6: the website keeps showing no customer prices).
+- `core/api/customer-price-api.ts` (`CustomerPriceApi`, the round 3
+  contract, shared with the export popup): `list(customerId)` and
+  `save(customerId, { source, changes })` on `/api/customers/{id}/prices`
+  (a patch: only the listed products change, `priceExclVat: null` removes
+  one, the answer is the full list), `history(customerId, productId?)`,
+  `exports(customerId, limit?)` (`/api/customers/{id}/catalog-exports`, the
+  journal of catalogues made for the customer) and `exportDetail(id)`
+  (`/api/catalog/exports/{id}`, the price each product carried and its
+  source CATALOGUE / CUSTOMER / ONE_OFF / ON_REQUEST). A row keeps the basis
+  it was set on (`salesUnit`, `piecesPerUnit`, `unitKey`) and the server's
+  status: EXPIRED (past Geldig tot), BASIS_CHANGED (the product's price
+  basis changed since) and PRODUCT_GONE are kept but print nothing.
+- Customer sheet: `app-customer-price-block` (`customer-price-block.ts`,
+  block 'Klantprijzen' under Websitelogin in the same tinted wrapper, only
+  for a saved customer; wording in the pure `customer-price-state.ts`).
+  Head "n klantprijzen · k actief" and "Logboek ›"
+  (`/activity?type=CUSTOMER&id=`). Rows of two lines: name · variant and
+  the price, then "Catalogus € x · −n % · tot dd/mm/jjjj" and the unit of
+  the stored basis; a one-word pill only for a price that does not print
+  (Verlopen, Nakijken for a changed basis, Verwijderd). Six rows, then
+  "Alle n tonen". A row edits in place (Prijs per <unit> with the
+  catalogue price as placeholder, Geldig tot, Notitie; Verwijderen behind
+  a confirm; Geschiedenis of that product) while the other rows and
+  + Product wait. A changed basis opens with an empty price ("was € 36,00
+  per display van 6"): an amount on the old basis is never sent back.
+  Before the PUT: above 0, under 1 000 000, at most 2 decimals (refused,
+  never rounded), Geldig tot today or later; "Onder de kostprijs" warns
+  without blocking. "+ Product" loads the catalogue once per block into
+  `app-product-picker` (selection only; sellable products without a price
+  yet). Geschiedenis (all products, or one) and a Prijslijsten entry's
+  lines are iOS sheets stacked on the customer sheet (nothing around them
+  is a size container); Prijslijsten (20 newest, 3 shown) hides while
+  empty.
+- Every save there is a PUT of its own with source CUSTOMER_SCREEN. The
+  sheet's Opslaan first stores a typed price that is not saved yet
+  (`pending()` / `saveDraft()`); a refused one keeps the sheet open on it
+  (`reveal()`). ×, Annuleren and Escape drop it, like the sheet's fields.
+- Logboek: `CATALOG_EXPORTED` reads "Catalogus met prijzen gemaakt"
+  (`activity-copy.ts`); the backend writes it on the customer.
+- Not built: a read-only "Klantprijzen" list on the product (the contract
+  has no endpoint per product).
+
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
 The document is an ordinary quote whose view carries a `webOrder` block

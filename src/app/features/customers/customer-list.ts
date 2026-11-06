@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
@@ -11,12 +11,13 @@ import { countryName } from '../../core/api/geo';
 import { messageOf } from '../../core/api/errors';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { CustomerLoginBlock } from './customer-login-block';
+import { CustomerPriceBlock } from './customer-price-block';
 import { blankCustomer as blank, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing } from './customer-form';
 
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock, LoadError],
+  imports: [Skeleton, FormsModule, PageHeader, Sheet, CustomerLoginBlock, CustomerPriceBlock, LoadError],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -167,6 +168,9 @@ import { blankCustomer as blank, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, v
             @if (draft().id; as customerId) {
               <div class="field span-2 partner-field">
                 <app-customer-login-block [customerId]="customerId" [customerEmail]="draft().email || null" />
+              </div>
+              <div class="field span-2 partner-field">
+                <app-customer-price-block [customerId]="customerId" />
               </div>
             }
             <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
@@ -322,6 +326,7 @@ export class CustomerList {
   }
 
   readonly saving = signal(false);
+  private readonly prices = viewChild(CustomerPriceBlock);
 
   /** The two letters of the VAT number next to the customer's country, when they differ. */
   readonly vatCountryMismatch = computed(() => vatCountryMismatch(this.draft().vatNumber, this.draft().countryCode));
@@ -341,6 +346,12 @@ export class CustomerList {
     }
     this.saving.set(true);
     try {
+      /* The price block saves on its own; a price typed there and not stored yet goes along, a refused one keeps the sheet. */
+      const prices = this.prices();
+      if (prices?.pending() && !(await prices.saveDraft())) {
+        prices.reveal();
+        return;
+      }
       if (customer.id === null) await this.sales.createCustomer(customer);
       else await this.sales.updateCustomer(customer.id, customer);
       this.editing.set(false);
