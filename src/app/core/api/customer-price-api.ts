@@ -47,6 +47,21 @@ export interface CustomerPriceChange {
   priceExclVat: number | null;
   validUntil?: string | null;
   note?: string | null;
+  /**
+   * The unit the amount was typed against, as the screen showed it then (pieces per display, null per piece). The
+   * server refuses a price whose product has since moved to another unit (409 CUSTOMER_PRICE_BASIS_CHANGED, nothing
+   * stored); an older server ignores both and stores the price on the product's unit at save time.
+   */
+  basis?: CustomerPriceBasis;
+  piecesPerUnit?: number | null;
+}
+
+/** 409 CUSTOMER_PRICE_BASIS_CHANGED: the products whose unit changed since their price was typed; null for any other failure. */
+export function priceBasisRefusal(failure: unknown): { message: string; productIds: number[] } | null {
+  const response = failure as { status?: number; error?: { code?: unknown; message?: unknown; productIds?: unknown } | null } | null;
+  if (response?.status !== 409 || response.error?.code !== 'CUSTOMER_PRICE_BASIS_CHANGED') return null;
+  const ids = Array.isArray(response.error.productIds) ? response.error.productIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0) : [];
+  return { message: typeof response.error.message === 'string' ? response.error.message.trim() : '', productIds: ids };
 }
 
 /** Patch: only the listed products change. */

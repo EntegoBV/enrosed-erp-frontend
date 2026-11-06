@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, type OnInit, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, type OnInit, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import type { CatalogPriceIssue, CatalogPriceOverride } from '../../core/api/catalog-api';
-import { CustomerPriceApi, type CustomerPrice } from '../../core/api/customer-price-api';
+import { CustomerPriceApi, priceBasisRefusal, type CustomerPrice } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
 import type { Product } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -14,7 +14,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import {
   basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceProblem, pricePrintable, standardPrice, todayIso,
-  type StandardPrice,
+  type PriceBasisNow, type StandardPrice,
 } from './catalog-prices';
 import { cataloguePhoto } from './catalog-studio';
 import { productSalesUnit } from './product-sales-unit';
@@ -48,6 +48,7 @@ const OWN_STATE: Record<string, string> = { ACTIVE: 'klant', EXPIRED: 'verlopen'
 /** The phone's one-word chip, "Nakijken" as the customer's price block says it; the price and its unit keep the room. */
 const OWN_CHIP: Record<string, string> = { ...OWN_STATE, BASIS_CHANGED: 'nakijken' };
 const UNPRINTABLE = 'Display zonder aantal stuks: de PDF toont Prijs op aanvraag';
+const STALE = 'Prijsbasis gewijzigd · vul opnieuw in';
 
 function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverride | undefined): boolean {
   return a?.priceEur === b?.priceEur && !!a?.onRequest === !!b?.onRequest && a?.basis === b?.basis
@@ -62,8 +63,9 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
  * them. Nothing changes until Toepassen; with a customer, "Ook bewaren als
  * prijzen van …" also stores the typed prices as that customer's own
  * (PUT /api/customers/{id}/prices, source CATALOG_EXPORT), with the PDF's
- * validity date. "onder kost" compares with the landed cost and stops
- * nothing.
+ * validity date and the unit each was typed on: one the product has left
+ * since is refused (nothing stored) and asks to be typed again. "onder
+ * kost" compares with the landed cost and stops nothing.
  */
 @Component({
   selector: 'app-catalog-price-sheet',
@@ -251,6 +253,7 @@ export class CatalogPriceSheet implements OnInit {
   protected readonly desktop = inject(DesktopViewport);
   private readonly ui = inject(Ui);
   private readonly api = inject(CustomerPriceApi);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** The selected products, in the catalogue's order. */
   readonly products = input.required<readonly Product[]>();
@@ -267,6 +270,8 @@ export class CatalogPriceSheet implements OnInit {
   readonly issues = input<readonly CatalogPriceIssue[]>([]);
   readonly applied = output<Map<number, CatalogPriceOverride>>();
   readonly saved = output<CustomerPrice[]>();
+  /** The server refused a kept price typed on a unit the product has since left: the page loads the products again. */
+  readonly productsStale = output<void>();
   readonly closed = output<void>();
 
   /** The prices being typed; Toepassen hands them to the page. */
@@ -279,12 +284,20 @@ export class CatalogPriceSheet implements OnInit {
   readonly keep = signal(false);
   readonly busy = signal(false);
   readonly menu = signal<{ row: PriceRow; anchor: MenuPoint } | null>(null);
+  /**
+   * The kept prices the server refused (409 CUSTOMER_PRICE_BASIS_CHANGED), with the unit each was typed on. They hold
+   * only until the page's products arrive again (basisChanged() then names them); a price typed on the same unit
+   * before that is refused here, not sent again.
+   */
+  private readonly refused = signal<{ products: readonly Product[]; basis: ReadonlyMap<number, PriceBasisNow> } | null>(null);
 
   readonly rows = computed<PriceRow[]>(() => {
     const draft = this.draft();
     const applied = this.overrides();
     const stored = this.customerPrices();
     const issues = new Map(this.issues().map((issue) => [issue.productId, issue.message]));
+    const refusal = this.refused();
+    const refusedBasis = refusal && refusal.products === this.products() ? refusal.basis : null;
     return this.products().flatMap((product) => {
       if (product.id === null) return [];
       const id = product.id;
@@ -293,9 +306,13 @@ export class CatalogPriceSheet implements OnInit {
       const standard = standardPrice(product, own);
       const price = draft.get(id) ?? null;
       const problem = price && !price.onRequest ? priceProblem(price.priceEur) : null;
-      const stale = !!price && basisChanged(product, price);
+      const was = refusedBasis?.get(id);
+      /* Typed on a unit the product has left: the row names the unit of now (once the page knows it) until typed again. */
+      const moved = !!price && basisChanged(product, price);
+      const stale = moved || (!!price && !!was && was.basis === price.basis && was.piecesPerUnit === (price.piecesPerUnit ?? null));
+      const now = unit.isDisplay ? unit.piecesPerDisplay ? `per display van ${unit.piecesPerDisplay}` : 'per display' : unit.piece.per;
       /* The server's word stays on the row only while the row is as it was sent. */
-      const refused = issues.has(id) && sameOverride(price ?? undefined, applied.get(id)) ? issues.get(id)! : null;
+      const rejected = issues.has(id) && sameOverride(price ?? undefined, applied.get(id)) ? issues.get(id)! : null;
       const shown = price?.onRequest ? null : price && price.priceEur !== null && !problem ? price.priceEur : standard.eur;
       const cost = product.landedCostEur;
       const photo = cataloguePhoto(product);
@@ -314,7 +331,7 @@ export class CatalogPriceSheet implements OnInit {
         changed: !!price && changesPrint(product, price, standard),
         onRequest: !!price?.onRequest,
         unprintable: !pricePrintable(product),
-        message: problem ?? (stale ? 'Prijsbasis gewijzigd · vul opnieuw in' : refused),
+        message: problem ?? (moved ? `Nu ${now} · vul opnieuw in` : stale ? STALE : rejected),
         belowCost: shown !== null && cost !== null && cost > 0 && shown < cost,
         photo: photo?.smallUrl || photo?.url || null,
       }];
@@ -443,12 +460,29 @@ export class CatalogPriceSheet implements OnInit {
           source: 'CATALOG_EXPORT',
           changes: keep.map((row) => ({
             productId: row.id, priceExclVat: row.price!.priceEur,
+            /* The unit the row named when the price was typed: the server refuses it once the product has left it. */
+            basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null,
             ...(until ? { validUntil: until } : ended(row) ? { validUntil: null } : {}),
           })),
         });
         this.saved.emit(saved);
         this.ui.toast(`${keep.length} ${keep.length === 1 ? 'prijs' : 'prijzen'} bewaard voor ${customer.name}`);
       } catch (failure) {
+        const stale = priceBasisRefusal(failure);
+        if (stale) {
+          /* Nothing was stored. The rows it names ask to be typed again, the page loads the products with their unit
+             of now, and the sheet stays open with every typed price. */
+          const named = new Set(stale.productIds);
+          this.refused.set({
+            products: this.products(),
+            basis: new Map(keep.filter((row) => !named.size || named.has(row.id))
+              .map((row) => [row.id, { basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null }])),
+          });
+          this.productsStale.emit();
+          this.ui.toast('Niets bewaard: de prijsbasis is gewijzigd', 'err');
+          setTimeout(() => this.host.nativeElement.querySelector('.cps-row.is-wrong')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+          return;
+        }
         this.ui.toast(messageOf(failure, 'De klantprijzen zijn niet bewaard. Probeer opnieuw.'), 'err');
         return;
       } finally {

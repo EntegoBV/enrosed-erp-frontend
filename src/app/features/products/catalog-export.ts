@@ -509,7 +509,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     @if (priceSheetOpen()) {
       <app-catalog-price-sheet [products]="selectedProducts()" [overrides]="priceOverrides()" [customer]="targetCustomer()"
         [customerPrices]="customerPrices()" [customerNote]="customerNote()" [validUntil]="pricesValidUntil()" [issues]="priceIssues()"
-        (saved)="customerPricesSaved($event)" (applied)="applyPrices($event)" (closed)="priceSheetOpen.set(false)" />
+        (saved)="customerPricesSaved($event)" (applied)="applyPrices($event)" (productsStale)="refreshProducts()" (closed)="priceSheetOpen.set(false)" />
     }
   `,
   styles: `
@@ -1370,8 +1370,11 @@ export class CatalogExport {
     this.ui.toast(messageOf(decodedFailure, toastFallback), 'err');
   }
 
-  /** The products again, without touching the selection or the message on screen (load() clears that). */
-  private async refreshProducts(): Promise<void> {
+  /**
+   * The products again, without touching the selection or the message on screen (load() clears that): after the PDF's
+   * BASIS_CHANGED, and after the price sheet's kept prices were refused for the same reason.
+   */
+  protected async refreshProducts(): Promise<void> {
     try {
       const products = await this.catalog.products();
       if (!this.destroyed) this.products.set(orderCatalogProducts(products.filter((product) => !product.demo), this.categories()));

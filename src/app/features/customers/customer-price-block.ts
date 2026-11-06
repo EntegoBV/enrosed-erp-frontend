@@ -4,6 +4,7 @@ import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import {
   CatalogExportDetail, CatalogExportLine, CatalogExportSummary, CustomerPrice, CustomerPriceApi, CustomerPriceHistoryEntry,
+  priceBasisRefusal,
 } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
 import { Category, Product, ProductFamily } from '../../core/api/models';
@@ -12,6 +13,7 @@ import { DecimalInput } from '../../shared/decimal-input';
 import { ProductPicker } from '../../shared/product-picker';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
+import { priceBasis, type PriceBasisNow } from '../products/catalog-prices';
 import { otherBasisPrice, productSalesUnit, unitName } from '../products/product-sales-unit';
 import {
   basisPer, dayText, euro, exportMeta, exportTitle, historyChange, historyMeta, languageLabel, layoutLabel, momentText,
@@ -25,6 +27,10 @@ interface PriceDraft {
   amount: number | null;
   validUntil: string;
   note: string;
+  /** The unit the amount was typed against: the price field's unit when it was typed, a stored amount's own basis. */
+  basis: PriceBasisNow;
+  /** The server refused the amount for a unit the product has since left: it stays on screen until typed again. */
+  stale: boolean;
 }
 
 /** One place in the list: a stored price, or (row null) the product being added. */
@@ -36,6 +42,7 @@ interface PriceEntry {
 const ROWS_SHOWN = 6;
 const EXPORTS_SHOWN = 3;
 const EXPORT_LIMIT = 20;
+const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
 
 /**
  * Klantprijzen on the customer sheet: one agreed price per product, EUR
@@ -110,7 +117,7 @@ const EXPORT_LIMIT = 20;
                 <span class="cp-gap"></span>
                 <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="cancel()">Annuleren</button>
                 @if (entry.row?.status !== 'PRODUCT_GONE') {
-                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy() || !dirty()" (click)="saveDraft()">
+                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy() || !dirty() || draft()!.stale" (click)="saveDraft()">
                     {{ busy() ? 'Bezig…' : 'Prijs opslaan' }}
                   </button>
                 }
@@ -570,15 +577,36 @@ export class CustomerPriceBlock {
     if (this.draft() || this.busy()) return;
     this.formError.set(null);
     /* An amount on the old basis would store a display's price as one bowl's: a changed basis starts empty. */
-    const amount = row.status === 'BASIS_CHANGED' ? null : row.priceExclVat;
-    this.draft.set({ productId: row.productId, isNew: false, amount, validUntil: row.validUntil ?? '', note: row.note ?? '' });
+    const changed = row.status === 'BASIS_CHANGED';
+    const display = row.salesUnit === 'DISPLAY';
+    this.draft.set({
+      productId: row.productId, isNew: false, amount: changed ? null : row.priceExclVat,
+      validUntil: row.validUntil ?? '', note: row.note ?? '',
+      /* The stored amount stands on the basis it was set on. */
+      basis: changed ? this.fieldBasis(row.productId)
+        : { basis: display ? 'DISPLAY' : 'PIECE', piecesPerUnit: display ? row.piecesPerUnit ?? null : null },
+      stale: false,
+    });
     void this.ensureProducts();
     this.focusPrice();
   }
 
   patchDraft(changes: Partial<Pick<PriceDraft, 'amount' | 'validUntil' | 'note'>>): void {
-    this.draft.update((draft) => draft ? { ...draft, ...changes } : draft);
-    if (this.formError()) this.formError.set(null);
+    /* A typed amount is on the unit the field names right now. */
+    this.draft.update((draft) => !draft ? draft
+      : 'amount' in changes ? { ...draft, ...changes, basis: this.fieldBasis(draft.productId), stale: false } : { ...draft, ...changes });
+    /* "Type the price again" stays until the price is typed. */
+    if (this.formError() && !this.draft()?.stale) this.formError.set(null);
+  }
+
+  /** The unit the price field names (priceLabel): the product's sales unit now, else the stored basis while the catalogue is not loaded. */
+  private fieldBasis(productId: number): PriceBasisNow {
+    const product = this.productOf(productId);
+    if (product) return priceBasis(product);
+    const row = this.rows().find((candidate) => candidate.productId === productId);
+    return row?.salesUnit === 'DISPLAY'
+      ? { basis: 'DISPLAY', piecesPerUnit: row.piecesPerUnit ?? null }
+      : { basis: 'PIECE', piecesPerUnit: null };
   }
 
   cancel(): void {
@@ -596,7 +624,7 @@ export class CustomerPriceBlock {
     const draft = this.draft();
     if (!draft) return true;
     if (this.busy()) return false;
-    const problem = priceProblem(draft.amount)
+    const problem = (draft.stale ? this.formError() || STALE_PRICE : null) ?? priceProblem(draft.amount)
       ?? (draft.validUntil && draft.validUntil < todayIso() ? 'Kies vandaag of een latere datum, of laat Geldig tot leeg.' : null);
     if (problem) {
       this.formError.set(problem);
@@ -608,7 +636,10 @@ export class CustomerPriceBlock {
     try {
       const rows = await this.api.save(customerId, {
         source: 'CUSTOMER_SCREEN',
-        changes: [{ productId: draft.productId, priceExclVat: draft.amount, validUntil: draft.validUntil || null, note: draft.note.trim() || null }],
+        changes: [{
+          productId: draft.productId, priceExclVat: draft.amount, validUntil: draft.validUntil || null, note: draft.note.trim() || null,
+          basis: draft.basis.basis, piecesPerUnit: draft.basis.piecesPerUnit,
+        }],
       });
       if (customerId !== this.customerId()) return true;
       this.rows.set(rows);
@@ -616,11 +647,41 @@ export class CustomerPriceBlock {
       this.ui.toast('Klantprijs opgeslagen');
       return true;
     } catch (failure: unknown) {
-      if (customerId === this.customerId()) this.formError.set(messageOf(failure, 'Klantprijs opslaan mislukt'));
+      if (customerId !== this.customerId()) return false;
+      const refused = priceBasisRefusal(failure);
+      if (refused) {
+        /* Nothing was stored: the rows and the product come again, and the amount stays in the field to be typed again. */
+        const unit = await this.reloadRefused(customerId, refused.productIds.length ? refused.productIds : [draft.productId], draft.productId);
+        if (customerId !== this.customerId()) return false;
+        this.draft.update((open) => open?.productId === draft.productId ? { ...open, stale: true } : open);
+        this.formError.set(unit ? `Het product wordt nu ${unit} verkocht · geef de prijs opnieuw in` : STALE_PRICE);
+      } else {
+        this.formError.set(messageOf(failure, 'Klantprijs opslaan mislukt'));
+      }
       return false;
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * After 409 CUSTOMER_PRICE_BASIS_CHANGED: the stored rows again, and the products the server named as it has them now,
+   * so the field names their unit. Answers the unit of `productId` now ("per stolp"), or null when it could not be loaded.
+   */
+  private async reloadRefused(customerId: number, productIds: number[], productId: number): Promise<string | null> {
+    const [rows, products] = await Promise.all([
+      this.api.list(customerId).catch(() => null),
+      Promise.all(productIds.map((id) => this.catalog.product(id).catch(() => null))),
+    ]);
+    if (customerId !== this.customerId()) return null;
+    if (rows) this.rows.set(rows);
+    const fresh = products.filter((product): product is Product => product?.id != null);
+    const known = this.products();
+    if (known && fresh.length) this.products.set(new Map([...known, ...fresh.map((product) => [product.id!, product] as const)]));
+    /* Without the catalogue the field would keep naming the stored unit: it is asked again. */
+    if (!known) void this.ensureProducts();
+    const product = fresh.find((candidate) => candidate.id === productId);
+    return product ? this.currentPer(product) : null;
   }
 
   remove(row: CustomerPrice): void {
@@ -674,7 +735,7 @@ export class CustomerPriceBlock {
       return;
     }
     this.formError.set(null);
-    this.draft.set({ productId: product.id, isNew: true, amount: null, validUntil: '', note: '' });
+    this.draft.set({ productId: product.id, isNew: true, amount: null, validUntil: '', note: '', basis: priceBasis(product), stale: false });
     this.focusPrice();
   }
 
