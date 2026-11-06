@@ -27,6 +27,8 @@ interface PriceRow {
   sku: string;
   /** "per stolp", "per display": what every amount on the row is for. */
   per: string;
+  /** "/ stolp", "/ display": the same after the phone's catalogue price, as the selection's reference prices say it. */
+  slash: string;
   catalogue: number | null;
   stored: CustomerPrice | null;
   standard: StandardPrice;
@@ -41,8 +43,10 @@ interface PriceRow {
   photo: string | null;
 }
 
-/** The words of a stored price that does not apply, as chip and as the desk's Klant column says them. */
+/** The words of a stored price that does not apply, as the desk's Klant column says them. */
 const OWN_STATE: Record<string, string> = { ACTIVE: 'klant', EXPIRED: 'verlopen', BASIS_CHANGED: 'prijsbasis gewijzigd' };
+/** The phone's one-word chip, "Nakijken" as the customer's price block says it; the price and its unit keep the room. */
+const OWN_CHIP: Record<string, string> = { ...OWN_STATE, BASIS_CHANGED: 'nakijken' };
 const UNPRINTABLE = 'Display zonder aantal stuks: de PDF toont Prijs op aanvraag';
 
 function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverride | undefined): boolean {
@@ -104,13 +108,18 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   <span class="cps-row__text cps-row__message">{{ row.message }}</span>
                 } @else {
                   <span class="cps-row__text cps-row__desk">{{ row.sku }} · {{ row.per }}</span>
-                  <span class="cps-row__text cps-row__phone">@if (row.catalogue !== null) {{{ row.catalogue | eur }} }{{ row.per }} · {{ row.sku }}</span>
+                  <!-- Phone: "€ 21,60 / display" stays whole (a ×6 mistake hides in the unit); the SKU gives way first. -->
+                  <span class="cps-row__phone cps-row__price">@if (row.catalogue !== null) {{{ row.catalogue | eur }} }{{ row.slash }}</span>
+                  <span class="cps-row__text cps-row__phone cps-row__sku">&nbsp;· {{ row.sku }}</span>
                 }
-                @if (row.stored; as own) {
-                  <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownWord(own) }}</i>
+                <!-- One chip, the most urgent; the phone has room for no more next to the price and its unit. -->
+                @if (row.unprintable) {
+                  <i class="cps-tag cps-tag--warn" [attr.title]="unprintableTitle">onvolledig</i>
+                } @else if (row.belowCost) {
+                  <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i>
+                } @else if (row.stored; as own) {
+                  <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownChip(own) }}</i>
                 }
-                @if (row.unprintable) { <i class="cps-tag cps-tag--warn" [attr.title]="unprintableTitle">onvolledig</i> }
-                @if (row.belowCost) { <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i> }
               </span>
               <span class="cps-row__cat">{{ row.catalogue !== null ? (row.catalogue | eur) : 'op aanvraag' }}</span>
               @if (customer()) {
@@ -223,7 +232,11 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
       .cps-row { grid-template-columns: 36px minmax(0, 1fr) 64px 28px; grid-template-areas: 'photo name name more' 'photo meta field field'; column-gap: 8px; row-gap: 4px; padding: 9px 10px; }
       .cps-row__photo { width: 36px; height: 40px; }
       .cps-row__name { align-self: center; }
-      .cps-row__meta { align-self: center; }
+      .cps-row__meta { align-self: center; gap: 0; }
+      .cps-row__price { flex: none; white-space: nowrap; }
+      /* Only the room left: the price and the chip keep their width, the chip shrinks only once the SKU is gone. */
+      .cps-row__sku { flex: 1 1 0; }
+      .cps-row__meta .cps-tag { flex: 0 1 auto; min-width: 0; margin-left: 5px; padding: 1px 6px; overflow: hidden; text-overflow: ellipsis; }
       .cps-row__more { height: 36px; margin: -8px 0; }
       .cps-row__cat, .cps-row__own, .cps-row__desk { display: none; }
       .cps-row__field .input { min-height: 38px; font-size: 16px; }
@@ -292,6 +305,7 @@ export class CatalogPriceSheet implements OnInit {
         variant: variantOf(product),
         sku: product.sku || 'Zonder SKU',
         per: unit.isDisplay ? 'per display' : unit.piece.per,
+        slash: `/ ${unit.isDisplay ? 'display' : unit.piece.one}`,
         catalogue: cataloguePrice(product),
         stored: own && own.status !== 'PRODUCT_GONE' ? own : null,
         standard, price,
@@ -334,6 +348,10 @@ export class CatalogPriceSheet implements OnInit {
 
   ownWord(own: CustomerPrice): string {
     return OWN_STATE[own.status] ?? '';
+  }
+
+  ownChip(own: CustomerPrice): string {
+    return OWN_CHIP[own.status] ?? '';
   }
 
   ownTitle(own: CustomerPrice): string {
