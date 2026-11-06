@@ -721,6 +721,8 @@ export class CatalogExport {
   constructor() {
     this.restoreState();
     void this.load();
+    /* The unit words of the reference prices and the price sheet ("per bowl", "per display"). */
+    void this.catalog.unitNames().catch(() => undefined);
 
     effect(() => {
       if (!this.dataReady()) return;

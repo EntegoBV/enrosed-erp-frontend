@@ -37,6 +37,7 @@ import {
   productIdsBetween,
   selectProductIds,
 } from './catalog-product-selection-state';
+import { productSalesUnit } from './product-sales-unit';
 
 /** What the open menu is about: one product row, or one category chip. */
 type MenuSubject =
@@ -207,7 +208,8 @@ function storeStudioView(view: CatalogueStudioView): void {
                             <b>{{ variantLabel(product) }}</b><small>{{ product.sku || 'Zonder SKU' }}</small>
                             @if (product.carton.piecesPerCarton; as carton) { <small>{{ carton }} stuks per omdoos</small> }
                             @if (showReferencePrices()) {
-                              <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / stuk</i> }</span>
+                              <!-- The price is per sales unit: per display for a product sold per display, per bowl for bowls. -->
+                              <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / {{ unitWord(product) }}</i> }</span>
                             }
                           </label>
                           <!-- One tap to this colour's catalogue picker in the product editor; back returns to this card. -->
@@ -695,6 +697,11 @@ export class CatalogProductSelection {
   referencePrice(product: Product): string {
     if (!this.hasReferencePrice(product)) return 'Op aanvraag';
     return this.referencePriceFormat.format(product.computedSalesPriceEur);
+  }
+
+  /** "display", "bowl", "stuk": what the catalogue price is for (productSalesUnit). */
+  unitWord(product: Product): string {
+    return productSalesUnit(product).singular;
   }
 
   private categoryProducts(categoryId: number | null): Product[] {
