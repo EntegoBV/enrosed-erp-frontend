@@ -27,6 +27,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   ],
   overview: [
     'Eén rij per onderdeel, dit jaar tenzij er een andere periode bij staat. Kasprognose: de laagste stand over de gekozen horizon (standaard 6 maanden), met het scenario.',
+    'Inkoop: nog te betalen aan leverancier, douane & transport en inspectie, zonder Enrosed-kost; extra opbrengst = Enrosed-kost + betaalresultaat.',
     'Aandacht: tik op een rij voor de lijst erachter.',
   ],
   sales: [
@@ -45,7 +46,8 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   'purchasing-kosten': [
     'Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.',
     'Minder betaald telt pas als besparing zodra die betaalgroep of leverancierstermijn is afgerekend; open bedragen en voorschotten zijn geen besparing. Een tegoed van de leverancier verlaagt de eindkost.',
-    'Enrosed-kost en productprijzen blijven gelijk; het betaalresultaat zit al in de verwachte containerkost en telt niet nog eens als winst.',
+    'Extra opbrengst = Enrosed-kost + betaalresultaat. De Enrosed-kost betaalt Enrosed aan niemand: die telt als opbrengst en nooit bij Nog te betalen.',
+    'Productprijzen blijven gelijk; het betaalresultaat zit al in de verwachte containerkost en telt niet nog eens als winst.',
   ],
   'purchasing-kwaliteit': [
     'Ontvangen orders in de gekozen periode. Perfect: alles bruikbaar ontvangen zoals besteld; meer ontvangen telt als afwijking. Op tijd: ontvangen op of vóór de laatst opgeslagen ETA.',

@@ -1222,9 +1222,17 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   remaining > 0) · Verwachte/Definitieve externe kost, in cents; one card
   "Verschil met de afspraak" whose lines add up to the net with "Tegoed
   leverancier" (`supplierCreditEur`) and, only when ≥ € 0,50 is left,
-  "Overig · afronding" (`varianceLines`), the Enrosed-kost + betaalresultaat
-  line under a divider. Afspraak, Nog te betalen, each non-zero line and a
-  several-products Per eenheid range open the Analyses drill-down
+  "Overig · afronding" (`varianceLines`), and under a divider the row "Extra
+  opbrengst" = Enrosed-kost + betaalresultaat (`markupWithResultEur`; Emre
+  2026-11-06: Enrosed pays its Enrosed-kost to nobody, so it is revenue next
+  to what was paid less). The table's last figure column and the phone sheet
+  read the same per container (the sheet also lists Enrosed-kost and
+  Betaalresultaat apart), the Overzicht Inkoop row says "extra opbrengst € x"
+  (`extraRevenueLine`), and "Nog te betalen" never holds the Enrosed-kost (it
+  is no payee stream, neither in Kosten & bank's Te betalen nor the Kaslijn).
+  Afspraak, Nog te betalen, each non-zero line, the Extra opbrengst
+  (`costExtraRevenueView`) and a several-products Per eenheid range open the
+  Analyses drill-down
   (`AnDrillHost`; views in the pure `drill-container-cost.ts`, sum rule in
   tests/analyses-drill-container-cost.test.mts). Its few new rules sit in the
   component's own `styles` (analyses-tabs.scss is at its budget).
