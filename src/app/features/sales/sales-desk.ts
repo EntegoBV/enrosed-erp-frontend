@@ -36,6 +36,7 @@ import {
 import { ShippingPlanner } from './shipping-planner';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
+import { LinePriceSource } from './line-price-source';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
@@ -74,7 +75,7 @@ interface JourneyStep {
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet,
+            ShippingPlanner, SalesPdfSheet, LinePriceSource,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
@@ -530,7 +531,7 @@ interface JourneyStep {
                             <div class="desk-price">
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="lineUnit(line.productId).priceLabel + ' ' + line.description"
-                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })" (blur)="creditPriceBlur(line.productId, $event)" />
+                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event, priceSource: 'MANUAL' })" (blur)="creditPriceBlur(line.productId, $event)" />
                               @if (!isCreditNoteDoc()) {
                               <button class="desk-disc-pill" type="button" [class.is-on]="line.manualPercent"
                                       [attr.aria-expanded]="discOpen() === line.productId" [attr.aria-label]="'Extra korting ' + line.description"
@@ -544,7 +545,9 @@ interface JourneyStep {
                                under the figure; the display side of it goes on the line
                                below, and only then the discounts, so "per display" never
                                reads as part of "−5 % korting". -->
-                          <small>per {{ lineUnit(line.productId).singular }}</small>
+                          <!-- A customer price wears a quiet K before its unit: hover says the standard price, a click offers the other. -->
+                          <small>@if (linePriceState(line); as priceState) {<app-line-price-source [state]="priceState" [editable]="commercialEditable()"
+                            [heading]="line.description" (use)="useLinePrice(line.productId, $event)" />}per {{ lineUnit(line.productId).singular }}</small>
                           @if (lineOtherPrice(line); as other) {
                             <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
                           }

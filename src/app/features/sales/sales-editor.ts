@@ -22,6 +22,7 @@ import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
+import { LinePriceSource, linePriceState, type LinePriceChoice, type LinePriceState } from './line-price-source';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, HostListener } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -37,7 +38,7 @@ import { mergeOrderAfterSave, shippingFields, shippingSnapshot, withoutShipping 
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
+  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesLinePriceSource, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { HostStickyBand } from '../../shared/host-page';
@@ -98,7 +99,7 @@ function layoutKey(order: SalesOrder): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -766,12 +767,19 @@ function layoutKey(order: SalesOrder): string {
                     @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
                   <div class="field">
-                    <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
+                    <!-- A customer price wears a quiet K beside the label; the marker brings the label along. -->
+                    @if (linePriceState(line); as priceState) {
+                      <app-line-price-source [state]="priceState" [editable]="mobileCommercialEditable()" [heading]="line.description"
+                                             [labelText]="lineUnit(line.productId).priceLabel" [labelFor]="'p-' + line.productId"
+                                             (use)="useLinePrice(line.productId, $event)" />
+                    } @else {
+                      <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
+                    }
                     <div class="input-affix">
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"
-                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })"
+                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event, priceSource: 'MANUAL' })"
                              (blur)="creditPriceBlur(line.productId, $event)" />
                       <!-- The discount hides behind its own vertical tab: two
                            calm fields until you actually want a third. -->
@@ -3411,6 +3419,24 @@ export class SalesEditor {
     return (line.discountPct || line.tierPercent || line.manualPercent || 0) > 0;
   }
 
+  /** Customer prices are pinned on regular quotes and invoices only: not on partner deals, container-cost pricing or credit notes. */
+  private readonly customerPricesApply = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !isCreditNote(order) && !isPartnerDocument(order) && order.markupMode !== 'CONTAINER_COST';
+  });
+
+  /** The quiet marker beside a line's price (round 3b); null when the customer has no price for it and the line is not on one. */
+  linePriceState(line: PricedLine): LinePriceState | null {
+    if (!this.customerPricesApply()) return null;
+    const draft = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    return linePriceState(draft, line, this.lineUnit(line.productId).singular);
+  }
+
+  /** "Standaardprijs gebruiken" or the customer's price from the marker: into the draft like a typed price, saved with Opslaan. */
+  useLinePrice(productId: number, choice: LinePriceChoice): void {
+    this.setLine(productId, { unitPriceEur: choice.unitPriceEur, priceSource: choice.source });
+  }
+
   quantityLabel(lines: readonly PricedLine[]): string {
     return salesQuantityLabel(lines.map((line) => this.products().find((product) => product.id === line.productId)));
   }
@@ -3868,9 +3894,9 @@ export class SalesEditor {
   }
 
   setLine(productId: number,
-          changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
-                     deliveryWeek?: string }, typing = false): void {
-    if (changes.unitPriceEur !== undefined) {
+          changes: { quantity?: number; unitPriceEur?: number | null; priceSource?: SalesLinePriceSource | null;
+                     manualDiscountPct?: number; deliveryWeek?: string }, typing = false): void {
+    if (changes.unitPriceEur !== undefined && changes.unitPriceEur !== null) {
       const cap = this.creditLineCap(productId);
       if (cap) {
         const typed = changes.unitPriceEur;
