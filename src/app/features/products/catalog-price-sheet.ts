@@ -137,11 +137,12 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   } @else { <b class="is-off">—</b> }
                 </span>
               }
-              <span class="cps-row__field">
+              <!-- No € before "Op aanvraag": the sign comes with a price, typed or as the placeholder. -->
+              <span class="cps-row__field" [class.is-bare]="row.standard.eur === null && row.price?.priceEur == null">
                 @if (row.onRequest || row.unprintable) {
                   <span class="cps-row__request" [attr.title]="row.unprintable ? unprintableTitle : null">Op aanvraag</span>
                 } @else {
-                  <i aria-hidden="true">€</i>
+                  @if (row.standard.eur !== null || row.price?.priceEur != null) { <i aria-hidden="true">€</i> }
                   <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.label"
                          [ngModel]="row.price?.priceEur ?? null" (ngModelChange)="setPrice(row.product, $event)" />
                 }
@@ -210,6 +211,7 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .cps-row__field > i { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 14px; font-style: normal; transform: translateY(-50%); pointer-events: none; }
     .cps-row__field .input { min-height: 40px; padding: 6px 10px 6px 24px; border-radius: 10px; text-align: right; font-variant-numeric: tabular-nums; }
     .cps-row__field .input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+    .cps-row__field.is-bare .input { padding-left: 10px; }
     /* The row menu names the whole variant: a long title wraps instead of losing the colour and size. */
     :host ::ng-deep .cps-menu .cm__head { white-space: normal; overflow-wrap: anywhere; }
     .is-changed .cps-row__field .input { border-color: var(--rose); background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); font-weight: 700; }
@@ -250,6 +252,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
       .cps-row__more { height: 36px; margin: -8px 0; }
       .cps-row__cat, .cps-row__own, .cps-row__desk { display: none; }
       .cps-row__field .input { min-height: 38px; font-size: 16px; }
+      /* "Op aanvraag" as small as the chip of the same name, so the narrow field shows it whole. */
+      .cps-row__field.is-bare .input::placeholder { font-size: 12.5px; }
       .cps-row__request { min-height: 38px; }
       :host ::ng-deep .cps-menu .sheet--ios .sheet__head h2 { white-space: normal; overflow-wrap: anywhere; text-wrap: balance; }
       .cps-foot { display: grid; width: 100%; gap: 10px; }
