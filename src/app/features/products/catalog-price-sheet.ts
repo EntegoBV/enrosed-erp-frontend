@@ -299,10 +299,12 @@ export class CatalogPriceSheet implements OnInit {
       const shown = price?.onRequest ? null : price && price.priceEur !== null && !problem ? price.priceEur : standard.eur;
       const cost = product.landedCostEur;
       const photo = cataloguePhoto(product);
+      const name = stripColour(product.name?.trim() ?? '', product.colour);
+      /* "Rozenstolp S" and "Hartbox 28 cm" already name their size. */
+      const size = product.variantSize?.trim() || null;
       return [{
-        id, product,
-        name: stripColour(product.name?.trim() ?? '', product.colour),
-        variant: variantOf(product),
+        id, product, name,
+        variant: variantOf({ colour: product.colour, variantSize: size && name.endsWith(size) ? null : size }),
         sku: product.sku || 'Zonder SKU',
         per: unit.isDisplay ? 'per display' : unit.piece.per,
         slash: `/ ${unit.isDisplay ? 'display' : unit.piece.one}`,
