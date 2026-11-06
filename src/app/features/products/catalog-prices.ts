@@ -26,6 +26,16 @@ export function priceBasis(product: Pick<Product, 'packaging'>): PriceBasisNow {
   return { basis: display ? 'DISPLAY' : 'PIECE', piecesPerUnit: display ? packaging.piecesPerUnit ?? null : null };
 }
 
+/**
+ * The server's printable(): a display sold per display without its piece
+ * count prints "Prijs op aanvraag" whatever price it is given (warning
+ * DISPLAY_WITHOUT_PIECES), a one-off or customer price included.
+ */
+export function pricePrintable(product: Pick<Product, 'packaging'>): boolean {
+  const { basis, piecesPerUnit } = priceBasis(product);
+  return basis !== 'DISPLAY' || (piecesPerUnit !== null && piecesPerUnit > 1);
+}
+
 /** The product is sold on another unit than the price was typed for: the server refuses it (BASIS_CHANGED). */
 export function basisChanged(product: Pick<Product, 'packaging'>, price: Pick<CatalogPriceOverride, 'basis' | 'piecesPerUnit'>): boolean {
   const now = priceBasis(product);
@@ -46,6 +56,7 @@ export interface StandardPrice {
 
 /** What the PDF prints without a one-off price. A stored price applies only while ACTIVE (the server's status). */
 export function standardPrice(product: PricedProduct, stored: CustomerPrice | null | undefined): StandardPrice {
+  if (!pricePrintable(product)) return { eur: null, source: 'ON_REQUEST' };
   if (stored?.status === 'ACTIVE' && stored.priceExclVat > 0) return { eur: stored.priceExclVat, source: 'CUSTOMER' };
   const catalogue = cataloguePrice(product);
   return catalogue === null ? { eur: null, source: 'ON_REQUEST' } : { eur: catalogue, source: 'CATALOGUE' };
@@ -82,6 +93,7 @@ export function oneOffPrice(product: Pick<Product, 'id' | 'packaging'>, priceEur
 /** Whether a one-off price changes what the PDF would print anyway (the server drops one that does not). */
 export function changesPrint(product: PricedProduct, price: CatalogPriceOverride, standard: StandardPrice): boolean {
   if (basisChanged(product, price)) return true;
+  if (!pricePrintable(product)) return false;
   if (price.onRequest) return standard.eur !== null;
   return price.priceEur !== null && price.priceEur !== standard.eur;
 }
@@ -89,7 +101,7 @@ export function changesPrint(product: PricedProduct, price: CatalogPriceOverride
 /** What the PDF prints for this product; null is "Prijs op aanvraag". */
 export function printedPrice(product: PricedProduct, price: CatalogPriceOverride | null | undefined,
                              stored: CustomerPrice | null | undefined): number | null {
-  if (price?.onRequest) return null;
+  if (price?.onRequest || !pricePrintable(product)) return null;
   if (price && price.priceEur !== null && !priceProblem(price.priceEur)) return price.priceEur;
   return standardPrice(product, stored).eur;
 }

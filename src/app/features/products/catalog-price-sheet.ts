@@ -13,7 +13,8 @@ import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import {
-  basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceProblem, standardPrice, todayIso, type StandardPrice,
+  basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceProblem, pricePrintable, standardPrice, todayIso,
+  type StandardPrice,
 } from './catalog-prices';
 import { cataloguePhoto } from './catalog-studio';
 import { productSalesUnit } from './product-sales-unit';
@@ -32,6 +33,8 @@ interface PriceRow {
   price: CatalogPriceOverride | null;
   changed: boolean;
   onRequest: boolean;
+  /** A display sold per display without its piece count: the PDF prints "Prijs op aanvraag" whatever is typed. */
+  unprintable: boolean;
   /** Why the row cannot go into the PDF as it is: a typed price, a unit changed since, or the server's refusal. */
   message: string | null;
   belowCost: boolean;
@@ -40,6 +43,7 @@ interface PriceRow {
 
 /** The words of a stored price that does not apply, as chip and as the desk's Klant column says them. */
 const OWN_STATE: Record<string, string> = { ACTIVE: 'klant', EXPIRED: 'verlopen', BASIS_CHANGED: 'prijsbasis gewijzigd' };
+const UNPRINTABLE = 'Display zonder aantal stuks: de PDF toont Prijs op aanvraag';
 
 function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverride | undefined): boolean {
   return a?.priceEur === b?.priceEur && !!a?.onRequest === !!b?.onRequest && a?.basis === b?.basis
@@ -105,6 +109,7 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                 @if (row.stored; as own) {
                   <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownWord(own) }}</i>
                 }
+                @if (row.unprintable) { <i class="cps-tag cps-tag--warn" [attr.title]="unprintableTitle">onvolledig</i> }
                 @if (row.belowCost) { <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i> }
               </span>
               <span class="cps-row__cat">{{ row.catalogue !== null ? (row.catalogue | eur) : 'op aanvraag' }}</span>
@@ -117,8 +122,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                 </span>
               }
               <span class="cps-row__field">
-                @if (row.onRequest) {
-                  <span class="cps-row__request">Op aanvraag</span>
+                @if (row.onRequest || row.unprintable) {
+                  <span class="cps-row__request" [attr.title]="row.unprintable ? unprintableTitle : null">Op aanvraag</span>
                 } @else {
                   <i aria-hidden="true">€</i>
                   <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.name"
@@ -292,6 +297,7 @@ export class CatalogPriceSheet implements OnInit {
         standard, price,
         changed: !!price && changesPrint(product, price, standard),
         onRequest: !!price?.onRequest,
+        unprintable: !pricePrintable(product),
         message: problem ?? (stale ? 'Prijsbasis gewijzigd · vul opnieuw in' : refused),
         belowCost: shown !== null && cost !== null && cost > 0 && shown < cost,
         photo: photo?.smallUrl || photo?.url || null,
@@ -323,6 +329,8 @@ export class CatalogPriceSheet implements OnInit {
   placeholder(standard: StandardPrice): string {
     return standard.eur === null ? 'Op aanvraag' : standard.eur.toFixed(2).replace('.', ',');
   }
+
+  readonly unprintableTitle = UNPRINTABLE;
 
   ownWord(own: CustomerPrice): string {
     return OWN_STATE[own.status] ?? '';
@@ -383,7 +391,9 @@ export class CatalogPriceSheet implements OnInit {
     const standard = row.standard.eur === null ? 'Prijs op aanvraag'
       : `${this.placeholder(row.standard)} · ${row.standard.source === 'CUSTOMER' ? 'klantprijs' : 'catalogusprijs'}`;
     return [
-      { id: 'request', label: 'Op aanvraag', hint: 'Geen prijs in deze PDF', checked: row.onRequest },
+      row.unprintable
+        ? { id: 'request', label: 'Op aanvraag', hint: 'Display zonder aantal stuks', checked: true, disabled: true }
+        : { id: 'request', label: 'Op aanvraag', hint: 'Geen prijs in deze PDF', checked: row.onRequest },
       { id: 'standard', label: 'Terug naar standaard', hint: standard, disabled: !row.price, divider: true },
     ];
   }
