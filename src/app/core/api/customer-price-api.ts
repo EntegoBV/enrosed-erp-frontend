@@ -30,6 +30,17 @@ export interface CustomerPrice {
   updatedBy: string | null;
 }
 
+/** One customer with an own price for a product, as the product screens list them (round 3b). */
+export interface ProductCustomerPrice {
+  customerId: number;
+  customerName: string;
+  /** EUR excl. VAT on the product's sales unit, like the catalogue price. */
+  priceExclVat: number;
+  /** null: until changed. */
+  validUntil: string | null;
+  status: CustomerPriceStatus;
+}
+
 export interface CustomerPriceChange {
   productId: number;
   /** null removes the product's price. */
@@ -105,6 +116,11 @@ export class CustomerPriceApi {
     const params: Record<string, number> = productId === undefined ? {} : { productId };
     return firstValueFrom(this.http.get<CustomerPriceHistoryEntry[]>(
       api(`/api/customers/${customerId}/prices/history`), { params }));
+  }
+
+  /** Every customer with an own price for one product; an older server answers 404. */
+  productPrices(productId: number): Promise<ProductCustomerPrice[]> {
+    return firstValueFrom(this.http.get<ProductCustomerPrice[]>(api(`/api/products/${productId}/customer-prices`)));
   }
 
   exports(customerId: number, limit = 20): Promise<CatalogExportSummary[]> {
