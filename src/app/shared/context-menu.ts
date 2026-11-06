@@ -111,6 +111,8 @@ export interface ContextMenuItem {
     .cm__item small { color: var(--muted); font-size: 11px; }
     .cm__item--danger b { color: var(--danger); }
     .desk-action i { width: 22px; text-align: center; }
+    /* The phone sheet greys a disabled choice as the desk popover does. */
+    .desk-action:disabled { background: none; cursor: default; opacity: .45; }
     .cm__icon { flex: none; color: var(--ink-2); }
     .cm__tick { margin-left: auto; color: var(--rose); }
     .desk-action .cm__tick { margin-left: auto; }
