@@ -19,6 +19,7 @@ import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet } from './stock-booking-sheet';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource } from './stock-movement-source';
 import { ProductBatchSheet } from './product-batch-sheet';
 import type { PriceRow } from './product-price-build';
@@ -55,7 +56,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [Icon, ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton, StockBookingSheet,
-    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, StockMovementSource, ProductBatchSheet,
+    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, ProductBatchSheet,
   ],
   template: `
     @if (product(); as product) {
@@ -280,6 +281,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <small>Catalogusprijs</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>per {{ salesUnit(product).singular }}@if (otherPrice(product, displayPrice()); as other) { · {{ other.text }}}</span>
+              <app-product-customer-prices class="pdk-flow__link" [product]="product" />
             </div>
             <i class="pdk-flow__op" aria-hidden="true">=</i>
             <div class="pdk-flow__step pdk-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">

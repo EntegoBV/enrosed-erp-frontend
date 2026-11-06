@@ -2582,6 +2582,8 @@ offertes en facturen"); the website shows it to that customer's logins
   it was set on (`salesUnit`, `piecesPerUnit`, `unitKey`) and the server's
   status: EXPIRED (past Geldig tot), BASIS_CHANGED (the product's price
   basis changed since) and PRODUCT_GONE are kept but print nothing.
+  `productPrices(productId)` lists one product's customers (round 3b, see
+  "Klantprijzen on the product").
 - Customer sheet: `app-customer-price-block` (`customer-price-block.ts`,
   block 'Klantprijzen' under Websitelogin in the same tinted wrapper, only
   for a saved customer; wording in the pure `customer-price-state.ts`).
@@ -2609,8 +2611,53 @@ offertes en facturen"); the website shows it to that customer's logins
   (`reveal()`). ×, Annuleren and Escape drop it, like the sheet's fields.
 - Logboek: `CATALOG_EXPORTED` reads "Catalogus met prijzen gemaakt"
   (`activity-copy.ts`); the backend writes it on the customer.
-- Not built: a read-only "Klantprijzen" list on the product (the contract
-  has no endpoint per product).
+- On the product: the read-only "n klantprijzen" chip of round 3b (next
+  section).
+
+### Klantprijzen on the product (round 3b, 2026-11-06)
+Contract-sales decision 5, the product part: wherever staff read a product's
+catalogue price, a quiet sign that customers have a price of their own for it,
+so a new catalogue price never forgets them. Staff screens only.
+- `app-product-customer-prices` (`features/products/product-customer-prices.ts`,
+  its own small component styles; the product screens' partials and the
+  editor's styles stay as they were, bar one rule `.pph-title-chip` in
+  `_product-phone.scss`). Data: `CustomerPriceApi.productPrices(productId)` =
+  `GET /api/products/{id}/customer-prices` → `ProductCustomerPrice[]`
+  (`customerId`, `customerName`, `priceExclVat` on the product's sales unit,
+  `validUntil`, `status`; admin only). Asked once per product, and again when
+  the saved price basis changes (packaging kind, sales unit, display count:
+  prices can turn to Nakijken). Nothing shows while loading, without rows or
+  when the list fails (an older server answers 404; no toast, no error); the
+  empty host is `display: none`, so it takes no room.
+- Where: desk `product-desk.ts` under the Catalogusprijs step of the price
+  flow (the step's link line, like Historiek ›); phone `product-view.ts` on
+  the title line of the Catalogusprijs cell (`.pph-title-chip`; the chip's
+  touch area reaches 12 px past it, so the row keeps its two lines); editor
+  `product-editor.ts` under the price in the dark preview (`class="pcu-dark"`,
+  `[product]="savedDraft()"`, `[changed]="savedPriceDiffers()"`).
+- Chip: `wk-pill` "n klantprijzen" / "1 klantprijs" (n = every row; accent,
+  grey when none applies). The list: the prices that apply first, then by
+  name (numeric); per row the customer, the price, "tot dd/mm/jjjj" when it
+  ends and a one-word pill only for a price that does not apply
+  (`statusPill` of `customer-price-state.ts`: Verlopen, Nakijken,
+  Verwijderd; its price muted); head "Klantprijzen per stolp". A row opens the
+  customer (`/customers?q=<name>`).
+- Desk: a mouse hovering the chip shows the list (`wk-popover`, 300 px, at
+  most 360 px high and scrolling; 180 ms grace to cross to it; touch and pen
+  wait for the tap); a click or Enter keeps it open; a second click, Escape
+  (focus back to the chip), a click outside or Tab out of it closes it. It
+  opens to the left when the window has no room right of the chip. Phone: a
+  tap opens the iOS sheet "Klantprijzen" (inset cells, foot "Per stolp, excl.
+  btw", Sluiten), rendered inside the component (no size container or
+  transform above it on the product page or the editor). The list and the
+  sheet reset the type they would inherit (white preview text, nowrap cell
+  title).
+- Editor: while the form's price differs from the saved one and at least one
+  price applies, the chip becomes the quiet line "2 klanten hebben een eigen
+  prijs ›" (n = the prices that apply) over the same list. Saving the product
+  changes no customer price.
+- Seen on the harness mock only (headless Chrome, 375/390 and 1080/1280/1440,
+  no overflow); not yet against the real backend or in iOS Safari.
 
 ### Klantprijs op offertes en facturen (round 3b, 2026-11-06)
 Emre: customer prices on quotes and invoices as the default, and "always
@@ -4214,6 +4261,9 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
 - Verkoop (round 3b): without `priceSource`, `standardUnitPriceEur` and
   `customerUnitPriceEur` from the server no line wears the K; an older
   server ignores the `priceSource` a typed price or a popover choice sends.
+- Klantprijzen on the product (round 3b): an older server answers 404 on
+  `GET /api/products/{id}/customer-prices`; the product screens and the
+  editor then simply show no chip.
 
 ### Kosten & bank refinements (2026-10-17)
 Design `redesign/finance/design.md` amended by its critique; one commit per

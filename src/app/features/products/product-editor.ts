@@ -1,6 +1,7 @@
 import { capitalize, DEFAULT_UNIT_KEY, otherBasisPrice, packagingSummary, priceBasisChange, priceBasisConfirmation, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import { ProductSalesSetup } from './product-sales-setup';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource, stockMovementDeletable } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementAfter, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
@@ -100,7 +101,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList, HostPage, HostStickyBand],
+    Skeleton, StockBookingSheet, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, ProductSupplierList, HostPage, HostStickyBand],
   template: `
     @if (!desktop.active()) {
       <header class="product-mobile-header" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
@@ -999,6 +1000,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
               @if (otherPrice(draft(), salesPrice()); as other) { <small>{{ other.text }}</small> }
+              <!-- Customers with an own price: a chip, and once the price is typed "2 klanten hebben een eigen prijs". -->
+              <app-product-customer-prices class="pcu-dark" [product]="savedDraft()" [changed]="savedPriceDiffers()" />
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
