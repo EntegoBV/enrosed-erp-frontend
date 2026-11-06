@@ -3429,7 +3429,7 @@ export class SalesEditor {
   linePriceState(line: PricedLine): LinePriceState | null {
     if (!this.customerPricesApply()) return null;
     const draft = this.view()?.order.lines.find((item) => item.productId === line.productId);
-    return linePriceState(draft, line, this.lineUnit(line.productId).singular);
+    return linePriceState(draft, line, this.lineUnit(line.productId).singular, this.customerChanged());
   }
 
   /** "Standaardprijs gebruiken" or the customer's price from the marker: into the draft like a typed price, saved with Opslaan. */
@@ -3466,6 +3466,16 @@ export class SalesEditor {
   /* Commercial edits remain a draft. Transport saves automatically through
      the same serial writer, with a narrow endpoint for already-sent quotes. */
   private readonly savedOrder = signal<string>('');
+  /** The saved document, read once per save instead of once per line and render. */
+  private readonly savedDocument = computed<SalesOrder | null>(() => {
+    try { return JSON.parse(this.savedOrder()) as SalesOrder; } catch { return null; }
+  });
+  /** The draft has another customer than the saved document: a save pins its customer prices again (contract decision 2). */
+  private readonly customerChanged = computed(() => {
+    const order = this.view()?.order;
+    const saved = this.savedDocument();
+    return !!order && !!saved && order.customerId !== saved.customerId;
+  });
   readonly saving = signal(false);
   readonly dirty = computed(() => {
     const data = this.view();

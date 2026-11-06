@@ -2677,11 +2677,15 @@ pinned price as to a typed one.
 - `app-line-price-source` (`features/sales/line-price-source.ts`, its own
   ~3 kB of styles: the editor's and the desk's stylesheets are at their
   budget and stay unchanged). The pure `linePriceState(draftLine,
-  pricedLine, unit)` decides: null (no marker) when the customer has no
-  price for the product and the line is not on one; the draft's source wins
-  over the server's (newer than the last preview); a new line (no id, no
-  typed price) that the preview priced at the customer's price reads
-  CUSTOMER already. The quiet K: filled in the accent tone on a CUSTOMER
+  pricedLine, unit, customerChanged)` decides: null (no marker) when the
+  customer has no price for the product and the line is not on one; the
+  draft's source wins over the server's (newer than the last preview),
+  except on a CUSTOMER line while the draft has another customer than the
+  saved document (`customerChanged`): a save pins it again, so it reads the
+  preview's source and price (the new customer's price, or no marker back on
+  the catalogue), never the old customer's pin; a new line (no id, no typed
+  price) that the preview priced at the customer's price reads CUSTOMER
+  already. The quiet K: filled in the accent tone on a CUSTOMER
   line, with a warn dot when the pinned price is not today's customer price
   (changed or gone); faint and hollow on a STANDARD, typed or older line
   while the customer has a price (a reading of the contract's "not in the

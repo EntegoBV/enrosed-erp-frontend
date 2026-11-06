@@ -41,12 +41,17 @@ const sameAmount = (a: number, b: number): boolean => Math.abs(a - b) < 0.00005;
  * draft's source wins over the server's (it may be newer than the last
  * preview). A new line without a typed price that the preview priced at the
  * customer's price is pinned to it on save (contract decision 2), so it
- * reads that way already.
+ * reads that way already. On a concept given another customer than the
+ * saved one, a save pins a line on the old customer's price again (the new
+ * customer's price, or back to the catalogue), as the preview already did:
+ * such a line reads the preview's source and price, not the old pin.
  */
-export function linePriceState(draft: SalesOrderLine | undefined, priced: PricedLine, unit: string): LinePriceState | null {
+export function linePriceState(draft: SalesOrderLine | undefined, priced: PricedLine, unit: string,
+                               customerChanged = false): LinePriceState | null {
   const customer = positive(priced.customerUnitPriceEur);
-  const typed = positive(draft?.unitPriceEur);
-  let source = draft?.priceSource ?? priced.priceSource ?? null;
+  const repinned = customerChanged && draft?.priceSource === 'CUSTOMER';
+  const typed = repinned ? null : positive(draft?.unitPriceEur);
+  let source = (repinned ? priced.priceSource : draft?.priceSource ?? priced.priceSource) ?? null;
   if (source === null && draft?.id == null && typed === null && customer !== null && sameAmount(priced.unitPrice, customer)) {
     source = 'CUSTOMER';
   }
