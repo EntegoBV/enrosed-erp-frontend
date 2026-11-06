@@ -52,6 +52,7 @@ import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection
 import { deselectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
 import { variantLabelIn } from './product-translation-adapter';
+import { productSalesUnit } from './product-sales-unit';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
@@ -80,6 +81,13 @@ interface PricesFor {
 /** A free name as a recipient: case and spacing do not make another lead. */
 function nameKey(name: string): string {
   return `n:${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-BE')}`;
+}
+
+/** "per display", "per stolp" (NL, the product's own unit) or the language's word for a piece. */
+function unitAfterPrice(product: Product, language: LanguageCode, copy: { perPiece: string; perDisplay: string }): string {
+  const unit = productSalesUnit(product);
+  if (unit.isDisplay) return copy.perDisplay;
+  return language === 'NL' ? unit.piece.per : copy.perPiece;
 }
 
 /** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80, 260 cm loaded with the wood, 700 kg. */
@@ -112,16 +120,18 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
   pallet: string; priceListFor: string;
+  /** After a price, as the PDF's catalog.simple.perpiece and its display word say it; NL names the product's own unit. */
+  perPiece: string; perDisplay: string;
 }> = {
-  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', priceListFor: 'Prijslijst voor {name}' },
-  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', priceListFor: 'Price list for {name}' },
-  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', priceListFor: 'Liste de prix pour {name}' },
-  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', priceListFor: 'Preisliste für {name}' },
-  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', priceListFor: 'Lista de precios para {name}' },
-  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', priceListFor: 'Cennik dla {name}' },
-  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', priceListFor: 'Tabela de preços para {name}' },
-  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', priceListFor: '{name} için fiyat listesi' },
-  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', priceListFor: 'Τιμοκατάλογος για {name}' },
+  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
+  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
+  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
+  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
+  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
+  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
+  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
+  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
+  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
 };
 
 @Component({
@@ -829,6 +839,7 @@ export class CatalogExport {
     const count = new Intl.NumberFormat(language.toLowerCase());
     const overrides = this.priceOverrides();
     const stored = this.customerPrices();
+    const copy = this.compactCopy();
     return this.selectedProducts().slice(0, 4).map(product => {
       const text = product.texts.find(row => row.language === language);
       const photo = cataloguePhoto(product);
@@ -854,7 +865,8 @@ export class CatalogExport {
         per20FtAuto: isAutoGpCapacity(gp),
         per20FtHint: gpCapacityHint(gp, product.carton),
         per40Ft: product.carton.hcCapacity ? count.format(product.carton.hcCapacity) : null,
-        price: price === null ? this.compactCopy().onRequest : currency.format(price),
+        /* The price names its unit, as the PDF does: per display or per piece is where a ×6 mistake would hide. */
+        price: price === null ? copy.onRequest : `${currency.format(price)} ${unitAfterPrice(product, language, copy)}`,
       };
     });
   });
