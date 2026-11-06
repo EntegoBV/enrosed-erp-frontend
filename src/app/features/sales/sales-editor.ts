@@ -3428,7 +3428,11 @@ export class SalesEditor {
   /** The quiet marker beside a line's price (round 3b); null when the customer has no price for it and the line is not on one. */
   linePriceState(line: PricedLine): LinePriceState | null {
     if (!this.customerPricesApply()) return null;
-    const draft = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    let draft = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    /* A customer price that is neither today's nor the one pinned on the saved line was typed over:
+       the server stores it as the line's own price, so the marker says so before Opslaan too. */
+    if (draft?.priceSource === 'CUSTOMER' && !this.customerChanged() && (draft.unitPriceEur ?? 0) > 0
+        && !this.agreedAmount(line, draft.unitPriceEur!)) draft = { ...draft, priceSource: 'MANUAL' };
     return linePriceState(draft, line, this.lineUnit(line.productId).singular, this.customerChanged());
   }
 

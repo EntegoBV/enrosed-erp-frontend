@@ -2714,12 +2714,14 @@ pinned price as to a typed one.
   goes through `setLinePrice` (desk and phone): `priceSource: 'MANUAL'`,
   except the customer's price of today or the saved line's pin typed again,
   which stays CUSTOMER as the server keeps it (the old customer's pin does
-  not count once the draft has another customer).
+  not count once the draft has another customer). Likewise a draft CUSTOMER
+  line whose amount is neither of those reads as the line's own price in the
+  marker (`SalesEditor.linePriceState`), as the server will store it.
 - Only on regular documents (`customerPricesApply`): no credit notes,
   partner deals or container-cost pricing; a website order shows what the
   website pinned. Not built: the phone's read view (`sales-view.ts`) shows
-  no marker. Seen on the harness mock only (`round3/mock-sales`), not yet
-  against the real backend or in iOS Safari.
+  no marker. Checked against a production-code backend jar (2026-11-06,
+  desk 1080-1440, phone 375/390), not yet in iOS Safari.
 
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
