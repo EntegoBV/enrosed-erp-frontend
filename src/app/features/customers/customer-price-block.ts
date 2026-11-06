@@ -17,7 +17,7 @@ import { priceBasis, type PriceBasisNow } from '../products/catalog-prices';
 import { otherBasisPrice, productSalesUnit, unitName } from '../products/product-sales-unit';
 import {
   basisPer, dayText, euro, exportMeta, exportTitle, historyChange, historyMeta, languageLabel, layoutLabel, momentText,
-  priceProblem, productLabel, rowMeta, sourcePill, statusPill, summaryText, todayIso,
+  priceProblem, productLabel, productParts, rowMeta, rowMetaParts, sourcePill, statusPill, summaryText, todayIso,
 } from './customer-price-state';
 
 /** A price being typed: a row of the list, or a product just picked. */
@@ -124,11 +124,13 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
               </div>
             </div>
           } @else if (entry.row; as row) {
+            @let name = parts(row.productId);
+            @let facts = metaParts(row);
             <button class="cp-row" type="button" [class.cp-row--off]="row.status !== 'ACTIVE'" [disabled]="!!draft() || busy()" (click)="edit(row)">
-              <span class="cp-name"><span>{{ label(entry) }}</span>
+              <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                 @if (pill(row); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
               <span class="cp-fig">{{ euro(row.priceExclVat) }}</span>
-              <span class="cp-meta">{{ meta(row) }}</span>
+              <span class="cp-meta cp-meta--split"><span>{{ facts.main }}</span>@if (facts.until) {<span class="cp-pin">&nbsp;· {{ facts.until }}</span>}</span>
               <span class="cp-unit">{{ per(row) }}</span>
               <span class="sr-only"> · aanpassen</span>
             </button>
@@ -200,7 +202,12 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
             <div class="cp-list cp-list--sheet">
               @for (entry of history(); track $index) {
                 <div class="cp-row cp-row--static">
-                  <span class="cp-name"><span>{{ target.productId === null ? labelOf(entry.productId) : moment(entry.changedAt) }}</span></span>
+                  @if (target.productId === null) {
+                    @let name = parts(entry.productId);
+                    <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}</span>
+                  } @else {
+                    <span class="cp-name"><span>{{ moment(entry.changedAt) }}</span></span>
+                  }
                   <span class="cp-fig">{{ change(entry) }}</span>
                   <span class="cp-meta">{{ historyLine(entry, target.productId === null) }}</span>
                   <span class="cp-unit">{{ historyPer(entry) }}</span>
@@ -236,11 +243,13 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
           } @else {
             <div class="cp-list cp-list--sheet">
               @for (line of detail()?.lines ?? []; track line.productId) {
+                @let name = lineParts(line);
                 <div class="cp-row cp-row--static">
-                  <span class="cp-name"><span>{{ lineLabel(line) }}</span>
+                  <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                     @if (source(line); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
                   <span class="cp-fig">{{ linePrice(line) }}</span>
-                  <span class="cp-meta">{{ lineMeta(line) }}</span>
+                  @let meta = lineMeta(line);
+                  <span class="cp-meta cp-meta--split"><span>{{ meta.main }}</span>@if (meta.pin) {<span class="cp-pin">&nbsp;· {{ meta.pin }}</span>}</span>
                   <span class="cp-unit">{{ line.printedPriceEur == null ? '' : linePer(line) }}</span>
                 </div>
               } @empty {
@@ -269,13 +278,19 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
       border: 0; border-top: 1px solid var(--rose-line); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
     .cp-row:disabled { cursor: default; opacity: .5; }
     .cp-row--static { cursor: auto; }
-    .cp-name { grid-area: name; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13.5px; font-weight: 650; }
+    .cp-name { grid-area: name; display: flex; align-items: center; min-width: 0; font-size: 13.5px; font-weight: 650; }
     .cp-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cp-name .badge { flex: none; font-style: normal; }
+    /* The rows of one family differ only in colour and size: the name gives way, the variant does not. */
+    .cp-name > .cp-variant { flex: none; max-width: 75%; }
+    .cp-name .badge { flex: none; margin-left: 6px; font-style: normal; }
     .cp-fig { grid-area: fig; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .cp-fig--day { color: var(--ink-2); font-size: 12.5px; font-weight: 600; }
     .cp-row--off .cp-fig { color: var(--ink-2); font-weight: 600; }
     .cp-meta { grid-area: meta; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    /* The end date (a price list: the catalogue figure) stays whole; what comes before it gives way. */
+    .cp-meta--split { display: flex; }
+    .cp-meta--split > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .cp-meta--split > .cp-pin { flex: none; }
     .cp-meta--wide { grid-column: 1 / -1; }
     .cp-unit { grid-area: unit; color: var(--ink-2); font-size: 12px; text-align: right; white-space: nowrap; }
     .cp-none { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
@@ -479,6 +494,21 @@ export class CustomerPriceBlock {
     return this.labelOf(entry.productId);
   }
 
+  /** The name and the variant apart, for a row that cuts the name before the variant. */
+  parts(productId: number): { label: string; head: string; tail: string | null } {
+    const row = this.rows().find((candidate) => candidate.productId === productId);
+    return productParts(this.productOf(productId), row ?? { productId, name: null, sku: null });
+  }
+
+  lineParts(line: CatalogExportLine): { label: string; head: string; tail: string | null } {
+    return productParts(this.productOf(line.productId), line);
+  }
+
+  metaParts(row: CustomerPrice): { main: string; until: string | null } {
+    const product = this.productOf(row.productId);
+    return rowMetaParts(row, product ? this.currentPer(product) : null);
+  }
+
   pill(row: CustomerPrice): { label: string; css: string } | null {
     return statusPill(row.status);
   }
@@ -546,25 +576,22 @@ export class CustomerPriceBlock {
     return basisPer(entry.salesUnit, entry.piecesPerUnit, row?.unitKey ?? this.productOf(entry.productId)?.packaging?.unitKey);
   }
 
-  lineLabel(line: CatalogExportLine): string {
-    return productLabel(this.productOf(line.productId), line);
-  }
-
   source(line: CatalogExportLine): { label: string; css: string } | null {
     return sourcePill(line.priceSource);
   }
 
-  /** "MB-RD · catalogus € 2,43": the SKU, and the catalogue price when another one printed. */
   /** The printed price, "Op aanvraag", or nothing in a PDF without prices (no source). */
   linePrice(line: CatalogExportLine): string {
     if (line.printedPriceEur != null) return euro(line.printedPriceEur);
     return line.priceSource === 'ON_REQUEST' ? 'Op aanvraag' : '';
   }
 
-  lineMeta(line: CatalogExportLine): string {
+  /** "MB-RD · catalogus € 2,43": the SKU, which may give way, and the catalogue price when another one printed. */
+  lineMeta(line: CatalogExportLine): { main: string; pin: string | null } {
     const other = line.priceSource != null && line.priceSource !== 'CATALOGUE';
     const catalogue = other && line.cataloguePriceEur != null ? `catalogus ${euro(line.cataloguePriceEur)}` : null;
-    return [line.sku, catalogue].filter(Boolean).join(' · ');
+    const sku = line.sku?.trim();
+    return sku ? { main: sku, pin: catalogue } : { main: catalogue ?? '', pin: null };
   }
 
   linePer(line: CatalogExportLine): string {
