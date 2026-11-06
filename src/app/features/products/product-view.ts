@@ -2,6 +2,7 @@ import { capitalize, customerReading, otherBasisPrice, productSalesUnit, salesQu
 import { effectiveOrderStep, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
@@ -81,7 +82,7 @@ export type { ReceivedContainer } from './received-containers';
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     ProductPlacesLine, IosNav, ContextMenu, Icon, Sheet, LoadError, StockBookingSheet, ProductBatchSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -291,7 +292,7 @@ export type { ReceivedContainer } from './received-containers';
             </button>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Prijsregel</span></span>
               <span class="ios-cell__value">{{ hasFixedSalesPrice(product) ? 'Vaste prijs' : '+ ' + (product.markupPct | num) + ' %' }}</span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Catalogusprijs</span>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title pph-title-chip">Catalogusprijs<app-product-customer-prices [product]="product" /></span>
                 <span class="ios-cell__sub">per {{ salesUnit(product).singular }} · {{ hasFixedSalesPrice(product) ? 'vaste prijs' : '+ ' + (product.markupPct | num) + ' % op de kostprijs' }}</span></span>
               <span class="ios-cell__value ios-cell__value--strong num">@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Bestellen</span><span class="ios-cell__sub pph-wrap">{{ orderStepSentence(product) }}</span></span></div>

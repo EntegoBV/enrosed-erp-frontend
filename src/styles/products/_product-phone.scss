@@ -92,6 +92,8 @@ app-product-view .pph-figs .pph-drift, app-product-view .pph-drift { color: var(
 app-product-view .pph-drift .pph-nw { color: inherit; }
 app-product-view .pph-wrap { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
 app-product-view .ios-cell__trail .pph-wrap { text-align: right; }
+/* "Catalogusprijs" with the klantprijzen chip on its line; the chip's touch area reaches past the title. */
+app-product-view .pph-title-chip { display: flex; align-items: center; gap: 8px; overflow: visible; }
 app-product-view .pph-points { padding: 0 16px 12px; }
 app-product-view .pph-points__group { padding: 8px 0; }
 app-product-view .pph-points__group b { font-size: 14px; }
