@@ -841,7 +841,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </a>
                 }
                 @if (isCreditNote()) {
-                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                  @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                     @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Creditnota e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de creditnota buiten het ERP bezorgde.</p>
@@ -859,7 +859,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <button class="btn btn--block" type="button" (click)="openPdfSheet('DOCUMENT')">PDF instellen</button>
                   @if (data.creditedInvoiceId) { <a class="btn btn--block" [routerLink]="['/sales', data.creditedInvoiceId]">Naar de factuur</a> }
                 } @else if (isInvoice()) {
-                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                  @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                     @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || allProductsUnavailable()"
                             (click)="markSent(data)">Markeer als verstuurd</button>

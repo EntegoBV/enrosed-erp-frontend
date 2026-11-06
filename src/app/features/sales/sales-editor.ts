@@ -1094,7 +1094,7 @@ function layoutKey(order: SalesOrder): string {
             <app-sales-advance-deductions [view]="data" />
             <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" />
             <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
-            @if (isClaimDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+            @if (isClaimDoc() && (data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
               <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">{{ isCreditNoteDoc() ? 'Creditnota e-mailen…' : 'Factuur e-mailen…' }}</button>
             }
             @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'deze container' }}</a>.</p> }
