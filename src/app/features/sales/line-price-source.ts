@@ -157,12 +157,15 @@ interface PriceAction { label: string; choice: LinePriceChoice }
       color: color-mix(in srgb, var(--muted) 85%, transparent); font: inherit; font-size: 9px; font-weight: 800; line-height: 1;
       cursor: pointer; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
     }
-    /* A finger-sized target around a quiet glyph. */
-    .lps::after { content: ''; position: absolute; inset: -11px -9px; }
+    /* A finger-sized target around a quiet glyph, where a finger taps it: under a mouse it covered the
+       bottom of the desk's price field, two pixels above the glyph. */
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px), (pointer: coarse) {
+      .lps::after { content: ''; position: absolute; inset: -11px -9px; }
+    }
     .lps--own { background: var(--rose-soft); box-shadow: none; color: var(--rose-dark); }
     .lps--stale::before {
       content: ''; position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%;
-      background: var(--warn); box-shadow: 0 0 0 1.5px var(--surface);
+      background: var(--warn); box-shadow: 0 0 0 1.5px var(--surface); pointer-events: none;
     }
     .lps:focus-visible { outline: 2px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: 2px; }
     /* Under the marker: above it, it would cover the very price it explains. */

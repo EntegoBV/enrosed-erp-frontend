@@ -2694,7 +2694,10 @@ pinned price as to a typed one.
 - Placement: desk before the unit under the price ("K per stolp",
   `sales-desk.ts`; the marker's margin box keeps the line height); phone
   editor after the price label, which the component then renders itself
-  (`labelText`/`labelFor`: a button inside a label is invalid).
+  (`labelText`/`labelFor`: a button inside a label is invalid). The
+  invisible finger-sized hit area around the glyph exists only on the phone
+  layout and coarse pointers, and the stale dot takes no clicks: under a
+  mouse they covered the bottom of the desk's price field.
 - Desk: hover or keyboard focus shows "Klantprijs · standaard € 4,95" (and
   "· nieuw € x" / "· niet meer actief"; a hollow K: "Klantprijs € x
   beschikbaar") under the marker; a click (or right click, the menu key)
