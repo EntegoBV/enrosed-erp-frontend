@@ -450,10 +450,10 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                     }
                   </div>
                 }
-                @if (priceIssueRows().length) {
+                @if (priceIssueList().length) {
                   <div class="translation-issues__list price-issues" aria-label="Prijzen die niet in de PDF kunnen">
-                    @for (issue of priceIssueRows(); track $index) {
-                      <div class="translation-issue"><span><b>{{ issue.name }}</b><small>{{ issue.message }}</small></span></div>
+                    @for (issue of priceIssueList(); track $index) {
+                      <div class="translation-issue"><span>@if (issue.name) {<b>{{ issue.name }}</b>}<small>{{ issue.message }}</small></span></div>
                     }
                   </div>
                 }
@@ -917,6 +917,11 @@ export class CatalogExport {
   });
   readonly validityPast = computed(() => !!this.pricesValidUntil() && this.pricesValidUntil() < todayIso());
   readonly priceIssueRows = computed(() => this.withProductNames(this.priceIssues()));
+  /** The list under the card's message; a single refusal is that message already, so it is not said twice. */
+  readonly priceIssueList = computed(() => {
+    const rows = this.priceIssueRows();
+    return rows.length === 1 && rows[0].message === this.renderError() ? [] : rows;
+  });
   readonly priceNoteRows = computed(() => this.withProductNames(this.priceNotes()));
   readonly previewTitle = computed(() => this.brochure().coverTitle.trim() || ({
     NL: 'Gepreserveerde rozen,', EN: 'Preserved roses,', FR: 'Roses préservées,', DE: 'Konservierte Rosen,',
@@ -1364,7 +1369,8 @@ export class CatalogExport {
     const refused = this.priceIssuesFromFailure(decodedFailure);
     if (refused) {
       this.priceIssues.set(refused.issues);
-      this.showRenderProblem(refused.message);
+      /* The card says what and where; the toast only that the PDF did not come. */
+      this.showRenderProblem(refused.message, 'PDF niet gemaakt: kijk de prijzen na');
       /* A product now sold on another unit: its price is typed again against the unit of now. */
       if (refused.issues.some((issue) => issue.code === 'BASIS_CHANGED')) void this.refreshProducts();
       return;
@@ -1390,11 +1396,11 @@ export class CatalogExport {
     }
   }
 
-  private showRenderProblem(message: string): void {
+  private showRenderProblem(message: string, toast = message): void {
     this.renderError.set(message);
     this.renderTranslationError.set(false);
     this.missingTranslationPaths.set([]);
-    this.ui.toast(message, 'err');
+    this.ui.toast(toast, 'err');
   }
 
   /** 409 CATALOG_PRICES_INVALID: the one-off prices the server cannot print, each with its reason. */
@@ -1412,11 +1418,16 @@ export class CatalogExport {
       ? [{ productId: Number(issue.productId) || 0, code: String(issue.code ?? ''), message: issue.message.trim() }] : []);
   }
 
-  /** The product a remark is about, as the selection names it; a remark about the whole PDF has none. */
+  /**
+   * The product a remark is about, as the selection names it. None for a remark about the whole PDF, nor in front of
+   * the server's words when they already name the product (its SKU, or "Product #12"): each remark says it once.
+   */
   private withProductNames(issues: readonly CatalogPriceIssue[]): (CatalogPriceIssue & { name: string })[] {
     const products = new Map(this.products().map((product) => [product.id, product]));
     return issues.map((issue) => {
       const product = issue.productId > 0 ? products.get(issue.productId) : undefined;
+      const sku = product?.sku?.trim();
+      if ((sku && issue.message.includes(sku)) || issue.message.includes(`Product #${issue.productId}`)) return { ...issue, name: '' };
       const variant = product ? [product.colour, product.variantSize].filter(Boolean).join(' · ') : '';
       const name = product ? `${product.name}${variant ? ` · ${variant}` : ''}` : issue.productId > 0 ? `Product #${issue.productId}` : '';
       return { ...issue, name };
