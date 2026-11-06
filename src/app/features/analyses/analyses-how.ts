@@ -64,6 +64,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   ],
   result: [
     'De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten.',
+    'De Enrosed-kost in de kostprijs van wat verkocht is betaalt Enrosed aan niemand: die telt hier als opbrengst, dus de marge is die van Verkoop plus die Enrosed-kost. Een kost waarvan de opbouw niet bewaard is, telt helemaal als kost.',
     'Verkoop telt op de factuurdatum, kosten op hun datum; een investering met haar afschrijving van de periode. Omzet excl. btw; kosten zonder de btw die we aftrekken (niet-aftrekbare btw telt als kost).',
     'TICA-verkopen tellen op de verkoopdatum, na korting excl. btw. De huidige productkost bepaalt de TICA-marge. Bevestigde TICA-commissie staat één keer bij de bedrijfskosten; de afrekening en uitbetaling voegen geen tweede omzet toe.',
     'Algemene kosten: kosten zonder verkoopkanaal, zodat de kanalen optellen tot het resultaat.',

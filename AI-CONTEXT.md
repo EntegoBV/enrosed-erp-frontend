@@ -1256,7 +1256,16 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   they left a 250 px hole), Per maand with "mrt 2026", every month up to
   today (`resultAnalysis` `today` option; credit notes counted apart:
   `creditNoteCount`) and a Totaal row. "Alle kosten ›" carries the period
-  (`costsQuery`).
+  (`costsQuery`). Its margin counts the Enrosed kost of what was sold as
+  revenue (Emre 2026-11-06): `accounting.recognizedEnrosedEur` (`enrosedOf`)
+  and TICA's `enrosedCostEur` (`ticaEnrosed`) leave the goods cost and join
+  the margin in `resultAnalysis` / `withTicaResult` (`enrosedEur`); the
+  Marge tile's foot reads "waarvan Enrosed-kost € x" and its drills, the
+  month and the channel views read `resultDocs` / `resultTicaMonths`
+  (`withEnrosedMargin`, `withEnrosedTica`) so their rows still add up. So
+  Resultaat's margin = Verkoop's Brutomarge + that Enrosed kost; Verkoop,
+  the quote and the sales line keep the commercial margin. The Home
+  "Resultaat dit jaar" reads the same functions.
 - Markt: its own tool row (desk: period segmented, ECB line, "+ Tarief
   toevoegen"; phone: the tinted capsule "6 maanden ⌄" opening a "Periode"
   sheet, as the Kasprognose horizon), tiles fill the card, "Onze laatste

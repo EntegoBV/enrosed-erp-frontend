@@ -1289,6 +1289,22 @@ export function documentAccounting(view: SalesOrderView): SalesAccounting {
     recognizedProfitEur: sign * finite(view.priced.totals.marginEur), recognizedQuantity: sign * finiteNonNegative(view.priced.totals.pieces) };
 }
 
+/**
+ * The Enrosed kost inside a document's recognised cost (the server's recognizedEnrosedEur), signed like that cost; 0 on
+ * an older answer. Enrosed pays it to nobody, so Resultaat counts it as revenue (Emre, 2026-11-06); Verkoop's margin
+ * keeps it as cost.
+ */
+export function enrosedOf(view: SalesOrderView): number {
+  return finite(documentAccounting(view).recognizedEnrosedEur);
+}
+
+/** A document row as Resultaat reads it: the Enrosed kost moves from its cost into its margin. */
+export function withEnrosedMargin(doc: SalesDocumentRow): SalesDocumentRow {
+  if (!doc.enrosedEur) return doc;
+  return { ...doc, costEur: round2(doc.costEur - doc.enrosedEur), profitEur: round2(doc.profitEur + doc.enrosedEur),
+    marginEur: doc.marginEur === null ? null : round2(doc.marginEur + doc.enrosedEur) };
+}
+
 function sumInvoiceClaims(rows: readonly SalesOrderView[]): number {
   return rows.reduce((sum, row) => sum + invoiceClaim(row), 0);
 }
@@ -1406,6 +1422,8 @@ export interface SalesDocumentRow {
   revenueExclEur: number;
   costEur: number;
   profitEur: number;
+  /** The Enrosed kost inside costEur, signed like it (enrosedOf): Resultaat counts it as revenue (withEnrosedMargin). */
+  enrosedEur: number;
   /** The recognised margin; null on a credit note and on a partner voorschot (they never show one). */
   marginEur: number | null;
   /** Quotes: the priced total excl. btw and its margin (null while a product has no cost); 0 / null otherwise. */
@@ -1480,6 +1498,7 @@ export function salesDocumentRows(
       revenueExclEur: accounting.recognizedRevenueEur,
       costEur: accounting.recognizedCostEur,
       profitEur: accounting.recognizedProfitEur,
+      enrosedEur: enrosedOf(view),
       marginEur: kind === 'CREDITNOTA' || advance ? null : accounting.recognizedProfitEur,
       quoteValueExclEur: kind === 'OFFERTE' ? finite(view.priced.totals.total) : 0,
       quoteMarginEur: kind === 'OFFERTE' && !missing.length ? finite(view.priced.totals.marginEur) : null,
@@ -1625,9 +1644,12 @@ export interface ResultAnalysis {
   creditNoteCount: number;
   /** Issued invoices, excluding VAT. */
   revenueEur: number;
-  /** The landed cost of the goods on those invoices. */
+  /** The landed cost of the goods on those invoices, without the Enrosed kost (enrosedEur). */
   goodsCostEur: number;
+  /** Revenue minus goodsCostEur: the Enrosed kost of the goods sold counts as revenue (Emre, 2026-11-06). */
   marginEur: number;
+  /** The Enrosed kost inside the goods sold: Enrosed pays it to nobody, so it is part of marginEur, not of goodsCostEur. */
+  enrosedEur: number;
   marginPct: number | null;
   /** The company's own costs charged to the period: expenses plus the depreciation of investments. */
   costsEur: number;
@@ -1674,6 +1696,8 @@ const defaultCharge: CostCharge = (cost, from, to) => ({
  * minus what it spent on itself, per channel and per month. Sales are
  * counted when they were invoiced, costs when they were made, and an
  * investment by its depreciation of the period (the 'Afschrijvingen' row).
+ * The Enrosed kost inside the goods sold is revenue, not cost (enrosedOf):
+ * this margin is Verkoop's plus that Enrosed kost.
  */
 export function resultAnalysis(
   sales: readonly SalesOrderView[],
@@ -1695,9 +1719,13 @@ export function resultAnalysis(
   /* Verkoop's rule (D-O7): a partner voorschot carries no goods cost, so its lines never make the margin "—". */
   const costedInvoices = invoices.filter((row) => docType(row) === 'FACTUUR' && !isAdvanceDocument(row));
 
+  /* The Enrosed kost of what was sold is revenue here (Emre, 2026-11-06): it leaves the cost and joins the margin. */
+  const profitOf = (row: SalesOrderView): number => documentAccounting(row).recognizedProfitEur + enrosedOf(row);
+  const costOf = (row: SalesOrderView): number => documentAccounting(row).recognizedCostEur - enrosedOf(row);
   const revenueEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedRevenueEur, 0));
-  const marginEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedProfitEur, 0));
-  const goodsCostEur = round2(invoices.reduce((sum, row) => sum + documentAccounting(row).recognizedCostEur, 0));
+  const marginEur = round2(invoices.reduce((sum, row) => sum + profitOf(row), 0));
+  const goodsCostEur = round2(invoices.reduce((sum, row) => sum + costOf(row), 0));
+  const enrosedEur = round2(invoices.reduce((sum, row) => sum + enrosedOf(row), 0));
   const depreciationEur = round2(charges.reduce((sum, row) => sum + row.depreciationEur, 0));
   const costsEur = round2(charges.reduce((sum, row) => sum + row.expenseEur, 0) + depreciationEur);
   const unpaidCostsEur = round2(periodCosts.reduce((sum, cost) => sum + costOpen(cost, options.openEur), 0));
@@ -1713,8 +1741,8 @@ export function resultAnalysis(
     const row = channelRow(channelOf(invoice.order));
     if (docType(invoice) !== 'CREDITNOTA') row.invoiceCount += 1;
     row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
-    row.goodsCostEur = round2(row.goodsCostEur + documentAccounting(invoice).recognizedCostEur);
-    row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
+    row.goodsCostEur = round2(row.goodsCostEur + costOf(invoice));
+    row.marginEur = round2(row.marginEur + profitOf(invoice));
   }
   for (const invoice of costedInvoices) channelRow(channelOf(invoice.order)).missingCostLines += invoice.priced.validation?.productsWithoutCost?.length ?? 0;
   let generalCostsEur = 0;
@@ -1750,7 +1778,7 @@ export function resultAnalysis(
   for (const invoice of invoices) {
     const row = monthRow(invoice.order.orderDate.slice(0, 7));
     row.revenueEur = round2(row.revenueEur + documentAccounting(invoice).recognizedRevenueEur);
-    row.marginEur = round2(row.marginEur + documentAccounting(invoice).recognizedProfitEur);
+    row.marginEur = round2(row.marginEur + profitOf(invoice));
   }
   /* Each month takes its own charge: the expenses made in it and the depreciation it carries. */
   for (const cost of periodCosts) monthRow(cost.date.slice(0, 7));
@@ -1782,6 +1810,7 @@ export function resultAnalysis(
     revenueEur,
     goodsCostEur,
     marginEur,
+    enrosedEur,
     marginPct: goodsTotal > 0 ? round2(marginEur / goodsTotal * 100) : null,
     costsEur,
     depreciationEur,

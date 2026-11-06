@@ -13,6 +13,8 @@ export type ResultWithTica = Omit<ResultAnalysis, 'byChannel'> & {
   byChannel: (ResultChannelRow & TicaChannel)[];
 };
 const money = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+/** The Enrosed kost inside a TICA day's goods cost; 0 on an older backend answer. */
+export const ticaEnrosed = (day: TicaAnalyticsDay): number => Number.isFinite(day.enrosedCostEur) ? day.enrosedCostEur! : 0;
 const selectedDays = (days: readonly TicaAnalyticsDay[], period: { from: string | null; to: string | null }): TicaAnalyticsDay[] =>
   days.filter(day => (!period.from || day.date >= period.from) && (!period.to || day.date <= period.to));
 
@@ -50,11 +52,15 @@ export function withTicaSales(base: SalesAnalysis, days: readonly TicaAnalyticsD
     ticaMonthly: [...monthly].map(([month, revenueExclEur]) => ({ month, revenueExclEur })).sort((a, b) => a.month.localeCompare(b.month)) };
 }
 
-/** Commission already lives in CompanyCost; add only portal revenue and CURRENT product cost here. */
+/**
+ * Commission already lives in CompanyCost; add only portal revenue and CURRENT product cost here. As resultAnalysis,
+ * the Enrosed kost inside that cost is revenue (2026-11-06): the cost here is without it, the margin with it.
+ */
 export function withTicaResult(base: ResultAnalysis, days: readonly TicaAnalyticsDay[]): ResultWithTica {
   const selected = selectedDays(days, base.period);
   const revenue = money(selected.reduce((sum, day) => sum + day.revenueExcl, 0));
-  const goodsCost = money(selected.reduce((sum, day) => sum + day.goodsCostEur, 0));
+  const enrosed = money(selected.reduce((sum, day) => sum + ticaEnrosed(day), 0));
+  const goodsCost = money(selected.reduce((sum, day) => sum + day.goodsCostEur - ticaEnrosed(day), 0));
   const transactions = selected.reduce((sum, day) => sum + day.transactionCount, 0);
   const missing = selected.reduce((sum, day) => sum + day.missingCostLines, 0);
   const channels = base.byChannel.map(channel => ({ ...channel, ticaTransactions: 0, ticaMissingCostLines: 0 }));
@@ -76,12 +82,12 @@ export function withTicaResult(base: ResultAnalysis, days: readonly TicaAnalytic
     const key = day.date.slice(0, 7);
     const month = months.get(key) ?? { month: key, revenueEur: 0, marginEur: 0, costsEur: 0, resultEur: 0 };
     month.revenueEur = money(month.revenueEur + day.revenueExcl);
-    month.marginEur = money(month.marginEur + day.revenueExcl - day.goodsCostEur);
+    month.marginEur = money(month.marginEur + day.revenueExcl - day.goodsCostEur + ticaEnrosed(day));
     month.resultEur = money(month.marginEur - month.costsEur);
     months.set(key, month);
   }
   const revenueEur = money(base.revenueEur + revenue), marginEur = money(base.marginEur + revenue - goodsCost);
-  return { ...base, revenueEur, marginEur, goodsCostEur: money(base.goodsCostEur + goodsCost),
+  return { ...base, revenueEur, marginEur, goodsCostEur: money(base.goodsCostEur + goodsCost), enrosedEur: money(base.enrosedEur + enrosed),
     marginPct: revenueEur > 0 ? money(marginEur / revenueEur * 100) : null, resultEur: money(marginEur - base.costsEur),
     missingCostLines: base.missingCostLines + missing, ticaTransactions: transactions, ticaRevenueExclEur: revenue,
     byChannel: channels.sort((a, b) => b.revenueEur - a.revenueEur || a.channel.localeCompare(b.channel)),

@@ -2134,6 +2134,11 @@ export interface SalesAccounting {
   recognizedCostEur: number;
   recognizedProfitEur: number;
   recognizedQuantity: number;
+  /**
+   * The Enrosed kost inside recognizedCostEur, signed like it: Enrosed pays it to nobody, so Resultaat counts it as
+   * revenue (2026-11-06). Absent on an older backend answer.
+   */
+  recognizedEnrosedEur?: number;
 }
 
 export interface SalesPayment {

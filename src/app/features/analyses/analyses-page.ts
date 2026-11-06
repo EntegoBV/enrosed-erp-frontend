@@ -26,7 +26,7 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import {
   inventoryAnalysis, lastSoldOn, missingCostRows, openPipelineQuotes, partnerFinancingAnalysis, receivedContainerRows, resultAnalysis, resultCostRows, salesAnalysis,
-  salesDocumentRows, salesLineRows,
+  salesDocumentRows, salesLineRows, withEnrosedMargin,
 } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
@@ -89,7 +89,7 @@ import { AnDrillHost } from './drill-host';
 import type { DrillView } from './drill-model';
 import {
   acceptedView, channelView, countryView, customerView, funnelView, invoicedView, marginViews, openInvoicesView, openQuotesView, overdueView,
-  productView, revenueViews, ticaMonthRows, ticaUnmatchedView,
+  productView, revenueViews, ticaMonthRows, ticaUnmatchedView, withEnrosedTica,
 } from './drill-sales';
 import type { FunnelStep, SalesDrillContext } from './drill-sales';
 import { incomingView, qualityViews, QUALITY_KEYS, reorderView, stockValueView, zeroNoIncomingView } from './drill-stock';
@@ -1556,6 +1556,9 @@ export class AnalysesPage {
     { from: this.salesFromDate() || null, to: this.salesToDate() || null, today: this.today() }));
   readonly allDocs = computed(() => salesDocumentRows(this.salesOrders(), this.customers(), { today: this.today() }));
   readonly ticaMonths = computed(() => ticaMonthRows(this.ticaDays(), this.salesFromDate() || null, this.salesToDate() || null));
+  /** The same rows as Resultaat reads them: the Enrosed kost of what was sold is margin, not cost (Emre, 2026-11-06). */
+  readonly resultDocs = computed(() => this.salesDocs().map(withEnrosedMargin));
+  readonly resultTicaMonths = computed(() => this.ticaMonths().map(withEnrosedTica));
   /** "Dit jaar · 1 jan – 20 okt 2026": the scope line of Verkoop's dialogs. */
   readonly salesScope = computed(() => {
     const label = this.salesPeriodLabel(), range = this.salesRangeText();
@@ -1610,12 +1613,14 @@ export class AnalysesPage {
     const tica = r.ticaTransactions ? plural(r.ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : '';
     const credits = r.creditNoteCount ? plural(r.creditNoteCount, 'creditnota', 'creditnota’s') : '';
     const cost = `kost ${this.whole(r.goodsCostEur)}`;
+    /* The margin holds the Enrosed kost of what was sold (revenue, never paid out); the foot says how much. */
+    const enrosed = !salesDown && !missing && Math.abs(r.enrosedEur) >= 0.5 ? this.enrosedWords(r.enrosedEur) : '';
     return [
       { key: 'revenue', label: 'Omzet', value: salesDown ? '—' : this.whole(r.revenueEur), tone: null,
         sub: `excl. btw · ${plural(r.revenueInvoiceCount, 'factuur', 'facturen')}`, foot: [tica, credits].filter(Boolean).join(' · '), drill: !salesDown && r.revenueEur !== 0 },
       { key: 'margin', label: 'Marge op goederen', value: salesDown || missing ? '—' : this.whole(r.marginEur), tone: !salesDown && !missing && r.marginEur < 0 ? 'danger' : null,
         sub: missing ? `${plural(missing, 'regel', 'regels')} zonder kost` : r.marginPct === null ? cost : `${pctText(r.marginPct, 1)} · ${cost}`, subWarn: missing > 0,
-        foot: '', drill: !salesDown && (missing > 0 || r.marginEur !== 0) },
+        foot: enrosed, drill: !salesDown && (missing > 0 || r.marginEur !== 0) },
       { key: 'costs', label: 'Eigen kosten', value: costsDown ? '—' : this.whole(r.costsEur), tone: null,
         sub: costsDown ? '' : r.unpaidCostsEur ? `${this.whole(r.unpaidCostsEur)} open incl. btw` : 'alles betaald',
         foot: !costsDown && r.depreciationEur > 0 ? `waarvan ${this.whole(r.depreciationEur)} afschrijvingen` : '', drill: !costsDown && (r.costsEur !== 0 || r.unpaidCostsEur !== 0) },
@@ -1625,6 +1630,10 @@ export class AnalysesPage {
         sub: plural(r.receivedContainers, 'container', 'containers'), foot: 'telt niet in het resultaat', drill: !this.failed('inkoop') && r.receivedContainers > 0 },
     ];
   });
+  /** "waarvan Enrosed-kost € 66": the part of Resultaat's margin that is the Enrosed kost of what was sold (label first, so a phone wraps before the amount). */
+  private enrosedWords(value: number): string {
+    return `waarvan Enrosed-kost ${this.whole(value)}`;
+  }
   /** A month of Per maand or the bars with something in it opens its rows. */
   monthActive(row: { revenueEur: number; marginEur: number; costsEur: number }): boolean {
     return row.revenueEur !== 0 || row.marginEur !== 0 || row.costsEur !== 0;
@@ -2157,8 +2166,10 @@ export class AnalysesPage {
     const r = this.result(), ctx = this.drillContext(), docs = this.salesDocs(), from = this.salesFromDate() || null, to = this.salesToDate() || null;
     switch (key) {
       case 'revenue': this.drillHost.open(revenueViews(docs, this.ticaMonths(), r.revenueEur, ctx, to)); break;
-      case 'margin': this.drillHost.open(marginViews(docs, this.ticaMonths(), missingCostRows(this.salesOrders(), { from, to }),
-        { marginEur: r.marginEur, marginPct: r.marginPct, missingCostLines: r.missingCostLines }, ctx, to,
+      /* Resultaat's margin holds the Enrosed kost of what was sold: its rows do too, so they add up to the tile. */
+      case 'margin': this.drillHost.open(marginViews(this.resultDocs(), this.resultTicaMonths(), missingCostRows(this.salesOrders(), { from, to }),
+        { marginEur: r.marginEur, marginPct: r.marginPct, missingCostLines: r.missingCostLines,
+          extra: Math.abs(r.enrosedEur) >= 0.5 ? this.enrosedWords(r.enrosedEur) : null }, ctx, to,
         ticaLineRange(this.salesFromDate(), this.salesToDate(), this.ticaDays(), this.today()))); break;
       case 'costs': this.drillHost.open([costsView(this.costRows(), r.byCategory.map((row) => row.category), r.costsEur, this.resultContext())]); break;
       case 'received': this.drillHost.open([receivedView(receivedContainerRows(this.purchases(), { from, to }), r.purchasedEur, this.resultContext(),
@@ -2180,7 +2191,7 @@ export class AnalysesPage {
     const first = `${month}-01`, last = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, '0')}`;
     const from = this.salesFromDate(), to = this.salesToDate();
     const costs = resultCostRows(this.costs(), { from: from && from > first ? from : first, to: to && to < last ? to : last, costCharge: this.costCharge, openEur: openOf });
-    this.drillHost.open([monthView(month, monthLabel(month), this.salesDocs(), this.ticaMonths(), costs, { resultEur: row.resultEur, complete: !r.missingCostLines },
+    this.drillHost.open([monthView(month, monthLabel(month), this.resultDocs(), this.resultTicaMonths(), costs, { resultEur: row.resultEur, complete: !r.missingCostLines },
       this.resultContext())]);
   }
 
@@ -2190,7 +2201,7 @@ export class AnalysesPage {
     if (code === null) { this.drillHost.open([generalCostsView(this.costRows(), r.generalCostsEur, this.resultContext())]); return; }
     const row = r.byChannel.find((candidate) => candidate.channel === code);
     if (!row) return;
-    this.drillHost.open([resultChannelView(code, this.salesDocs(), this.ticaMonths(), this.costRows(),
+    this.drillHost.open([resultChannelView(code, this.resultDocs(), this.resultTicaMonths(), this.costRows(),
       { resultEur: row.resultEur, complete: !row.missingCostLines && !row.ticaMissingCostLines }, this.resultContext())]);
   }
 
