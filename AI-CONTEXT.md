@@ -2707,8 +2707,11 @@ pinned price as to a typed one.
   (`commercialEditable` / `mobileCommercialEditable`) also "Standaardprijs
   gebruiken", "Klantprijs gebruiken" or "Nieuwe klantprijs € x toepassen".
 - A choice goes through `useLinePrice` → `setLine` into the draft like a
-  typed price (re-priced after 250 ms, saved with Opslaan); typing a price
-  now sends `priceSource: 'MANUAL'` (desk and phone).
+  typed price (re-priced after 250 ms, saved with Opslaan). A typed price
+  goes through `setLinePrice` (desk and phone): `priceSource: 'MANUAL'`,
+  except the customer's price of today or the saved line's pin typed again,
+  which stays CUSTOMER as the server keeps it (the old customer's pin does
+  not count once the draft has another customer).
 - Only on regular documents (`customerPricesApply`): no credit notes,
   partner deals or container-cost pricing; a website order shows what the
   website pinned. Not built: the phone's read view (`sales-view.ts`) shows

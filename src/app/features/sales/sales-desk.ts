@@ -531,7 +531,7 @@ interface JourneyStep {
                             <div class="desk-price">
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="lineUnit(line.productId).priceLabel + ' ' + line.description"
-                                     [ngModel]="line.unitPrice" (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event, priceSource: 'MANUAL' })" (blur)="creditPriceBlur(line.productId, $event)" />
+                                     [ngModel]="line.unitPrice" (ngModelChange)="setLinePrice(line, $event)" (blur)="creditPriceBlur(line.productId, $event)" />
                               @if (!isCreditNoteDoc()) {
                               <button class="desk-disc-pill" type="button" [class.is-on]="line.manualPercent"
                                       [attr.aria-expanded]="discOpen() === line.productId" [attr.aria-label]="'Extra korting ' + line.description"

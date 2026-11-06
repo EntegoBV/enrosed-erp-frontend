@@ -779,7 +779,7 @@ function layoutKey(order: SalesOrder): string {
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"
-                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event, priceSource: 'MANUAL' })"
+                             (ngModelChange)="setLinePrice(line, $event)"
                              (blur)="creditPriceBlur(line.productId, $event)" />
                       <!-- The discount hides behind its own vertical tab: two
                            calm fields until you actually want a third. -->
@@ -3435,6 +3435,27 @@ export class SalesEditor {
   /** "Standaardprijs gebruiken" or the customer's price from the marker: into the draft like a typed price, saved with Opslaan. */
   useLinePrice(productId: number, choice: LinePriceChoice): void {
     this.setLine(productId, { unitPriceEur: choice.unitPriceEur, priceSource: choice.source });
+  }
+
+  /**
+   * A typed price is the line's own (MANUAL), except the customer's price of
+   * today or the price pinned on the saved line typed again: that stays the
+   * customer's price, as the server keeps it, and follows a later change of
+   * customer.
+   */
+  setLinePrice(line: PricedLine, typed: number | null): void {
+    const price = +(typed ?? 0);
+    this.setLine(line.productId, { unitPriceEur: price, priceSource: this.agreedAmount(line, price) ? 'CUSTOMER' : 'MANUAL' });
+  }
+
+  private agreedAmount(line: PricedLine, price: number): boolean {
+    if (!this.customerPricesApply() || !(price > 0)) return false;
+    const same = (value: number | null | undefined): boolean => value != null && value > 0 && Math.abs(value - price) < 0.00005;
+    if (same(line.customerUnitPriceEur)) return true;
+    /* The old customer's pin is not this customer's price. */
+    if (this.customerChanged()) return false;
+    const saved = this.savedDocument()?.lines.find((item) => item.productId === line.productId);
+    return saved?.priceSource === 'CUSTOMER' && same(saved.unitPriceEur);
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {
