@@ -108,7 +108,8 @@ the workspaces. All CSS lives in one global partial,
   `MediaApi.allAssets()` + `collectPages()` (paging past the server's
   200-row cap), `appAuthLazy` on AuthImage, `Ui.toast(text, kind, action)`
   for undo toasts, `variant="ios"` on app-sheet and app-context-menu,
-  `iconName` / `checked` / `cancelLabel` on context menus, and about sixty
+  `iconName` / `checked` / `cancelLabel` on context menus (a `disabled` item
+  is greyed in the phone sheet as in the desk popover), and about sixty
   icons in icon.ts ('more' is the horizontal ellipsis).
 - Tones: `tone-accent`, `-ok`, `-warn`, `-danger`, `-blue`, `-teal`,
   `-amber`, `-green`, `-plum`, `-grey`, `-ink` set `--tone` for tiles,
@@ -2603,12 +2604,24 @@ offertes en facturen"); the website shows it to that customer's logins
   `app-product-picker` (selection only; sellable products without a price
   yet). Geschiedenis (all products, or one) and a Prijslijsten entry's
   lines are iOS sheets stacked on the customer sheet (nothing around them
-  is a size container); Prijslijsten (20 newest, 3 shown) hides while
-  empty.
+  is a size container); Prijslijsten (the journal's 100 newest, the
+  server's maximum, counted in the head, "100+" when full; 3 shown) hides
+  while empty.
 - Every save there is a PUT of its own with source CUSTOMER_SCREEN. The
   sheet's Opslaan first stores a typed price that is not saved yet
   (`pending()` / `saveDraft()`); a refused one keeps the sheet open on it
   (`reveal()`). ×, Annuleren and Escape drop it, like the sheet's fields.
+- Round 3c (2026-11-06): a save names the unit the amount was typed against
+  (`basis`, `piecesPerUnit` in `CustomerPriceChange`): the field's unit when
+  typed, a stored amount's own basis. 409 CUSTOMER_PRICE_BASIS_CHANGED
+  (`priceBasisRefusal`) stores nothing: the rows and the named products load
+  again, the typed amount stays with "Het product wordt nu per stolp verkocht
+  · geef de prijs opnieuw in" and Prijs opslaan waits until it is typed
+  again. A narrow row cuts the name, never the variant (`productParts`: a
+  size the name ends with goes along) nor the end date; a price just added
+  opens the list as far as its row and marks it for a moment; Notitie takes
+  300 characters like the server; the journal's lower-case language reads
+  "Nederlands".
 - Logboek: `CATALOG_EXPORTED` reads "Catalogus met prijzen gemaakt"
   (`activity-copy.ts`); the backend writes it on the customer.
 - On the product: the read-only "n klantprijzen" chip of round 3b (next
@@ -4861,7 +4874,8 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   never compounding, whole cents half up), "Alles terug". Nothing applies
   until "Toepassen (n)"; closing with changes asks first. With a stored
   customer, "Ook bewaren als prijzen van {klant}" first PUTs the typed prices
-  (not "Op aanvraag") with source CATALOG_EXPORT: product and price only, plus
+  (not "Op aanvraag") with source CATALOG_EXPORT: product, price and the unit
+  it was typed on (`basis`, `piecesPerUnit`, round 3c), plus
   `validUntil` when the PDF has a validity that is not past, so a stored note
   and end date stay (the backend keeps a field a change leaves out); without
   such a validity a stored end date that already passed is sent as null, so
@@ -4888,6 +4902,19 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   preflight's `recipient.name`, else the screen's; the slug as the server's
   Recipient.fileSlug: NFD, every \p{M} dropped, lower case, other runs one
   dash, 60 at most, "klant" when empty), the usual names without.
+- **Round 3c (2026-11-06)**: a kept price on a unit the product has left since
+  the tab loaded is refused (409 CUSTOMER_PRICE_BASIS_CHANGED, nothing stored):
+  one toast "Niets bewaard: de prijsbasis is gewijzigd", the sheet stays open,
+  the page reloads the products (`productsStale` → `refreshProducts`) and the
+  row reads "Nu per stolp · vul opnieuw in" and blocks Toepassen until typed
+  again. A row's name gives way on the phone, never its variant (a size the
+  name ends with goes along); the row menu's title and the field's aria-label
+  carry the variant (the title wraps, `.cps-menu`). No € before the
+  "Op aanvraag" placeholder (12.5 px on the phone, whole). The compact preview
+  shows a one-off on a changed unit as "Prijsbasis gewijzigd · vul opnieuw in".
+  A single CATALOG_PRICES_INVALID says its sentence once (the card, no list;
+  the toast "PDF niet gemaakt: kijk de prijzen na"), and a remark or refusal
+  that names the SKU gets no product name in front.
 - **Reference prices** in the selection name the product's own unit ("€ 21,60
   / display", "/ bowl"; `productSalesUnit().singular`); the studio now loads
   the unit names itself.

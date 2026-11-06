@@ -1,8 +1,8 @@
-import { ChangeDetectionStrategy, Component, type OnInit, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, type OnInit, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../../core/api/auth-image';
 import type { CatalogPriceIssue, CatalogPriceOverride } from '../../core/api/catalog-api';
-import { CustomerPriceApi, type CustomerPrice } from '../../core/api/customer-price-api';
+import { CustomerPriceApi, priceBasisRefusal, type CustomerPrice } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
 import type { Product } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -14,7 +14,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import {
   basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceProblem, pricePrintable, standardPrice, todayIso,
-  type StandardPrice,
+  type PriceBasisNow, type StandardPrice,
 } from './catalog-prices';
 import { cataloguePhoto } from './catalog-studio';
 import { productSalesUnit } from './product-sales-unit';
@@ -22,8 +22,12 @@ import { productSalesUnit } from './product-sales-unit';
 interface PriceRow {
   id: number;
   product: Product;
-  name: string;
-  variant: string | null;
+  /** "Rozenstolp M · Rood · 20 cm": the row menu's title and the field's name for a screen reader. */
+  label: string;
+  /** The label for a narrow row: the head gives way; the tail (" · Rood · 20 cm", or " 30 cm · Rood" when the name
+      ends with its size) never does, because the rows of one family differ only there. */
+  head: string;
+  tail: string | null;
   sku: string;
   /** "per stolp", "per display": what every amount on the row is for. */
   per: string;
@@ -48,6 +52,7 @@ const OWN_STATE: Record<string, string> = { ACTIVE: 'klant', EXPIRED: 'verlopen'
 /** The phone's one-word chip, "Nakijken" as the customer's price block says it; the price and its unit keep the room. */
 const OWN_CHIP: Record<string, string> = { ...OWN_STATE, BASIS_CHANGED: 'nakijken' };
 const UNPRINTABLE = 'Display zonder aantal stuks: de PDF toont Prijs op aanvraag';
+const STALE = 'Prijsbasis gewijzigd · vul opnieuw in';
 
 function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverride | undefined): boolean {
   return a?.priceEur === b?.priceEur && !!a?.onRequest === !!b?.onRequest && a?.basis === b?.basis
@@ -62,8 +67,9 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
  * them. Nothing changes until Toepassen; with a customer, "Ook bewaren als
  * prijzen van …" also stores the typed prices as that customer's own
  * (PUT /api/customers/{id}/prices, source CATALOG_EXPORT), with the PDF's
- * validity date. "onder kost" compares with the landed cost and stops
- * nothing.
+ * validity date and the unit each was typed on: one the product has left
+ * since is refused (nothing stored) and asks to be typed again. "onder
+ * kost" compares with the landed cost and stops nothing.
  */
 @Component({
   selector: 'app-catalog-price-sheet',
@@ -102,7 +108,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
           @for (row of visibleRows(); track row.id) {
             <li class="cps-row" [class.is-changed]="row.changed" [class.is-wrong]="!!row.message">
               <span class="cps-row__photo">@if (row.photo) {<img [appAuthSrc]="row.photo" appAuthLazy alt="" />}</span>
-              <b class="cps-row__name">{{ row.name }}@if (row.variant) {<span> · {{ row.variant }}</span>}</b>
+              <!-- The rows of one family differ only in colour and size: the name gives way, the variant never. -->
+              <b class="cps-row__name"><span>{{ row.head }}</span>@if (row.tail) {<span class="cps-row__variant">{{ row.tail }}</span>}</b>
               <span class="cps-row__meta">
                 @if (row.message) {
                   <span class="cps-row__text cps-row__message">{{ row.message }}</span>
@@ -117,7 +124,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   <i class="cps-tag cps-tag--warn" [attr.title]="unprintableTitle">onvolledig</i>
                 } @else if (row.belowCost) {
                   <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i>
-                } @else if (row.stored; as own) {
+                } @else if (!row.message && row.stored; as own) {
+                  <!-- A refusal says what to do; the stored price's chip would only squeeze it on the phone. -->
                   <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownChip(own) }}</i>
                 }
               </span>
@@ -130,16 +138,17 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   } @else { <b class="is-off">—</b> }
                 </span>
               }
-              <span class="cps-row__field">
+              <!-- No € before "Op aanvraag": the sign comes with a price, typed or as the placeholder. -->
+              <span class="cps-row__field" [class.is-bare]="row.standard.eur === null && row.price?.priceEur == null">
                 @if (row.onRequest || row.unprintable) {
                   <span class="cps-row__request" [attr.title]="row.unprintable ? unprintableTitle : null">Op aanvraag</span>
                 } @else {
-                  <i aria-hidden="true">€</i>
-                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.name"
+                  @if (row.standard.eur !== null || row.price?.priceEur != null) { <i aria-hidden="true">€</i> }
+                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.label"
                          [ngModel]="row.price?.priceEur ?? null" (ngModelChange)="setPrice(row.product, $event)" />
                 }
               </span>
-              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.name" (click)="openMenu($event, row)">⋯</button>
+              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.label" (click)="openMenu($event, row)">⋯</button>
             </li>
           } @empty {
             <li class="cps__empty">{{ onlyChanged() && !query().trim() ? 'Nog geen aangepaste prijzen.' : 'Geen producten gevonden.' }}</li>
@@ -147,7 +156,7 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
         </ul>
         <!-- Inside the sheet: its overlay is a stacking context, a desk popover outside it would open under the sheet. -->
         @if (menu(); as open) {
-          <app-context-menu variant="ios" [title]="open.row.name" [items]="menuItems(open.row)" [anchor]="open.anchor"
+          <app-context-menu class="cps-menu" variant="ios" [title]="open.row.label" [items]="menuItems(open.row)" [anchor]="open.anchor"
                             (pick)="pick(open.row, $event)" (closed)="menu.set(null)" />
         }
       </div>
@@ -184,8 +193,9 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .cps-row + .cps-row { border-top: 1px solid var(--line); }
     .cps-row__photo { grid-area: photo; display: grid; width: 40px; height: 44px; place-items: center; overflow: hidden; border-radius: 8px; background: #fff; box-shadow: inset 0 0 0 1px var(--line); }
     .cps-row__photo img { width: 100%; height: 100%; padding: 2px; box-sizing: border-box; object-fit: contain; }
-    .cps-row__name { grid-area: name; align-self: end; min-width: 0; overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-    .cps-row__name span { color: var(--rose-dark); }
+    .cps-row__name { grid-area: name; display: flex; align-self: end; min-width: 0; color: var(--ink); font-size: 14px; font-weight: 650; line-height: 1.3; white-space: nowrap; }
+    .cps-row__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .cps-row__name > .cps-row__variant { flex: none; max-width: 75%; color: var(--rose-dark); }
     .cps-row__meta { grid-area: meta; display: flex; align-self: start; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; line-height: 1.35; }
     .cps-row__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cps-row__message { color: var(--danger); font-weight: 600; }
@@ -202,6 +212,9 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .cps-row__field > i { position: absolute; top: 50%; left: 10px; color: var(--muted); font-size: 14px; font-style: normal; transform: translateY(-50%); pointer-events: none; }
     .cps-row__field .input { min-height: 40px; padding: 6px 10px 6px 24px; border-radius: 10px; text-align: right; font-variant-numeric: tabular-nums; }
     .cps-row__field .input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); }
+    .cps-row__field.is-bare .input { padding-left: 10px; }
+    /* The row menu names the whole variant: a long title wraps instead of losing the colour and size. */
+    :host ::ng-deep .cps-menu .cm__head { white-space: normal; overflow-wrap: anywhere; }
     .is-changed .cps-row__field .input { border-color: var(--rose); background: color-mix(in srgb, var(--rose-soft) 45%, var(--surface)); font-weight: 700; }
     .is-wrong .cps-row__field .input { border-color: var(--danger); }
     .cps-row__request { display: grid; min-height: 40px; place-items: center; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; font-weight: 650; }
@@ -240,7 +253,10 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
       .cps-row__more { height: 36px; margin: -8px 0; }
       .cps-row__cat, .cps-row__own, .cps-row__desk { display: none; }
       .cps-row__field .input { min-height: 38px; font-size: 16px; }
+      /* "Op aanvraag" as small as the chip of the same name, so the narrow field shows it whole. */
+      .cps-row__field.is-bare .input::placeholder { font-size: 12.5px; }
       .cps-row__request { min-height: 38px; }
+      :host ::ng-deep .cps-menu .sheet--ios .sheet__head h2 { white-space: normal; overflow-wrap: anywhere; text-wrap: balance; }
       .cps-foot { display: grid; width: 100%; gap: 10px; }
       .cps-foot__cancel { display: none; }
       .cps-keep { margin: 0; padding: 2px 4px; }
@@ -251,6 +267,7 @@ export class CatalogPriceSheet implements OnInit {
   protected readonly desktop = inject(DesktopViewport);
   private readonly ui = inject(Ui);
   private readonly api = inject(CustomerPriceApi);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   /** The selected products, in the catalogue's order. */
   readonly products = input.required<readonly Product[]>();
@@ -267,6 +284,8 @@ export class CatalogPriceSheet implements OnInit {
   readonly issues = input<readonly CatalogPriceIssue[]>([]);
   readonly applied = output<Map<number, CatalogPriceOverride>>();
   readonly saved = output<CustomerPrice[]>();
+  /** The server refused a kept price typed on a unit the product has since left: the page loads the products again. */
+  readonly productsStale = output<void>();
   readonly closed = output<void>();
 
   /** The prices being typed; Toepassen hands them to the page. */
@@ -279,12 +298,20 @@ export class CatalogPriceSheet implements OnInit {
   readonly keep = signal(false);
   readonly busy = signal(false);
   readonly menu = signal<{ row: PriceRow; anchor: MenuPoint } | null>(null);
+  /**
+   * The kept prices the server refused (409 CUSTOMER_PRICE_BASIS_CHANGED), with the unit each was typed on. They hold
+   * only until the page's products arrive again (basisChanged() then names them); a price typed on the same unit
+   * before that is refused here, not sent again.
+   */
+  private readonly refused = signal<{ products: readonly Product[]; basis: ReadonlyMap<number, PriceBasisNow> } | null>(null);
 
   readonly rows = computed<PriceRow[]>(() => {
     const draft = this.draft();
     const applied = this.overrides();
     const stored = this.customerPrices();
     const issues = new Map(this.issues().map((issue) => [issue.productId, issue.message]));
+    const refusal = this.refused();
+    const refusedBasis = refusal && refusal.products === this.products() ? refusal.basis : null;
     return this.products().flatMap((product) => {
       if (product.id === null) return [];
       const id = product.id;
@@ -293,18 +320,27 @@ export class CatalogPriceSheet implements OnInit {
       const standard = standardPrice(product, own);
       const price = draft.get(id) ?? null;
       const problem = price && !price.onRequest ? priceProblem(price.priceEur) : null;
-      const stale = !!price && basisChanged(product, price);
+      const was = refusedBasis?.get(id);
+      /* Typed on a unit the product has left: the row names the unit of now (once the page knows it) until typed again. */
+      const moved = !!price && basisChanged(product, price);
+      const stale = moved || (!!price && !!was && was.basis === price.basis && was.piecesPerUnit === (price.piecesPerUnit ?? null));
+      const now = unit.isDisplay ? unit.piecesPerDisplay ? `per display van ${unit.piecesPerDisplay}` : 'per display' : unit.piece.per;
       /* The server's word stays on the row only while the row is as it was sent. */
-      const refused = issues.has(id) && sameOverride(price ?? undefined, applied.get(id)) ? issues.get(id)! : null;
+      const rejected = issues.has(id) && sameOverride(price ?? undefined, applied.get(id)) ? issues.get(id)! : null;
       const shown = price?.onRequest ? null : price && price.priceEur !== null && !problem ? price.priceEur : standard.eur;
       const cost = product.landedCostEur;
       const photo = cataloguePhoto(product);
       const name = stripColour(product.name?.trim() ?? '', product.colour);
-      /* "Rozenstolp S" and "Hartbox 28 cm" already name their size. */
+      /* "Rozenstolp S" and "Hartbox 28 cm" already name their size: not repeated, but kept whole with the variant. */
       const size = product.variantSize?.trim() || null;
+      const named = !!size && name.endsWith(size);
+      const variant = variantOf({ colour: product.colour, variantSize: named ? null : size });
+      const split = named && name.endsWith(` ${size}`);
       return [{
-        id, product, name,
-        variant: variantOf({ colour: product.colour, variantSize: size && name.endsWith(size) ? null : size }),
+        id, product,
+        label: variant ? `${name} · ${variant}` : name,
+        head: split ? name.slice(0, -size!.length).trimEnd() : name,
+        tail: split ? `\u00a0${size}${variant ? ` · ${variant}` : ''}` : variant ? `\u00a0· ${variant}` : null,
         sku: product.sku || 'Zonder SKU',
         per: unit.isDisplay ? 'per display' : unit.piece.per,
         slash: `/ ${unit.isDisplay ? 'display' : unit.piece.one}`,
@@ -314,7 +350,7 @@ export class CatalogPriceSheet implements OnInit {
         changed: !!price && changesPrint(product, price, standard),
         onRequest: !!price?.onRequest,
         unprintable: !pricePrintable(product),
-        message: problem ?? (stale ? 'Prijsbasis gewijzigd · vul opnieuw in' : refused),
+        message: problem ?? (moved ? `Nu ${now} · vul opnieuw in` : stale ? STALE : rejected),
         belowCost: shown !== null && cost !== null && cost > 0 && shown < cost,
         photo: photo?.smallUrl || photo?.url || null,
       }];
@@ -443,12 +479,29 @@ export class CatalogPriceSheet implements OnInit {
           source: 'CATALOG_EXPORT',
           changes: keep.map((row) => ({
             productId: row.id, priceExclVat: row.price!.priceEur,
+            /* The unit the row named when the price was typed: the server refuses it once the product has left it. */
+            basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null,
             ...(until ? { validUntil: until } : ended(row) ? { validUntil: null } : {}),
           })),
         });
         this.saved.emit(saved);
         this.ui.toast(`${keep.length} ${keep.length === 1 ? 'prijs' : 'prijzen'} bewaard voor ${customer.name}`);
       } catch (failure) {
+        const stale = priceBasisRefusal(failure);
+        if (stale) {
+          /* Nothing was stored. The rows it names ask to be typed again, the page loads the products with their unit
+             of now, and the sheet stays open with every typed price. */
+          const named = new Set(stale.productIds);
+          this.refused.set({
+            products: this.products(),
+            basis: new Map(keep.filter((row) => !named.size || named.has(row.id))
+              .map((row) => [row.id, { basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null }])),
+          });
+          this.productsStale.emit();
+          this.ui.toast('Niets bewaard: de prijsbasis is gewijzigd', 'err');
+          setTimeout(() => this.host.nativeElement.querySelector('.cps-row.is-wrong')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+          return;
+        }
         this.ui.toast(messageOf(failure, 'De klantprijzen zijn niet bewaard. Probeer opnieuw.'), 'err');
         return;
       } finally {

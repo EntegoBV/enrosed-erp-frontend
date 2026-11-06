@@ -1,9 +1,10 @@
-import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import {
   CatalogExportDetail, CatalogExportLine, CatalogExportSummary, CustomerPrice, CustomerPriceApi, CustomerPriceHistoryEntry,
+  priceBasisRefusal,
 } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
 import { Category, Product, ProductFamily } from '../../core/api/models';
@@ -12,10 +13,11 @@ import { DecimalInput } from '../../shared/decimal-input';
 import { ProductPicker } from '../../shared/product-picker';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
+import { priceBasis, type PriceBasisNow } from '../products/catalog-prices';
 import { otherBasisPrice, productSalesUnit, unitName } from '../products/product-sales-unit';
 import {
   basisPer, dayText, euro, exportMeta, exportTitle, historyChange, historyMeta, languageLabel, layoutLabel, momentText,
-  priceProblem, productLabel, rowMeta, sourcePill, statusPill, summaryText, todayIso,
+  priceProblem, productLabel, productParts, rowMeta, rowMetaParts, sourcePill, statusPill, summaryText, todayIso,
 } from './customer-price-state';
 
 /** A price being typed: a row of the list, or a product just picked. */
@@ -25,6 +27,10 @@ interface PriceDraft {
   amount: number | null;
   validUntil: string;
   note: string;
+  /** The unit the amount was typed against: the price field's unit when it was typed, a stored amount's own basis. */
+  basis: PriceBasisNow;
+  /** The server refused the amount for a unit the product has since left: it stays on screen until typed again. */
+  stale: boolean;
 }
 
 /** One place in the list: a stored price, or (row null) the product being added. */
@@ -35,7 +41,9 @@ interface PriceEntry {
 
 const ROWS_SHOWN = 6;
 const EXPORTS_SHOWN = 3;
-const EXPORT_LIMIT = 20;
+/** The most the journal answers at once (CatalogExportJournal.MAX_LIMIT): a full answer may leave older ones out. */
+const EXPORT_LIMIT = 100;
+const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
 
 /**
  * Klantprijzen on the customer sheet: one agreed price per product, EUR
@@ -97,7 +105,7 @@ const EXPORT_LIMIT = 20;
                   </div>
                   <div class="field cp-note">
                     <label for="cp-note">Notitie <span class="opt"></span></label>
-                    <input class="input" id="cp-note" maxlength="500" autocomplete="off" [disabled]="busy()"
+                    <input class="input" id="cp-note" maxlength="300" autocomplete="off" [disabled]="busy()"
                            [ngModel]="draft()!.note" (ngModelChange)="patchDraft({ note: $event ?? '' })" />
                   </div>
                 </div>
@@ -110,18 +118,21 @@ const EXPORT_LIMIT = 20;
                 <span class="cp-gap"></span>
                 <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="cancel()">Annuleren</button>
                 @if (entry.row?.status !== 'PRODUCT_GONE') {
-                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy() || !dirty()" (click)="saveDraft()">
+                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy() || !dirty() || draft()!.stale" (click)="saveDraft()">
                     {{ busy() ? 'Bezig…' : 'Prijs opslaan' }}
                   </button>
                 }
               </div>
             </div>
           } @else if (entry.row; as row) {
-            <button class="cp-row" type="button" [class.cp-row--off]="row.status !== 'ACTIVE'" [disabled]="!!draft() || busy()" (click)="edit(row)">
-              <span class="cp-name"><span>{{ label(entry) }}</span>
+            @let name = parts(row.productId);
+            @let facts = metaParts(row);
+            <button class="cp-row" type="button" [attr.data-product]="row.productId" [class.cp-row--off]="row.status !== 'ACTIVE'"
+                    [class.cp-row--saved]="justSaved() === row.productId" [disabled]="!!draft() || busy()" (click)="edit(row)">
+              <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                 @if (pill(row); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
               <span class="cp-fig">{{ euro(row.priceExclVat) }}</span>
-              <span class="cp-meta">{{ meta(row) }}</span>
+              <span class="cp-meta cp-meta--split"><span>{{ facts.main }}</span>@if (facts.until) {<span class="cp-pin">&nbsp;· {{ facts.until }}</span>}</span>
               <span class="cp-unit">{{ per(row) }}</span>
               <span class="sr-only"> · aanpassen</span>
             </button>
@@ -146,7 +157,7 @@ const EXPORT_LIMIT = 20;
         <div class="cp-head cp-head--sub"><b>Prijslijsten</b></div>
         <p class="cp-none">Niet geladen. <button class="linklike" type="button" (click)="loadExports(customerId())">Opnieuw proberen</button></p>
       } @else if (exports().length) {
-        <div class="cp-head cp-head--sub"><b>Prijslijsten</b><small>{{ exports().length }}</small></div>
+        <div class="cp-head cp-head--sub"><b>Prijslijsten</b><small>{{ exports().length }}@if (exports().length >= exportLimit) {+}</small></div>
         <div class="cp-list">
           @for (entry of shownExports(); track entry.id) {
             <button class="cp-row" type="button" (click)="openExport(entry)">
@@ -156,7 +167,7 @@ const EXPORT_LIMIT = 20;
             </button>
           }
           @if (!allExports() && exports().length > exportsShown) {
-            <button class="linklike cp-more" type="button" (click)="allExports.set(true)">Alle {{ exports().length }} tonen</button>
+            <button class="linklike cp-more" type="button" (click)="allExports.set(true)">{{ exports().length >= exportLimit ? 'De laatste ' + exports().length + ' tonen' : 'Alle ' + exports().length + ' tonen' }}</button>
           }
         </div>
       }
@@ -193,7 +204,12 @@ const EXPORT_LIMIT = 20;
             <div class="cp-list cp-list--sheet">
               @for (entry of history(); track $index) {
                 <div class="cp-row cp-row--static">
-                  <span class="cp-name"><span>{{ target.productId === null ? labelOf(entry.productId) : moment(entry.changedAt) }}</span></span>
+                  @if (target.productId === null) {
+                    @let name = parts(entry.productId);
+                    <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}</span>
+                  } @else {
+                    <span class="cp-name"><span>{{ moment(entry.changedAt) }}</span></span>
+                  }
                   <span class="cp-fig">{{ change(entry) }}</span>
                   <span class="cp-meta">{{ historyLine(entry, target.productId === null) }}</span>
                   <span class="cp-unit">{{ historyPer(entry) }}</span>
@@ -229,11 +245,13 @@ const EXPORT_LIMIT = 20;
           } @else {
             <div class="cp-list cp-list--sheet">
               @for (line of detail()?.lines ?? []; track line.productId) {
+                @let name = lineParts(line);
                 <div class="cp-row cp-row--static">
-                  <span class="cp-name"><span>{{ lineLabel(line) }}</span>
+                  <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                     @if (source(line); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
                   <span class="cp-fig">{{ linePrice(line) }}</span>
-                  <span class="cp-meta">{{ lineMeta(line) }}</span>
+                  @let meta = lineMeta(line);
+                  <span class="cp-meta cp-meta--split"><span>{{ meta.main }}</span>@if (meta.pin) {<span class="cp-pin">&nbsp;· {{ meta.pin }}</span>}</span>
                   <span class="cp-unit">{{ line.printedPriceEur == null ? '' : linePer(line) }}</span>
                 </div>
               } @empty {
@@ -262,13 +280,22 @@ const EXPORT_LIMIT = 20;
       border: 0; border-top: 1px solid var(--rose-line); background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
     .cp-row:disabled { cursor: default; opacity: .5; }
     .cp-row--static { cursor: auto; }
-    .cp-name { grid-area: name; display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13.5px; font-weight: 650; }
+    /* A price just added: the row it sorted into is marked for a moment (the shadows carry the tint past the text). */
+    .cp-row { transition: background-color var(--dur-3, .32s) var(--ease-out, ease-out), box-shadow var(--dur-3, .32s) var(--ease-out, ease-out); }
+    .cp-row--saved { --cp-mark: color-mix(in srgb, var(--rose) 13%, transparent); background: var(--cp-mark); box-shadow: -8px 0 var(--cp-mark), 8px 0 var(--cp-mark); }
+    .cp-name { grid-area: name; display: flex; align-items: center; min-width: 0; font-size: 13.5px; font-weight: 650; }
     .cp-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cp-name .badge { flex: none; font-style: normal; }
+    /* The rows of one family differ only in colour and size: the name gives way, the variant does not. */
+    .cp-name > .cp-variant { flex: none; max-width: 75%; }
+    .cp-name .badge { flex: none; margin-left: 6px; font-style: normal; }
     .cp-fig { grid-area: fig; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
     .cp-fig--day { color: var(--ink-2); font-size: 12.5px; font-weight: 600; }
     .cp-row--off .cp-fig { color: var(--ink-2); font-weight: 600; }
     .cp-meta { grid-area: meta; min-width: 0; overflow: hidden; color: var(--ink-2); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    /* The end date (a price list: the catalogue figure) stays whole; what comes before it gives way. */
+    .cp-meta--split { display: flex; }
+    .cp-meta--split > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .cp-meta--split > .cp-pin { flex: none; }
     .cp-meta--wide { grid-column: 1 / -1; }
     .cp-unit { grid-area: unit; color: var(--ink-2); font-size: 12px; text-align: right; white-space: nowrap; }
     .cp-none { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
@@ -319,11 +346,15 @@ export class CustomerPriceBlock {
   readonly draft = signal<PriceDraft | null>(null);
   readonly formError = signal<string | null>(null);
   readonly allRows = signal(false);
+  /** The product whose price was just added, marked in the list for a moment. */
+  readonly justSaved = signal<number | null>(null);
+  private savedTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly exports = signal<CatalogExportSummary[]>([]);
   readonly exportsError = signal(false);
   readonly allExports = signal(false);
   readonly exportsShown = EXPORTS_SHOWN;
+  readonly exportLimit = EXPORT_LIMIT;
 
   /** The catalogue, for variant names, today's sales unit and the picker; loaded once a row or the picker needs it. */
   readonly products = signal<ReadonlyMap<number, Product> | null>(null);
@@ -398,9 +429,11 @@ export class CustomerPriceBlock {
         this.formError.set(null);
         this.allRows.set(false);
         this.allExports.set(false);
+        this.justSaved.set(null);
         void this.load(customerId);
       });
     });
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.savedTimer));
   }
 
   reload(): void {
@@ -472,6 +505,21 @@ export class CustomerPriceBlock {
     return this.labelOf(entry.productId);
   }
 
+  /** The name and the variant apart, for a row that cuts the name before the variant. */
+  parts(productId: number): { label: string; head: string; tail: string | null } {
+    const row = this.rows().find((candidate) => candidate.productId === productId);
+    return productParts(this.productOf(productId), row ?? { productId, name: null, sku: null });
+  }
+
+  lineParts(line: CatalogExportLine): { label: string; head: string; tail: string | null } {
+    return productParts(this.productOf(line.productId), line);
+  }
+
+  metaParts(row: CustomerPrice): { main: string; until: string | null } {
+    const product = this.productOf(row.productId);
+    return rowMetaParts(row, product ? this.currentPer(product) : null);
+  }
+
   pill(row: CustomerPrice): { label: string; css: string } | null {
     return statusPill(row.status);
   }
@@ -539,25 +587,22 @@ export class CustomerPriceBlock {
     return basisPer(entry.salesUnit, entry.piecesPerUnit, row?.unitKey ?? this.productOf(entry.productId)?.packaging?.unitKey);
   }
 
-  lineLabel(line: CatalogExportLine): string {
-    return productLabel(this.productOf(line.productId), line);
-  }
-
   source(line: CatalogExportLine): { label: string; css: string } | null {
     return sourcePill(line.priceSource);
   }
 
-  /** "MB-RD · catalogus € 2,43": the SKU, and the catalogue price when another one printed. */
   /** The printed price, "Op aanvraag", or nothing in a PDF without prices (no source). */
   linePrice(line: CatalogExportLine): string {
     if (line.printedPriceEur != null) return euro(line.printedPriceEur);
     return line.priceSource === 'ON_REQUEST' ? 'Op aanvraag' : '';
   }
 
-  lineMeta(line: CatalogExportLine): string {
+  /** "MB-RD · catalogus € 2,43": the SKU, which may give way, and the catalogue price when another one printed. */
+  lineMeta(line: CatalogExportLine): { main: string; pin: string | null } {
     const other = line.priceSource != null && line.priceSource !== 'CATALOGUE';
     const catalogue = other && line.cataloguePriceEur != null ? `catalogus ${euro(line.cataloguePriceEur)}` : null;
-    return [line.sku, catalogue].filter(Boolean).join(' · ');
+    const sku = line.sku?.trim();
+    return sku ? { main: sku, pin: catalogue } : { main: catalogue ?? '', pin: null };
   }
 
   linePer(line: CatalogExportLine): string {
@@ -570,15 +615,36 @@ export class CustomerPriceBlock {
     if (this.draft() || this.busy()) return;
     this.formError.set(null);
     /* An amount on the old basis would store a display's price as one bowl's: a changed basis starts empty. */
-    const amount = row.status === 'BASIS_CHANGED' ? null : row.priceExclVat;
-    this.draft.set({ productId: row.productId, isNew: false, amount, validUntil: row.validUntil ?? '', note: row.note ?? '' });
+    const changed = row.status === 'BASIS_CHANGED';
+    const display = row.salesUnit === 'DISPLAY';
+    this.draft.set({
+      productId: row.productId, isNew: false, amount: changed ? null : row.priceExclVat,
+      validUntil: row.validUntil ?? '', note: row.note ?? '',
+      /* The stored amount stands on the basis it was set on. */
+      basis: changed ? this.fieldBasis(row.productId)
+        : { basis: display ? 'DISPLAY' : 'PIECE', piecesPerUnit: display ? row.piecesPerUnit ?? null : null },
+      stale: false,
+    });
     void this.ensureProducts();
     this.focusPrice();
   }
 
   patchDraft(changes: Partial<Pick<PriceDraft, 'amount' | 'validUntil' | 'note'>>): void {
-    this.draft.update((draft) => draft ? { ...draft, ...changes } : draft);
-    if (this.formError()) this.formError.set(null);
+    /* A typed amount is on the unit the field names right now. */
+    this.draft.update((draft) => !draft ? draft
+      : 'amount' in changes ? { ...draft, ...changes, basis: this.fieldBasis(draft.productId), stale: false } : { ...draft, ...changes });
+    /* "Type the price again" stays until the price is typed. */
+    if (this.formError() && !this.draft()?.stale) this.formError.set(null);
+  }
+
+  /** The unit the price field names (priceLabel): the product's sales unit now, else the stored basis while the catalogue is not loaded. */
+  private fieldBasis(productId: number): PriceBasisNow {
+    const product = this.productOf(productId);
+    if (product) return priceBasis(product);
+    const row = this.rows().find((candidate) => candidate.productId === productId);
+    return row?.salesUnit === 'DISPLAY'
+      ? { basis: 'DISPLAY', piecesPerUnit: row.piecesPerUnit ?? null }
+      : { basis: 'PIECE', piecesPerUnit: null };
   }
 
   cancel(): void {
@@ -596,7 +662,7 @@ export class CustomerPriceBlock {
     const draft = this.draft();
     if (!draft) return true;
     if (this.busy()) return false;
-    const problem = priceProblem(draft.amount)
+    const problem = (draft.stale ? this.formError() || STALE_PRICE : null) ?? priceProblem(draft.amount)
       ?? (draft.validUntil && draft.validUntil < todayIso() ? 'Kies vandaag of een latere datum, of laat Geldig tot leeg.' : null);
     if (problem) {
       this.formError.set(problem);
@@ -608,19 +674,63 @@ export class CustomerPriceBlock {
     try {
       const rows = await this.api.save(customerId, {
         source: 'CUSTOMER_SCREEN',
-        changes: [{ productId: draft.productId, priceExclVat: draft.amount, validUntil: draft.validUntil || null, note: draft.note.trim() || null }],
+        changes: [{
+          productId: draft.productId, priceExclVat: draft.amount, validUntil: draft.validUntil || null, note: draft.note.trim() || null,
+          basis: draft.basis.basis, piecesPerUnit: draft.basis.piecesPerUnit,
+        }],
       });
       if (customerId !== this.customerId()) return true;
       this.rows.set(rows);
       this.draft.set(null);
       this.ui.toast('Klantprijs opgeslagen');
+      if (draft.isNew) this.showSaved(draft.productId);
       return true;
     } catch (failure: unknown) {
-      if (customerId === this.customerId()) this.formError.set(messageOf(failure, 'Klantprijs opslaan mislukt'));
+      if (customerId !== this.customerId()) return false;
+      const refused = priceBasisRefusal(failure);
+      if (refused) {
+        /* Nothing was stored: the rows and the product come again, and the amount stays in the field to be typed again. */
+        const unit = await this.reloadRefused(customerId, refused.productIds.length ? refused.productIds : [draft.productId], draft.productId);
+        if (customerId !== this.customerId()) return false;
+        this.draft.update((open) => open?.productId === draft.productId ? { ...open, stale: true } : open);
+        this.formError.set(unit ? `Het product wordt nu ${unit} verkocht · geef de prijs opnieuw in` : STALE_PRICE);
+      } else {
+        this.formError.set(messageOf(failure, 'Klantprijs opslaan mislukt'));
+      }
       return false;
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /**
+   * After 409 CUSTOMER_PRICE_BASIS_CHANGED: the stored rows again, and the products the server named as it has them now,
+   * so the field names their unit. Answers the unit of `productId` now ("per stolp"), or null when it could not be loaded.
+   */
+  private async reloadRefused(customerId: number, productIds: number[], productId: number): Promise<string | null> {
+    const [rows, products] = await Promise.all([
+      this.api.list(customerId).catch(() => null),
+      Promise.all(productIds.map((id) => this.catalog.product(id).catch(() => null))),
+    ]);
+    if (customerId !== this.customerId()) return null;
+    if (rows) this.rows.set(rows);
+    const fresh = products.filter((product): product is Product => product?.id != null);
+    const known = this.products();
+    if (known && fresh.length) this.products.set(new Map([...known, ...fresh.map((product) => [product.id!, product] as const)]));
+    /* Without the catalogue the field would keep naming the stored unit: it is asked again. */
+    if (!known) void this.ensureProducts();
+    const product = fresh.find((candidate) => candidate.id === productId);
+    return product ? this.currentPer(product) : null;
+  }
+
+  /** A price just added sorts in by SKU: the list opens as far as its row, which comes into view and is marked for a moment. */
+  private showSaved(productId: number): void {
+    if (this.rows().findIndex((row) => row.productId === productId) >= ROWS_SHOWN) this.allRows.set(true);
+    clearTimeout(this.savedTimer);
+    this.justSaved.set(productId);
+    setTimeout(() => this.host.nativeElement.querySelector(`.cp-row[data-product="${productId}"]`)
+      ?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+    this.savedTimer = setTimeout(() => this.justSaved.set(null), 2400);
   }
 
   remove(row: CustomerPrice): void {
@@ -674,7 +784,7 @@ export class CustomerPriceBlock {
       return;
     }
     this.formError.set(null);
-    this.draft.set({ productId: product.id, isNew: true, amount: null, validUntil: '', note: '' });
+    this.draft.set({ productId: product.id, isNew: true, amount: null, validUntil: '', note: '', basis: priceBasis(product), stale: false });
     this.focusPrice();
   }
 

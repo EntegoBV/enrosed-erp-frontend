@@ -42,21 +42,41 @@ export function todayIso(now = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** "Rozenstolp M · Rood": the series and what tells this variant apart; without the product, its stored name or SKU. */
+/**
+ * The series and what tells this variant apart, as one label ("Rozenstolp M · Rood"; without the product its stored
+ * name and SKU), and split for a narrow row: the head gives way, the tail never does, because the rows of one family
+ * differ only there. The tail starts with a no-break space and carries a size the name ends with ("Hartbox 28 cm":
+ * " 28 cm · Rood"), so a cut name never hides it.
+ */
+export function productParts(
+  product: Pick<Product, 'name' | 'colour' | 'variantSize'> | null | undefined,
+  row: { productId: number; name: string | null; sku: string | null },
+): { label: string; head: string; tail: string | null } {
+  if (!product) {
+    const name = row.name?.trim();
+    const sku = row.sku?.trim();
+    if (name && sku) return { label: `${name} · ${sku}`, head: name, tail: `\u00a0· ${sku}` };
+    const only = name || sku || `Product #${row.productId}`;
+    return { label: only, head: only, tail: null };
+  }
+  const name = stripColour(product.name?.trim() ?? '', product.colour);
+  /* "Rozenstolp S" already names its size: it is not repeated. */
+  const size = product.variantSize?.trim() || null;
+  const named = !!size && name.endsWith(size);
+  const variant = variantOf({ colour: product.colour, variantSize: named ? null : size });
+  const label = variant ? `${name} · ${variant}` : name;
+  if (named && name.endsWith(` ${size}`)) {
+    return { label, head: name.slice(0, -size!.length).trimEnd(), tail: `\u00a0${size}${variant ? ` · ${variant}` : ''}` };
+  }
+  return { label, head: name, tail: variant ? `\u00a0· ${variant}` : null };
+}
+
+/** "Rozenstolp M · Rood", in one line. */
 export function productLabel(
   product: Pick<Product, 'name' | 'colour' | 'variantSize'> | null | undefined,
   row: { productId: number; name: string | null; sku: string | null },
 ): string {
-  if (!product) {
-    const name = row.name?.trim();
-    const sku = row.sku?.trim();
-    return name && sku ? `${name} · ${sku}` : name || sku || `Product #${row.productId}`;
-  }
-  const name = stripColour(product.name?.trim() ?? '', product.colour);
-  /* "Rozenstolp S" already names its size. */
-  const size = product.variantSize?.trim() || null;
-  const variant = variantOf({ colour: product.colour, variantSize: size && name.endsWith(size) ? null : size });
-  return variant ? `${name} · ${variant}` : name;
+  return productParts(product, row).label;
 }
 
 /** "per bowl", "per display van 6": the unit a stored basis names (no unit key reads as stuk). */
@@ -89,12 +109,19 @@ export function deltaText(price: number, catalogue: number | null | undefined): 
  * date, or why the price prints nothing ("Prijsbasis nu per bowl").
  */
 export function rowMeta(row: CustomerPrice, currentPer: string | null): string {
-  if (row.status === 'PRODUCT_GONE') return row.sku ? `${row.sku} · niet meer in de catalogus` : 'Niet meer in de catalogus';
-  if (row.status === 'BASIS_CHANGED') return currentPer ? `Prijsbasis nu ${currentPer}` : 'Prijsbasis gewijzigd';
-  const catalogue = row.cataloguePriceNow != null ? `catalogus ${euro(row.cataloguePriceNow)}` : 'geen catalogusprijs';
-  const text = [catalogue, deltaText(row.priceExclVat, row.cataloguePriceNow), row.validUntil ? `tot ${dayText(row.validUntil)}` : null]
-    .filter(Boolean).join(' · ');
-  return text.charAt(0).toLocaleUpperCase(LOCALE) + text.slice(1);
+  const { main, until } = rowMetaParts(row, currentPer);
+  return until ? `${main} · ${until}` : main;
+}
+
+/** rowMeta in two parts: what may give way on a narrow row, and the end date ("tot 31/12/2026"), which never does. */
+export function rowMetaParts(row: CustomerPrice, currentPer: string | null): { main: string; until: string | null } {
+  if (row.status === 'PRODUCT_GONE') return { main: row.sku ? `${row.sku} · niet meer in de catalogus` : 'Niet meer in de catalogus', until: null };
+  if (row.status === 'BASIS_CHANGED') return { main: currentPer ? `Prijsbasis nu ${currentPer}` : 'Prijsbasis gewijzigd', until: null };
+  const catalogue = row.cataloguePriceNow != null ? `Catalogus ${euro(row.cataloguePriceNow)}` : 'Geen catalogusprijs';
+  return {
+    main: [catalogue, deltaText(row.priceExclVat, row.cataloguePriceNow)].filter(Boolean).join(' · '),
+    until: row.validUntil ? `tot ${dayText(row.validUntil)}` : null,
+  };
 }
 
 /** "n klantprijzen", and how many print when that is not all of them. */
@@ -132,8 +159,10 @@ export function layoutLabel(layout: CatalogLayout | string): string {
   return layout === 'SIMPLE' ? 'Compact overzicht' : layout === 'BROCHURE' ? 'Handelscatalogus' : layout;
 }
 
+/** "Nederlands" for 'NL', and for the 'nl' the journal sends. */
 export function languageLabel(language: LanguageCode | string): string {
-  return LANGUAGES.find((entry) => entry.code === language)?.label ?? language;
+  const code = String(language ?? '').trim().toUpperCase();
+  return LANGUAGES.find((entry) => entry.code === code)?.label ?? language;
 }
 
 /** A journal entry's second line: the language, the prices it carried and who made it. */
