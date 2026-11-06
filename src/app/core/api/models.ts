@@ -1893,6 +1893,13 @@ export interface PricedExtraLine {
   total: number;
 }
 
+/**
+ * Where a line's unit price comes from (round 3b): CUSTOMER is the
+ * customer's own price, pinned when the line was added; STANDARD follows the
+ * catalogue and is never pinned again; MANUAL was typed. null: an older line.
+ */
+export type SalesLinePriceSource = 'CUSTOMER' | 'STANDARD' | 'MANUAL';
+
 export interface SalesOrderLine {
   id: number | null;
   productId: number;
@@ -1900,6 +1907,8 @@ export interface SalesOrderLine {
   unavailable?: boolean | null;
   requestedQuantity?: number | null;
   unitPriceEur: number | null;
+  /** Absent from older servers; set with the price ("Standaardprijs gebruiken" sends null and STANDARD). */
+  priceSource?: SalesLinePriceSource | null;
   manualDiscountPct: number | null;
   /** Zelf ingevulde leverweek, bv. "2026-W34". Optioneel. */
   deliveryWeek: string | null;
@@ -2069,6 +2078,17 @@ export interface PricedLine {
   expectedUnitCost?: number | null;
   /** What the pieces cost that left stock, by batch; margins use it after shipment. */
   stockUnitCost?: number | null;
+  /*
+   * Round 3b, staff only (never on a customer document); absent from older
+   * servers. The figures are unit prices on the line's own basis, before
+   * discounts, as of today.
+   */
+  /** The source the server priced this line with, a preview's pinning included. */
+  priceSource?: SalesLinePriceSource | null;
+  /** What the line would cost on the catalogue price. */
+  standardUnitPriceEur?: number | null;
+  /** The customer's active price for the product; null when there is none. */
+  customerUnitPriceEur?: number | null;
 }
 
 export interface PricedOrder {
