@@ -2228,6 +2228,8 @@ cijfers'.
   that the freight then counts; never required for sending.
 - PDF sheet: quote PDF in any of 8 languages, plus **Pakbon** (packing
   slip, grouped per pallet when laid out).
+- A line on the customer's own price wears a quiet K beside its price (round
+  3b): see "Klantprijs op offertes en facturen".
 - **Save queue**: every mutation goes through `enqueue(make)` - a strict
   promise chain applying each change to the freshest order. Two quick
   taps used to race and resurrect stale state (pallets came back
@@ -2562,9 +2564,12 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
 ### Klantprijzen on the customer (round 3, 2026-11-06)
 One agreed price per customer and product: EUR excl. VAT on the product's
 own sales unit (per display when sold per display), like the catalogue
-price. A catalogue PDF made for the customer prints it while it is ACTIVE;
-quotes, invoices, the portal and the website never use it (round 3,
-decision 6: the website keeps showing no customer prices).
+price. A catalogue PDF made for the customer prints it while it is ACTIVE.
+Since round 3b (`round3/contract-sales.md`, 2026-11-06) it is also the
+default on that customer's quotes and invoices: the server pins it onto a
+line when the line is added, and the editor shows it (see "Klantprijs op
+offertes en facturen"); the website shows it to that customer's logins
+(website repo).
 - `core/api/customer-price-api.ts` (`CustomerPriceApi`, the round 3
   contract, shared with the export popup): `list(customerId)` and
   `save(customerId, { source, changes })` on `/api/customers/{id}/prices`
@@ -2606,6 +2611,58 @@ decision 6: the website keeps showing no customer prices).
   (`activity-copy.ts`); the backend writes it on the customer.
 - Not built: a read-only "Klantprijzen" list on the product (the contract
   has no endpoint per product).
+
+### Klantprijs op offertes en facturen (round 3b, 2026-11-06)
+Emre: customer prices on quotes and invoices as the default, and "always
+subtly the standard price on our side", by hovering on the desk and a press
+on the phone. The server pins (contract decision 2): a NEW line without a
+typed price on a regular document gets the customer's ACTIVE price with
+`priceSource` CUSTOMER; "Standaardprijs gebruiken" stores price null and
+STANDARD (follows the catalogue, never pinned again); a typed price is
+MANUAL; existing lines never change by themselves. Discounts apply to a
+pinned price as to a typed one.
+- Model (`models.ts`, all optional, absent from an older server):
+  `SalesOrderLine.priceSource` (`SalesLinePriceSource`), and on
+  `PricedLine` the source the server priced with (a preview's pinning
+  included) plus `standardUnitPriceEur` and `customerUnitPriceEur` (today's
+  catalogue and customer price on the line's basis, before discounts; staff
+  only, never on a customer document).
+- `app-line-price-source` (`features/sales/line-price-source.ts`, its own
+  ~3 kB of styles: the editor's and the desk's stylesheets are at their
+  budget and stay unchanged). The pure `linePriceState(draftLine,
+  pricedLine, unit)` decides: null (no marker) when the customer has no
+  price for the product and the line is not on one; the draft's source wins
+  over the server's (newer than the last preview); a new line (no id, no
+  typed price) that the preview priced at the customer's price reads
+  CUSTOMER already. The quiet K: filled in the accent tone on a CUSTOMER
+  line, with a warn dot when the pinned price is not today's customer price
+  (changed or gone); faint and hollow on a STANDARD, typed or older line
+  while the customer has a price (a reading of the contract's "not in the
+  row" to confirm with Emre: the popover must stay reachable and the price
+  never forgotten; the hint text itself stays in the popover).
+- Placement: desk before the unit under the price ("K per stolp",
+  `sales-desk.ts`; the marker's margin box keeps the line height); phone
+  editor after the price label, which the component then renders itself
+  (`labelText`/`labelFor`: a button inside a label is invalid).
+- Desk: hover or keyboard focus shows "Klantprijs · standaard € 4,95" (and
+  "· nieuw € x" / "· niet meer actief"; a hollow K: "Klantprijs € x
+  beschikbaar") under the marker; a click (or right click, the menu key)
+  opens a fixed popover under it. Phone: a tap or a long press
+  (`SalesMenuGesture`, with its guard against the click after the hold)
+  opens an iOS sheet titled with the product. Both list Klantprijs (the
+  pinned price) and Standaardprijs, "Eigen prijs" first on a typed line, the
+  hint "Klantprijs € x beschikbaar" on a catalogue line and "Geen actieve
+  klantprijs meer" on a pin whose price is gone; with the line editable
+  (`commercialEditable` / `mobileCommercialEditable`) also "Standaardprijs
+  gebruiken", "Klantprijs gebruiken" or "Nieuwe klantprijs € x toepassen".
+- A choice goes through `useLinePrice` → `setLine` into the draft like a
+  typed price (re-priced after 250 ms, saved with Opslaan); typing a price
+  now sends `priceSource: 'MANUAL'` (desk and phone).
+- Only on regular documents (`customerPricesApply`): no credit notes,
+  partner deals or container-cost pricing; a website order shows what the
+  website pinned. Not built: the phone's read view (`sales-view.ts`) shows
+  no marker. Seen on the harness mock only (`round3/mock-sales`), not yet
+  against the real backend or in iOS Safari.
 
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
@@ -4154,6 +4211,9 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   or one-off prices is exported only when the preflight answers `prices`; an
   older server would drop them silently (see "Catalogus PDF: prijzen voor een
   klant").
+- Verkoop (round 3b): without `priceSource`, `standardUnitPriceEur` and
+  `customerUnitPriceEur` from the server no line wears the K; an older
+  server ignores the `priceSource` a typed price or a popover choice sends.
 
 ### Kosten & bank refinements (2026-10-17)
 Design `redesign/finance/design.md` amended by its critique; one commit per
