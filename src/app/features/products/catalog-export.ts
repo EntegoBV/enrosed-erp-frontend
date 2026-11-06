@@ -1160,7 +1160,10 @@ export class CatalogExport {
       this.customersState.set('READY');
       const chosen = this.customerId();
       if (chosen !== null && !customers.some((customer) => customer.id === chosen)) {
+        /* Its one-off prices were typed for that customer: they must not end up in a general price list. */
         this.customerId.set(null);
+        this.priceOverrides.set(new Map());
+        this.pricesFor.set(null);
         this.ui.toast('De gekozen klant bestaat niet meer', 'err');
       }
     } catch {
