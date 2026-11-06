@@ -124,7 +124,8 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                   <i class="cps-tag cps-tag--warn" [attr.title]="unprintableTitle">onvolledig</i>
                 } @else if (row.belowCost) {
                   <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i>
-                } @else if (row.stored; as own) {
+                } @else if (!row.message && row.stored; as own) {
+                  <!-- A refusal says what to do; the stored price's chip would only squeeze it on the phone. -->
                   <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownChip(own) }}</i>
                 }
               </span>

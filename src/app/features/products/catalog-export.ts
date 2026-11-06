@@ -851,7 +851,8 @@ export class CatalogExport {
       const override = overrides.get(product.id!);
       /* A one-off typed on a unit the product has since left is no price at its unit now: it waits to be typed again
          (the server refuses it, BASIS_CHANGED), as the sheet says. */
-      const priceStale = !!override && basisChanged(product, override);
+      /* "Op aanvraag" has no unit to go stale: the server prints it whatever the product is sold per. */
+      const priceStale = !!override && !override.onRequest && basisChanged(product, override);
       const price = printedPrice(product, override, stored.get(product.id!));
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       return {

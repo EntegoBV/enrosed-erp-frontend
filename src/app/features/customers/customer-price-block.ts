@@ -167,7 +167,7 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
             </button>
           }
           @if (!allExports() && exports().length > exportsShown) {
-            <button class="linklike cp-more" type="button" (click)="allExports.set(true)">Alle {{ exports().length }} tonen</button>
+            <button class="linklike cp-more" type="button" (click)="allExports.set(true)">{{ exports().length >= exportLimit ? 'De laatste ' + exports().length + ' tonen' : 'Alle ' + exports().length + ' tonen' }}</button>
           }
         </div>
       }
