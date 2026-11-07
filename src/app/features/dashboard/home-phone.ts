@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ContextMenu } from '../../shared/context-menu';
 import type { ContextMenuItem } from '../../shared/context-menu';
@@ -17,8 +17,12 @@ import { othersOf } from './home-priority';
 import type { HomeTask, Tier } from './home-priority';
 import { HomeTaskCells } from './home-task-cells';
 import { PlannerCards } from './planner-cards';
+import { HostBridge } from '../../core/platform/host-bridge';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { menuRows } from '../../shared/host-page';
+import { homeTargetLink } from './home-sources';
+import type { TodaySources } from './home-today';
+import { containerName } from '../purchasing/container-name';
 import { HomeInkoop } from './widgets/home-inkoop';
 import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
@@ -206,6 +210,34 @@ export class HomePhone {
   readonly adding = signal(false);
   readonly menuItems = MENU;
   private readonly bellRef = viewChild(NotificationBell);
+
+  constructor() {
+    /* The native host's Vandaag widget (plan 3.6): the Home's figures as one `today` snapshot, 2 s after they last changed
+       and once Te doen may show. Host mode only; the mapper is a lazy chunk (home-today.ts) and posts only a change. */
+    const host = inject(HostBridge);
+    if (!host.present) return;
+    effect((onCleanup) => {
+      const data = this.data;
+      if (!data.tasksReady()) return;
+      const cash = data.cashData;
+      const sources: TodaySources = {
+        day: data.today(), loadedAt: data.loadedAt(), settled: data.settled(), tasks: data.tasks(), warnings: data.warnings(), cash: data.cash(),
+        days: data.forecast()?.days ?? null, payEur: data.outlookFigures()?.payEur ?? null, waiting: data.work.actionCount(),
+        tica: cash.state() === 'ready' && !cash.ticaSalesFailed() && cash.ticaSales().length > 0 ? cash.ticaSales() : null,
+        agenda: data.agenda().restOfToday, milestones: data.milestones(),
+        names: new Map(data.purchases().map((row) => [row.order.id, containerName(row.order)] as const)),
+        link: (target) => {
+          const link = homeTargetLink(target);
+          return link ? this.router.serializeUrl(this.router.createUrlTree(link.commands, { queryParams: link.queryParams })) : null;
+        },
+      };
+      const timer = setTimeout(() => void import('./home-today').then(({ nextToday }) => {
+        const today = nextToday(sources);
+        if (today) host.send(today);
+      }), 2000);
+      onCleanup(() => clearTimeout(timer));
+    });
+  }
 
   /** The native host's chrome: '+' Toevoegen, the bell with its count, the '…' rows; pull to refresh reloads. */
   readonly hostPage = computed<HostPageInput>(() => {
