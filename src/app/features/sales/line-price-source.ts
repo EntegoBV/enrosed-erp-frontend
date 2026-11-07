@@ -2,11 +2,14 @@ import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, afterRenderEffect, computed, inject, input, output,
   signal, untracked, viewChild,
 } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { CustomerPriceApi, followsCatalogue, type AppliedPriceEntry } from '../../core/api/customer-price-api';
 import type { PricedLine, SalesLinePriceSource, SalesOrderLine } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { clampMenuPosition, type MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { Sheet } from '../../shared/ui';
+import { appliedDay, CustomerPricePopup } from '../customers/customer-price-popup';
 import { euroText } from '../products/product-sales-unit';
 import { SalesMenuGesture } from './sales-menu-gesture';
 
@@ -109,12 +112,15 @@ export function linePriceHint(state: LinePriceState, offersNewPrice: boolean): s
  * press opens a sheet. Both show the figures and, when the line may change,
  * "Standaardprijs gebruiken", "Klantprijs gebruiken" or "Nieuwe klantprijs
  * € x toepassen". With `labelText` the marker brings the field's label along
- * (a button inside a label would be invalid).
+ * (a button inside a label would be invalid). Given the customer and the
+ * product, both also cite what the last document charged ("Eerder
+ * gehanteerd", fetched when they open) and offer every document in the
+ * customer's price popup.
  */
 @Component({
   selector: 'app-line-price-source',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, Sheet],
+  imports: [Icon, Sheet, CustomerPricePopup],
   host: { '[class.lps-host--label]': '!!labelText()' },
   template: `
     @if (labelText()) { <label [attr.for]="labelFor() || null">{{ labelText() }}</label> }
@@ -140,11 +146,15 @@ export function linePriceHint(state: LinePriceState, offersNewPrice: boolean): s
             }
           </dl>
           @if (hint()) { <p class="lpp__hint">{{ hint() }}</p> }
-          @if (editable() && actions().length) {
+          @if (earlier()) { <p class="lpp__hint">{{ earlier() }}</p> }
+          @if ((editable() && actions().length) || applied()) {
             <div class="lpp__actions">
-              @for (action of actions(); track action.label) {
-                <button class="lpp__action" type="button" (click)="choose(action)">{{ action.label }}</button>
+              @if (editable()) {
+                @for (action of actions(); track action.label) {
+                  <button class="lpp__action" type="button" (click)="choose(action)">{{ action.label }}</button>
+                }
               }
+              @if (applied()) { <button class="lpp__action" type="button" (click)="openDocuments()">Alle documenten ›</button> }
             </div>
           }
         </div>
@@ -164,16 +174,24 @@ export function linePriceHint(state: LinePriceState, offersNewPrice: boolean): s
               }
             </div>
             @if (hint()) { <p class="ios-section__foot">{{ hint() }}</p> }
-            @if (editable() && actions().length) {
+            @if (earlier()) { <p class="ios-section__foot">{{ earlier() }}</p> }
+            @if ((editable() && actions().length) || applied()) {
               <div class="ios-group lps-sheet__actions">
-                @for (action of actions(); track action.label) {
-                  <button class="ios-cell ios-cell--action" type="button" (click)="choose(action)">{{ action.label }}</button>
+                @if (editable()) {
+                  @for (action of actions(); track action.label) {
+                    <button class="ios-cell ios-cell--action" type="button" (click)="choose(action)">{{ action.label }}</button>
+                  }
                 }
+                @if (applied()) { <button class="ios-cell ios-cell--action" type="button" (click)="openDocuments()">Alle documenten ›</button> }
               </div>
             }
           </div>
         </app-sheet>
       }
+    }
+    @if (popup() && customerId() !== null && productId() !== null) {
+      <app-customer-price-popup [customerId]="customerId()!" [productId]="productId()!" [productName]="heading()"
+                                [currentDocumentId]="excludeDocumentId()" [showCustomerLink]="false" (closed)="popup.set(false)" />
     }
   `,
   styles: `
@@ -234,12 +252,14 @@ export function linePriceHint(state: LinePriceState, offersNewPrice: boolean): s
     .lpp__action:hover, .lpp__action:focus-visible { background: var(--surface-2); outline: none; }
     .lps-sheet { display: grid; gap: 14px; }
     .lps-sheet .ios-section__foot { margin-top: -6px; }
+    .lps-sheet .ios-section__foot + .ios-section__foot { margin-top: -10px; }
     .lps-sheet__actions .ios-cell { justify-content: flex-start; }
   `,
 })
 export class LinePriceSource {
   protected readonly desktop = inject(DesktopViewport);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly prices = inject(CustomerPriceApi);
 
   readonly state = input.required<LinePriceState>();
   /** Whether the line's price may change here; without it the popover only shows the figures. */
@@ -249,9 +269,19 @@ export class LinePriceSource {
   /** The phone's price label, brought along: "Prijs per stolp". */
   readonly labelText = input('');
   readonly labelFor = input('');
+  /** The document's customer and the line's product: with both, the marker cites earlier documents. */
+  readonly customerId = input<number | null>(null);
+  readonly productId = input<number | null>(null);
+  /** The document being edited: its own line is not an earlier price. */
+  readonly excludeDocumentId = input<number | null>(null);
   readonly use = output<LinePriceChoice>();
 
   readonly open = signal(false);
+  readonly popup = signal(false);
+  /** The newest priced line of another document for this pair; null while unknown or when there is none. */
+  readonly applied = signal<AppliedPriceEntry | null>(null);
+  /** The pair (and the document left out) the entry was fetched for: another one asks again. */
+  private appliedKey: string | null = null;
   readonly hovered = signal(false);
   readonly focused = signal(false);
   readonly position = signal<MenuPoint>({ x: 8, y: 8 });
@@ -266,6 +296,17 @@ export class LinePriceSource {
   readonly rows = computed(() => linePriceFigures(this.state()));
   /* The desk popover keeps its hint as before; the phone sheet names today's price beside an older pin when it cannot offer it. */
   readonly hint = computed(() => linePriceHint(this.state(), this.editable() || this.desktop.active()));
+  /**
+   * "Eerder gehanteerd: € 4,20 · 3 nov · OF-2026-031". A line that followed the catalogue stored no price of its own
+   * but was charged the catalogue price: "standaardprijs € 4,95" (today's, that day's is not kept), never "geen prijs".
+   */
+  readonly earlier = computed(() => {
+    const entry = this.applied();
+    if (!entry) return '';
+    const figure = !followsCatalogue(entry) ? euroText(entry.unitPriceEur!)
+      : this.state().standard === null ? 'standaardprijs (op aanvraag)' : `standaardprijs ${euroText(this.state().standard!)}`;
+    return ['Eerder gehanteerd: ' + figure, appliedDay(entry.orderDate), entry.number].filter(Boolean).join(' · ');
+  });
   readonly actions = computed<PriceAction[]>(() => {
     const state = this.state();
     const toStandard: PriceAction = { label: 'Standaardprijs gebruiken', choice: { source: 'STANDARD', unitPriceEur: null } };
@@ -284,9 +325,11 @@ export class LinePriceSource {
       const gesture = new SalesMenuGesture(this.mark().nativeElement, () => false, () => this.show());
       this.destroyRef.onDestroy(() => gesture.destroy());
     });
-    /* The desk popover opens under the marker, kept inside the window, and takes the focus. */
+    /* The desk popover opens under the marker, kept inside the window, and takes the focus; the earlier-price line
+       arrives later and makes it taller, so it is placed again then. */
     afterRenderEffect(() => {
       const element = this.pop()?.nativeElement;
+      this.applied();
       if (!element || !this.anchor) return;
       const rect = element.getBoundingClientRect();
       const next = clampMenuPosition(this.anchor, { width: rect.width, height: rect.height },
@@ -312,6 +355,38 @@ export class LinePriceSource {
     this.position.set(this.anchor);
     this.hovered.set(false);
     this.open.set(true);
+    void this.loadApplied();
+  }
+
+  /**
+   * Fetched once per pair, when the marker opens; nothing shows while it loads, and a failure shows nothing either.
+   * The document's own line is skipped (it is the price being decided, not an earlier one); a catalogue line counts,
+   * it was charged the catalogue price.
+   */
+  private async loadApplied(): Promise<void> {
+    const customerId = this.customerId();
+    const productId = this.productId();
+    if (customerId === null || productId === null) return;
+    const exclude = this.excludeDocumentId();
+    const key = `${customerId}:${productId}:${exclude ?? ''}`;
+    if (key === this.appliedKey) return;
+    this.appliedKey = key;
+    this.applied.set(null);
+    try {
+      const entries = await this.prices.appliedPriceEntries(customerId, productId);
+      if (this.destroyRef.destroyed || key !== this.appliedKey) return;
+      const newestFirst = [...entries].sort((left, right) => right.orderDate.localeCompare(left.orderDate) || right.documentId - left.documentId);
+      this.applied.set(newestFirst.find((entry) => entry.documentId !== exclude) ?? null);
+    } catch (failure: unknown) {
+      /* An older server (404) has nothing to tell and is not asked again; any other failure (a timeout, a token refresh) is retried on the next open. */
+      if (key === this.appliedKey && !(failure instanceof HttpErrorResponse && failure.status === 404)) this.appliedKey = null;
+    }
+  }
+
+  /** The popup takes the popover's place; the phone sheet goes too, so one sheet is open at a time. */
+  openDocuments(): void {
+    this.close();
+    this.popup.set(true);
   }
 
   close(): void {

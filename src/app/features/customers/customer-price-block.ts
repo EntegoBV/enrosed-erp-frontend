@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -338,6 +338,8 @@ export class CustomerPriceBlock {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly customerId = input.required<number>();
+  /** After a price was stored or removed: the Gehanteerde prijzen under this block compare against the klantprijs of now. */
+  readonly changed = output<void>();
 
   readonly rows = signal<CustomerPrice[]>([]);
   readonly loading = signal(true);
@@ -684,6 +686,7 @@ export class CustomerPriceBlock {
       this.draft.set(null);
       this.ui.toast('Klantprijs opgeslagen');
       if (draft.isNew) this.showSaved(draft.productId);
+      this.changed.emit();
       return true;
     } catch (failure: unknown) {
       if (customerId !== this.customerId()) return false;
@@ -753,6 +756,7 @@ export class CustomerPriceBlock {
       this.rows.set(rows);
       this.draft.set(null);
       this.ui.toast('Klantprijs verwijderd');
+      this.changed.emit();
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
     } finally {

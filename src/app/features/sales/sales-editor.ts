@@ -775,6 +775,7 @@ function layoutKey(order: SalesOrder): string {
                     @if (priceState) {
                       <app-line-price-source [state]="priceState" [editable]="mobileCommercialEditable()" [heading]="line.description"
                                              [labelText]="lineUnit(line.productId).priceLabel" [labelFor]="'p-' + line.productId"
+                                             [customerId]="view()?.order.customerId ?? null" [productId]="line.productId" [excludeDocumentId]="view()?.order.id ?? null"
                                              (use)="useLinePrice(line.productId, $event)" />
                     } @else {
                       <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>

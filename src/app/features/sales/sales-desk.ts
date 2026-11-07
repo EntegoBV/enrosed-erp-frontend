@@ -547,7 +547,8 @@ interface JourneyStep {
                                reads as part of "−5 % korting". -->
                           <!-- A customer price wears a quiet K before its unit: hover says the standard price, a click offers the other. -->
                           <small>@if (linePriceState(line); as priceState) {<app-line-price-source [state]="priceState" [editable]="commercialEditable()"
-                            [heading]="line.description" (use)="useLinePrice(line.productId, $event)" />}per {{ lineUnit(line.productId).singular }}</small>
+                            [heading]="line.description" [customerId]="data.order.customerId ?? null" [productId]="line.productId" [excludeDocumentId]="data.order.id"
+                            (use)="useLinePrice(line.productId, $event)" />}per {{ lineUnit(line.productId).singular }}</small>
                           @if (lineOtherPrice(line); as other) {
                             <small class="desk-unit-equivalent">{{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}</small>
                           }
