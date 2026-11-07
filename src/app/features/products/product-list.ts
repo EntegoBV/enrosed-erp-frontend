@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { filter } from 'rxjs';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
@@ -20,7 +22,7 @@ import { productSalesUnit } from './product-sales-unit';
 import { PhotoExportSheet } from './photo-export-sheet';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import {
-  SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, sortButtonLabel, type ListCategory, type ListSort, type ListStatus,
+  SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, sortButtonLabel, type ListCategory, type ListSort, type ListState, type ListStatus,
 } from './product-list-query';
 import { onderwegSummary, type Onderweg } from './product-figures';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -557,13 +559,13 @@ export class ProductList implements ProductListTableHost {
     /* Names the unit under each price ("per diamant"); "per stuk" until it arrives. */
     void this.catalog.unitNames().catch(() => undefined);
     /* The list opens as the address says (back from a product restores it), then writes every change back. */
-    const initial = readListQuery(this.route.snapshot.queryParams);
-    this.query.set(initial.q);
-    this.urlQuery.set(initial.q);
-    this.categoryFilter.set(initial.category);
-    this.statusFilter.set(initial.status);
-    this.sortKey.set(initial.sort);
-    this.openOverrides.set(new Map(initial.open.map((key) => [key, true])));
+    this.openAs(readListQuery(this.route.snapshot.queryParams));
+    /* A query-only navigation reuses this list: the native host's open of /products?q=… onto it (a search hand-off;
+       host-bridge-impl marks it nav 'replace') opens it as that address says again. */
+    this.route.queryParams.pipe(
+      filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe((params) => this.openAs(readListQuery(params)));
     effect(() => {
       const search = listQueryString({
         q: this.urlQuery(),
@@ -576,6 +578,17 @@ export class ProductList implements ProductListTableHost {
     });
     this.destroyRef.onDestroy(() => { if (this.queryTimer !== null) clearTimeout(this.queryTimer); });
     void this.load();
+  }
+
+  /** The list as an address opens it; a typing timer still running cannot bring the earlier search back. */
+  private openAs(state: ListState): void {
+    if (this.queryTimer !== null) { clearTimeout(this.queryTimer); this.queryTimer = null; }
+    this.query.set(state.q);
+    this.urlQuery.set(state.q);
+    this.categoryFilter.set(state.category);
+    this.statusFilter.set(state.status);
+    this.sortKey.set(state.sort);
+    this.openOverrides.set(new Map(state.open.map((key) => [key, true])));
   }
 
   private media(query: string) {

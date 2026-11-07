@@ -15,7 +15,9 @@ import type { PartnerContainerDeletionResult } from '../../core/api/partner-cont
 import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink, type ParamMap } from '@angular/router';
+import { filter } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
@@ -1101,14 +1103,28 @@ export class SalesList {
 
   constructor() {
     const query = this.route.snapshot.queryParamMap;
-    this.query.set(query.get('q')?.slice(0, 200) ?? '');
-    const scope = query.get('scope');
-    if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
-    const tab = query.get('tab');
-    if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
-    if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
-    const docs = query.get('docs');
-    if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
+    this.readAddress(query);
+    /* A query-only navigation reuses this list. The native host's open of /sales?… onto it (a search hand-off, the Vandaag
+       widget's Facturen › Openstaand, the root of 'Nieuwe order'; host-bridge-impl marks it nav 'replace') reads the
+       address again, on a list as a fresh open shows it, before the page goes out again. The web's own query changes
+       (rememberNavigation, the q leaving the address) carry no such marker. */
+    this.route.queryParamMap.pipe(
+      filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
+      takeUntilDestroyed(),
+    ).subscribe((params) => {
+      this.filter.set('');
+      this.attentionOnly.set(false);
+      this.customerFilter.set('');
+      this.websiteOnly.set(false);
+      this.toTakeOnly.set(false);
+      this.outstandingOnly.set(false);
+      this.docsFilter.set('all');
+      this.docTab.set('OFFERTE');
+      this.businessScope.set('ALL');
+      this.openRow.set(null);
+      this.expandedGroups.set(new Set());
+      this.readAddress(params);
+    });
     /* Before the first load answers: the folds of this device (not in load(), which also runs after every change). */
     this.restoreFolds();
     if (typeof matchMedia === 'function') {
@@ -1134,9 +1150,26 @@ export class SalesList {
     void this.load();
     /* The phone home's '+' lands here with ?nieuw=1: open the new-order sheet once and drop the flag so a reload does not reopen it. */
     if (query.get('nieuw') === '1') {
-      void this.router.navigate([], { queryParams: { nieuw: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
+      void this.router.navigate([], { queryParams: { nieuw: null, q: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
       this.startNew();
     }
+  }
+
+  /**
+   * The address's search and filters: q, scope, tab, payment=open, docs. A q is read once and then leaves the address
+   * (as ?nieuw=1 does), so Terug from an order, a tab switch's merge or a second hand-off of the same text never brings
+   * back a search that was cleared or retyped since.
+   */
+  private readAddress(query: ParamMap): void {
+    this.query.set(query.get('q')?.slice(0, 200) ?? '');
+    const scope = query.get('scope');
+    if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
+    const tab = query.get('tab');
+    if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
+    if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
+    const docs = query.get('docs');
+    if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
+    if (query.has('q')) void this.router.navigate([], { relativeTo: this.route, queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   async load(): Promise<void> {

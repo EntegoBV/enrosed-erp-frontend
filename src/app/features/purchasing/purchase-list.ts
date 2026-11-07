@@ -1,6 +1,8 @@
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, type ParamMap } from '@angular/router';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
 import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -606,7 +608,18 @@ export class PurchaseList {
   readonly smallPhone = signal(false);
 
   constructor() {
-    this.query.set(this.route.snapshot.queryParamMap.get('q')?.slice(0, 200) ?? '');
+    this.readSearch(this.route.snapshot.queryParamMap);
+    /* A query-only navigation reuses this list. The native host's open of /purchasing?q=… onto it (a search hand-off;
+       host-bridge-impl marks it nav 'replace') reads the address again, on the working list with every status. */
+    this.route.queryParamMap.pipe(
+      filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
+      takeUntilDestroyed(),
+    ).subscribe((params) => {
+      this.statusFilter.set('ALL');
+      this.showArchive(false);
+      this.openRow.set(null);
+      this.readSearch(params);
+    });
     if (typeof matchMedia === 'function') {
       const destroyRef = inject(DestroyRef);
       for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
@@ -621,6 +634,12 @@ export class PurchaseList {
     /* Fill each untouched field as soon as the daily reference arrives. */
     effect(() => this.applyAutomaticRates(this.automaticRates()));
     if (!this.fx.series()) void this.fx.load();
+  }
+
+  /** ?q=: read once, then it leaves the address, so Terug from a container never brings back a search cleared since. */
+  private readSearch(params: ParamMap): void {
+    this.query.set(params.get('q')?.slice(0, 200) ?? '');
+    if (params.has('q')) void this.router.navigate([], { relativeTo: this.route, queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   reload(): void { void this.load(); }

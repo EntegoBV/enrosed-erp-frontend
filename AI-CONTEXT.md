@@ -847,8 +847,14 @@ pallet round of 2026-11-04: the baseline to track.
     NAV_WORKSPACES, PHONE_TAB_PAGES, symbols through `resolveSymbol`, the
     WorkQueue counts and `isNew` (newUntil), plus `search`: the lists that
     read `?q=` on open (customers, products, sales, purchasing; sales-list
-    and purchase-list since this round). While signed in, a second after its
-    last change, only when its JSON changed.
+    and purchase-list since this round). Native opens a tab root's own list
+    with another query as `open` replace onto the mounted list, and a
+    query-only navigation reuses the component: sales-list, purchase-list and
+    product-list follow `queryParamMap` for that host open only (`nav:
+    'replace'` in the navigation's info) and read the address again on a
+    fresh list; sales-list and purchase-list then drop `q` from the address.
+    While signed in, a second after its last change, only when its JSON
+    changed.
   - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
     home-phone's one host-only effect): the Home's Kas headline with 30 days
     of the sparkline and its link, Nu te betalen, the top 6 of Te doen with
