@@ -853,6 +853,12 @@ pallet round of 2026-11-04: the baseline to track.
     product-list follow `queryParamMap` for that host open only (`nav:
     'replace'` in the navigation's info) and read the address again on a
     fresh list; sales-list and purchase-list then drop `q` from the address.
+    product-list keeps `q` in its address (Location.replaceState, so Terug
+    restores the search), which never moves `router.url`, the page's `url`
+    that native compares a hand-off with: in host mode it drops `q` from
+    the router's own URL once the navigation that brought it ended, and
+    writes its address again, so the same text after a cleared or retyped
+    field is never "already there".
     While signed in and once this web view's WorkQueue answered (a fresh
     queue's zero counts would blank the native menu's counts), a second
     after its last change, only when its JSON changed.

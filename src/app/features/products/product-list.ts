@@ -1,13 +1,13 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Location, NgTemplateOutlet } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationCancel, NavigationEnd, NavigationError, Router, RouterLink } from '@angular/router';
 import { filter } from 'rxjs';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
 import { Category, Product, ProductFamily, StockLevel, ExpectedStock, StockLocation } from '../../core/api/models';
-import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { HostBridge, type HostActionEvent, type HostPageInput } from '../../core/platform/host-bridge';
 import { menuRows } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
@@ -486,6 +486,7 @@ export class ProductList implements ProductListTableHost {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly host = inject(HostBridge);
   /** Desk widths: the table from 900, the full column set and the category chips from 1360. */
   readonly wide = this.media('(min-width: 900px)');
   readonly full = this.media('(min-width: 1360px)');
@@ -560,20 +561,18 @@ export class ProductList implements ProductListTableHost {
     void this.catalog.unitNames().catch(() => undefined);
     /* The list opens as the address says (back from a product restores it), then writes every change back. */
     this.openAs(readListQuery(this.route.snapshot.queryParams));
+    if (this.route.snapshot.queryParamMap.has('q')) this.releaseSearch();
     /* A query-only navigation reuses this list: the native host's open of /products?q=… onto it (a search hand-off;
        host-bridge-impl marks it nav 'replace') opens it as that address says again. */
     this.route.queryParams.pipe(
       filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
       takeUntilDestroyed(this.destroyRef),
-    ).subscribe((params) => this.openAs(readListQuery(params)));
+    ).subscribe((params) => {
+      this.openAs(readListQuery(params));
+      if (params['q'] !== undefined) this.releaseSearch();
+    });
     effect(() => {
-      const search = listQueryString({
-        q: this.urlQuery(),
-        category: this.categoryFilter(),
-        status: this.familyLoadError() ? 'ALL' : this.statusFilter(),
-        sort: this.sortKey(),
-        open: [...this.openOverrides()].filter(([, open]) => open).map(([key]) => key),
-      });
+      const search = this.addressSearch();
       untracked(() => this.writeUrl(search));
     });
     this.destroyRef.onDestroy(() => { if (this.queryTimer !== null) clearTimeout(this.queryTimer); });
@@ -589,6 +588,44 @@ export class ProductList implements ProductListTableHost {
     this.statusFilter.set(state.status);
     this.sortKey.set(state.sort);
     this.openOverrides.set(new Map(state.open.map((key) => [key, true])));
+  }
+
+  /** The list's state as its address carries it (writeUrl). */
+  private addressSearch(): string {
+    return listQueryString({
+      q: this.urlQuery(),
+      category: this.categoryFilter(),
+      status: this.familyLoadError() ? 'ALL' : this.statusFilter(),
+      sort: this.sortKey(),
+      open: [...this.openOverrides()].filter(([, open]) => open).map(([key]) => key),
+    });
+  }
+
+  /**
+   * In the native host the router's own URL lets go of ?q= once the list has read it, as soon as the navigation that
+   * brought it has ended. The host compares a search hand-off with the page's url, which is router.url, and writeUrl's
+   * replaceState never moves it: after the field was cleared or retyped, 'Producten: "…"' with the text the router still
+   * had was 'already there' and did nothing. The address keeps q (written again after the replace), so Terug still opens
+   * the list with its search. Never inside the navigation that is still activating: a Terug's pop would be lost.
+   */
+  private releaseSearch(): void {
+    if (!this.host.present) return;
+    const id = this.router.currentNavigation()?.id;
+    const release = (): void => {
+      const running = this.router.currentNavigation();
+      if ((running && running.id !== id) || this.router.url.split('?')[0] !== '/products') return;
+      if (!this.router.parseUrl(this.router.url).queryParamMap.has('q')) return;
+      void this.router.navigate([], { relativeTo: this.route, queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true })
+        .then((done) => { if (done) this.writeUrl(this.addressSearch()); });
+    };
+    if (id === undefined) { queueMicrotask(release); return; }
+    /* By hand rather than with take(1): that operator alone reshuffled the lazy chunks (+3 kB, the Kosten and Verkoop screens). */
+    const ended = this.router.events.subscribe((event) => {
+      if (!(event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError) || event.id !== id) return;
+      ended.unsubscribe();
+      if (event instanceof NavigationEnd) queueMicrotask(release);
+    });
+    this.destroyRef.onDestroy(() => ended.unsubscribe());
   }
 
   private media(query: string) {
