@@ -708,7 +708,7 @@ handler per command type with `enrosedHost.on(type, fn)` and then calling
 `enrosedHost.ready()` (commands received before that are queued). Messages
 web → native: `ready`, `auth`, `theme`, `badges`, `nav.willChange`, `page`,
 `scroll`, `overlay`, `haptic`, `file`, `share`, `openExternal`,
-`refreshDone`, `log`; asks: `confirm` (with an optional `secondary`
+`refreshDone`, `log`, and since round 4 `session`, `today`, `nav` (below); asks: `confirm` (with an optional `secondary`
 button: the leave question's Niet opslaan) and `prompt`. Commands native →
 web: `action {id}`, `back {count}`, `open {url, nav}`, `tabRoot`,
 `lifecycle`, `refresh`, `insets`, `sessionCheck`. Both sides tolerate
@@ -831,6 +831,37 @@ pallet round of 2026-11-04: the baseline to track.
   `PushSetup.hosted` is true in host mode (no Push API in a WKWebView):
   Instellingen › Dit toestel says notifications come from the home-screen
   app.
+- Round 4 (2026-11-07, for the app's widgets, Siri, search and sidebar;
+  additive, `hostVersion` stays 1, an older shell ignores them): three more
+  messages, all host-only and in lazy chunks.
+  - `session` (host-bridge-impl `sendSession`): the stored credential as it
+    is (`enrosed.auth`, base64(username:token)), username, displayName,
+    `expiresAt` and `apiBase` (the build's API_BASE), at boot and after every
+    sign-in, deduped per web view. Only for kind `session-v1`
+    (`Auth.credentialKind()`, `Auth.sessionExpiresAt()`: two read-only
+    getters, the only bytes this round adds to the initial bundle); a legacy
+    username:password never crosses. Native takes it only from the main
+    frame of the web origin, keeps it in the keychain and never logs it. Never
+    log or print it on the web side either.
+  - `nav` (`navMessage`): every NAV_GROUPS row this person sees (onlyUser),
+    NAV_WORKSPACES, PHONE_TAB_PAGES, symbols through `resolveSymbol`, the
+    WorkQueue counts and `isNew` (newUntil), plus `search`: the lists that
+    read `?q=` on open (customers, products, sales, purchasing; sales-list
+    and purchase-list since this round). While signed in, a second after its
+    last change, only when its JSON changed.
+  - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
+    home-phone's one host-only effect): the Home's Kas headline with 30 days
+    of the sparkline and its link, Nu te betalen, the top 6 of Te doen with
+    their router urls (`homeTargetLink`), the bell's count, today's TICA,
+    the rest of today's agenda (3) and the next expected arrivals (5); `at`
+    is `HomeData.loadedAt`, so the snapshot moves when the Home reloads or a
+    figure changes. Once `tasksReady()`, 2 s after the last change, only
+    when it changed, at most 8 KB. The mapper keeps type imports only and no
+    object spread: esbuild lowers spread to shared helpers, and a helper or
+    runtime import there split them into a new initial chunk (+0.3 kB).
+    Native sends the existing `refresh` to the Home root when its copy is
+    older than 30 minutes on a return to the foreground.
+  Initial total: 971.74 kB on main 2f92dc9, 971.82 kB with this round.
 
 **A refused back** (`app.config.ts`: `withRouterConfig({ canceledNavigationResolution:
 'computed' })`, 2026-10-30, for the PWA's back too). The router's default,
