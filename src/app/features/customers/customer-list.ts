@@ -86,6 +86,8 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
                     {{ placeLine(customer) }}
                   </div>
                 }
+                <!-- Phone: the stamp reads under the place; in the narrow end column it broke over two lines and squeezed the name. -->
+                @if (customerSince(customer.createdAt); as since) { <div class="list-item__meta cl-since cl-since--body">{{ since }}</div> }
               </div>
               <div class="list-item__end list-item__end--stacked">
                 @if (statusTone(customer.crmStatus); as tone) {
@@ -291,6 +293,11 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
     .customer-open { display: flex; align-items: center; gap: 12px; flex: 1; align-self: stretch; min-width: 0; border: 0; background: transparent;
       padding: 0; text-align: left; cursor: pointer; border-radius: 8px; color: inherit; font: inherit; }
     .cl-since { color: var(--muted-2); }
+    .cl-since--body { display: none; }
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+      .cl-since--body { display: block; }
+      .list-item__end .cl-since { display: none; }
+    }
     .cl-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
     .cl-marks .wk-pill { height: 18px; padding: 0 6px; font-size: 10px; }
 
