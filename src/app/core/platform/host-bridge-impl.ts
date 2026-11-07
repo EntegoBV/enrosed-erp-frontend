@@ -7,20 +7,24 @@ import { HOST_VERSION, cleanLabel } from './host';
 import { stripSide } from './nav-rail';
 import { resolveSymbol, workspaceOf } from './host-symbols';
 import type {
-  HostAction, HostCommand, HostMenuItem, HostNavDirection, HostPage, HostStackEntry, HostTheme, HostTitleRow, HostWindow,
+  HostAction, HostCommand, HostMenuItem, HostNav, HostNavDirection, HostNavRow, HostPage, HostSession, HostStackEntry, HostTheme, HostTitleRow,
+  HostWindow,
 } from './host';
 import { HostBridge } from './host-bridge';
 import type { HostBridgeImplementation, HostContribution, HostPageSource } from './host-bridge';
 import { NavHistory } from './nav-history-service';
 import { navPath, navScreen } from './nav-history';
 import { WorkspaceReturn } from './workspace-return';
-import { NAV_GROUPS, navItemActive, navItemUrl } from './nav-items';
+import { NAV_GROUPS, NAV_WORKSPACES, navItemActive, navItemIsNew, navItemUrl, navItemVisible } from './nav-items';
+import type { NavCountKey, NavItem } from './nav-items';
 import { tabMenuFor } from './tab-menu';
-import { PHONE_TABS, phoneTabForUrl } from './phone-tabs';
+import { PHONE_TABS, PHONE_TAB_PAGES, phoneTabForUrl } from './phone-tabs';
 import { navDirection, navInfoDirection } from './nav-direction';
 import { returnLabel, screenLabel } from './return-label';
 import { WorkQueue } from '../api/work-queue';
 import { Auth } from '../api/auth';
+import { api } from '../api/api.config';
+import type { CurrentUser } from '../api/models';
 import { Theme } from './theme';
 import { scrollBehavior } from '../../shared/motion';
 
@@ -42,9 +46,46 @@ interface Owner {
 const COMMAND_TYPES: readonly HostCommand['type'][] = ['action', 'back', 'open', 'tabRoot', 'lifecycle', 'refresh', 'insets', 'sessionCheck'];
 const FALLBACK_MS = 300;
 const REFRESH_TIMEOUT_MS = 15000;
+/** `nav` goes out a second after its last change. */
+const NAV_DEBOUNCE_MS = 1000;
+/** The lists that read `?q=` on open (customer-list, product-list, sales-list, purchase-list): native search hands the typed text over. */
+const NAV_SEARCH: HostNav['search'] = [
+  { label: 'Klanten', url: '/customers?q=' }, { label: 'Producten', url: '/products?q=' },
+  { label: 'Verkoop', url: '/sales?q=' }, { label: 'Inkoop', url: '/purchasing?q=' },
+];
 
 function bellLabel(count: number): string {
   return count === 0 ? 'Meldingen' : count === 1 ? '1 klant wacht' : `${count} klanten wachten`;
+}
+
+/**
+ * The ERP menu as the native host mirrors it (`nav`, plan 3.6): every NAV_GROUPS row this person sees (onlyUser), the
+ * workspaces, the phone tabs' pages, symbols resolved as for the bars, the WorkQueue counts and the "nieuw" pills.
+ */
+function navMessage(user: CurrentUser | null, counts: Readonly<Record<NavCountKey, number>>): HostNav {
+  const username = user?.username ?? null;
+  const row = (item: NavItem): HostNavRow => {
+    const out: HostNavRow = { id: item.id, label: item.label, url: navItemUrl(item),
+      symbol: resolveSymbol({ icon: item.icon, label: item.label }) ?? 'circle.dashed' };
+    if (item.short) out.short = item.short;
+    const count = item.countKey ? counts[item.countKey] : 0;
+    if (count > 0) out.count = count;
+    if (navItemIsNew(item)) out.isNew = true;
+    if (item.tabRoot) out.tabRoot = true;
+    return out;
+  };
+  const nav: HostNav = {
+    type: 'nav', user: { name: user?.displayName ?? '' }, tabPages: PHONE_TAB_PAGES,
+    groups: NAV_GROUPS.map((group) => ({
+      id: group.id, label: group.label, tone: group.tone,
+      symbol: resolveSymbol({ icon: group.meerIcon ?? group.icon, label: group.label }) ?? 'circle.dashed',
+      rows: group.items.filter((item) => navItemVisible(item, username)).map(row),
+    })),
+    workspaces: NAV_WORKSPACES.map(row),
+    search: NAV_SEARCH,
+  };
+  if (username) nav.user.username = username;
+  return nav;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -65,6 +106,9 @@ export class HostBridgeImpl implements HostBridgeImplementation {
   private publishedUrl: string | null = null;
   private navStartUrl: string | null = null;
   private refreshFinish: (() => void) | null = null;
+  /** The last `session` and `nav` this web view sent (JSON): each goes out again only when it changed. */
+  private lastSession = '';
+  private lastNav = '';
 
   /** The URL the router settled on; read by the compose effect so a navigation republishes. */
   private readonly navUrl = toSignal(
@@ -451,6 +495,26 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     const work = this.injector.get(WorkQueue);
     const theme = this.injector.get(Theme);
     effect(() => { this.bridge.send({ type: 'auth', loggedIn: auth.isLoggedIn() }); }, { injector: this.injector });
+    /* The login for the native glances (plan 3.2): at boot and after every sign-in, a signed session token only. */
+    effect(() => {
+      const header = auth.header();
+      const user = auth.user();
+      untracked(() => this.sendSession(auth, header, user));
+    }, { injector: this.injector });
+    /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later. */
+    effect((onCleanup) => {
+      const user = auth.isLoggedIn() ? auth.user() : null;
+      const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount() };
+      if (!user) { this.lastNav = ''; return; }
+      const timer = setTimeout(() => {
+        const nav = navMessage(user, counts);
+        const json = JSON.stringify(nav);
+        if (json === this.lastNav) return;
+        this.lastNav = json;
+        this.bridge.send(nav);
+      }, NAV_DEBOUNCE_MS);
+      onCleanup(() => clearTimeout(timer));
+    }, { injector: this.injector });
     effect(() => {
       const sales = work.actionCount();
       const more = work.loginRequestCount();
@@ -467,6 +531,26 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       url: `${win.location.pathname}${win.location.search}`,
     });
     this.scheduleFallback();
+  }
+
+  /**
+   * `session` (plan 3.2): the stored credential as it is, for a signed session token only (a legacy username:password
+   * never crosses; auth.ts exchanges it on start and this runs again). Once per change: at boot, after a sign-in, after
+   * another web view's sign-in reached this one (sessionCheck). Never logged here.
+   */
+  private sendSession(auth: Auth, header: string | null, user: CurrentUser | null): void {
+    const prefix = 'Basic ';
+    if (!header) { this.lastSession = ''; return; }
+    const expiresAt = auth.sessionExpiresAt();
+    if (!header.startsWith(prefix) || !user?.username || auth.credentialKind() !== 'session-v1' || !expiresAt) return;
+    const session: HostSession = {
+      type: 'session', kind: 'session-v1', username: user.username, credential: header.slice(prefix.length), expiresAt, apiBase: api(''),
+    };
+    if (user.displayName) session.displayName = user.displayName;
+    const json = JSON.stringify(session);
+    if (json === this.lastSession) return;
+    this.lastSession = json;
+    this.bridge.send(session);
   }
 
   private themeColours(): HostTheme {
