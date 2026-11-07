@@ -13,6 +13,7 @@ import { DecimalInput } from '../../shared/decimal-input';
 import { ProductPicker } from '../../shared/product-picker';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui, escapeHtml } from '../../shared/ui';
+import { CatalogPriceSheet } from '../products/catalog-price-sheet';
 import { priceBasis, type PriceBasisNow } from '../products/catalog-prices';
 import { otherBasisPrice, productSalesUnit, unitName } from '../products/product-sales-unit';
 import {
@@ -49,7 +50,10 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
  * Klantprijzen on the customer sheet: one agreed price per product, EUR
  * excl. VAT on the product's own sales unit, which a catalogue made for this
  * customer prints instead of the catalogue price. A row edits in place, "+
- * Product" goes through the product picker, and the Prijslijsten list shows
+ * Product" goes through the product picker, "Prijzen aanpassen" opens the
+ * catalogue's price sheet for this customer (search the whole catalogue, take
+ * many in at once, one price for all found, Emre 2026-11-07: "alle stolpen
+ * aanpassen in 1 x inpv 1 per 1"), and the Prijslijsten list shows
  * every catalogue made for the customer with the price each product carried.
  *
  * Like the Websitelogin block, every save here acts at once and on its own;
@@ -58,7 +62,7 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
 @Component({
   selector: 'app-customer-price-block',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, DateField, DecimalInput, ProductPicker, Sheet, Skeleton],
+  imports: [FormsModule, RouterLink, CatalogPriceSheet, DateField, DecimalInput, ProductPicker, Sheet, Skeleton],
   template: `
     <div class="cp-head">
       <b>Klantprijzen</b>
@@ -128,7 +132,7 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
             @let name = parts(row.productId);
             @let facts = metaParts(row);
             <button class="cp-row" type="button" [attr.data-product]="row.productId" [class.cp-row--off]="row.status !== 'ACTIVE'"
-                    [class.cp-row--saved]="justSaved() === row.productId" [disabled]="!!draft() || busy()" (click)="edit(row)">
+                    [class.cp-row--saved]="justSaved() === row.productId" [disabled]="!!draft() || busy() || bulkLoading()" (click)="edit(row)">
               <span class="cp-name"><span>{{ name.head }}</span>@if (name.tail) {<span class="cp-variant">{{ name.tail }}</span>}
                 @if (pill(row); as tag) { <i class="badge" [class]="tag.css">{{ tag.label }}</i> }</span>
               <span class="cp-fig">{{ euro(row.priceExclVat) }}</span>
@@ -145,11 +149,14 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
         }
       </div>
       <div class="cp-actions">
-        <button class="btn btn--sm" type="button" [disabled]="!!draft() || busy() || pickerLoading()" (click)="pick()">
+        <button class="btn btn--sm" type="button" [disabled]="!!draft() || busy() || bulkLoading() || pickerLoading()" (click)="openBulk()">
+          {{ bulkLoading() ? 'Bezig…' : 'Prijzen aanpassen' }}
+        </button>
+        <button class="btn btn--sm" type="button" [disabled]="!!draft() || busy() || pickerLoading() || bulkLoading()" (click)="pick()">
           {{ pickerLoading() ? 'Bezig…' : '+ Product' }}
         </button>
         @if (rows().length) {
-          <button class="btn btn--sm" type="button" [disabled]="busy()" (click)="openHistory(null)">Geschiedenis</button>
+          <button class="btn btn--sm" type="button" [disabled]="busy() || bulkLoading()" (click)="openHistory(null)">Geschiedenis</button>
         }
       </div>
 
@@ -187,6 +194,12 @@ const STALE_PRICE = 'De prijsbasis is gewijzigd · geef de prijs opnieuw in';
         (picked)="choose($event.product)"
         (cancelled)="picking.set(false)"
       />
+    }
+
+    @if (bulk()) {
+      <app-catalog-price-sheet mode="customer" [catalogue]="sellable()" [selected]="pricedIds()" [families]="families()"
+        [categories]="categories()" [customer]="bulkCustomer()" [customerPrices]="priceMap()"
+        (saved)="bulkSaved($event)" (productsStale)="refreshAfterRefusal()" (closed)="bulk.set(false)" />
     }
 
     @if (historyFor(); as target) {
@@ -338,6 +351,8 @@ export class CustomerPriceBlock {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly customerId = input.required<number>();
+  /** The customer's name for the price sheet ("Klantprijzen van …"). */
+  readonly customerName = input('');
 
   readonly rows = signal<CustomerPrice[]>([]);
   readonly loading = signal(true);
@@ -362,6 +377,14 @@ export class CustomerPriceBlock {
   readonly families = signal<ProductFamily[]>([]);
   readonly picking = signal(false);
   readonly pickerLoading = signal(false);
+  /** The price sheet for many products at once. */
+  readonly bulk = signal(false);
+  readonly bulkLoading = signal(false);
+  /** Every sellable product, in the catalogue's order: the sheet finds and takes in those without a price yet. */
+  readonly sellable = computed(() => [...(this.products()?.values() ?? [])].filter((product) => product.id != null && product.active && !product.demo));
+  readonly pricedIds = computed(() => new Set(this.rows().filter((row) => row.status !== 'PRODUCT_GONE').map((row) => row.productId)));
+  readonly priceMap = computed(() => new Map(this.rows().map((row) => [row.productId, row] as const)));
+  readonly bulkCustomer = computed(() => ({ id: this.customerId(), name: this.customerName().trim() || 'deze klant' }));
   private productsRequest: Promise<void> | null = null;
   private listsRequest: Promise<void> | null = null;
 
@@ -609,10 +632,41 @@ export class CustomerPriceBlock {
     return basisPer(line.salesUnit, line.piecesPerUnit, line.unitKey);
   }
 
+  /* ------------------------------------------------------------ many at once */
+
+  async openBulk(): Promise<void> {
+    if (this.draft() || this.busy() || this.bulkLoading() || this.pickerLoading()) return;
+    this.bulkLoading.set(true);
+    try {
+      await Promise.all([this.ensureProducts(), this.ensurePickerLists()]);
+    } finally {
+      this.bulkLoading.set(false);
+    }
+    /* Something opened while the lists loaded: the sheet never opens over a price the block holds open, whose old
+       amount would otherwise be saved back over the sheet's. */
+    if (this.draft() || this.busy() || this.picking() || this.historyFor()) return;
+    if (this.products()) this.bulk.set(true);
+    else this.ui.toast('De producten konden niet geladen worden. Probeer opnieuw.', 'err');
+  }
+
+  /** The sheet stored its prices: the answer is the customer's whole list. */
+  bulkSaved(rows: CustomerPrice[]): void {
+    this.rows.set(rows);
+    this.allRows.set(true);
+  }
+
+  /** A price typed on a unit the product has left (409): the products and the stored prices come again, the sheet stays open. */
+  refreshAfterRefusal(): void {
+    this.productsRequest = null;
+    void this.ensureProducts();
+    const customerId = this.customerId();
+    void this.api.list(customerId).then((rows) => { if (customerId === this.customerId()) this.rows.set(rows); }).catch(() => undefined);
+  }
+
   /* ------------------------------------------------------------ editing */
 
   edit(row: CustomerPrice): void {
-    if (this.draft() || this.busy()) return;
+    if (this.draft() || this.busy() || this.bulkLoading()) return;
     this.formError.set(null);
     /* An amount on the old basis would store a display's price as one bowl's: a changed basis starts empty. */
     const changed = row.status === 'BASIS_CHANGED';
@@ -761,7 +815,7 @@ export class CustomerPriceBlock {
   }
 
   async pick(): Promise<void> {
-    if (this.draft() || this.busy() || this.pickerLoading()) return;
+    if (this.draft() || this.busy() || this.pickerLoading() || this.bulkLoading()) return;
     this.pickerLoading.set(true);
     try {
       await Promise.all([this.ensureProducts(), this.ensurePickerLists()]);

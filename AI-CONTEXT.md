@@ -2624,6 +2624,22 @@ offertes en facturen"); the website shows it to that customer's logins
   is a size container); Prijslijsten (the journal's 100 newest, the
   server's maximum, counted in the head, "100+" when full; 3 shown) hides
   while empty.
+- **Prijzen aanpassen** (2026-11-07, Emre: "alle stolpen aanpassen in 1 x
+  inpv 1 per 1"): a button before "+ Product" opens the catalogue's price
+  sheet (`app-catalog-price-sheet mode="customer"`, see Catalogus PDF ›
+  Prijzen aanpassen): catalogue = every active, non-demo product, selected =
+  the products with a stored price, "Klantprijzen van {klant}", columns
+  Catalogus · Klant · Nieuwe prijs. The same search over the whole catalogue,
+  "Zonder klantprijs" with Opnemen / "Alle n opnemen", "Alle n gevonden" for
+  one price over what a search shows (one unit basis), % on the rows on
+  screen. "Bewaren (n)" PUTs every typed price at once (source
+  CUSTOMER_SCREEN, the unit typed on, the sheet's optional "Geldig tot" for
+  all of them; a past date blocks; without one stored end dates stay and a
+  passed one is cleared; notes stay); a product taken in without a price
+  stores nothing; where no ACTIVE price applies every typed price counts,
+  also one equal to the catalogue price. No "Op aanvraag" and no keep box
+  there; the ⋯ has "Ongedaan maken" and "Niet opnemen". A 409 keeps the
+  sheet open and the block loads the products and rows again.
 - Every save there is a PUT of its own with source CUSTOMER_SCREEN. The
   sheet's Opslaan first stores a typed price that is not saved yet
   (`pending()` / `saveDraft()`); a refused one keeps the sheet open on it
@@ -4854,7 +4870,7 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 | File | Role | Styles (budget size) |
 |---|---|---|
 | `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
-| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup: prices, taking products in, "Alle n gevonden" | ~9.5 kB |
+| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup: prices, taking products in, "Alle n gevonden"; `mode="customer"` for the customer's Klantprijzen | ~10 kB |
 | `catalog-product-selection-state.ts` | Pure: selection helpers and the catalogue search (`catalogSearchKey`, `catalogSearchWords`, `catalogSearchText`, `catalogSearchMatch`), shared by step 03 and the sheet | – |
 | `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
 | `core/api/catalog-api.ts` | `CatalogExportRequest` + `customerId`, `recipientName`, `pricesValidUntil`, `priceOverrides` (`CatalogPriceOverride`); `CatalogPreflightResult` + `prices`, `priceWarnings`, `recipient`; `CatalogPricesInvalid` | – |

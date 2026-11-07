@@ -170,7 +170,7 @@ import { blankCustomer as blank, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, v
                 <app-customer-login-block [customerId]="customerId" [customerEmail]="draft().email || null" />
               </div>
               <div class="field span-2 partner-field">
-                <app-customer-price-block [customerId]="customerId" />
+                <app-customer-price-block [customerId]="customerId" [customerName]="draft().company" />
               </div>
             }
             <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
