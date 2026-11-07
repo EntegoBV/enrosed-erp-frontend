@@ -49,7 +49,7 @@ import {
   catalogTranslationLinks,
 } from './catalog-translation-issues';
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
-import { deselectProductIds } from './catalog-product-selection-state';
+import { deselectProductIds, selectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
 import { variantLabelIn } from './product-translation-adapter';
 import { productSalesUnit } from './product-sales-unit';
@@ -90,7 +90,7 @@ function unitAfterPrice(product: Product, language: LanguageCode, copy: { perPie
   return language === 'NL' ? unit.piece.per : copy.perPiece;
 }
 
-/** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80, 260 cm loaded with the wood, 700 kg. */
+/** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80 at the standard loaded height (the wood included), 700 kg. */
 const CATALOGUE_PALLET = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
@@ -320,7 +320,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                     @if (validityPast()) { <small class="price-target__past">Ligt in het verleden</small> }
                   </label>
                   <div class="price-target__adjust">
-                    <button class="btn" type="button" [disabled]="!dataReady() || !selected().size" (click)="openPriceSheet()">
+                    <!-- Also with an empty PDF: the sheet finds and takes in products itself. -->
+                    <button class="btn" type="button" [disabled]="!dataReady()" (click)="openPriceSheet()">
                       Prijzen aanpassen{{ overrideCount() ? ' (' + overrideCount() + ')' : '' }}
                     </button>
                     @if (customerNote()) { <small>{{ customerNote() }}</small> }
@@ -513,9 +514,11 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     </div>
 
     @if (priceSheetOpen()) {
-      <app-catalog-price-sheet [products]="selectedProducts()" [families]="families()" [overrides]="priceOverrides()" [customer]="targetCustomer()"
+      <app-catalog-price-sheet [catalogue]="orderedProducts()" [selected]="selected()" [families]="families()" [categories]="categories()"
+        [overrides]="priceOverrides()" [customer]="targetCustomer()"
         [customerPrices]="customerPrices()" [customerNote]="customerNote()" [validUntil]="pricesValidUntil()" [issues]="priceIssues()"
-        (saved)="customerPricesSaved($event)" (applied)="applyPrices($event)" (productsStale)="refreshProducts()" (closed)="priceSheetOpen.set(false)" />
+        (saved)="customerPricesSaved($event)" (included)="includeProducts($event)" (applied)="applyPrices($event)"
+        (productsStale)="refreshProducts()" (closed)="priceSheetOpen.set(false)" />
     }
   `,
   styles: `
@@ -1280,7 +1283,13 @@ export class CatalogExport {
       this.confirmRecipientName();
       return;
     }
-    if (this.dataReady() && this.selected().size) this.priceSheetOpen.set(true);
+    if (this.dataReady()) this.priceSheetOpen.set(true);
+  }
+
+  /** Products taken in from Prijzen aanpassen: added to the PDF (never replacing it), so step 03 and the counts follow. */
+  includeProducts(ids: readonly number[]): void {
+    const known = new Set(this.products().map((product) => product.id));
+    this.selected.update((current) => selectProductIds(current, ids.filter((id) => known.has(id))));
   }
 
   /** The sheet's prices; one that prints what the PDF would print anyway is not kept. */

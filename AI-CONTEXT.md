@@ -4854,7 +4854,8 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 | File | Role | Styles (budget size) |
 |---|---|---|
 | `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
-| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup | ~8 kB |
+| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup: prices, taking products in, "Alle n gevonden" | ~9.5 kB |
+| `catalog-product-selection-state.ts` | Pure: selection helpers and the catalogue search (`catalogSearchKey`, `catalogSearchWords`, `catalogSearchText`, `catalogSearchMatch`), shared by step 03 and the sheet | – |
 | `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
 | `core/api/catalog-api.ts` | `CatalogExportRequest` + `customerId`, `recipientName`, `pricesValidUntil`, `priceOverrides` (`CatalogPriceOverride`); `CatalogPreflightResult` + `prices`, `priceWarnings`, `recipient`; `CatalogPricesInvalid` | – |
 | `core/api/customer-price-api.ts` | `CustomerPriceApi` (list, save, history, exports, exportDetail), shared with the customer sheet's block | – |
@@ -4940,7 +4941,8 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   the overlay): "Op aanvraag" and "Terug naar standaard". Tools: search,
   "Alleen aangepast", a −/+ toggle (the phone's decimal keypad has no minus),
   a percentage and "% op alles" (from what each row prints without a change,
-  never compounding, whole cents half up), "Alles terug". Nothing applies
+  never compounding, whole cents half up; on the rows on screen: "% op 8"
+  while a search or the chip narrows the list), "Alles terug". Nothing applies
   until "Toepassen (n)"; closing with changes asks first. With a stored
   customer, "Ook bewaren als klantprijzen van {klant}" (hint "Ook op offertes,
   facturen en de website", no date: a typed price equal to the colour's own
@@ -4960,6 +4962,41 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   preview says "Prijs op aanvraag". A row with an invalid price or a unit
   changed since it was typed blocks Toepassen until it is typed again or
   reset.
+  **Taking in and one price for what is found** (Emre, 2026-11-07: "alle
+  domes van 12x25 kunnen kiezen in 1x om dan de prijs te zetten", instead of
+  adding products one by one in step 03 between two visits to the sheet). The
+  sheet gets the whole catalogue (`catalogue` = `orderedProducts()`,
+  `selected`) and opens even with an empty PDF ("Zoek een product om op te
+  nemen."). Its search ("Zoek in de hele catalogus…", the desk's first focus;
+  Enter goes to the found field or the first price) finds what the PDF does
+  not have yet under "Niet in deze PDF", above the list so it stays in sight
+  above a keyboard: one line per product built from the matching colours
+  only, the whole line takes them in (pill "Opnemen"), "Alle n opnemen" all of
+  them. Taken in (`added`) they are rows like the others with the chip "nieuw"
+  (on the product's line when all its colours are new), count in "Toepassen
+  (n)" and under "Alleen aangepast", and leave again through "Niet opnemen" in
+  a ⋯ (only what was taken in here; a product already in the PDF leaves in
+  step 03). A one-off left from an earlier PDF does not come back with a
+  product taken in. Toepassen emits `included` (after the keep PUT, before
+  `applied`; the page adds the ids with `selectProductIds`) and one toast
+  ("8 prijzen bewaard voor X · +8 varianten in de PDF"). While a search shows
+  rows of more than one product, or part of one, the list starts with "Alle 8
+  gevonden" (tinted, a magnifier for a photo, "7 producten · per stolp"): its
+  field types one price on exactly the printable rows on screen, never one a
+  search hides, and exists only while they share one unit basis (`unitKey`:
+  `priceBasis` basis + pieces per display; a stolp and a stuk are both per
+  piece, the words then show in warn colour) — else "Eenheden verschillen";
+  its ⋯ has Op aanvraag, Terug naar standaard and Niet opnemen; "n onder kost"
+  as a chip with its count. Never with "Alleen aangepast" on (rows would come
+  and go while typing). The refusal of a kept price (409 BASIS_CHANGED) holds
+  per `catalogue()` identity, so taking a product in does not drop it. On the
+  phone a product's line may take two lines (the end of a name tells "… 25 cm"
+  from "… 20 cm"). The search (also step 03's): no case or accents, 12x25 =
+  12*25 = 12×25 = 12 x 25, "30 cm" = "30cm", words in any order, a size word
+  never inside a larger number ("2x25" does not find "12x25"), a word of 4+
+  letters ending in s also finds its singular; it reads the product's, the
+  family's and the Dutch catalogue name and colour, Maat, colour, category,
+  SKU and barcodes.
 - **Download**: preflight first. Old-server guard: a request with a customer,
   a free name, a validity or one-off prices is refused on the screen when the
   preflight has no `prices` ("De server kent prijzen per klant nog niet…"); a

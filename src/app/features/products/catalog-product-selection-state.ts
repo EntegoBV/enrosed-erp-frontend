@@ -1,3 +1,5 @@
+import type { Category, Product } from '../../core/api/models';
+
 /** Add valid product IDs without mutating the current selection. */
 export function selectProductIds(
   current: ReadonlySet<number>,
@@ -67,4 +69,67 @@ export function productIdsBetween(
   const start = Math.min(clamp(fromIndex), clamp(toIndex));
   const end = Math.max(clamp(fromIndex), clamp(toIndex));
   return orderedIds.slice(start, end + 1).filter((id): id is number => id !== null);
+}
+
+
+/* ------------------------------------------------------------------ search */
+
+/**
+ * A search key: no case, no accents, and a size written 12x25, 12*25, 12×25
+ * or 12 x 25 the same (Emre types 12x25, the names say 12*25); "15 x 30 cm"
+ * and "15x30cm" too. Only digits are joined: "box" and "XL" stay as they are.
+ */
+export function catalogSearchKey(text: string): string {
+  return text.toLocaleLowerCase('nl-BE').normalize('NFD').replace(/\p{M}/gu, '')
+    .replace(/(\d)\s*[x×*]\s*(?=\d)/g, '$1x')
+    .replace(/(\d)\s+(?=(?:cm|mm)\b)/g, '$1');
+}
+
+/** The words of a search; a size being typed ("12*", "12 ×") already reads as "12x", so the list does not empty halfway. */
+export function catalogSearchWords(query: string): string[] {
+  const key = catalogSearchKey(query).replace(/(\d)\s*[x×*]\s*$/, '$1x').trim();
+  return key ? key.split(/\s+/) : [];
+}
+
+/** What a category is found by: its name, its language-neutral code ("domes") and its translated names ("Stolpen", "Domes"). */
+export function catalogCategorySearchName(category: Category): string {
+  return [category.name, category.code, ...(category.texts ?? []).map((text) => text.name)].filter(Boolean).join(' ');
+}
+
+/** What a product is found by: its own, its family's and its Dutch catalogue name, Maat, colour, category, SKU and barcodes. */
+export function catalogSearchText(product: Product, familyName?: string | null, categoryName?: string | null): string {
+  const dutch = product.texts?.find((text) => text.language === 'NL');
+  return catalogSearchKey([
+    product.name, familyName, dutch?.name, dutch?.colour, product.variantSize, product.colour, categoryName,
+    product.sku, product.canonicalBarcode, product.barcodeInner, product.barcodeOuter,
+  ].filter(Boolean).join(' '));
+}
+
+/**
+ * Every word somewhere in the text, in any order. A size never matches inside
+ * a larger number ("2x25" does not find "12x25"). A word of four letters or
+ * more that ends in s also finds its singular, but only as a word of its own:
+ * "domes" finds "dome" and "boxes" "box", while the Dutch "roos" never finds
+ * "rood" and "doos" never "odoo".
+ */
+export function catalogSearchMatch(text: string, words: readonly string[]): boolean {
+  return words.every((word) => hasWord(text, word)
+    || (word.length >= 4 && word.endsWith('s') && (hasWholeWord(text, word.slice(0, -1))
+      || (word.endsWith('es') && hasWholeWord(text, word.slice(0, -2))))));
+}
+
+function hasWholeWord(text: string, word: string): boolean {
+  const inWord = /[\p{L}\p{N}]/u;
+  for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
+    if (!inWord.test(text[at - 1] ?? ' ') && !inWord.test(text[at + word.length] ?? ' ')) return true;
+  }
+  return false;
+}
+
+function hasWord(text: string, word: string): boolean {
+  if (!/^\d+x\d/.test(word)) return text.includes(word);
+  for (let at = text.indexOf(word); at >= 0; at = text.indexOf(word, at + 1)) {
+    if (at === 0 || !/\d/.test(text[at - 1])) return true;
+  }
+  return false;
 }
