@@ -208,7 +208,7 @@ export interface HostToday {
   type: 'today';
   /** ISO instant the Home loaded these figures. */
   at: string;
-  /** Europe/Brussels day YYYY-MM-DD. */
+  /** The Home's day YYYY-MM-DD (the phone's calendar; day 0 of cash.spark). Native judges "van gisteren" by `at`. */
   day: string;
   complete: boolean;
   /** The web's own words for the sources that failed. */

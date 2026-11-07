@@ -859,11 +859,14 @@ pallet round of 2026-11-04: the baseline to track.
   - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
     home-phone's one host-only effect): the Home's Kas headline with 30 days
     of the sparkline and its link, Nu te betalen, the top 6 of Te doen with
-    their router urls (`homeTargetLink`), the bell's count, today's TICA,
-    the rest of today's agenda (3) and the next expected arrivals (5); `at`
-    is `HomeData.loadedAt`, so the snapshot moves when the Home reloads or a
-    figure changes. Once `tasksReady()`, 2 s after the last change, only
-    when it changed, at most 8 KB. The mapper keeps type imports only and no
+    their router urls (`homeTargetLink`), the bell's count, today's TICA
+    (on the Brussels day, `ticaToday`, as the Home's TICA card), the rest of
+    today's agenda (3) and the next expected arrivals (5); `at` is
+    `HomeData.loadedAt`, so the snapshot moves when the Home reloads or a
+    figure changes. `day` is the Home's own day (the phone's calendar, day 0
+    of the sparkline), not Brussels abroad: native judges "van gisteren" by
+    the Brussels day of `at`. Once `tasksReady()`, 2 s after the last
+    change, only when it changed, at most 8 KB. The mapper keeps type imports only and no
     object spread: esbuild lowers spread to shared helpers, and a helper or
     runtime import there split them into a new initial chunk (+0.3 kB).
     Native sends the existing `refresh` to the Home root when its copy is

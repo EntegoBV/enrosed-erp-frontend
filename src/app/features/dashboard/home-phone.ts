@@ -23,6 +23,7 @@ import { menuRows } from '../../shared/host-page';
 import { homeTargetLink } from './home-sources';
 import type { TodaySources } from './home-today';
 import { containerName } from '../purchasing/container-name';
+import { ticaToday } from '../tica/tica-format';
 import { HomeInkoop } from './widgets/home-inkoop';
 import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
@@ -221,7 +222,8 @@ export class HomePhone {
       if (!data.tasksReady()) return;
       const cash = data.cashData;
       const sources: TodaySources = {
-        day: data.today(), loadedAt: data.loadedAt(), settled: data.settled(), tasks: data.tasks(), warnings: data.warnings(), cash: data.cash(),
+        day: data.today(), ticaDay: ticaToday(new Date(data.now())),
+        loadedAt: data.loadedAt(), settled: data.settled(), tasks: data.tasks(), warnings: data.warnings(), cash: data.cash(),
         days: data.forecast()?.days ?? null, payEur: data.outlookFigures()?.payEur ?? null, waiting: data.work.actionCount(),
         tica: cash.state() === 'ready' && !cash.ticaSalesFailed() && cash.ticaSales().length > 0 ? cash.ticaSales() : null,
         agenda: data.agenda().restOfToday, milestones: data.milestones(),

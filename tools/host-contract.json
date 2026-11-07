@@ -148,7 +148,7 @@
       "properties": {
         "type": { "const": "today" },
         "at": { "type": "string", "description": "ISO instant the Home loaded these figures (HomeData.loadedAt)" },
-        "day": { "type": "string", "description": "Europe/Brussels day YYYY-MM-DD (the Home's day)" },
+        "day": { "type": "string", "description": "the Home's day YYYY-MM-DD (the phone's calendar, day 0 of cash.spark); native judges a snapshot from before the Brussels midnight by at" },
         "complete": { "type": "boolean", "description": "every source answered and none failed; false with an empty missing while the Home is still loading" },
         "missing": { "type": "array", "items": { "type": "string" }, "description": "the web's own words for sources that failed" },
         "cash": {
@@ -172,7 +172,7 @@
           }
         },
         "waiting": { "type": "object", "required": ["count"], "properties": { "count": { "type": "integer", "minimum": 0 } } },
-        "tica": { "type": "object", "properties": { "todayEur": { "type": "number" }, "todayPieces": { "type": "integer", "minimum": 0 } } },
+        "tica": { "type": "object", "description": "TICA's sales on today's Brussels day (the portal's days)", "properties": { "todayEur": { "type": "number" }, "todayPieces": { "type": "integer", "minimum": 0 } } },
         "agenda": { "type": "array", "items": { "type": "object", "required": ["title"], "properties": { "time": { "type": "string" }, "title": { "type": "string" }, "kind": { "type": "string", "description": "EVENT, TASK, CONTAINER or MONEY (the agenda's afspraak, taak, container, geld)" }, "url": { "type": "string" } } } },
         "arrivals": { "type": "array", "items": { "type": "object", "required": ["orderId", "name", "day"], "properties": { "orderId": { "type": "integer" }, "name": { "type": "string" }, "day": { "type": "string" }, "late": { "type": "boolean" } } } }
       }

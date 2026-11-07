@@ -17,8 +17,10 @@ import type { PlannerMilestone } from './planner-cards';
 
 /** The Home's signals as one plain object, read inside home-phone's effect. */
 export interface TodaySources {
-  /** The Home's day (HomeData.today, the Brussels calendar on the phone). */
+  /** The Home's day (HomeData.today: the phone's own calendar, the day 0 of the forecast and the tasks). */
   day: string;
+  /** Today on the Brussels calendar (ticaToday), the portal's days: the TICA figure, as the Home's TICA card counts it. */
+  ticaDay: string;
   /** HomeData.loadedAt: when the last load finished; null during the first one. */
   loadedAt: number | null;
   /** HomeData.settled: every source answered (or failed); `complete` waits for it. */
@@ -92,7 +94,7 @@ export function todayOf(sources: TodaySources, now = Date.now()): HostToday {
   };
   if (finite(sources.payEur)) today.payNowEur = cents(sources.payEur);
   if (sources.tica) {
-    const rows = sources.tica.filter((row) => row.date === day);
+    const rows = sources.tica.filter((row) => row.date === sources.ticaDay);
     today.tica = { todayEur: cents(rows.reduce((sum, row) => sum + row.revenueExcl, 0)), todayPieces: rows.reduce((sum, row) => sum + row.quantity, 0) };
   }
   const agenda = sources.agenda.slice(0, 3).map((entry) => {
