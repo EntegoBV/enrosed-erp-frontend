@@ -2640,6 +2640,15 @@ offertes en facturen"); the website shows it to that customer's logins
   also one equal to the catalogue price. No "Op aanvraag" and no keep box
   there; the ⋯ has "Ongedaan maken" and "Niet opnemen". A 409 keeps the
   sheet open and the block loads the products and rows again.
+  "Prijzen van klant…" (a select in the tools row, both modes, Emre:
+  "prijzen van andere klant kunnen overnemen dat het snel kan"): another
+  customer's ACTIVE prices become typed prices on each product's unit of now
+  (`oneOffPrice`), products not listed are taken in, expired prices, prices
+  on a unit the product left and products outside the catalogue are skipped
+  (counted in the toast); the list switches to "Alleen aangepast" to look
+  them over; nothing is stored before Bewaren / Toepassen. The customers
+  load once per sheet (`SalesApi.customers()`, the current customer left
+  out).
 - Every save there is a PUT of its own with source CUSTOMER_SCREEN. The
   sheet's Opslaan first stores a typed price that is not saved yet
   (`pending()` / `saveDraft()`); a refused one keeps the sheet open on it
