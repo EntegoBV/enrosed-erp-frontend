@@ -4,7 +4,8 @@ import { SalesApi } from '../../core/api/sales-api';
 import { Country } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { CarrierManager } from './carrier-manager';
-import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
+import { countryName } from '../../core/api/geo';
+import { CountryPicker } from '../../shared/country-picker';
 import { Sheet, Ui } from '../../shared/ui';
 
 function blank(): Country {
@@ -15,7 +16,7 @@ function blank(): Country {
 @Component({
   selector: 'app-country-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, PageHeader, Sheet, CarrierManager],
+  imports: [FormsModule, PageHeader, Sheet, CarrierManager, CountryPicker],
   template: `
     <app-page-header [showBack]="true" title="Landen & vracht" subtitle="Minimum order, palletvracht en staffels">
       @if (tab() === 'LANDEN') {
@@ -93,13 +94,8 @@ function blank(): Country {
             <!-- One pick fills both code and name; nobody should have to know
                  that Ireland is IE. -->
             <div class="field span-2"><label class="req" for="k-code">Land</label>
-              <select class="select" id="k-code" [ngModel]="draft().code"
-                      (ngModelChange)="pickCountry($event)">
-                <option value="" disabled>Kies een land…</option>
-                @for (option of isoCountries; track option.code) {
-                  <option [value]="option.code">{{ option.name }} ({{ option.code }})</option>
-                }
-              </select></div>
+              <app-country-picker inputId="k-code" [value]="draft().code" [exclude]="configuredCodes()"
+                                  (changed)="pickCountry($event)" /></div>
           }
           <div class="field"><label for="k-min">Minimum orderwaarde</label>
             <div class="input-affix">
@@ -177,7 +173,8 @@ function blank(): Country {
 export class CountryList {
   readonly tab = signal<'LANDEN' | 'CARRIERS'>('LANDEN');
 
-  readonly isoCountries = ISO_COUNTRIES;
+  /** A country already configured is not offered again; editing one goes through its own row. */
+  readonly configuredCodes = computed(() => this.countries().map((country) => country.code));
 
   /** Filling code and name together keeps them consistent by construction. */
   pickCountry(code: string): void {

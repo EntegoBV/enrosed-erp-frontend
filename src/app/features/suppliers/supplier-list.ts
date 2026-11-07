@@ -8,7 +8,8 @@ import { PurchaseOrderView, Supplier } from '../../core/api/models';
 import type { SupplierProductRow } from '../../core/api/product-supplier-models';
 import { AuthImage } from '../../core/api/auth-image';
 import { PageHeader } from '../../shared/page-header';
-import { ISO_COUNTRIES, countryName } from '../../core/api/geo';
+import { countryName } from '../../core/api/geo';
+import { CountryPicker } from '../../shared/country-picker';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { Icon } from '../../shared/icon';
@@ -64,7 +65,7 @@ function blank(): Supplier {
 @Component({
   selector: 'app-supplier-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, EurPipe, CurPipe, DateNlPipe],
+  imports: [Skeleton, FormsModule, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SupplierAddress, Icon, ContextMenu, LoadError, SupplierListStyles, CountryPicker, EurPipe, CurPipe, DateNlPipe],
   template: `
     <app-supplier-list-styles />
     <app-page-header [showBack]="true" title="Leveranciers" [subtitle]="subtitle()">
@@ -529,17 +530,8 @@ function blank(): Supplier {
                          [ngModel]="draft().postalCode"
                          (ngModelChange)="patch({ postalCode: $event })" /></div>
                 <div class="field"><label for="s-country">Land</label>
-                  <select class="select" id="s-country" autocomplete="country"
-                          [ngModel]="draft().country"
-                          (ngModelChange)="patch({ country: $event })">
-                    <option value="">Land nog niet gekozen</option>
-                    @if (draft().country && !countryKnown(draft().country)) {
-                      <option [value]="draft().country">{{ draft().country }}</option>
-                    }
-                    @for (option of isoCountries; track option.code) {
-                      <option [value]="option.code">{{ option.name }}</option>
-                    }
-                  </select></div>
+                  <app-country-picker inputId="s-country" [value]="draft().country" [allowEmpty]="true"
+                                      (changed)="patch({ country: $event })" /></div>
               </div>
             </section>
 
@@ -614,7 +606,6 @@ function blank(): Supplier {
   `],
 })
 export class SupplierList {
-  readonly isoCountries = ISO_COUNTRIES;
   readonly desktop = inject(DesktopViewport);
   readonly containerCounts = containerCounts;
   readonly containerCellSub = containerCellSub;
@@ -844,10 +835,6 @@ export class SupplierList {
   supplierLocation(supplier: Supplier): string {
     return [supplier.city, supplier.region, countryName(supplier.country)]
       .map((value) => value?.trim()).filter(Boolean).join(' · ');
-  }
-
-  countryKnown(code: string): boolean {
-    return ISO_COUNTRIES.some((country) => country.code === code);
   }
 
   patch(changes: Partial<Supplier>): void {

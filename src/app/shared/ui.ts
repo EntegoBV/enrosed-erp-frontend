@@ -154,8 +154,8 @@ export class Sheet implements AfterViewInit, OnDestroy {
   onKeydown(event: KeyboardEvent): void {
     if (Sheet.stack.at(-1) !== this) return;
     if (event.key === 'Escape') {
-      /* A desk menu open in this dialog is a popover, not a sheet on the stack: the Escape is its own, it closes just the menu. */
-      if (this.dialog?.nativeElement.querySelector('.cm')) return;
+      /* A desk menu or country popover open in this dialog is a popover, not a sheet on the stack: the Escape is its own, it closes just that. */
+      if (this.dialog?.nativeElement.querySelector('.cm, .cp-pop')) return;
       event.preventDefault();
       event.stopPropagation();
       this.requestClose();
