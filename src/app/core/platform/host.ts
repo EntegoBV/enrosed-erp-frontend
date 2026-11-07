@@ -222,6 +222,7 @@ export interface HostToday {
     spark?: number[];
     url?: string;
   };
+  /** Kosten & bank's "Nu te betalen" (HomeData.payNowEur): open costs dated today or earlier plus the container terms due now. */
   payNowEur?: number;
   tasks: { count: number; nu: number; top: HostTodayTask[] };
   waiting: { count: number };

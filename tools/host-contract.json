@@ -162,7 +162,7 @@
             "url": { "type": "string" }
           }
         },
-        "payNowEur": { "type": "number", "description": "outlookFigures().payEur; absent when a source failed" },
+        "payNowEur": { "type": "number", "description": "Kosten & bank's Nu te betalen (FinanceState.payableTotals().nowEur, the headline of /costs?view=open&tab=all, the page the widget opens): open costs dated today or earlier plus the container terms due now, never the fixed costs (HomeData.payNowEur); absent while the costs or the purchase orders failed or have not answered" },
         "tasks": {
           "type": "object", "required": ["count", "nu", "top"],
           "properties": {

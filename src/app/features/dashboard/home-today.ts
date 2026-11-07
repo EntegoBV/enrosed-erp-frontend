@@ -31,7 +31,7 @@ export interface TodaySources {
   cash: CashHeadline;
   /** The forecast's days (the Kas hero's line); null until it is built. */
   days: readonly Pick<ForecastDay, 'withEur'>[] | null;
-  /** outlookFigures().payEur ("Nu te betalen"); null when a source behind it failed. */
+  /** HomeData.payNowEur: Kosten & bank's "Nu te betalen" (due now); null while the costs or the purchase orders are missing. */
   payEur: number | null;
   /** WorkQueue.actionCount: the bell's number. */
   waiting: number;

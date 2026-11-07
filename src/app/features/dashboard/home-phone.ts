@@ -224,7 +224,7 @@ export class HomePhone {
       const sources: TodaySources = {
         day: data.today(), ticaDay: ticaToday(new Date(data.now())),
         loadedAt: data.loadedAt(), settled: data.settled(), tasks: data.tasks(), warnings: data.warnings(), cash: data.cash(),
-        days: data.forecast()?.days ?? null, payEur: data.outlookFigures()?.payEur ?? null, waiting: data.work.actionCount(),
+        days: data.forecast()?.days ?? null, payEur: data.payNowEur(), waiting: data.work.actionCount(),
         tica: cash.state() === 'ready' && !cash.ticaSalesFailed() && cash.ticaSales().length > 0 ? cash.ticaSales() : null,
         agenda: data.agenda().restOfToday, milestones: data.milestones(),
         names: new Map(data.purchases().map((row) => [row.order.id, containerName(row.order)] as const)),

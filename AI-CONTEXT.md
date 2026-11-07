@@ -866,8 +866,13 @@ pallet round of 2026-11-04: the baseline to track.
     after its last change, only when its JSON changed.
   - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
     home-phone's one host-only effect): the Home's Kas headline with 30 days
-    of the sparkline and its link, Nu te betalen, the top 6 of Te doen with
-    their router urls (`homeTargetLink`), the bell's count, today's TICA
+    of the sparkline and its link, Nu te betalen (`HomeData.payNowEur`, Emre
+    2026-11-07: Kosten & bank's Te betalen headline, the page the widget
+    opens, so open costs dated today or earlier plus the container terms due
+    now; not the desk Kas card's Vooruitblik figure with 30 days of fixed
+    costs; absent while the costs or the purchase orders are missing), the
+    top 6 of Te doen with their router urls (`homeTargetLink`), the bell's
+    count, today's TICA
     (on the Brussels day, `ticaToday`, as the Home's TICA card), the rest of
     today's agenda (3) and the next expected arrivals (5); `at` is
     `HomeData.loadedAt`, so the snapshot moves when the Home reloads or a
