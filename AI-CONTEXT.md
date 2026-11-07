@@ -4995,3 +4995,12 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   label `CATALOG_EXPORTED`. Seen on the harness mock only (headless Chrome,
   375/390/1080/1280/1440, no overflow); not yet against the real backend or in
   iOS Safari.
+
+## Catalogus PDF: PDF verkleinen (2026-11-07)
+
+Emre: "pdf compresser toggle om pdf rond 10 mb te krijgen zet dit standaard aan". Step 02 has a switch
+"PDF verkleinen" ("Rond 10 MB, makkelijk te mailen") under Productfoto's, on by default, kept with the
+other choices in the builder state (`compressPdf`, missing reads on). `CatalogApi.exportCatalog(request,
+compress)` sends `?compress=false` only when it is off; the server (`PdfCompressor`, backend 2bdba9f)
+then leaves the photos as rendered. With it on, every photo becomes at most 1400 px as a JPEG (alpha
+kept): the whole range goes from 65-70 MB to about 10 MB, the export journal records the PDF that leaves.

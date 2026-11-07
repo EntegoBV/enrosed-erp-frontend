@@ -687,10 +687,13 @@ export class CatalogApi {
       this.http.post<CatalogPreflightResult>(api('/api/catalog/preflight'), request));
   }
 
-  /** The catalogue as a PDF, after the lightweight translation preflight succeeds. */
-  exportCatalog(request: CatalogExportRequest): Promise<Blob> {
+  /**
+   * The catalogue as a PDF, after the lightweight translation preflight succeeds. {@code compress}
+   * ("PDF verkleinen", on by default) lets the server bring the photos down to about 10 MB in all.
+   */
+  exportCatalog(request: CatalogExportRequest, compress = true): Promise<Blob> {
     return firstValueFrom(
-      this.http.post(api('/api/catalog/export'), request, { responseType: 'blob' }));
+      this.http.post(api(compress ? '/api/catalog/export' : '/api/catalog/export?compress=false'), request, { responseType: 'blob' }));
   }
 
   /* --------------------------------------------------- categorieen / HS */

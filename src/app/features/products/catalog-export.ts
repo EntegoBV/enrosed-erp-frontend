@@ -100,6 +100,8 @@ interface CatalogBuilderState extends CatalogBrochureDraft {
   intro: string;
   includePrices: boolean;
   includePhotos: boolean;
+  /** "PDF verkleinen": the server makes the photos lighter, about 10 MB for the whole range; on unless turned off. */
+  compressPdf?: boolean;
   selectedIds: number[];
   /** All available products, so deselecting and reselecting retains their position. */
   orderedIds?: number[];
@@ -334,6 +336,10 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               <label class="option-toggle">
                 <span><b>Productfoto’s</b><small>Je foto voor de catalogus krijgt voorrang</small></span>
                 <input class="studio-switch" type="checkbox" [ngModel]="includePhotos()" (ngModelChange)="includePhotos.set($event)" />
+              </label>
+              <label class="option-toggle">
+                <span><b>PDF verkleinen</b><small>Rond 10 MB, makkelijk te mailen</small></span>
+                <input class="studio-switch" type="checkbox" [ngModel]="compressPdf()" (ngModelChange)="compressPdf.set($event)" />
               </label>
             </div>
           </section>
@@ -730,6 +736,8 @@ export class CatalogExport {
   readonly intro = signal('');
   readonly includePrices = signal(false);
   readonly includePhotos = signal(true);
+  /** Emre, 2026-11-07: "pdf rond 10 mb … zet dit standaard aan". */
+  readonly compressPdf = signal(true);
   readonly brochure = signal<CatalogBrochureDraft>({ ...DEFAULT_BROCHURE });
 
   /* Who the PDF is for and its one-off prices: they count only while "Prijzen tonen" is on (PRICE_STATE_KEY). */
@@ -969,6 +977,7 @@ export class CatalogExport {
         intro: this.intro(),
         includePrices: this.includePrices(),
         includePhotos: this.includePhotos(),
+        compressPdf: this.compressPdf(),
         selectedIds: this.selectedProducts().map(product => product.id!),
         orderedIds: this.orderedProducts().map(product => product.id!),
         ...brochure,
@@ -1091,7 +1100,7 @@ export class CatalogExport {
         this.showMissingTranslations(missingPaths);
         return;
       }
-      const blob = await this.catalog.exportCatalog(request);
+      const blob = await this.catalog.exportCatalog(request, this.compressPdf());
       if (this.destroyed || key !== this.requestKey()) return;
       saveBlob(blob, this.fileName(request, preflight));
       const notes = this.validPriceIssues(preflight.priceWarnings);
@@ -1556,6 +1565,7 @@ export class CatalogExport {
       if (typeof parsed.intro === 'string') this.intro.set(parsed.intro);
       if (typeof parsed.includePrices === 'boolean') this.includePrices.set(parsed.includePrices);
       if (typeof parsed.includePhotos === 'boolean') this.includePhotos.set(parsed.includePhotos);
+      if (typeof parsed.compressPdf === 'boolean') this.compressPdf.set(parsed.compressPdf);
       if (Array.isArray(parsed.selectedIds)) {
         this.storedSelection = parsed.selectedIds.filter(
           (id): id is number => Number.isInteger(id) && id > 0,
