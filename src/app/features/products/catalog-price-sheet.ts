@@ -4,7 +4,7 @@ import { AuthImage } from '../../core/api/auth-image';
 import type { CatalogPriceIssue, CatalogPriceOverride } from '../../core/api/catalog-api';
 import { CustomerPriceApi, priceBasisRefusal, type CustomerPrice } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
-import type { Product } from '../../core/api/models';
+import type { Product, ProductFamily } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
@@ -13,7 +13,7 @@ import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { stripColour, variantOf } from '../purchasing/purchase-desk-format';
 import {
-  basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceProblem, pricePrintable, standardPrice, todayIso,
+  basisChanged, cataloguePrice, changesPrint, oneOffPrice, percentPrice, priceBasis, priceProblem, pricePrintable, standardPrice, todayIso,
   type PriceBasisNow, type StandardPrice,
 } from './catalog-prices';
 import { cataloguePhoto } from './catalog-studio';
@@ -22,6 +22,8 @@ import { productSalesUnit } from './product-sales-unit';
 interface PriceRow {
   id: number;
   product: Product;
+  /** "Rozenstolp M": the product's name without its colour; the colours of one product share it. */
+  name: string;
   /** "Rozenstolp M · Rood · 20 cm": the row menu's title and the field's name for a screen reader. */
   label: string;
   /** The label for a narrow row: the head gives way; the tail (" · Rood · 20 cm", or " 30 cm · Rood" when the name
@@ -59,17 +61,151 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     && (a?.piecesPerUnit ?? null) === (b?.piecesPerUnit ?? null);
 }
 
+/** "12,90", or "Op aanvraag": a price field's placeholder. */
+function pricePlaceholder(eur: number | null): string {
+  return eur === null ? 'Op aanvraag' : eur.toFixed(2).replace('.', ',');
+}
+
+/**
+ * The colours of one product: one family, one size and one sales unit, so one
+ * price can fit them all. Another size or unit of the family is a product of
+ * its own (sizes have prices of their own); a product without a family stands
+ * alone.
+ */
+function groupKey(product: Product): string {
+  if (product.familyId === null) return `p${product.id}`;
+  const unit = priceBasis(product);
+  const size = product.variantSize?.trim().toLocaleLowerCase('nl-BE') ?? '';
+  return `f${product.familyId}|${size}|${unit.basis}|${unit.piecesPerUnit ?? ''}`;
+}
+
+/** A product with its colours below it: its price field types one price on every colour. */
+interface PriceGroup {
+  key: string;
+  /** Every colour, in the catalogue's order, also those a search or "Alleen aangepast" hides. */
+  rows: PriceRow[];
+  /** "Diamantroos met display en geur · 4.5*4.5cm": the menu's title and the field's name. */
+  label: string;
+  head: string;
+  tail: string | null;
+  /** "4 kleuren"; "3 varianten" when the colours do not tell them apart. */
+  count: string;
+  /** Every colour has a colour of its own: the rows below say only "Rood". */
+  byColour: boolean;
+  /** "kleur" or "variant": what the menu says the change is for. */
+  noun: string;
+  photo: string | null;
+  per: string;
+  slash: string;
+  catalogue: number | null;
+  catalogueMixed: boolean;
+  /** The customer's price of every colour alike; ownMixed when they differ. */
+  own: CustomerPrice | null;
+  ownMixed: boolean;
+  placeholder: string;
+  /** No € before the field: "Op aanvraag" or "Verschillend" fills it. */
+  bare: boolean;
+  /** The colours print different prices and none is typed on all: the field says "Verschillend". */
+  mixed: boolean;
+  /** The price typed on every colour alike; null while they differ or none is typed. */
+  value: number | null;
+  changed: boolean;
+  onRequest: boolean;
+  unprintable: boolean;
+  message: string | null;
+}
+
+/**
+ * `sizes`: the family is in the list in more than one size. Only then does
+ * the product's line show its size, kept whole like a colour on a row (the
+ * name gives way): one size is a fact of the product, not what tells it apart.
+ */
+function priceGroup(key: string, rows: PriceRow[], families: ReadonlyMap<number, string>, sizes: boolean): PriceGroup {
+  const first = rows[0];
+  const shared = rows.every((row) => row.name === first.name);
+  const name = shared ? first.name : (first.product.familyId !== null ? families.get(first.product.familyId) : null) || first.name;
+  /* "Rozenstolp 30 cm" already names its size. */
+  const size = first.product.variantSize?.trim() || null;
+  const named = !!size && name.endsWith(size);
+  const split = sizes && named && name.endsWith(` ${size}`);
+  const colours = rows.map((row) => row.product.colour?.trim().toLocaleLowerCase('nl-BE') ?? '');
+  const byColour = shared && colours.every(Boolean) && new Set(colours).size === rows.length;
+  const typed = first.price;
+  const value = typed && !typed.onRequest && typed.priceEur !== null
+    && rows.every((row) => !!row.price && !row.price.onRequest && row.price.priceEur === typed.priceEur) ? typed.priceEur : null;
+  /* What each colour prints now, a typed price included: the field shows one price only while they all print it. */
+  const printed = (row: PriceRow): number | null => row.onRequest || row.unprintable ? null
+    : row.price && row.price.priceEur !== null && !priceProblem(row.price.priceEur) ? row.price.priceEur : row.standard.eur;
+  const shown = printed(first);
+  const samePrint = rows.every((row) => printed(row) === shown);
+  const sameOwn = rows.every((row) => row.stored?.priceExclVat === first.stored?.priceExclVat && row.stored?.status === first.stored?.status);
+  /* A price typed on all of them that the colours refuse (a unit changed since, the server's word): the product says so too. */
+  const refused = rows.find((row) => row.message)?.message ?? null;
+  return {
+    key, rows,
+    label: size && !named ? `${name} · ${size}` : name,
+    head: split ? name.slice(0, -size!.length).trimEnd() : name,
+    tail: split ? `\u00a0${size}` : sizes && size && !named ? `\u00a0· ${size}` : null,
+    count: `${rows.length} ${byColour ? 'kleuren' : 'varianten'}`,
+    byColour,
+    noun: byColour ? 'kleur' : 'variant',
+    photo: rows.find((row) => row.photo)?.photo ?? null,
+    per: first.per,
+    slash: first.slash,
+    catalogue: first.catalogue,
+    catalogueMixed: !rows.every((row) => row.catalogue === first.catalogue),
+    own: sameOwn ? first.stored : null,
+    ownMixed: !sameOwn,
+    placeholder: samePrint ? pricePlaceholder(shown) : 'Verschillend',
+    bare: value === null && (!samePrint || shown === null),
+    mixed: value === null && !samePrint,
+    value,
+    changed: rows.some((row) => row.changed) && (value !== null || rows.every((row) => row.onRequest)),
+    onRequest: rows.every((row) => row.onRequest),
+    unprintable: rows.every((row) => row.unprintable),
+    message: value === null ? null
+      : priceProblem(value) ?? (refused && (rows.every((row) => row.message === refused) ? refused : 'Nakijken per kleur')),
+  };
+}
+
+/** One line of the list: a product above its colours, or a row (a colour below its product, or a product on its own). */
+interface PriceEntry {
+  key: string;
+  group: PriceGroup | null;
+  row: PriceRow | null;
+  /** The product's line: "4 kleuren", or "1 van 4 kleuren" while the others are hidden. */
+  count: string;
+  /** A search or "Alleen aangepast" hides some of its colours: the product's line has no field and no menu then,
+      so a price typed there can never reach a colour out of sight. */
+  narrowed: boolean;
+  /** The row's first line: a colour below its product says only "Rood". */
+  name: string;
+  tail: string | null;
+  colour: boolean;
+  tint: boolean;
+}
+
+interface PriceMenu {
+  title: string;
+  ids: readonly number[];
+  /** "kleur" when the menu is a product's, for all its colours; null for one row. */
+  noun: string | null;
+  anchor: MenuPoint;
+}
+
 /**
  * Prijzen aanpassen: the price of every selected product in this one PDF.
  * A row shows what the PDF prints without a change (the field's placeholder:
  * the customer's price while it applies, else the catalogue price) and takes
  * a one-off price, "Op aanvraag" from its menu, or a percentage on all of
- * them. Nothing changes until Toepassen; with a customer, "Ook bewaren als
- * prijzen van …" also stores the typed prices as that customer's own
- * (PUT /api/customers/{id}/prices, source CATALOG_EXPORT), with the PDF's
- * validity date and the unit each was typed on: one the product has left
- * since is refused (nothing stored) and asks to be typed again. "onder
- * kost" compares with the landed cost and stops nothing.
+ * them. The colours of one product stand below it (Emre, 2026-11-07): the
+ * product's field types its price on every colour, a colour's own field
+ * changes only that colour. Nothing changes until Toepassen; with a customer,
+ * "Ook bewaren als klantprijzen van …" also stores the typed prices as that
+ * customer's own (PUT /api/customers/{id}/prices, source CATALOG_EXPORT),
+ * with the PDF's validity date and the unit each was typed on: one the
+ * product has left since is refused (nothing stored) and asks to be typed
+ * again. "onder kost" compares with the landed cost and stops nothing.
  */
 @Component({
   selector: 'app-catalog-price-sheet',
@@ -105,16 +241,67 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
           <span>Product</span><span>Catalogus</span>@if (customer()) {<span>Klant</span>}<span>In deze PDF</span>
         </div>
         <ul class="cps-rows">
-          @for (row of visibleRows(); track row.id) {
-            <li class="cps-row" [class.is-changed]="row.changed" [class.is-wrong]="!!row.message">
+          @for (entry of entries(); track entry.key) {
+            @if (entry.group; as group) {
+              <!-- The product above its colours: its price goes to every colour, also one a search hides. -->
+              <li class="cps-row cps-row--head" [class.is-changed]="group.changed" [class.is-wrong]="!!group.message">
+                <span class="cps-row__photo">@if (group.photo) {<img [appAuthSrc]="group.photo" appAuthLazy alt="" />}</span>
+                <b class="cps-row__name"><span>{{ group.head }}</span>@if (group.tail) {<span class="cps-row__variant">{{ group.tail }}</span>}</b>
+                <span class="cps-row__meta">
+                  @if (group.message) {
+                    <span class="cps-row__text cps-row__message">{{ group.message }}</span>
+                  } @else {
+                    <span class="cps-row__text cps-row__desk">{{ entry.count }} · {{ group.per }}</span>
+                    <!-- Without one catalogue price there is no "€ x / stolp" to show: the count and the unit then. -->
+                    @if (group.catalogueMixed || group.catalogue === null) {
+                      <span class="cps-row__text cps-row__phone">{{ entry.count }} · {{ group.per }}</span>
+                    } @else {
+                      <span class="cps-row__phone cps-row__price">@if (group.catalogue !== null) {{{ group.catalogue | eur }} }{{ group.slash }}</span>
+                      <span class="cps-row__text cps-row__phone cps-row__sku">&nbsp;· {{ entry.count }}</span>
+                    }
+                  }
+                </span>
+                <span class="cps-row__cat">
+                  @if (group.catalogueMixed) { <span class="cps-row__mixed">verschillend</span> }
+                  @else { {{ group.catalogue !== null ? (group.catalogue | eur) : 'op aanvraag' }} }
+                </span>
+                @if (customer()) {
+                  <span class="cps-row__own">
+                    @if (group.ownMixed) {
+                      <span class="cps-row__mixed">verschillend</span>
+                    } @else if (group.own; as own) {
+                      <b [class.is-off]="own.status !== 'ACTIVE'">{{ own.priceExclVat | eur }}</b>
+                      @if (own.status !== 'ACTIVE') { <small [attr.title]="ownTitle(own)">{{ ownWord(own) }}</small> }
+                    } @else { <b class="is-off">—</b> }
+                  </span>
+                }
+                @if (!entry.narrowed) {
+                  <span class="cps-row__field" [class.is-bare]="group.bare" [class.is-mixed]="group.mixed">
+                    @if (group.onRequest || group.unprintable) {
+                      <span class="cps-row__request" [attr.title]="group.unprintable ? unprintableTitle : null">Op aanvraag</span>
+                    } @else {
+                      @if (!group.bare) { <i aria-hidden="true">€</i> }
+                      <input class="input" appDecimal [placeholder]="group.placeholder"
+                             [attr.aria-label]="'Prijs in deze PDF voor alle ' + group.count + ', ' + group.label"
+                             [ngModel]="group.value" (ngModelChange)="setGroupPrice(group, $event)" />
+                    }
+                  </span>
+                  <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor alle ' + group.count + ', ' + group.label"
+                          (click)="openMenu($event, group.label, group.rows, group.noun)">⋯</button>
+                }
+              </li>
+            } @else if (entry.row; as row) {
+            <li class="cps-row" [class.cps-row--colour]="entry.colour" [class.cps-row--compact]="entry.tint" [class.has-note]="!!row.message || row.unprintable || row.belowCost || !!row.stored"
+                [class.is-changed]="row.changed" [class.is-wrong]="!!row.message">
               <span class="cps-row__photo">@if (row.photo) {<img [appAuthSrc]="row.photo" appAuthLazy alt="" />}</span>
               <!-- The rows of one family differ only in colour and size: the name gives way, the variant never. -->
-              <b class="cps-row__name"><span>{{ row.head }}</span>@if (row.tail) {<span class="cps-row__variant">{{ row.tail }}</span>}</b>
+              <b class="cps-row__name" [class.is-tint]="entry.tint"><span>{{ entry.name }}</span>@if (entry.tail) {<span class="cps-row__variant">{{ entry.tail }}</span>}</b>
               <span class="cps-row__meta">
                 @if (row.message) {
                   <span class="cps-row__text cps-row__message">{{ row.message }}</span>
                 } @else {
-                  <span class="cps-row__text cps-row__desk">{{ row.sku }} · {{ row.per }}</span>
+                  <!-- Below its product the unit is the product's: the colour keeps only its SKU. -->
+                  <span class="cps-row__text cps-row__desk">{{ row.sku }}@if (!entry.colour) { · {{ row.per }} }</span>
                   <!-- Phone: "€ 21,60 / display" stays whole (a ×6 mistake hides in the unit); the SKU gives way first. -->
                   <span class="cps-row__phone cps-row__price">@if (row.catalogue !== null) {{{ row.catalogue | eur }} }{{ row.slash }}</span>
                   <span class="cps-row__text cps-row__phone cps-row__sku">&nbsp;· {{ row.sku }}</span>
@@ -148,23 +335,28 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
                          [ngModel]="row.price?.priceEur ?? null" (ngModelChange)="setPrice(row.product, $event)" />
                 }
               </span>
-              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.label" (click)="openMenu($event, row)">⋯</button>
+              <button class="cps-row__more" type="button" [attr.aria-label]="'Meer voor ' + row.label" (click)="openMenu($event, row.label, [row])">⋯</button>
             </li>
+            }
           } @empty {
             <li class="cps__empty">{{ onlyChanged() && !query().trim() ? 'Nog geen aangepaste prijzen.' : 'Geen producten gevonden.' }}</li>
           }
         </ul>
         <!-- Inside the sheet: its overlay is a stacking context, a desk popover outside it would open under the sheet. -->
         @if (menu(); as open) {
-          <app-context-menu class="cps-menu" variant="ios" [title]="open.row.label" [items]="menuItems(open.row)" [anchor]="open.anchor"
-                            (pick)="pick(open.row, $event)" (closed)="menu.set(null)" />
+          <app-context-menu class="cps-menu" variant="ios" [title]="open.title" [items]="menuItems(open)" [anchor]="open.anchor"
+                            (pick)="pick(open, $event)" (closed)="menu.set(null)" />
         }
       </div>
       <div foot class="cps-foot">
         @if (customer(); as who) {
           <label class="cps-keep">
             <input type="checkbox" [checked]="keep()" [disabled]="busy() || !keepable().length" (change)="keep.set($any($event.target).checked)" />
-            <span>Ook bewaren als prijzen van {{ who.name }}</span>
+            <!-- What the box is for (Emre asked, 2026-11-07): the prices become the customer's own, beyond this PDF. -->
+            <span class="cps-keep__text">
+              <span>Ook bewaren als klantprijzen van {{ who.name }}</span>
+              <small>Ook op offertes, facturen en de website</small>
+            </span>
           </label>
         }
         <button class="btn cps-foot__cancel" type="button" [disabled]="busy()" (click)="requestClose()">Annuleren</button>
@@ -221,15 +413,26 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
     .is-changed .cps-row__request { background: var(--rose-soft); color: var(--rose-dark); }
     .cps-row__more { grid-area: more; display: grid; width: 28px; height: 40px; place-items: center; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
     .cps__empty { padding: 22px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+    /* The colours below their product: lighter lines, a smaller photo set in under the product's, the colour as the name. */
+    .cps-row--colour { padding-top: 6px; padding-bottom: 6px; }
+    .cps-row + .cps-row--colour { border-top-color: color-mix(in srgb, var(--line) 45%, transparent); }
+    .cps-row--colour .cps-row__photo { justify-self: end; width: 30px; height: 32px; border-radius: 7px; }
+    .cps-row__name.is-tint { color: var(--rose-dark); font-weight: 600; }
+    .cps-row__mixed { color: var(--muted); font-size: 12px; font-weight: 600; }
+    /* "Verschillend" whole in the desk's field; the phone's bare field sets its own size. */
+    .cps-row__field.is-mixed .input::placeholder { font-size: 12px; }
     .cps-head { display: none; }
     .cps-foot { display: contents; }
     .cps-keep { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; margin-right: auto; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
     .cps-keep input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--rose); }
-    .cps-keep span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+    .cps-keep__text { display: grid; gap: 1px; min-width: 0; }
+    .cps-keep__text > span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; }
+    .cps-keep__text small { color: var(--muted); font-size: 11.5px; font-weight: 500; line-height: 1.35; }
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
       .cps-head, .cps-row { grid-template-columns: 44px minmax(0, 1fr) 92px 128px 28px; grid-template-areas: 'photo name cat field more' 'photo meta cat field more'; column-gap: 14px; }
       .cps--own .cps-head, .cps--own .cps-row { grid-template-columns: 44px minmax(0, 1fr) 92px 124px 128px 28px; grid-template-areas: 'photo name cat own field more' 'photo meta cat own field more'; }
       .cps-row { padding: 9px 14px; }
+      .cps-row--colour { padding-top: 6px; padding-bottom: 6px; }
       .cps-row__photo { width: 44px; }
       .cps-row__phone { display: none; }
       .cps-head { display: grid; padding: 0 14px; color: var(--muted); font-size: 10.5px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
@@ -256,6 +459,15 @@ function sameOverride(a: CatalogPriceOverride | undefined, b: CatalogPriceOverri
       /* "Op aanvraag" as small as the chip of the same name, so the narrow field shows it whole. */
       .cps-row__field.is-bare .input::placeholder { font-size: 12.5px; }
       .cps-row__request { min-height: 38px; }
+      .cps-row--colour .cps-row__photo { width: 28px; height: 30px; }
+      /* A colour named by its colour alone is one line, its name and its field (as wide as the product's, "Op aanvraag"
+         fits); a second only for a chip or a message. Variants with names of their own keep the row's two lines and SKU. */
+      .cps-row--compact { grid-template-columns: 36px minmax(0, 1fr) 100px 28px; grid-template-areas: 'photo name field more' 'photo meta field more'; row-gap: 2px; padding: 5px 10px; }
+      .cps-row--compact:not(.has-note) { grid-template-areas: 'photo name field more'; }
+      .cps-row--compact:not(.has-note) .cps-row__meta { display: none; }
+      .cps-row--compact .cps-row__price, .cps-row--compact .cps-row__sku { display: none; }
+      .cps-row--compact .cps-row__meta .cps-tag { margin-left: 0; }
+      .cps-row--compact .cps-row__message + .cps-tag { margin-left: 5px; }
       :host ::ng-deep .cps-menu .sheet--ios .sheet__head h2 { white-space: normal; overflow-wrap: anywhere; text-wrap: balance; }
       .cps-foot { display: grid; width: 100%; gap: 10px; }
       .cps-foot__cancel { display: none; }
@@ -271,6 +483,8 @@ export class CatalogPriceSheet implements OnInit {
 
   /** The selected products, in the catalogue's order. */
   readonly products = input.required<readonly Product[]>();
+  /** The families of the catalogue: a product whose colours carry other names is called by its family. */
+  readonly families = input<readonly ProductFamily[]>([]);
   /** The one-off prices as applied now. */
   readonly overrides = input<ReadonlyMap<number, CatalogPriceOverride>>(new Map());
   /** A stored customer; a free recipient name has no prices of its own. */
@@ -297,7 +511,7 @@ export class CatalogPriceSheet implements OnInit {
   readonly sign = signal<-1 | 1>(-1);
   readonly keep = signal(false);
   readonly busy = signal(false);
-  readonly menu = signal<{ row: PriceRow; anchor: MenuPoint } | null>(null);
+  readonly menu = signal<PriceMenu | null>(null);
   /**
    * The kept prices the server refused (409 CUSTOMER_PRICE_BASIS_CHANGED), with the unit each was typed on. They hold
    * only until the page's products arrive again (basisChanged() then names them); a price typed on the same unit
@@ -337,7 +551,7 @@ export class CatalogPriceSheet implements OnInit {
       const variant = variantOf({ colour: product.colour, variantSize: named ? null : size });
       const split = named && name.endsWith(` ${size}`);
       return [{
-        id, product,
+        id, product, name,
         label: variant ? `${name} · ${variant}` : name,
         head: split ? name.slice(0, -size!.length).trimEnd() : name,
         tail: split ? `\u00a0${size}${variant ? ` · ${variant}` : ''}` : variant ? `\u00a0· ${variant}` : null,
@@ -356,11 +570,54 @@ export class CatalogPriceSheet implements OnInit {
       }];
     });
   });
-  readonly visibleRows = computed(() => {
+  /** The rows by product, at the place of the product's first colour; a product of one colour stays a row. */
+  readonly groups = computed<PriceGroup[]>(() => {
+    const families = new Map(this.families().flatMap((family) => family.id === null || !family.name?.trim() ? [] : [[family.id, family.name.trim()] as const]));
+    const members = new Map<string, PriceRow[]>();
+    const sizes = new Map<number, Set<string>>();
+    for (const row of this.rows()) {
+      const key = groupKey(row.product);
+      const list = members.get(key);
+      if (list) list.push(row);
+      else members.set(key, [row]);
+      const family = row.product.familyId;
+      if (family === null) continue;
+      const seen = sizes.get(family) ?? new Set<string>();
+      seen.add(row.product.variantSize?.trim().toLocaleLowerCase('nl-BE') ?? '');
+      sizes.set(family, seen);
+    }
+    return [...members].map(([key, rows]) => priceGroup(key, rows, families,
+      rows[0].product.familyId !== null && (sizes.get(rows[0].product.familyId)?.size ?? 0) > 1));
+  });
+  readonly entries = computed<PriceEntry[]>(() => {
     const needle = this.query().trim().toLocaleLowerCase('nl-BE');
-    return this.rows().filter((row) => (!this.onlyChanged() || row.changed || !!row.message)
-      && (!needle || [row.product.name, row.sku, row.product.colour, row.product.variantSize, row.product.canonicalBarcode]
-        .filter(Boolean).join(' ').toLocaleLowerCase('nl-BE').includes(needle)));
+    const only = this.onlyChanged();
+    const shown = (row: PriceRow): boolean => !only || row.changed || !!row.message;
+    const found = (row: PriceRow): boolean => !needle
+      || [row.product.name, row.sku, row.product.colour, row.product.variantSize, row.product.canonicalBarcode]
+        .filter(Boolean).join(' ').toLocaleLowerCase('nl-BE').includes(needle);
+    return this.groups().flatMap((group): PriceEntry[] => {
+      if (group.rows.length === 1) {
+        const row = group.rows[0];
+        return shown(row) && found(row)
+          ? [{ key: `r${row.id}`, group: null, row, count: '', narrowed: false, name: row.head, tail: row.tail, colour: false, tint: false }] : [];
+      }
+      /* A search for the product keeps all its colours; one for a colour or a SKU shows the colours it finds. */
+      const named = !!needle && group.label.toLocaleLowerCase('nl-BE').includes(needle);
+      const rows = group.rows.filter((row) => shown(row) && (named || found(row)));
+      if (!rows.length) return [];
+      const narrowed = rows.length < group.rows.length;
+      return [
+        { key: `g${group.key}`, group, row: null, count: narrowed ? `${rows.length} van ${group.count}` : group.count, narrowed,
+          name: '', tail: null, colour: false, tint: false },
+        ...rows.map((row): PriceEntry => ({
+          key: `r${row.id}`, group: null, row, count: '', narrowed: false,
+          name: group.byColour ? row.product.colour!.trim() : row.head,
+          tail: group.byColour ? null : row.tail,
+          colour: true, tint: group.byColour,
+        })),
+      ];
+    });
   });
   readonly changeCount = computed(() => this.rows().filter((row) => row.changed && !row.message).length);
   /** A typed price that cannot go, or one on a unit the product is no longer sold in: fix it first. */
@@ -379,7 +636,7 @@ export class CatalogPriceSheet implements OnInit {
   }
 
   placeholder(standard: StandardPrice): string {
-    return standard.eur === null ? 'Op aanvraag' : standard.eur.toFixed(2).replace('.', ',');
+    return pricePlaceholder(standard.eur);
   }
 
   readonly unprintableTitle = UNPRINTABLE;
@@ -406,6 +663,18 @@ export class CatalogPriceSheet implements OnInit {
       const next = new Map(draft);
       if (value === null) next.delete(id);
       else next.set(id, oneOffPrice(product, value));
+      return next;
+    });
+  }
+
+  /** The product's field: one price on every colour, or every colour back to its standard when emptied. */
+  setGroupPrice(group: PriceGroup, value: number | null): void {
+    this.draft.update((draft) => {
+      const next = new Map(draft);
+      for (const row of group.rows) {
+        if (value === null) next.delete(row.id);
+        else next.set(row.id, oneOffPrice(row.product, value));
+      }
       return next;
     });
   }
@@ -438,28 +707,47 @@ export class CatalogPriceSheet implements OnInit {
     this.ui.toast(`${sign}${Math.abs(pct).toLocaleString('nl-BE')} % op ${count} ${count === 1 ? 'prijs' : 'prijzen'}`);
   }
 
-  openMenu(event: MouseEvent, row: PriceRow): void {
+  /** One row's menu, or a product's (noun "kleur"): then every choice is for all its colours. */
+  openMenu(event: MouseEvent, title: string, rows: readonly PriceRow[], noun: string | null = null): void {
     const rect = (event.currentTarget as HTMLElement | null)?.getBoundingClientRect();
-    this.menu.set({ row, anchor: rect ? { x: rect.left, y: rect.bottom + 4 } : { x: event.clientX, y: event.clientY } });
+    this.menu.set({
+      title, ids: rows.map((row) => row.id), noun,
+      anchor: rect ? { x: rect.left, y: rect.bottom + 4 } : { x: event.clientX, y: event.clientY },
+    });
   }
 
-  menuItems(row: PriceRow): ContextMenuItem[] {
-    const standard = row.standard.eur === null ? 'Prijs op aanvraag'
-      : `${this.placeholder(row.standard)} · ${row.standard.source === 'CUSTOMER' ? 'klantprijs' : 'catalogusprijs'}`;
+  menuItems(open: PriceMenu): ContextMenuItem[] {
+    const rows = this.menuRows(open);
+    const first = rows[0];
+    if (!first) return [];
+    const same = rows.every((row) => row.standard.eur === first.standard.eur && row.standard.source === first.standard.source);
+    const standard = !same ? `Verschilt per ${open.noun ?? 'kleur'}` : first.standard.eur === null ? 'Prijs op aanvraag'
+      : `${this.placeholder(first.standard)} · ${first.standard.source === 'CUSTOMER' ? 'klantprijs' : 'catalogusprijs'}`;
     return [
-      row.unprintable
+      rows.every((row) => row.unprintable)
         ? { id: 'request', label: 'Op aanvraag', hint: 'Display zonder aantal stuks', checked: true, disabled: true }
-        : { id: 'request', label: 'Op aanvraag', hint: 'Geen prijs in deze PDF', checked: row.onRequest },
-      { id: 'standard', label: 'Terug naar standaard', hint: standard, disabled: !row.price, divider: true },
+        : { id: 'request', label: 'Op aanvraag', hint: open.noun ? `Geen prijs in deze PDF, voor elke ${open.noun}` : 'Geen prijs in deze PDF',
+            checked: rows.every((row) => row.onRequest) },
+      { id: 'standard', label: 'Terug naar standaard', hint: standard, disabled: !rows.some((row) => !!row.price), divider: true },
     ];
   }
 
-  pick(row: PriceRow, item: ContextMenuItem): void {
+  pick(open: PriceMenu, item: ContextMenuItem): void {
     this.menu.set(null);
+    const rows = this.menuRows(open);
+    const request = rows.every((row) => row.onRequest);
     const next = new Map(this.draft());
-    if (item.id === 'standard' || (item.id === 'request' && row.onRequest)) next.delete(row.id);
-    else if (item.id === 'request') next.set(row.id, oneOffPrice(row.product, null, true));
+    for (const row of rows) {
+      if (item.id === 'standard' || (item.id === 'request' && request)) next.delete(row.id);
+      else if (item.id === 'request') next.set(row.id, oneOffPrice(row.product, null, true));
+    }
     this.draft.set(next);
+  }
+
+  /** The menu's rows as they are now, not as they were when it opened. */
+  private menuRows(open: PriceMenu): PriceRow[] {
+    const ids = new Set(open.ids);
+    return this.rows().filter((row) => ids.has(row.id));
   }
 
   async apply(): Promise<void> {

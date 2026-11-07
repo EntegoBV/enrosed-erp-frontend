@@ -507,7 +507,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     </div>
 
     @if (priceSheetOpen()) {
-      <app-catalog-price-sheet [products]="selectedProducts()" [overrides]="priceOverrides()" [customer]="targetCustomer()"
+      <app-catalog-price-sheet [products]="selectedProducts()" [families]="families()" [overrides]="priceOverrides()" [customer]="targetCustomer()"
         [customerPrices]="customerPrices()" [customerNote]="customerNote()" [validUntil]="pricesValidUntil()" [issues]="priceIssues()"
         (saved)="customerPricesSaved($event)" (applied)="applyPrices($event)" (productsStale)="refreshProducts()" (closed)="priceSheetOpen.set(false)" />
     }

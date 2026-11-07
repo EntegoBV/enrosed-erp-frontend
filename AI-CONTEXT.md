@@ -4849,7 +4849,7 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 | File | Role | Styles (budget size) |
 |---|---|---|
 | `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
-| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup | ~6.3 kB |
+| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup | ~8 kB |
 | `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
 | `core/api/catalog-api.ts` | `CatalogExportRequest` + `customerId`, `recipientName`, `pricesValidUntil`, `priceOverrides` (`CatalogPriceOverride`); `CatalogPreflightResult` + `prices`, `priceWarnings`, `recipient`; `CatalogPricesInvalid` | – |
 | `core/api/customer-price-api.ts` | `CustomerPriceApi` (list, save, history, exports, exportDetail), shared with the customer sheet's block | – |
@@ -4895,8 +4895,32 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   selected products only and only when they change what the PDF would print
   (`requestOverrides`); one typed on another unit than the product's now goes
   along so the server names it.
-- **Prijzen aanpassen** (`app-sheet variant="ios"`, wide on the desk): one row
-  per selected product: photo, name · variant (a size the name already ends
+- **Prijzen aanpassen** (`app-sheet variant="ios"`, wide on the desk): the
+  colours of one product stand below it (Emre, 2026-11-07). A product is one
+  family + variant size + sales unit (`groupKey`: sizes and units have prices
+  of their own, so another size is another product); a product with one
+  colour in the list, or without a family, stays a plain row. The product's
+  line: its name (the family's name when its colours carry different names;
+  the size only while the family is in the list in more sizes, kept whole),
+  "4 kleuren · per stolp" (phone "€ 54,00 / display · 4 kleuren"), Catalogus
+  and Klant ("verschillend" when the colours differ) and one field: typing
+  there puts that price on every colour (`setGroupPrice`), emptying it puts
+  every colour back to its standard; it shows a price only while every colour
+  has the same typed one, else empty with what they all print or
+  "Verschillend". Its ⋯ ("Op aanvraag", "Terug naar standaard") acts on every
+  colour. Below it each colour: smaller photo set in, "Rood" only (the full
+  label when the colours do not tell them apart: "3 varianten"), its own
+  field; on the phone a colour named by its colour alone is one line
+  (`.cps-row--compact`, field 100 px like the product's) unless it has a chip
+  or a message (`.has-note`); variants with names of their own keep the row's
+  two lines with the SKU.
+  A search for the product keeps all its colours, one for a colour or SKU
+  shows the colours it finds under "1 van 4 kleuren"; while a search or
+  "Alleen aangepast" hides some colours the product's line has no field and
+  no ⋯ (a price there would reach colours out of sight). A price typed on all
+  colours that they refuse (unit changed since, the server's word) puts the
+  colours' message on the product's line too ("Nakijken per kleur" when they
+  differ); "Op aanvraag" on all of them marks it changed. Each row: photo, name · variant (a size the name already ends
   with is not repeated), then "SKU · per stolp" (desk;
   Catalogus, Klant and In deze PDF columns, Klant only with a stored customer,
   a stored price that does not apply struck through with "verlopen" or
@@ -4913,7 +4937,10 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
   a percentage and "% op alles" (from what each row prints without a change,
   never compounding, whole cents half up), "Alles terug". Nothing applies
   until "Toepassen (n)"; closing with changes asks first. With a stored
-  customer, "Ook bewaren als prijzen van {klant}" first PUTs the typed prices
+  customer, "Ook bewaren als klantprijzen van {klant}" (hint "Ook op offertes,
+  facturen en de website", no date: a typed price equal to the colour's own
+  active price is not sent, so its end date stays; Emre asked what the box
+  was for) first PUTs the typed prices
   (not "Op aanvraag") with source CATALOG_EXPORT: product, price and the unit
   it was typed on (`basis`, `piecesPerUnit`, round 3c), plus
   `validUntil` when the PDF has a validity that is not past, so a stored note
