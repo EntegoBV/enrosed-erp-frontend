@@ -10,7 +10,8 @@
         { "$ref": "#/$defs/ready" }, { "$ref": "#/$defs/auth" }, { "$ref": "#/$defs/theme" }, { "$ref": "#/$defs/badges" },
         { "$ref": "#/$defs/navWillChange" }, { "$ref": "#/$defs/page" }, { "$ref": "#/$defs/scroll" }, { "$ref": "#/$defs/overlay" },
         { "$ref": "#/$defs/haptic" }, { "$ref": "#/$defs/file" }, { "$ref": "#/$defs/share" }, { "$ref": "#/$defs/openExternal" },
-        { "$ref": "#/$defs/refreshDone" }, { "$ref": "#/$defs/log" }
+        { "$ref": "#/$defs/refreshDone" }, { "$ref": "#/$defs/log" },
+        { "$ref": "#/$defs/session" }, { "$ref": "#/$defs/today" }, { "$ref": "#/$defs/nav" }
       ]
     },
     "ask": { "oneOf": [{ "$ref": "#/$defs/confirm" }, { "$ref": "#/$defs/prompt" }] },
@@ -115,6 +116,92 @@
     "openExternal": { "type": "object", "required": ["type", "url"], "properties": { "type": { "const": "openExternal" }, "url": { "type": "string" } } },
     "refreshDone": { "type": "object", "required": ["type"], "properties": { "type": { "const": "refreshDone" } } },
     "log": { "type": "object", "required": ["type", "level", "text"], "properties": { "type": { "const": "log" }, "level": { "enum": ["info", "warn", "error"] }, "text": { "type": "string" } } },
+
+    "session": {
+      "type": "object", "required": ["type", "kind", "username", "credential", "expiresAt", "apiBase"],
+      "description": "Round 4 (additive, hostVersion stays 1): the stored login for the native glances. Sent by HostBridgeImpl in host mode only, at boot and after every sign-in, and only for a signed session token. Native accepts it only from the main frame of the web origin (protocol, host and port of its base URL), checks kind, a future expiry and the apiBase allowlist, keeps it in the keychain and never logs it.",
+      "properties": {
+        "type": { "const": "session" },
+        "kind": { "const": "session-v1" },
+        "username": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string" },
+        "credential": { "type": "string", "minLength": 1, "description": "localStorage enrosed.auth as stored: base64(username:token), sent verbatim after 'Basic '. Only from HostBridgeImpl inside a native host and only for kind session-v1; native accepts it only from the main frame of the web origin, keeps it in the keychain and never logs it." },
+        "expiresAt": { "type": "string", "description": "ISO instant, localStorage enrosed.auth.expiresAt" },
+        "apiBase": { "type": "string", "description": "the build's API_BASE; native allowlists it" }
+      }
+    },
+    "todayTask": {
+      "type": "object", "required": ["key", "tier", "title"],
+      "properties": {
+        "key": { "type": "string" },
+        "tier": { "enum": ["nu", "vandaag", "ooknog"] },
+        "title": { "type": "string" },
+        "context": { "type": "string" },
+        "chip": { "type": "object", "required": ["label"], "properties": { "label": { "type": "string" }, "tone": { "type": "string" } } },
+        "eur": { "type": "number" },
+        "url": { "type": "string", "description": "router url starting with /; absent for bell and planner targets" }
+      }
+    },
+    "today": {
+      "type": "object", "required": ["type", "at", "day", "complete", "tasks", "waiting"],
+      "description": "Round 4: the phone Home's figures for the Vandaag widget and intent (features/dashboard/home-today.ts), posted in host mode only, once Te doen may show, 2 s after the last change and only when it changed; at most 8 KB of UTF-8. Native validates every url with the deep link route rules and drops a row that fails.",
+      "properties": {
+        "type": { "const": "today" },
+        "at": { "type": "string", "description": "ISO instant the Home loaded these figures (HomeData.loadedAt)" },
+        "day": { "type": "string", "description": "Europe/Brussels day YYYY-MM-DD (the Home's day)" },
+        "complete": { "type": "boolean", "description": "every source answered and none failed; false with an empty missing while the Home is still loading" },
+        "missing": { "type": "array", "items": { "type": "string" }, "description": "the web's own words for sources that failed" },
+        "cash": {
+          "type": "object", "required": ["state"],
+          "properties": {
+            "state": { "enum": ["loading", "computing", "ready", "partial", "no-bank", "no-reading"] },
+            "startEur": { "type": "number" },
+            "lowest": { "type": "object", "properties": { "day": { "type": "string" }, "eur": { "type": "number" }, "warn": { "type": "boolean" } } },
+            "tight": { "type": "object", "properties": { "from": { "type": "string" }, "to": { "type": "string" }, "lowestEur": { "type": "number" } } },
+            "spark": { "type": "array", "items": { "type": "number" }, "description": "at most 30 daily balances from today" },
+            "url": { "type": "string" }
+          }
+        },
+        "payNowEur": { "type": "number", "description": "outlookFigures().payEur; absent when a source failed" },
+        "tasks": {
+          "type": "object", "required": ["count", "nu", "top"],
+          "properties": {
+            "count": { "type": "integer", "minimum": 0 },
+            "nu": { "type": "integer", "minimum": 0 },
+            "top": { "type": "array", "items": { "$ref": "#/$defs/todayTask" }, "description": "at most 6" }
+          }
+        },
+        "waiting": { "type": "object", "required": ["count"], "properties": { "count": { "type": "integer", "minimum": 0 } } },
+        "tica": { "type": "object", "properties": { "todayEur": { "type": "number" }, "todayPieces": { "type": "integer", "minimum": 0 } } },
+        "agenda": { "type": "array", "items": { "type": "object", "required": ["title"], "properties": { "time": { "type": "string" }, "title": { "type": "string" }, "kind": { "type": "string", "description": "EVENT, TASK, CONTAINER or MONEY (the agenda's afspraak, taak, container, geld)" }, "url": { "type": "string" } } } },
+        "arrivals": { "type": "array", "items": { "type": "object", "required": ["orderId", "name", "day"], "properties": { "orderId": { "type": "integer" }, "name": { "type": "string" }, "day": { "type": "string" }, "late": { "type": "boolean" } } } }
+      }
+    },
+    "navRow": {
+      "type": "object", "required": ["id", "label", "url", "symbol"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "short": { "type": "string" },
+        "url": { "type": "string" },
+        "symbol": { "type": "string", "description": "SF Symbol, resolved by the web (resolveSymbol / HOST_SYMBOLS)" },
+        "count": { "type": "integer", "minimum": 0 },
+        "isNew": { "type": "boolean", "description": "newUntil is after today" },
+        "tabRoot": { "type": "boolean" }
+      }
+    },
+    "nav": {
+      "type": "object", "required": ["type", "user", "tabPages", "groups", "workspaces"],
+      "description": "Round 4: the ERP menu as this person sees it (NAV_GROUPS with onlyUser, NAV_WORKSPACES, PHONE_TAB_PAGES, WorkQueue counts), sent by HostBridgeImpl while signed in, a second after ready and after every change, only when it changed. Native drops a row whose url fails the deep link route rules.",
+      "properties": {
+        "type": { "const": "nav" },
+        "user": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" }, "username": { "type": "string" } } },
+        "tabPages": { "type": "object", "description": "PHONE_TAB_PAGES: home, sales, purchasing, products -> path prefixes; anything else lights Meer" },
+        "groups": { "type": "array", "items": { "type": "object", "required": ["id", "label", "symbol", "rows"], "properties": { "id": { "type": "string" }, "label": { "type": "string" }, "symbol": { "type": "string" }, "tone": { "type": "string" }, "rows": { "type": "array", "items": { "$ref": "#/$defs/navRow" } } } } },
+        "workspaces": { "type": "array", "items": { "$ref": "#/$defs/navRow" } },
+        "search": { "type": "array", "items": { "type": "object", "required": ["label", "url"], "properties": { "label": { "type": "string" }, "url": { "type": "string", "description": "a list url ending in q=; native appends the typed text" } } } }
+      }
+    },
 
     "confirm": {
       "type": "object", "required": ["type", "title", "confirm", "cancel"],

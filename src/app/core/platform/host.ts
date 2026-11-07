@@ -173,6 +173,87 @@ export interface HostTheme {
   background: string;
 }
 
+/**
+ * `session` (round 4): the stored login for the native glances (widgets, Siri, the Live Activity). HostBridgeImpl
+ * sends it inside a host only, and only for a signed session token (kind session-v1, never a legacy password
+ * credential); native takes it only from the main frame of the web origin and keeps it in the keychain.
+ */
+export interface HostSession {
+  type: 'session';
+  kind: 'session-v1';
+  username: string;
+  displayName?: string;
+  /** localStorage enrosed.auth as stored: base64(username:token), sent verbatim after 'Basic '. */
+  credential: string;
+  /** ISO instant, localStorage enrosed.auth.expiresAt. */
+  expiresAt: string;
+  /** The build's API_BASE (native allowlists it). */
+  apiBase: string;
+}
+
+/** A Te doen row of the `today` snapshot. */
+export interface HostTodayTask {
+  key: string;
+  tier: 'nu' | 'vandaag' | 'ooknog';
+  title: string;
+  context?: string;
+  chip?: { label: string; tone?: string };
+  eur?: number;
+  /** A router url; absent for the bell and planner targets. */
+  url?: string;
+}
+
+/** `today` (round 4): what the Home computed, for the Vandaag widget (features/dashboard/home-today.ts, at most 8 KB). */
+export interface HostToday {
+  type: 'today';
+  /** ISO instant the Home loaded these figures. */
+  at: string;
+  /** Europe/Brussels day YYYY-MM-DD. */
+  day: string;
+  complete: boolean;
+  /** The web's own words for the sources that failed. */
+  missing: string[];
+  cash?: {
+    state: 'loading' | 'computing' | 'ready' | 'partial' | 'no-bank' | 'no-reading';
+    startEur?: number;
+    lowest?: { day: string; eur: number; warn: boolean };
+    tight?: { from: string; to: string; lowestEur: number };
+    /** At most 30 daily balances from today. */
+    spark?: number[];
+    url?: string;
+  };
+  payNowEur?: number;
+  tasks: { count: number; nu: number; top: HostTodayTask[] };
+  waiting: { count: number };
+  tica?: { todayEur?: number; todayPieces?: number };
+  /** The rest of today's agenda; kind is EVENT, TASK, CONTAINER or MONEY. */
+  agenda?: { time?: string; title: string; kind?: string; url?: string }[];
+  arrivals?: { orderId: number; name: string; day: string; late?: boolean }[];
+}
+
+/** A page of the ERP menu in `nav`. */
+export interface HostNavRow {
+  id: string;
+  label: string;
+  short?: string;
+  url: string;
+  symbol: string;
+  count?: number;
+  isNew?: boolean;
+  tabRoot?: boolean;
+}
+
+/** `nav` (round 4): the ERP menu for the native search, sidebar and router, as the web shows it to this person. */
+export interface HostNav {
+  type: 'nav';
+  user: { name: string; username?: string };
+  tabPages: Readonly<Record<string, readonly string[]>>;
+  groups: { id: string; label: string; symbol: string; tone?: string; rows: HostNavRow[] }[];
+  workspaces: HostNavRow[];
+  /** The lists that read ?q=: native appends the typed text to `url`. */
+  search: { label: string; url: string }[];
+}
+
 export type HostMessage =
   | { type: 'ready'; hostVersion: number; app: string; loggedIn: boolean; theme: HostTheme; url: string }
   | { type: 'auth'; loggedIn: boolean }
@@ -187,7 +268,10 @@ export type HostMessage =
   | { type: 'share'; title: string; url?: string; text?: string }
   | { type: 'openExternal'; url: string }
   | { type: 'refreshDone' }
-  | { type: 'log'; level: 'info' | 'warn' | 'error'; text: string };
+  | { type: 'log'; level: 'info' | 'warn' | 'error'; text: string }
+  | HostSession
+  | HostToday
+  | HostNav;
 
 /** Questions the web asks and waits for (the `enrosedAsk` handler replies). */
 export type HostAsk =
