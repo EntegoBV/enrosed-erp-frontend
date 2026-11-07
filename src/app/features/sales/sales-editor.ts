@@ -768,15 +768,17 @@ function layoutKey(order: SalesOrder): string {
                     @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
                   <div class="field">
-                    <!-- A customer price wears a quiet K beside the label; the marker brings the label along. -->
-                    @if (linePriceState(line); as priceState) {
+                    <!-- A customer price wears a K beside the label (the marker brings the label along); a line on it
+                         also tints its price field, since a glyph alone is small on a phone. -->
+                    @let priceState = linePriceState(line);
+                    @if (priceState) {
                       <app-line-price-source [state]="priceState" [editable]="mobileCommercialEditable()" [heading]="line.description"
                                              [labelText]="lineUnit(line.productId).priceLabel" [labelFor]="'p-' + line.productId"
                                              (use)="useLinePrice(line.productId, $event)" />
                     } @else {
                       <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
                     }
-                    <div class="input-affix">
+                    <div class="input-affix" [class.input-affix--agreed]="priceState?.source === 'CUSTOMER'">
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"

@@ -833,6 +833,8 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   gap: 0;
 }
 .input-affix .input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+/* A price on the customer's agreed price (the phone editor's K line). */
+.input-affix--agreed .input { border-color: var(--rose-line); background: var(--rose-soft); color: var(--rose-dark); font-weight: 650; }
 .input-affix__suffix {
   display: flex;
   align-items: center;

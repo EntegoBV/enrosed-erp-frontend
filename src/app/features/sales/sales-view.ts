@@ -27,6 +27,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
+import { linePriceFigures, linePriceHint, linePriceState, linePriceSummary, type LinePriceState } from './line-price-source';
 import { ChangeDetectionStrategy, Component, HostListener, afterRenderEffect, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { documentTitle } from '../../core/platform/document-title';
@@ -643,6 +644,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     }
 
                     @if (showsMargin() || line.discountPct) {
+                    <!-- On (or beside) a customer price the figure is highlighted with the K; the open panel names both prices. -->
+                    @let priceState = linePriceState(line);
                     <button class="line-breakdown-toggle" type="button"
                             [attr.aria-expanded]="openLine() === line.productId"
                             [attr.aria-controls]="linePanelId(line.productId)"
@@ -651,7 +654,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         <small>Prijsopbouw</small>
                         <strong>{{ profitMode() === 'UNIT' ? 'Per ' + lineUnit(line.productId).singular + ' bekijken' : 'Hele regel bekijken' }}</strong>
                       </span>
-                      <span class="line-breakdown-toggle__total">
+                      <span class="line-breakdown-toggle__total" [class.line-price-pill]="!!priceState"
+                            [class.line-price-pill--own]="priceState?.source === 'CUSTOMER'" [class.line-price-pill--stale]="priceState?.stale">
+                        @if (priceState) { <i class="line-price-pill__k" aria-hidden="true">K</i><span class="sr-only">{{ priceSummary(priceState) }}</span> }
                         {{ profitMode() === 'UNIT' ? (line.netUnitPrice | eur: 2) : (line.net | eur) }}
                       </span>
                       <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
@@ -663,6 +668,15 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
                     @if (openLine() === line.productId) {
                       <div class="line-breakdown" [id]="linePanelId(line.productId)">
+                        @if (priceState) {
+                          <div class="line-breakdown__prices">
+                            @for (figure of priceFigures(priceState); track figure.label) {
+                              <div class="stat-row" [class.line-breakdown__price--current]="figure.current"><span>{{ figure.label }}</span>
+                                <span class="num">{{ figure.value }} <small>per {{ priceState.unit }}</small></span></div>
+                            }
+                            @if (priceHint(priceState); as hint) { <p class="line-breakdown__hint">{{ hint }}</p> }
+                          </div>
+                        }
                         @if (line.discountPct) {
                           <div class="stat-row"><span>Regelkorting {{ line.discountPct | pct: 1 }}</span>
                             <span class="num">− {{ profitDiscount(line) | eur: 2 }}</span></div>
@@ -1161,6 +1175,16 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .line-breakdown-toggle small { color:var(--muted);font-size:9px }
     .line-breakdown-toggle strong { font-size:11px }
     .line-breakdown-toggle__total { color:var(--rose);font-size:12px;font-weight:760;font-variant-numeric:tabular-nums }
+    /* A customer price: the figure in a pill with the K (filled on it, outlined beside it, a dot when the price changed since). */
+    .line-price-pill { position:relative;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:3px 10px 3px 5px;border-radius:999px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--muted) 38%,transparent) }
+    .line-price-pill--own { background:var(--rose-soft);color:var(--rose-dark);box-shadow:none }
+    .line-price-pill__k { position:relative;display:inline-grid;width:18px;height:18px;place-items:center;border-radius:6px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--muted) 42%,transparent);color:var(--muted);font-size:10px;font-style:normal;font-weight:800 }
+    .line-price-pill--own .line-price-pill__k { background:var(--surface);box-shadow:none;color:var(--rose-dark) }
+    .line-price-pill--stale .line-price-pill__k::after { content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 1.5px var(--surface) }
+    .line-breakdown__prices { margin-bottom:3px;padding-bottom:4px;border-bottom:1px solid var(--line) }
+    .line-breakdown__prices small { color:var(--muted);font-size:10px;font-weight:500 }
+    .line-breakdown__price--current>span { color:var(--rose-dark)!important;font-weight:700 }
+    .line-breakdown__hint { margin:2px 0 3px;color:var(--muted);font-size:11px }
     .line-breakdown-toggle svg { flex:none;color:var(--muted);transition:transform .18s }
     .line-breakdown-toggle svg.chevron-open { transform:rotate(180deg) }
     .line-breakdown { margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease }
@@ -2023,6 +2047,26 @@ export class SalesView {
 
   lineQuantityDetail(line: PricedLine): string | null {
     return salesQuantityDetail(this.productFor(line.productId), line.quantity);
+  }
+
+  /** Customer prices live on regular quotes and invoices only, as in the editor: no credit notes, partner deals or container-cost pricing. */
+  private readonly customerPricesApply = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !isCreditNote(order) && !isPartnerDocument(order) && order.markupMode !== 'CONTAINER_COST';
+  });
+
+  /** The K on a line's price, read only: the saved line's source beside today's catalogue and customer price. */
+  linePriceState(line: PricedLine): LinePriceState | null {
+    if (!this.customerPricesApply()) return null;
+    const saved = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    return linePriceState(saved, line, this.lineUnit(line.productId).singular);
+  }
+
+  readonly priceSummary = linePriceSummary;
+  readonly priceFigures = linePriceFigures;
+  /** Nothing can be changed here, so an older pin names the customer's price of today. */
+  priceHint(state: LinePriceState): string {
+    return linePriceHint(state, false);
   }
 
   /** The display side of the line's price, before discount: "= € 35,40 per display van 12". */

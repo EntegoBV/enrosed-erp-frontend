@@ -2749,9 +2749,17 @@ pinned price as to a typed one.
   marker (`SalesEditor.linePriceState`), as the server will store it.
 - Only on regular documents (`customerPricesApply`): no credit notes,
   partner deals or container-cost pricing; a website order shows what the
-  website pinned. Not built: the phone's read view (`sales-view.ts`) shows
-  no marker. Checked against a production-code backend jar (2026-11-06,
+  website pinned. Checked against a production-code backend jar (2026-11-06,
   desk 1080-1440, phone 375/390), not yet in iOS Safari.
+- Phone (Emre, 2026-11-07: "mobiel is alles al klein", press or
+  highlight): the read view (`sales-view.ts`) shows the Prijsopbouw figure
+  as a pill with the K (filled on the customer's price, outlined beside it,
+  a warn dot on an older pin); its open panel lists the figures
+  (`linePriceFigures`) and the hint (`linePriceHint(state, false)`: also
+  "Klantprijs nu € x" beside an older pin, since nothing changes there).
+  The phone editor tints the price field of a CUSTOMER line
+  (`.input-affix--agreed`, global) and its K is 18 px; the picker shows an
+  agreed price as a pill (`picker-price--agreed`). The desk is unchanged.
 - Product picker (same evening): "Producten toevoegen" shows what a new line
   gets. `SalesEditor.pinsAgreedPrices` copies the server's
   `pinsCustomerPrices` (also no advance invoice, no split part); there

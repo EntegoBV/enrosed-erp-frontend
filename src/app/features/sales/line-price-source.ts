@@ -65,8 +65,40 @@ export function linePriceState(draft: SalesOrderLine | undefined, priced: Priced
   };
 }
 
-interface FigureRow { label: string; value: string; current: boolean }
+/** One figure the marker lists: "Klantprijs € 4,20", the line's own price marked current. */
+export interface LinePriceFigure { label: string; value: string; current: boolean }
 interface PriceAction { label: string; choice: LinePriceChoice }
+
+/** The marker's name and the desk tooltip: "Klantprijs · standaard € 4,95", or "Klantprijs € 4,20 beschikbaar". */
+export function linePriceSummary(state: LinePriceState): string {
+  if (state.source !== 'CUSTOMER') return `Klantprijs ${euroText(state.customer!)} beschikbaar`;
+  const standard = state.standard === null ? 'geen standaardprijs' : `standaard ${euroText(state.standard)}`;
+  const now = !state.stale ? '' : state.customer === null ? ' · niet meer actief' : ` · nieuw ${euroText(state.customer)}`;
+  return `Klantprijs · ${standard}${now}`;
+}
+
+/** Klantprijs and Standaardprijs, "Eigen prijs" first on a typed line; on the catalogue only the standard price. */
+export function linePriceFigures(state: LinePriceState): LinePriceFigure[] {
+  const standard: LinePriceFigure = { label: 'Standaardprijs', value: state.standard === null ? 'op aanvraag' : euroText(state.standard), current: state.onStandard };
+  if (state.source === 'CUSTOMER') return [{ label: 'Klantprijs', value: euroText(state.price), current: true }, standard];
+  /* On the catalogue the customer's price is only a hint (below); a typed price shows next to both. */
+  if (state.onStandard) return [standard];
+  return [{ label: 'Eigen prijs', value: euroText(state.price), current: true },
+    { label: 'Klantprijs', value: euroText(state.customer!), current: false }, standard];
+}
+
+/**
+ * The line under the figures: the customer's price on a catalogue line, a pin whose price is gone,
+ * and, where no "Nieuwe klantprijs" action can be offered, the customer's price of today beside an
+ * older pin.
+ */
+export function linePriceHint(state: LinePriceState, offersNewPrice: boolean): string {
+  if (state.source === 'CUSTOMER') {
+    if (state.customer === null) return 'Geen actieve klantprijs meer';
+    return state.stale && !offersNewPrice ? `Klantprijs nu ${euroText(state.customer)}` : '';
+  }
+  return state.onStandard ? `Klantprijs ${euroText(state.customer!)} beschikbaar` : '';
+}
 
 /**
  * The quiet "K" beside a line's price, staff only. Filled in the accent tone
@@ -162,6 +194,10 @@ interface PriceAction { label: string; choice: LinePriceChoice }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px), (pointer: coarse) {
       .lps::after { content: ''; position: absolute; inset: -11px -9px; }
     }
+    /* On the phone everything is small already (Emre): beside the price label the K is a size up (the field itself is tinted). */
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+      :host(.lps-host--label) .lps { width: 18px; height: 18px; border-radius: 6px; font-size: 10px; }
+    }
     .lps--own { background: var(--rose-soft); box-shadow: none; color: var(--rose-dark); }
     .lps--stale::before {
       content: ''; position: absolute; top: -3px; right: -3px; width: 6px; height: 6px; border-radius: 50%;
@@ -226,27 +262,10 @@ export class LinePriceSource {
 
   readonly own = computed(() => this.state().source === 'CUSTOMER');
   /** The tooltip and the marker's name: "Klantprijs · standaard € 4,95", or "Klantprijs € 4,20 beschikbaar". */
-  readonly summary = computed(() => {
-    const state = this.state();
-    if (state.source !== 'CUSTOMER') return `Klantprijs ${euroText(state.customer!)} beschikbaar`;
-    const standard = state.standard === null ? 'geen standaardprijs' : `standaard ${euroText(state.standard)}`;
-    const now = !state.stale ? '' : state.customer === null ? ' · niet meer actief' : ` · nieuw ${euroText(state.customer)}`;
-    return `Klantprijs · ${standard}${now}`;
-  });
-  readonly rows = computed<FigureRow[]>(() => {
-    const state = this.state();
-    const standard: FigureRow = { label: 'Standaardprijs', value: state.standard === null ? 'op aanvraag' : euroText(state.standard), current: state.onStandard };
-    if (state.source === 'CUSTOMER') return [{ label: 'Klantprijs', value: euroText(state.price), current: true }, standard];
-    /* On the catalogue the customer's price is only a hint (below); a typed price shows next to both. */
-    if (state.onStandard) return [standard];
-    return [{ label: 'Eigen prijs', value: euroText(state.price), current: true },
-      { label: 'Klantprijs', value: euroText(state.customer!), current: false }, standard];
-  });
-  readonly hint = computed(() => {
-    const state = this.state();
-    if (state.source === 'CUSTOMER') return state.customer === null ? 'Geen actieve klantprijs meer' : '';
-    return state.onStandard ? `Klantprijs ${euroText(state.customer!)} beschikbaar` : '';
-  });
+  readonly summary = computed(() => linePriceSummary(this.state()));
+  readonly rows = computed(() => linePriceFigures(this.state()));
+  /* The desk popover keeps its hint as before; the phone sheet names today's price beside an older pin when it cannot offer it. */
+  readonly hint = computed(() => linePriceHint(this.state(), this.editable() || this.desktop.active()));
   readonly actions = computed<PriceAction[]>(() => {
     const state = this.state();
     const toStandard: PriceAction = { label: 'Standaardprijs gebruiken', choice: { source: 'STANDARD', unitPriceEur: null } };

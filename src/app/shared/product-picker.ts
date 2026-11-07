@@ -466,7 +466,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                             </span>
                             @if (showPrice()) {
                               <span class="picker-item__end">
-                                <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id">
+                                <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id" [class.picker-price--agreed]="!!priceMark(product)">
                                   @if (priceMark(product); as mark) {
                                     <span class="picker-price__mark" aria-hidden="true">K</span>
                                     <span class="picker-price__tip" aria-hidden="true">{{ mark }}</span>
@@ -533,7 +533,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                 </div>
                 @if (showPrice()) {
                   <div class="picker-item__end">
-                    <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id">
+                    <span class="picker-price" [class.picker-price--held]="heldPrice() === product.id" [class.picker-price--agreed]="!!priceMark(product)">
                       @if (priceMark(product); as mark) {
                         <span class="picker-price__mark" aria-hidden="true">K</span>
                         <span class="picker-price__tip" aria-hidden="true">{{ mark }}</span>
@@ -762,6 +762,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
       .picker-item--nested { min-height: 56px; gap: 9px; padding: 8px 10px 8px 12px!important; }
       .picker-item--nested .picker-item__meta { font-size: 10.5px; }
       .picker-item--nested .picker-item__end { font-size: 12px; }
+      /* Everything is small on the phone (Emre): an agreed price stands out as a pill with its K. */
+      .picker-price--agreed { padding: 2px 8px 2px 3px; border-radius: 999px; background: var(--rose-soft); color: var(--rose-dark); }
+      .picker-price--agreed .picker-price__mark { width: 17px; height: 17px; background: var(--surface); }
       .picker-batch__row--nested { display: grid; grid-template-columns: 36px minmax(0,1fr) 64px 44px;
         gap: 6px; padding: 8px 9px; }
       .picker-batch__row--nested .thumb--variant { width: 36px; height: 36px; }
