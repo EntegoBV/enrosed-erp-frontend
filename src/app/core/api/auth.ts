@@ -85,6 +85,16 @@ export class Auth {
     return value === null ? null : 'Basic ' + value;
   }
 
+  /** The stored credential's kind: 'session-v1' for a signed session token (read only; the native host's `session`). */
+  credentialKind(): string | null {
+    return this.restore(CREDENTIAL_KIND_KEY);
+  }
+
+  /** When the stored session token expires, an ISO instant (read only). */
+  sessionExpiresAt(): string | null {
+    return this.restore(SESSION_EXPIRY_KEY);
+  }
+
   /**
    * Attempts to sign in. The raw password exists only in this request and is
    * never persisted: the successful response is exchanged for a session key.
