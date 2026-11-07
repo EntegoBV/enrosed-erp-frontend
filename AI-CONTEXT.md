@@ -853,8 +853,9 @@ pallet round of 2026-11-04: the baseline to track.
     product-list follow `queryParamMap` for that host open only (`nav:
     'replace'` in the navigation's info) and read the address again on a
     fresh list; sales-list and purchase-list then drop `q` from the address.
-    While signed in, a second after its last change, only when its JSON
-    changed.
+    While signed in and once this web view's WorkQueue answered (a fresh
+    queue's zero counts would blank the native menu's counts), a second
+    after its last change, only when its JSON changed.
   - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
     home-phone's one host-only effect): the Home's Kas headline with 30 days
     of the sparkline and its link, Nu te betalen, the top 6 of Te doen with

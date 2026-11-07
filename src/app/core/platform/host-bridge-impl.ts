@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, Injector, effect, inject, untracked } from '@angular/core';
+import { DestroyRef, Injectable, Injector, effect, inject, signal, untracked } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationError, NavigationSkipped, NavigationStart, Router } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -501,11 +501,22 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       const user = auth.user();
       untracked(() => this.sendSession(auth, header, user));
     }, { injector: this.injector });
-    /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later. */
+    /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later.
+       Not before this web view's own queue answered once (a refresh shares the bell's fetch or reuses a fresh one): a
+       new web view's queue starts empty, and a nav with its zero counts would blank the menu's counts until it answered. */
+    const queueAnswered = signal(false);
+    let queueAsked = false;
     effect((onCleanup) => {
       const user = auth.isLoggedIn() ? auth.user() : null;
       const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount() };
       if (!user) { this.lastNav = ''; return; }
+      if (!queueAnswered()) {
+        if (!queueAsked) {
+          queueAsked = true;
+          untracked(() => void work.refresh().finally(() => queueAnswered.set(true)));
+        }
+        return;
+      }
       const timer = setTimeout(() => {
         const nav = navMessage(user, counts);
         const json = JSON.stringify(nav);
