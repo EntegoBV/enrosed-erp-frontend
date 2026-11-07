@@ -814,8 +814,10 @@ pallet round of 2026-11-04: the baseline to track.
 - Shell-level messages: `ready` (build id = the main script's file name,
   loggedIn, the theme colours read from `--rose` / `--rose-dark` /
   `--ios-bg`, the URL), `auth` on `Auth.isLoggedIn()` changes, `badges`
-  (`actionCount` → sales and bell, `loginRequestCount` → more), `theme` on
-  palette changes. `sessionCheck` → `Auth.recheckSession()` (the storage
+  (`actionCount` → sales and bell, `loginRequestCount` → more; since round
+  4 only once this web view's WorkQueue answered, as `nav`: a prewarmed web
+  view's zero counts blanked the tab badges and the bell's level), `theme`
+  on palette changes. `sessionCheck` → `Auth.recheckSession()` (the storage
   event may not cross WKWebViews). `insets` (the window's insets, so top 0
   on a strip pose) sets `--host-safe-t/r/b/l` on `<html>` and toggles
   `data-host-strip` with `stripSide` (nav-rail.ts, the thresholds of the

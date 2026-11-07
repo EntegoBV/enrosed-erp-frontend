@@ -501,22 +501,22 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       const user = auth.user();
       untracked(() => this.sendSession(auth, header, user));
     }, { injector: this.injector });
-    /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later.
-       Not before this web view's own queue answered once (a refresh shares the bell's fetch or reuses a fresh one): a
-       new web view's queue starts empty, and a nav with its zero counts would blank the menu's counts until it answered. */
+    /* nav and badges carry this web view's own queue counts: neither goes out before that queue answered once, asked
+       while signed in (a refresh shares the bell's fetch or reuses a fresh one). A new web view's queue starts empty, and
+       its zero counts would blank the menu's counts, the tab badges and the bell's level until it answered. */
     const queueAnswered = signal(false);
     let queueAsked = false;
+    const askQueue = (): void => {
+      if (queueAsked) return;
+      queueAsked = true;
+      untracked(() => void work.refresh().finally(() => queueAnswered.set(true)));
+    };
+    /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later. */
     effect((onCleanup) => {
       const user = auth.isLoggedIn() ? auth.user() : null;
       const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount() };
       if (!user) { this.lastNav = ''; return; }
-      if (!queueAnswered()) {
-        if (!queueAsked) {
-          queueAsked = true;
-          untracked(() => void work.refresh().finally(() => queueAnswered.set(true)));
-        }
-        return;
-      }
+      if (!queueAnswered()) { askQueue(); return; }
       const timer = setTimeout(() => {
         const nav = navMessage(user, counts);
         const json = JSON.stringify(nav);
@@ -527,6 +527,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       onCleanup(() => clearTimeout(timer));
     }, { injector: this.injector });
     effect(() => {
+      if (!queueAnswered()) { if (auth.isLoggedIn()) askQueue(); return; }
       const sales = work.actionCount();
       const more = work.loginRequestCount();
       this.bridge.send({ type: 'badges', sales, more, bell: sales });
