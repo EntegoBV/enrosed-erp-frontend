@@ -6,10 +6,12 @@ import { AuthImage } from '../../core/api/auth-image';
 import type { CatalogPriceIssue, CatalogPriceOverride } from '../../core/api/catalog-api';
 import { CustomerPriceApi, priceBasisRefusal, type CustomerPrice } from '../../core/api/customer-price-api';
 import { messageOf } from '../../core/api/errors';
+import { SalesApi } from '../../core/api/sales-api';
 import type { Category, Product, ProductFamily } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
+import { DateField } from '../../shared/date-field';
 import { DecimalInput } from '../../shared/decimal-input';
 import { EurPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
@@ -266,6 +268,8 @@ interface RowContext {
   refusedBasis: ReadonlyMap<number, PriceBasisNow> | null;
   added: ReadonlySet<number>;
   texts: ReadonlyMap<number, string>;
+  /** The customer's Geldig tot for the prices typed here ('' in a PDF). */
+  until: string;
 }
 
 interface PriceMenu {
@@ -289,7 +293,15 @@ interface PriceMenu {
  * it), and "Alle 8 gevonden" gives one price to every row the search shows
  * (Emre, same day: no more one product at a time between step 03 and here).
  * Nothing changes until Toepassen, which also adds the taken-in products to
- * the PDF's selection; with a customer,
+ * the PDF's selection. mode "customer" is the same sheet on the customer's
+ * Klantprijzen (Emre, same day: "alle stolpen aanpassen in 1 x"): the list is
+ * the customer's priced products, the field is the new price, "Bewaren"
+ * stores every typed price at once (optional Geldig tot), and there is no
+ * PDF, no "Op aanvraag" and no keep box. In both, "Prijzen van klant…" puts
+ * another customer's active prices in as typed prices (taking in what is not
+ * listed yet), to look over before Toepassen or Bewaren (Emre, same day:
+ * "prijzen van andere klant kunnen overnemen dat het snel kan"). With a
+ * customer in the PDF,
  * "Ook bewaren als klantprijzen van …" also stores the typed prices as that
  * customer's own (PUT /api/customers/{id}/prices, source CATALOG_EXPORT),
  * with the PDF's validity date and the unit each was typed on: one the
@@ -299,12 +311,12 @@ interface PriceMenu {
 @Component({
   selector: 'app-catalog-price-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, ContextMenu, DecimalInput, EurPipe, FormsModule, Sheet],
+  imports: [AuthImage, ContextMenu, DateField, DecimalInput, EurPipe, FormsModule, Sheet],
   template: `
     <app-sheet title="Prijzen aanpassen" variant="ios" [wide]="desktop.active()" (closed)="requestClose()">
       <div body class="cps" [class.cps--own]="!!customer()" [attr.inert]="busy() ? '' : null">
         @if (customer(); as who) {
-          <p class="cps__for">Voor {{ who.name }}@if (customerNote()) {<span> · {{ customerNote() }}</span>}</p>
+          <p class="cps__for">@if (forCustomer()) {Klantprijzen van {{ who.name }}} @else {Voor {{ who.name }}@if (customerNote()) {<span> · {{ customerNote() }}</span>}}</p>
         }
         <div class="cps-tools">
           <label class="cps-search">
@@ -329,19 +341,27 @@ interface PriceMenu {
                 {{ narrowed() && shownRows().length ? '% op ' + shownRows().length : '% op alles' }}
               </button>
             </span>
+            <!-- Another customer's active prices as typed prices here, looked over before Toepassen or Bewaren. -->
+            <label class="cps-copy">
+              <span class="sr-only">Prijzen overnemen van een andere klant</span>
+              <select class="select" [disabled]="copying() || !donors()?.length" (change)="copyFrom($any($event.target))">
+                <option value="" selected>{{ copying() ? 'Overnemen…' : donors() === null ? (donorsFailed() ? 'Klanten niet geladen' : 'Klanten laden…') : 'Prijzen van klant…' }}</option>
+                @for (donor of donors() ?? []; track donor.id) { <option [value]="donor.id">{{ donor.name }}</option> }
+              </select>
+            </label>
             <button class="linklike cps-reset" type="button" [disabled]="!draft().size" (click)="resetAll()">Alles terug</button>
           </div>
         </div>
         @if (entries().length || outside().length) {
           <div class="cps-head" aria-hidden="true">
-            <span>Product</span><span>Catalogus</span>@if (customer()) {<span>Klant</span>}<span>In deze PDF</span>
+            <span>Product</span><span>Catalogus</span>@if (customer()) {<span>Klant</span>}<span>{{ forCustomer() ? 'Nieuwe prijs' : 'In deze PDF' }}</span>
           </div>
         }
         @if (outside().length) {
           <!-- First, so taking in stays in sight above the keyboard; the found line then covers what came in. -->
           <section class="cps-more" aria-labelledby="cps-more-title">
             <div class="cps-more__head">
-              <span id="cps-more-title">Niet in deze PDF</span>
+              <span id="cps-more-title">{{ forCustomer() ? 'Zonder klantprijs' : 'Niet in deze PDF' }}</span>
               @if (outside().length > 1) {
                 <button class="btn btn--sm" type="button" (click)="includeAll()">Alle {{ outsideCount() }} opnemen</button>
               }
@@ -375,7 +395,7 @@ interface PriceMenu {
                     </span>
                   }
                   <span class="cps-row__field">
-                    <button class="cps-row__take" type="button" [attr.aria-label]="'Opnemen in deze PDF: ' + line.label">Opnemen</button>
+                    <button class="cps-row__take" type="button" [attr.aria-label]="(forCustomer() ? 'Opnemen: ' : 'Opnemen in deze PDF: ') + line.label">Opnemen</button>
                   </span>
                 </li>
               }
@@ -421,7 +441,7 @@ interface PriceMenu {
                       <span class="cps-row__request" [attr.title]="group.unprintable ? unprintableTitle : null">Op aanvraag</span>
                     } @else {
                       @if (!group.bare) { <i aria-hidden="true">€</i> }
-                      <input class="input" appDecimal [placeholder]="group.placeholder" [attr.aria-label]="'Prijs in deze PDF voor ' + group.label"
+                      <input class="input" appDecimal [placeholder]="group.placeholder" [attr.aria-label]="fieldWord() + ' voor ' + group.label"
                              [ngModel]="group.value" (ngModelChange)="setGroupPrice(group, $event)" />
                     }
                   </span>
@@ -446,7 +466,7 @@ interface PriceMenu {
                       <span class="cps-row__text cps-row__phone cps-row__sku">&nbsp;· {{ entry.count }}</span>
                     }
                   }
-                  @if (group.added) { <i class="cps-tag cps-tag--new" title="Komt in de PDF bij Toepassen">nieuw</i> }
+                  @if (group.added) { <i class="cps-tag cps-tag--new" [attr.title]="newTitle()">nieuw</i> }
                 </span>
                 <span class="cps-row__cat">
                   @if (group.catalogueMixed) { <span class="cps-row__mixed">verschillend</span> }
@@ -469,7 +489,7 @@ interface PriceMenu {
                     } @else {
                       @if (!group.bare) { <i aria-hidden="true">€</i> }
                       <input class="input" appDecimal [placeholder]="group.placeholder"
-                             [attr.aria-label]="'Prijs in deze PDF voor alle ' + group.count + ', ' + group.label"
+                             [attr.aria-label]="fieldWord() + ' voor alle ' + group.count + ', ' + group.label"
                              [ngModel]="group.value" (ngModelChange)="setGroupPrice(group, $event)" />
                     }
                   </span>
@@ -500,7 +520,7 @@ interface PriceMenu {
                 } @else if (row.belowCost) {
                   <i class="cps-tag cps-tag--warn" [attr.title]="'Kostprijs ' + (row.product.landedCostEur | eur)">onder kost</i>
                 } @else if (entry.fresh) {
-                  <i class="cps-tag cps-tag--new" title="Komt in de PDF bij Toepassen">nieuw</i>
+                  <i class="cps-tag cps-tag--new" [attr.title]="newTitle()">nieuw</i>
                 } @else if (!row.message && row.stored; as own) {
                   <!-- A refusal says what to do; the stored price's chip would only squeeze it on the phone. -->
                   <i class="cps-tag cps-row__phone" [class.cps-tag--own]="own.status === 'ACTIVE'" [attr.title]="ownTitle(own)">{{ ownChip(own) }}</i>
@@ -521,7 +541,7 @@ interface PriceMenu {
                   <span class="cps-row__request" [attr.title]="row.unprintable ? unprintableTitle : null">Op aanvraag</span>
                 } @else {
                   @if (row.standard.eur !== null || row.price?.priceEur != null) { <i aria-hidden="true">€</i> }
-                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="'Prijs in deze PDF, ' + row.label"
+                  <input class="input" appDecimal [placeholder]="placeholder(row.standard)" [attr.aria-label]="fieldWord() + ', ' + row.label"
                          [ngModel]="row.price?.priceEur ?? null" (ngModelChange)="setPrice(row.product, $event)" />
                 }
               </span>
@@ -540,7 +560,14 @@ interface PriceMenu {
         }
       </div>
       <div foot class="cps-foot">
-        @if (customer(); as who) {
+        @if (forCustomer()) {
+          <!-- For every price typed here; empty keeps each stored end date (one already passed is cleared). -->
+          <div class="cps-until">
+            <label for="cps-until">Geldig tot <span class="opt"></span></label>
+            <app-date-field fieldId="cps-until" [value]="ownUntil()" (valueChange)="ownUntil.set($event)" />
+            @if (untilPast()) { <small id="cps-until-past" role="alert">Ligt in het verleden</small> }
+          </div>
+        } @else if (customer(); as who) {
           <label class="cps-keep">
             <input type="checkbox" [checked]="keep()" [disabled]="busy() || !keepable().length" (change)="keep.set($any($event.target).checked)" />
             <!-- What the box is for (Emre asked, 2026-11-07): the prices become the customer's own, beyond this PDF. -->
@@ -551,8 +578,8 @@ interface PriceMenu {
           </label>
         }
         <button class="btn cps-foot__cancel" type="button" [disabled]="busy()" (click)="requestClose()">Annuleren</button>
-        <button class="btn btn--primary" type="button" [disabled]="busy() || blocked()" (click)="apply()">
-          {{ busy() ? 'Bewaren…' : 'Toepassen (' + changeCount() + ')' }}
+        <button class="btn btn--primary" type="button" [disabled]="busy() || blocked()" [attr.aria-describedby]="untilPast() ? 'cps-until-past' : null" (click)="apply()">
+          {{ busy() ? 'Bewaren…' : (forCustomer() ? 'Bewaren (' : 'Toepassen (') + changeCount() + ')' }}
         </button>
       </div>
     </app-sheet>
@@ -571,6 +598,8 @@ interface PriceMenu {
     .cps-pct .input { width: 58px; min-height: 36px; padding: 5px 9px; border-radius: 10px; text-align: right; }
     .cps-pct .btn { min-height: 36px; white-space: nowrap; }
     .cps-reset { min-height: 36px; margin-left: auto; font-size: 13px; }
+    .cps-copy { display: block; min-width: 0; }
+    .cps-copy .select { min-height: 36px; max-width: 220px; padding-top: 4px; padding-bottom: 4px; border-radius: 10px; font-size: 13px; }
     .cps-rows { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
     .cps-row { display: grid; align-items: center; column-gap: 10px; row-gap: 1px; min-width: 0; padding: 9px 12px; }
     .cps-row + .cps-row { border-top: 1px solid var(--line); }
@@ -632,6 +661,9 @@ interface PriceMenu {
     @media (hover: hover) { .cps-row--add:hover { background: color-mix(in srgb, var(--rose-soft) 30%, transparent); } }
     .cps-head { display: none; }
     .cps-foot { display: contents; }
+    .cps-until { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; margin-right: auto; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+    .cps-until app-date-field { width: 168px; }
+    .cps-until small { color: var(--warn); font-size: 11.5px; font-weight: 650; }
     .cps-keep { display: flex; flex: 1 1 auto; align-items: center; gap: 9px; min-width: 0; margin-right: auto; color: var(--ink-2); font-size: 13px; font-weight: 600; cursor: pointer; }
     .cps-keep input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--rose); }
     .cps-keep__text { display: grid; gap: 1px; min-width: 0; }
@@ -649,6 +681,7 @@ interface PriceMenu {
       .cps-head span:first-child { grid-column: 1 / 3; text-align: left; }
       .cps-head span:last-child { grid-column: -3 / -2; }
       .cps-keep { max-width: 440px; }
+      .cps-until ~ .btn { align-self: center; }
     }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
       .cps { padding: 0 16px; }
@@ -686,6 +719,8 @@ interface PriceMenu {
       .cps-foot { display: grid; width: 100%; gap: 10px; }
       .cps-foot__cancel { display: none; }
       .cps-keep { margin: 0; padding: 2px 4px; }
+      .cps-until { margin: 0; padding: 2px 4px; }
+      .cps-until app-date-field { flex: 1 1 160px; width: auto; }
     }
   `,
 })
@@ -695,6 +730,7 @@ export class CatalogPriceSheet implements OnInit {
   private readonly api = inject(CustomerPriceApi);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
+  private readonly sales = inject(SalesApi);
 
   /** Every product of the catalogue, in the PDF's order: the search finds and takes in those the PDF does not have yet. */
   readonly catalogue = input.required<readonly Product[]>();
@@ -704,6 +740,8 @@ export class CatalogPriceSheet implements OnInit {
   readonly families = input<readonly ProductFamily[]>([]);
   /** The categories: "domes" finds every dome. */
   readonly categories = input<readonly Category[]>([]);
+  /** "customer": the customer's Klantprijzen, stored at once with Bewaren; "pdf": the prices of one catalogue PDF. */
+  readonly mode = input<'pdf' | 'customer'>('pdf');
   /** The one-off prices as applied now. */
   readonly overrides = input<ReadonlyMap<number, CatalogPriceOverride>>(new Map());
   /** A stored customer; a free recipient name has no prices of its own. */
@@ -735,6 +773,16 @@ export class CatalogPriceSheet implements OnInit {
   readonly menu = signal<PriceMenu | null>(null);
   /** Taken in here and not in the PDF yet: rows like the others, joining the PDF on Toepassen. */
   readonly added = signal<ReadonlySet<number>>(new Set());
+  readonly forCustomer = computed(() => this.mode() === 'customer');
+  /** The other customers whose prices can be taken over; null while they load. */
+  readonly donors = signal<{ id: number; name: string }[] | null>(null);
+  readonly donorsFailed = signal(false);
+  readonly copying = signal(false);
+  /** The customer's Geldig tot for every price typed here (customer mode). */
+  readonly ownUntil = signal('');
+  readonly untilPast = computed(() => this.forCustomer() && !!this.ownUntil() && this.ownUntil() < todayIso());
+  readonly fieldWord = computed(() => (this.forCustomer() ? 'Nieuwe prijs' : 'Prijs in deze PDF'));
+  readonly newTitle = computed(() => (this.forCustomer() ? 'Krijgt een klantprijs bij Bewaren als je een prijs ingeeft' : 'Komt in de PDF bij Toepassen'));
   /** One-off prices from an earlier PDF that taking a product in cleared: "Niet opnemen" gives them back. */
   private readonly setAside = new Map<number, CatalogPriceOverride>();
   /** When a "Niet in deze PDF" line last took a product in. */
@@ -773,7 +821,7 @@ export class CatalogPriceSheet implements OnInit {
       draft: this.draft(), applied: this.overrides(), stored: this.customerPrices(),
       issues: new Map(this.issues().map((issue) => [issue.productId, issue.message])),
       refusedBasis: refusal && refusal.products === this.catalogue() ? refusal.basis : null,
-      added: this.added(), texts: this.searchTexts(),
+      added: this.added(), texts: this.searchTexts(), until: this.forCustomer() ? this.ownUntil() : '',
     };
   });
 
@@ -817,9 +865,14 @@ export class CatalogPriceSheet implements OnInit {
       catalogue: cataloguePrice(product),
       stored: own && own.status !== 'PRODUCT_GONE' ? own : null,
       standard, price,
-      changed: !!price && changesPrint(product, price, standard),
+      /* For the customer every typed price counts where none applies yet, also one equal to the catalogue price: it
+         pins the price for them. With a price of their own: another amount or unit, or the same with a new Geldig tot. */
+      changed: !!price && (!this.forCustomer() ? changesPrint(product, price, standard)
+        : !price.onRequest && price.priceEur !== null && (own?.status !== 'ACTIVE' || price.priceEur !== own.priceExclVat
+          || basisChanged(product, price) || (!!context.until && context.until !== (own.validUntil ?? '')))),
       onRequest: !!price?.onRequest,
-      unprintable: !pricePrintable(product),
+      /* Printing is the PDF's concern: a customer's price for a display without its piece count still goes on offers. */
+      unprintable: !this.forCustomer() && !pricePrintable(product),
       message: problem ?? (moved ? `Nu ${now} · vul opnieuw in` : stale ? STALE : rejected),
       belowCost: shown !== null && cost !== null && cost > 0 && shown < cost,
       photo: photo?.smallUrl || photo?.url || null,
@@ -931,22 +984,85 @@ export class CatalogPriceSheet implements OnInit {
   readonly outsideCount = computed(() => this.outside().reduce((sum, line) => sum + line.rows.length, 0));
   readonly emptyText = computed(() => this.words().length ? 'Geen producten gevonden.'
     : this.onlyChanged() ? 'Nog geen aangepaste prijzen.'
-      : this.products().length ? 'Geen producten gevonden.' : 'Zoek een product om op te nemen.');
+      : this.products().length ? 'Geen producten gevonden.' : 'Zoek een product om op te nemen, of neem de prijzen van een klant over.');
   /** What Toepassen changes in the PDF: a new price, or a product taken in (once, also when it has a price). */
-  readonly changeCount = computed(() => this.rows().filter((row) => (row.changed && !row.message) || row.added).length);
+  readonly changeCount = computed(() => (this.forCustomer() ? this.keepable().length
+    : this.rows().filter((row) => (row.changed && !row.message) || row.added).length));
   /** A typed price that cannot go, or one on a unit the product is no longer sold in: fix it first. */
-  readonly blocked = computed(() => this.rows().some((row) => !!row.price && !!row.message && row.message !== this.refusalOf(row)));
+  readonly blocked = computed(() => this.untilPast() || this.rows().some((row) => !!row.price && !!row.message && row.message !== this.refusalOf(row)));
   /** The typed prices that can become the customer's own; "Op aanvraag" is for this PDF only. */
   readonly keepable = computed(() => this.rows().filter((row) => row.changed && !row.message && !row.onRequest && row.price?.priceEur != null));
   private readonly dirty = computed(() => {
     const draft = this.draft();
     const applied = this.overrides();
+    /* For the customer only typed prices are at stake; a product taken in without one stores nothing. */
+    if (this.forCustomer()) return draft.size > 0;
     return this.added().size > 0 || draft.size !== applied.size || [...draft].some(([id, price]) => !sameOverride(price, applied.get(id)));
   });
 
   ngOnInit(): void {
     /* Opened from the server's refusal: the rows it names come first. */
     if (this.issues().length) this.onlyChanged.set(true);
+    void this.loadDonors();
+  }
+
+  private async loadDonors(): Promise<void> {
+    try {
+      const own = this.customer()?.id ?? null;
+      const customers = await this.sales.customers();
+      this.donors.set(customers
+        .flatMap((customer) => customer.id === null || customer.id === own ? [] : [{ id: customer.id, name: customer.company?.trim() || `Klant #${customer.id}` }])
+        .sort((left, right) => left.name.localeCompare(right.name, 'nl-BE')));
+    } catch {
+      this.donorsFailed.set(true);
+    }
+  }
+
+  /** The select's choice; it goes back to its prompt right away, so the same customer can be chosen again. */
+  copyFrom(select: HTMLSelectElement): void {
+    const id = Number(select.value);
+    select.value = '';
+    const donor = this.donors()?.find((candidate) => candidate.id === id);
+    if (donor) void this.copy(donor);
+  }
+
+  /**
+   * Another customer's active prices as typed prices here, on each product's
+   * unit of now (an active price is on it); products not listed yet are taken
+   * in. Expired prices, prices on a unit the product has left and products
+   * outside the catalogue stay out. The list then shows what changed, to look
+   * over before Toepassen or Bewaren; nothing is stored before that.
+   */
+  private async copy(donor: { id: number; name: string }): Promise<void> {
+    if (this.copying()) return;
+    this.copying.set(true);
+    try {
+      const prices = await this.api.list(donor.id);
+      const products = new Map(this.catalogue().flatMap((product) => product.id === null ? [] : [[product.id, product] as const]));
+      const usable = prices.filter((price) => price.status === 'ACTIVE' && products.has(price.productId));
+      const skipped = prices.length - usable.length;
+      if (!usable.length) {
+        this.ui.toast(prices.length ? `Geen bruikbare prijzen bij ${donor.name} (verlopen of andere eenheid)` : `${donor.name} heeft geen klantprijzen`, 'err');
+        return;
+      }
+      const selected = this.selected();
+      const draft = new Map(this.draft());
+      const take: number[] = [];
+      for (const price of usable) {
+        draft.set(price.productId, oneOffPrice(products.get(price.productId)!, price.priceExclVat));
+        if (!selected.has(price.productId)) take.push(price.productId);
+      }
+      if (take.length) this.added.update((current) => new Set([...current, ...take]));
+      this.draft.set(draft);
+      this.query.set('');
+      this.onlyChanged.set(true);
+      const count = `${usable.length} ${usable.length === 1 ? 'prijs' : 'prijzen'} van ${donor.name} overgenomen`;
+      this.ui.toast(skipped ? `${count} · ${skipped} overgeslagen` : count);
+    } catch (failure) {
+      this.ui.toast(messageOf(failure, `De prijzen van ${donor.name} konden niet geladen worden.`), 'err');
+    } finally {
+      this.copying.set(false);
+    }
   }
 
   placeholder(standard: StandardPrice): string {
@@ -1114,6 +1230,13 @@ export class CatalogPriceSheet implements OnInit {
     const same = rows.every((row) => row.standard.eur === first.standard.eur && row.standard.source === first.standard.source);
     const standard = !same ? `Verschilt per ${open.noun ?? 'kleur'}` : first.standard.eur === null ? 'Prijs op aanvraag'
       : `${this.placeholder(first.standard)} · ${first.standard.source === 'CUSTOMER' ? 'klantprijs' : 'catalogusprijs'}`;
+    /* A customer's price is a price: "Op aanvraag" is for one PDF only, and undoing a typed price leaves what is stored. */
+    if (this.forCustomer()) {
+      return [
+        { id: 'standard', label: 'Ongedaan maken', hint: standard, disabled: !rows.some((row) => !!row.price) },
+        ...(all.some((row) => row.added) ? [{ id: 'drop', label: 'Niet opnemen', hint: 'Geen klantprijs', divider: true }] : []),
+      ];
+    }
     return [
       rows.every((row) => row.unprintable)
         ? { id: 'request', label: 'Op aanvraag', hint: 'Display zonder aantal stuks', checked: true, disabled: true }
@@ -1162,49 +1285,28 @@ export class CatalogPriceSheet implements OnInit {
   async apply(): Promise<void> {
     if (this.busy() || this.blocked()) return;
     const customer = this.customer();
+    if (this.forCustomer()) {
+      const keep = this.keepable();
+      if (!keep.length && this.ownUntil()) {
+        this.ui.toast('Geldig tot gaat mee met de prijzen die je hier ingeeft: geef eerst een prijs in', 'err');
+        return;
+      }
+      if (customer && keep.length) {
+        const saved = await this.store(customer.id, keep, 'CUSTOMER_SCREEN', this.ownUntil());
+        if (!saved) return;
+        this.saved.emit(saved);
+        this.ui.toast(`${keep.length} ${keep.length === 1 ? 'klantprijs' : 'klantprijzen'} bewaard`);
+      }
+      this.closed.emit();
+      return;
+    }
     const keep = customer && this.keep() ? this.keepable() : [];
     let kept = 0;
     if (customer && keep.length) {
-      /* The PDF's validity goes along unless it already lies in the past. Without one, a stored end date that is still
-         ahead stays (the server keeps a field the change leaves out), and one that already passed is cleared, so the
-         kept price applies again. The stored note always stays. */
-      const until = this.validUntil() && this.validUntil() >= todayIso() ? this.validUntil() : null;
-      const today = todayIso();
-      const ended = (row: PriceRow): boolean => !!row.stored?.validUntil && row.stored.validUntil < today;
-      this.busy.set(true);
-      try {
-        const saved = await this.api.save(customer.id, {
-          source: 'CATALOG_EXPORT',
-          changes: keep.map((row) => ({
-            productId: row.id, priceExclVat: row.price!.priceEur,
-            /* The unit the row named when the price was typed: the server refuses it once the product has left it. */
-            basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null,
-            ...(until ? { validUntil: until } : ended(row) ? { validUntil: null } : {}),
-          })),
-        });
-        this.saved.emit(saved);
-        kept = keep.length;
-      } catch (failure) {
-        const stale = priceBasisRefusal(failure);
-        if (stale) {
-          /* Nothing was stored. The rows it names ask to be typed again, the page loads the products with their unit
-             of now, and the sheet stays open with every typed price. */
-          const named = new Set(stale.productIds);
-          this.refused.set({
-            products: this.catalogue(),
-            basis: new Map(keep.filter((row) => !named.size || named.has(row.id))
-              .map((row) => [row.id, { basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null }])),
-          });
-          this.productsStale.emit();
-          this.ui.toast('Niets bewaard: de prijsbasis is gewijzigd', 'err');
-          setTimeout(() => this.host.nativeElement.querySelector('.cps-row.is-wrong')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
-          return;
-        }
-        this.ui.toast(messageOf(failure, 'De klantprijzen zijn niet bewaard. Probeer opnieuw.'), 'err');
-        return;
-      } finally {
-        this.busy.set(false);
-      }
+      const saved = await this.store(customer.id, keep, 'CATALOG_EXPORT', this.validUntil());
+      if (!saved) return;
+      this.saved.emit(saved);
+      kept = keep.length;
     }
     /* Taken in and still in the catalogue (a reload can drop one meanwhile); they join the PDF before the prices apply. */
     const known = new Set(this.catalogue().map((product) => product.id));
@@ -1219,6 +1321,50 @@ export class CatalogPriceSheet implements OnInit {
     this.applied.emit(new Map(this.draft()));
   }
 
+  /**
+   * PUTs these typed prices as the customer's own, each on the unit it was typed on. `until` goes along unless it lies
+   * in the past; without one, a stored end date that is still ahead stays (the server keeps a field the change leaves
+   * out) and one that already passed is cleared, so the price applies again; the stored note always stays. Null when
+   * nothing was stored: a unit changed since (409) marks the rows it names and has the page load the products again.
+   */
+  private async store(customerId: number, keep: readonly PriceRow[], source: 'CATALOG_EXPORT' | 'CUSTOMER_SCREEN', until: string): Promise<CustomerPrice[] | null> {
+    const today = todayIso();
+    const date = until && until >= today ? until : null;
+    const ended = (row: PriceRow): boolean => !!row.stored?.validUntil && row.stored.validUntil < today;
+    this.busy.set(true);
+    try {
+      return await this.api.save(customerId, {
+        source,
+        changes: keep.map((row) => ({
+          productId: row.id, priceExclVat: row.price!.priceEur,
+          /* The unit the row named when the price was typed: the server refuses it once the product has left it. */
+          basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null,
+          ...(date ? { validUntil: date } : ended(row) ? { validUntil: null } : {}),
+        })),
+      });
+    } catch (failure) {
+      const stale = priceBasisRefusal(failure);
+      if (stale) {
+        /* Nothing was stored. The rows it names ask to be typed again, the page loads the products with their unit
+           of now, and the sheet stays open with every typed price. */
+        const named = new Set(stale.productIds);
+        this.refused.set({
+          products: this.catalogue(),
+          basis: new Map(keep.filter((row) => !named.size || named.has(row.id))
+            .map((row) => [row.id, { basis: row.price!.basis, piecesPerUnit: row.price!.piecesPerUnit ?? null }])),
+        });
+        this.productsStale.emit();
+        this.ui.toast('Niets bewaard: de prijsbasis is gewijzigd', 'err');
+        setTimeout(() => this.host.nativeElement.querySelector('.cps-row.is-wrong')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 60);
+        return null;
+      }
+      this.ui.toast(messageOf(failure, 'De klantprijzen zijn niet bewaard. Probeer opnieuw.'), 'err');
+      return null;
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   requestClose(): void {
     if (this.busy()) return;
     if (!this.dirty()) {
@@ -1226,8 +1372,9 @@ export class CatalogPriceSheet implements OnInit {
       return;
     }
     /* Products taken in are more than prices: the question names both. */
-    const title = this.added().size ? 'Wijzigingen niet toepassen?' : 'Prijzen niet toepassen?';
-    this.ui.confirm({ title, message: 'Wat je hier aanpaste, gaat verloren.', confirmLabel: 'Niet toepassen', danger: true },
+    const customer = this.forCustomer();
+    const title = customer ? 'Prijzen niet bewaren?' : this.added().size ? 'Wijzigingen niet toepassen?' : 'Prijzen niet toepassen?';
+    this.ui.confirm({ title, message: 'Wat je hier aanpaste, gaat verloren.', confirmLabel: customer ? 'Niet bewaren' : 'Niet toepassen', danger: true },
       () => this.closed.emit());
   }
 

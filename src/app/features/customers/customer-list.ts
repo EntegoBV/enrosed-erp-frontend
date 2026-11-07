@@ -244,10 +244,10 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
               </div>
               <!-- A klantprijs saved above changes the pills below (klantprijs / ≠ klantprijs): the rows come again. -->
               <div class="field span-2 partner-field">
-                <app-customer-price-block [customerId]="customerId" (changed)="appliedPrices()?.reload()" />
+                <app-customer-price-block [customerId]="customerId" [customerName]="draft().company" (changed)="appliedPrices()?.reload()" />
               </div>
               <div class="field span-2 partner-field">
-                <app-customer-applied-prices [customerId]="customerId" />
+                <app-customer-applied-prices [customerId]="customerId" [customerName]="draft().company" />
               </div>
             }
             <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
