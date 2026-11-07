@@ -62,6 +62,7 @@ import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
 import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
+import { PALLET_LEGACY_MAX_HEIGHT_CM } from './pallet-calculator-model';
 import {
   automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
 } from './pallet-stack';
@@ -3344,7 +3345,7 @@ export class SalesEditor {
         issues.push('Vernieuw de palletindeling: er staat een verwijderd product op');
       }
       const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
-      const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
+      const palletMax = data.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM;
       if (data.order.pallets.some((pallet) => pallet.heightCm != null
           && (pallet.heightCm < palletBase || pallet.heightCm > palletMax))) {
         issues.push('Controleer de gemeten hoogte van de handmatige pallets');
@@ -4714,7 +4715,7 @@ export class SalesEditor {
   setPalletHeight(index: number, raw: string | number | null): void {
     const rounded = Math.round(Number(raw));
     const minimum = Math.ceil(this.view()?.priced.totals.palletBaseHeightCm ?? 14.4);
-    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? 260);
+    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM);
     const value = raw === '' || raw === null || !Number.isFinite(rounded) || rounded <= 0
       ? null
       : Math.max(minimum, Math.min(maximum, rounded));

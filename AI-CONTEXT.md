@@ -4594,8 +4594,10 @@ Frontend only: it reads `GET /api/products` (active, not demo), the categories, 
 product families (CatalogApi's 20 s cache) and the unit names in parallel; failing
 categories or families fall back quietly (the picker's fallback names, only the
 Recent and Alle chips). The picks, pallet type, height and the recent products stay
-in localStorage (`enrosed.palletCalculator`: `profile`, `maxHeightCm`, `rows`,
-`recent`); nothing goes to the server. Built for the fair: photo first, one tap
+in localStorage (`enrosed.palletCalculator`: `profile`, `heightCm`, `rows`,
+`recent`; the height was `maxHeightCm` until the standard went from 260 to 220 cm on
+2026-11-07, and that old field is not read, so every device started once at 220);
+nothing goes to the server. Built for the fair: photo first, one tap
 adds, the answer stays in sight.
 
 - **Choosing by photo** (`pallet-browser.ts`, `app-pallet-browser`; pure
@@ -4636,7 +4638,9 @@ adds, the answer stays in sight.
   the backend's `PalletCalculator.fit` exactly (guillotine rows in both pallet
   directions, layers under the total height with the 14.4 cm wood, then 700 kg) on
   the `PalletProfile` footprints and the `SalesSettings` defaults, which production
-  does not override; keep the two in step when the backend changes.
+  does not override (`PALLET_MAX_HEIGHT_CM` 220 cm since 2026-11-07, the standard a
+  new sales document stores; `PALLET_LEGACY_MAX_HEIGHT_CM` 260 is what a document
+  from before keeps); keep the two in step when the backend changes.
   `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
 - **A mix** stacks every product in layers of its own, a started layer as high as a
   full one (the pallet planner's `estimatePalletHeightCm` model). `planPallets` is
@@ -4650,7 +4654,7 @@ adds, the answer stays in sight.
   omdozen a weight split leaves behind join the product's next layer instead of
   starting a short one of their own, so one product alone gets exactly its
   `cartonsPerPallet` per pallet: 238 omdozen of 40×40×50 cm at 30.7 kg on a
-  Europallet at 260 cm make 11 pallets, the strict count (the first version made
+  Europallet at 220 cm (or 260) make 11 pallets, the strict count (the first version made
   12, 22/20/22/20…; money review 2026-11-04). A plan that still needs more pallets
   than every product on pallets of its own (`separatePallets`) becomes that layout
   (`separateLayout`: per line its full pallets, then its rest; a pallet's layers
@@ -4700,7 +4704,7 @@ adds, the answer stays in sight.
   side (desk pallet panel + result) sticky right. Phone header: the pallet
   button "Pallet instellen" (one shared settings template, here in an iOS sheet
   with Klaar; changes apply live) and the trash; the caption is the pallet
-  ("Europallet 120 × 80 · max 260 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
+  ("Europallet 120 × 80 · max 220 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
   the search, Wissen; the settings are a panel.
 - **The capsule** (phone): while there is a plan and the result is out of view
   (IntersectionObserver, 96 px off the bottom for the tab bar) the kit's glass
@@ -4719,7 +4723,8 @@ adds, the answer stays in sight.
 Verkoop › order › Transport & levering (`app-shipping-planner`), the same
 component in the phone editor's sheet (sales-editor.ts) and the desk's
 (sales-desk.ts), both `<app-sheet [wide]="true" variant="ios">`. The answer
-comes first: a hero with the pallet ("Europallet 120 × 80 · max 260 cm", on the
+comes first: a hero with the pallet ("Europallet 120 × 80 · max 220 cm", the
+document's own height: 260 on one from before 2026-11-07, on the
 phone a button to the Lading sheet), "4 pallets" with fill words and one state
 pill, "102 omdozen · m³ · kg" and the freight (phone: a button to Vracht); then
 the Automatisch | Zelf indelen switch with its "i" caption, Nakijken (products
@@ -4736,7 +4741,7 @@ are tiles, hand pallets are cards edited in place.
 | `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
 | `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
 | `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
-| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm, "Standaard"), "incl. pallet 14,4 cm" | 1.0 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm; "Standaard" only while a height other than 220 was picked by hand, and it and then an emptied field send 220, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard, and an emptied field shows its height again, so nothing sent, accepted or invoiced on 260 moves to 220 by one tap), "incl. pallet 14,4 cm" | 1.0 kB |
 | `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
 | `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
 

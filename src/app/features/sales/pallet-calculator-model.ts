@@ -22,9 +22,15 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  * A started carton counts as a full one, as everywhere for m³, kg and pallets.
  */
 
-/** SalesSettings' defaults (enrosed.pallet.*); production overrides none of them. */
+/**
+ * SalesSettings' defaults (enrosed.pallet.*); production overrides none of them. The max height is
+ * the standard (Emre, 2026-11-07: 220 cm, 260 before): Palletberekening, the catalogue and a new
+ * sales document count with it, while a document keeps the height it was made with.
+ */
 export const PALLET_BASE_HEIGHT_CM = 14.4;
-export const PALLET_MAX_HEIGHT_CM = 260;
+export const PALLET_MAX_HEIGHT_CM = 220;
+/** The height every document made before 2026-11-07 keeps (the server reads its missing height as this). */
+export const PALLET_LEGACY_MAX_HEIGHT_CM = 260;
 export const PALLET_MAX_WEIGHT_KG = 700;
 /** The backend's ceiling for an order's maximum pallet height. */
 export const PALLET_HEIGHT_LIMIT_CM = 300;

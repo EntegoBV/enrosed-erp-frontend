@@ -29,7 +29,7 @@ const PROFILES_SHORT: SegmentOption[] = PALLET_CHOICES.map((choice) =>
         <app-segmented label="Pallettype" [variant]="desk() ? 'desk' : 'ios'" [options]="profiles()" [value]="profile()" (changed)="profileChange.emit($any($event))" />
         <div class="ld-row">
           <span class="ld-label" id="ld-height">Max. hoogte</span>
-          <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="16" [max]="300" [allowEmpty]="true"
+          <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="16" [max]="300" [allowEmpty]="overridden()"
                               [disabled]="!canEdit()" label="Max. hoogte in cm" lessLabel="10 cm lager" moreLabel="10 cm hoger"
                               (changed)="heightChange.emit($event)" />
           <span class="ld-unit">cm</span>

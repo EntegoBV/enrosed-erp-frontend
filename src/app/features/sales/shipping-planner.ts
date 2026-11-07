@@ -13,7 +13,7 @@ import { scrollBehavior } from '../../shared/motion';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
-import { clampPalletHeight } from './pallet-calculator-model';
+import { PALLET_MAX_HEIGHT_CM, clampPalletHeight } from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
@@ -260,7 +260,7 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </span>
     </ng-template>
     <ng-template #load>
-      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [overridden]="view().order.maxPalletHeightCm != null"
+      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [overridden]="heightOverridden()"
                         [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
                         (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)" />
     </ng-template>
@@ -410,6 +410,14 @@ export class ShippingPlanner {
     : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]))));
   readonly cells = computed(() => (this.palletsMode() && !this.manual() ? this.lines().filter((line) => !line.problem) : this.lines()));
   readonly heightCm = computed(() => this.order().maxPalletHeightCm ?? Math.round(this.spec().maxHeightCm));
+  /**
+   * "Standaard" (and an emptied field meaning it) while the document carries a height picked by hand
+   * other than the standard. A document from before 2026-11-07 has none and keeps its 260 cm: what was
+   * sent, accepted or invoiced on it never moves by one tap (the server moved the untouched concept
+   * quotes itself); typing another height stays possible.
+   */
+  readonly heightOverridden = computed(() => this.order().maxPalletHeightCm != null
+    && this.heightCm() !== PALLET_MAX_HEIGHT_CM);
   readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
   readonly modeOptions = computed<SegmentOption[]>(() => [
     { id: 'auto', label: 'Automatisch' },
@@ -712,9 +720,13 @@ export class ShippingPlanner {
     this.profileOffer.set(true);
   }
 
-  /** ±10 cm or typed, within the backend's bounds; an emptied field is the standard height again. */
+  /**
+   * ±10 cm or typed, within the backend's bounds; "Standaard" or an emptied field (only offered while a
+   * height was picked by hand) sends the standard's number: the server keeps a document's own height
+   * when none is sent.
+   */
   setMaxHeight(value: number | null): void {
-    if (this.canEdit()) this.patch.emit({ maxPalletHeightCm: value === null ? null : clampPalletHeight(value) });
+    if (this.canEdit()) this.patch.emit({ maxPalletHeightCm: value === null ? PALLET_MAX_HEIGHT_CM : clampPalletHeight(value) });
   }
 
   /* ---- desk: drag a card by its glyph */

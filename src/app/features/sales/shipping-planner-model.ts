@@ -2,7 +2,7 @@ import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import {
-  MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
+  MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
   planPallets, roomWithoutExtraPallet, separatePallets, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
@@ -32,7 +32,8 @@ export function plannerSpec(view: SalesOrderView): PlannerSpec {
   const profile = view.order.palletProfile ?? 'EURO_120X80';
   const choice = PALLET_CHOICES.find((candidate) => candidate.id === profile) ?? PALLET_CHOICES[0];
   const base = view.priced.totals.palletBaseHeightCm ?? PALLET_BASE_HEIGHT_CM;
-  const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? PALLET_MAX_HEIGHT_CM;
+  /* The server's effective height; an older server without it priced a document without a height on 260. */
+  const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM;
   return {
     profile, name: `${choice.label} ${choice.size}`, lengthCm: choice.lengthCm, widthCm: choice.widthCm,
     baseHeightCm: base, maxHeightCm: max, maxWeightKg: PALLET_MAX_WEIGHT_KG, usableCm: Math.max(1, max - base),

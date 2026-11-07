@@ -717,7 +717,9 @@ export class PalletCalculatorPage {
   constructor() {
     this.restore();
     effect(() => {
-      const state = { profile: this.profile(), maxHeightCm: this.maxHeight(), rows: this.rows(), recent: this.recentIds() };
+      /* The height under heightCm since the standard went to 220 cm (2026-11-07): a device's old maxHeightCm
+         (mostly the 260 of that time) is not read again, so every device starts once at the new standard. */
+      const state = { profile: this.profile(), heightCm: this.maxHeight(), rows: this.rows(), recent: this.recentIds() };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode: the picks live as long as the page */ }
     });
     /* The capsule shows while the result is out of view (the tab bar's band counts as out of view). */
@@ -1069,10 +1071,10 @@ export class PalletCalculatorPage {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const stored = JSON.parse(raw) as { profile?: unknown; maxHeightCm?: unknown; rows?: unknown; recent?: unknown };
+      const stored = JSON.parse(raw) as { profile?: unknown; heightCm?: unknown; rows?: unknown; recent?: unknown };
       const profile = PALLET_CHOICES.find((choice) => choice.id === stored.profile);
       if (profile) this.profile.set(profile.id);
-      if (typeof stored.maxHeightCm === 'number') this.maxHeight.set(clampPalletHeight(stored.maxHeightCm));
+      if (typeof stored.heightCm === 'number') this.maxHeight.set(clampPalletHeight(stored.heightCm));
       if (Array.isArray(stored.rows)) {
         const seen = new Set<number>();
         this.rows.set(stored.rows.filter(storedRow).filter((row) => !seen.has(row.productId) && !!seen.add(row.productId)).slice(0, MAX_ROWS));
