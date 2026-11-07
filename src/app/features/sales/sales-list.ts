@@ -1101,6 +1101,7 @@ export class SalesList {
 
   constructor() {
     const query = this.route.snapshot.queryParamMap;
+    this.query.set(query.get('q')?.slice(0, 200) ?? '');
     const scope = query.get('scope');
     if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
     const tab = query.get('tab');

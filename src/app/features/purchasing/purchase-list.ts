@@ -606,6 +606,7 @@ export class PurchaseList {
   readonly smallPhone = signal(false);
 
   constructor() {
+    this.query.set(this.route.snapshot.queryParamMap.get('q')?.slice(0, 200) ?? '');
     if (typeof matchMedia === 'function') {
       const destroyRef = inject(DestroyRef);
       for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
