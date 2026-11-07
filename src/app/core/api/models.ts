@@ -1038,6 +1038,16 @@ export const LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'EL', label: 'Grieks' },
 ];
 
+/** Where a customer stands in the follow-up: new lead, talking, buying, gone quiet, lost. */
+export type CrmStatus = 'NIEUW' | 'IN_GESPREK' | 'ACTIEF' | 'SLAPEND' | 'VERLOREN';
+
+/** One tick of the follow-up checklist (mailed, called, catalogue sent, ...): the server stamps when and by whom. */
+export interface CustomerTouchpoint {
+  kind: string;
+  at: string;
+  by: string | null;
+}
+
 export interface Customer {
   id: number | null;
   company: string;
@@ -1065,6 +1075,10 @@ export interface Customer {
   fiscalRepresentative?: boolean;
   /** A sentence of our own on every quote and invoice for this customer. */
   invoiceNote?: string | null;
+  /** Follow-up status; null from a client keeps the stored one, a new customer starts as NIEUW. */
+  crmStatus?: CrmStatus | null;
+  /** The ticked follow-up steps; null from a client keeps the stored list, [] clears it. */
+  touchpoints?: CustomerTouchpoint[];
 }
 
 export interface Country {

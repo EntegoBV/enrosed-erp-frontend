@@ -5041,3 +5041,44 @@ other choices in the builder state (`compressPdf`, missing reads on). `CatalogAp
 compress)` sends `?compress=false` only when it is off; the server (`PdfCompressor`, backend 2bdba9f)
 then leaves the photos as rendered. With it on, every photo becomes at most 1400 px as a JPEG (alpha
 kept): the whole range goes from 65-70 MB to about 10 MB, the export journal records the PDF that leaves.
+
+## Klanten: landen, CRM-status, sortering en gehanteerde prijzen (2026-11-07)
+
+Emre's first step towards a CRM menu, in one round (backend commits "Klanten:
+CRM status and contact moments" and "Klanten: the prices charged per product").
+
+- **Countries.** `core/api/geo.ts` holds every ISO 3166-1 country (250 with
+  Kosovo) with Dutch names and aliases people type (Saudi, UK, USA, Dubai,
+  Holland…), `countryFlag()` and `searchCountries()`. `shared/country-picker.ts`
+  (`<app-country-picker>`) is the one country field: a trigger shaped like the
+  house `.select`, on the desk an anchored popover with a search box and
+  keyboard, on the phone an iOS sheet with a sticky search; `preferred` lists
+  the countries of Landen & vracht first. Used in the customer form, the
+  supplier form and Landen & vracht; the prospects page keeps its plain select
+  and simply gets the longer list.
+- **Status and contact moments.** `Customer.crmStatus` (NIEUW, IN_GESPREK,
+  ACTIEF, SLAPEND, VERLOREN; null on older rows reads "Geen status") and
+  `Customer.touchpoints` (GEMAILD, GEBELD, GESPROKEN, CATALOGUS_GESTUURD,
+  STAAL_GESTUURD; the server stamps `at`/`by`, the client only sends kinds).
+  Vocabulary and pure helpers in `customers/customer-form.ts`
+  (`CRM_STATUSES`, `TOUCHPOINT_KINDS`, `sortCustomers`, `filterCustomers`,
+  `customerSince`, `metaLine`). The Klanten list has a status filter (desk
+  segmented, phone chips), a sort (Naam, Nieuwste eerst, Oudste eerst, Laatste
+  contact, Land, Status; remembered in localStorage `enrosed.customers.sort`),
+  `?status=` deep links, "klant sinds" and the status badge with the ticked
+  moments as quiet pills. The sheet opens with the Opvolging block: status
+  control and a checklist of pressable rows ("7 nov · Emre"), saved with
+  Opslaan.
+- **Gehanteerde prijzen.** `CustomerPriceApi.appliedPrices()` /
+  `appliedPriceEntries()`; `customers/customer-applied-prices.ts` lists per
+  product what the customer was charged (last price, document, count), and
+  `customers/customer-price-popup.ts` is the one popup (klantprijs,
+  standaardprijs, laatst gehanteerd, every document as a link). It opens from
+  those rows, from the product's "n klantprijzen" rows
+  (`products/product-customer-prices.ts`, with "Naar klant ›") and from the
+  K marker's popover on a line (`sales/line-price-source.ts`, "Eerder
+  gehanteerd" + "Alle documenten ›", desk table and phone editor alike). A
+  line that followed the catalogue shows the catalogue price with the pill
+  "standaard".
+- Checked live against a dev jar with the Nov-6 H2 dataset (desk at 800 px,
+  phone at 375 px): list, filter, sort, sheet, picker, popup, K marker.
