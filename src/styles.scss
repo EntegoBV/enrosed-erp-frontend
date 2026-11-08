@@ -1026,7 +1026,10 @@ app-product-editor .variant-copy__options { display: grid; gap: 11px; }
   min-width: 44px;
   min-height: 44px;
 }
-.sheet__body { padding: 16px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+/* No -webkit-overflow-scrolling: touch: iOS WebKit makes such a scroller a stacking context that clips its fixed
+   descendants, so a sheet opened inside a sheet (the Land picker, Prijzen aanpassen and the Klantprijs popup in Klant
+   bewerken) was cut to this body, its head and foot under the outer ones. Momentum scrolling is the default since iOS 13. */
+.sheet__body { padding: 16px; overflow-y: auto; flex: 1; }
 .sheet__foot {
   padding: 12px 16px;
   border-top: 1px solid var(--line);
