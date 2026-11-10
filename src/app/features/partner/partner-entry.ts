@@ -101,7 +101,7 @@ const PRICE_JUMP = 5;
             }
           }
           @if (hasBuyback()) {
-            <div class="line"><span>Terugkoopkost <small>· komt terug op voorraad</small></span><span class="fig">{{ minus(t.buybackEur) }}</span></div>
+            <div class="line"><span>Terugkoopkost<small>komt terug op voorraad</small></span><span class="fig">{{ minus(t.buybackEur) }}</span></div>
           }
           <div class="line line--total"><span>Netto</span><b class="fig" [class.is-neg]="t.netEur < 0">{{ eur(t.netEur) }}</b></div>
           @if (money.costsExceedGross) { <p class="bad" role="alert">De kosten zijn hoger dan de opbrengst</p> }
@@ -136,12 +136,13 @@ const PRICE_JUMP = 5;
     }
   `,
   styles: `
-    :host{display:block;padding-bottom:8px}
+    :host{display:flex;flex-direction:column}
     .kinds{display:grid;height:44px;margin:0 0 14px}
     .layout{display:grid;gap:14px}
     .layout__main{display:grid;align-content:start;gap:12px;min-width:0}
     .layout__side{display:grid;align-content:start;gap:12px;min-width:0}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
+      .kinds{max-width:520px}
       .layout{grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
       .layout__side{position:sticky;top:calc(var(--pp-head-h,60px) + 12px)}
     }
@@ -156,7 +157,7 @@ const PRICE_JUMP = 5;
     .date:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--rose) 45%,transparent)}
     .cost{display:grid;gap:2px;padding:10px 16px 12px;border-radius:18px;background:var(--surface)}
     .line{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-height:34px;padding:6px 0;color:var(--ink-2);font-size:15px}
-    .line small{color:var(--muted);font-size:13px}
+    .line small{display:block;color:var(--muted);font-size:13px}
     .line--head{align-items:center;padding:0}
     .line--total{margin-top:4px;padding-top:10px;border-top:1px solid var(--line);color:var(--ink);font-size:17px;font-weight:700}
     .line--total .fig{font-size:22px;font-weight:800;letter-spacing:-.02em}
@@ -174,7 +175,8 @@ const PRICE_JUMP = 5;
     .error{padding:12px 14px;border-radius:16px;background:var(--danger-soft);color:#83261e;font-size:15px;font-weight:500;line-height:1.4}
     .send{min-height:54px;font-size:17px}
     .hint{margin:0;color:var(--muted);font-size:13.5px;text-align:center}
-    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:16px calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
+    .layout{margin-bottom:16px}
+    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
     .bar::before{content:'';position:absolute;inset:0;z-index:-1;backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
     .bar__sum{display:grid;flex:1;min-width:0}
     .bar__sum small{color:var(--muted);font-size:12.5px;font-weight:600}

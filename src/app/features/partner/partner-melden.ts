@@ -84,10 +84,13 @@ const DAYS_BACK = 90;
     }
   `,
   styles: `
-    :host{display:block}
-    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:16px calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
+    /* The page fills the screen, so a bottom bar stands at the bottom also under a short list. */
+    :host{display:flex;flex-direction:column;min-height:calc(100dvh - var(--pp-head-h,60px) - 8px)}
+    app-partner-entry{flex:1}
+    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
     .bar::before{content:'';position:absolute;inset:0;z-index:-1;backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
     .bar__count{flex:1;font-size:17px;font-weight:700}
+    app-partner-grid{margin-bottom:16px}
     .bar__next{min-width:150px;min-height:52px;font-size:17px;font-weight:700}
     .bar__next::before{inset:0}
     .done{display:grid;justify-items:center;gap:6px;max-width:560px;margin:12px auto 0;padding-bottom:calc(24px + var(--safe-b,0px));text-align:center}

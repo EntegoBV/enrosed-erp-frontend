@@ -21,20 +21,20 @@ import { PartnerData } from './partner-data';
   imports: [RouterOutlet, RouterLink, BrandMark],
   providers: [PartnerData],
   template: `
-    <div class="pp ios-page ios-page--bare">
-      <header class="pp-head">
-        <div class="pp-head__in">
-          <a class="pp-head__brand" routerLink="/partner" aria-label="Partnerportaal, overzicht">
+    <div class="pt-page ios-page ios-page--bare">
+      <header class="pt-head">
+        <div class="pt-head__in">
+          <a class="pt-head__brand" routerLink="/partner" aria-label="Partnerportaal, overzicht">
             <app-brand-mark subtitle="Partnerportaal" [small]="true" />
           </a>
-          <div class="pp-head__who">
+          <div class="pt-head__who">
             @if (person()) { <strong>{{ person() }}</strong> }
             @if (company()) { <span>{{ company() }}</span> }
           </div>
-          <button class="ios-capsule ios-capsule--sm pp-head__out" type="button" [disabled]="leaving()" (click)="logout()">Afmelden</button>
+          <button class="ios-capsule ios-capsule--sm pt-head__out" type="button" [disabled]="leaving()" (click)="logout()">Afmelden</button>
         </div>
       </header>
-      <main class="pp-main">
+      <main class="pt-main">
         @if (host.present) {
           <div class="ios-empty">
             <h1 class="ios-empty__title">Open het partnerportaal in Safari</h1>
@@ -49,16 +49,16 @@ import { PartnerData } from './partner-data';
   styles: `
     :host{display:block;--pp-gutter:16px;--pp-head-h:calc(60px + var(--safe-t,0px))}
     /* Each page keeps its own room at the bottom (the Melden bar sits on the edge itself). */
-    .pp{min-height:100dvh;padding-bottom:0}
-    .pp-head{position:sticky;top:0;z-index:30;isolation:isolate;padding-top:var(--safe-t,0px)}
-    .pp-head::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 .5px 0 rgb(26 22 20/10%);backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
-    .pp-head__in{display:flex;align-items:center;gap:12px;max-width:1080px;min-height:60px;margin:0 auto;padding:0 var(--pp-gutter)}
-    .pp-head__brand{display:flex;flex:none;align-items:center;min-height:44px;color:inherit;text-decoration:none;--brand-sub:var(--rose-dark)}
-    .pp-head__who{display:grid;flex:1;justify-items:end;min-width:0;line-height:1.2;text-align:right}
-    .pp-head__who strong{max-width:100%;overflow:hidden;font-size:14.5px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
-    .pp-head__who span{max-width:100%;overflow:hidden;color:var(--muted);font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}
-    .pp-head__out{flex:none}
-    .pp-main{width:100%;max-width:1080px;margin:0 auto;padding:8px var(--pp-gutter) 0}
+    .pt-page{min-height:100dvh;padding-bottom:0}
+    .pt-head{position:sticky;top:0;z-index:30;isolation:isolate;padding-top:var(--safe-t,0px)}
+    .pt-head::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 .5px 0 rgb(26 22 20/10%);backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
+    .pt-head__in{display:flex;align-items:center;gap:12px;max-width:1080px;min-height:60px;margin:0 auto;padding:0 var(--pp-gutter)}
+    .pt-head__brand{display:flex;flex:none;align-items:center;min-height:44px;color:inherit;text-decoration:none;--brand-sub:var(--rose-dark)}
+    .pt-head__who{display:grid;flex:1;justify-items:end;min-width:0;line-height:1.2;text-align:right}
+    .pt-head__who strong{max-width:100%;overflow:hidden;font-size:14.5px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+    .pt-head__who span{max-width:100%;overflow:hidden;color:var(--muted);font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}
+    .pt-head__out{flex:none}
+    .pt-main{width:100%;max-width:1080px;margin:0 auto;padding:8px var(--pp-gutter) 0}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){:host{--pp-gutter:24px}}
   `,
 })
@@ -72,6 +72,11 @@ export class PartnerShell {
   readonly leaving = signal(false);
   readonly person = computed(() => this.data.overview()?.partner.displayName || this.auth.user()?.displayName || null);
   readonly company = computed(() => this.data.overview()?.partner.name ?? null);
+
+  constructor() {
+    /* The header's names (and every screen's data) come with the overview; a screen that loads it too shares the call. */
+    if (!this.host.present) void this.data.load();
+  }
 
   /**
    * Afmelden: first leave (a form with typed values asks first, and may keep

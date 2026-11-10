@@ -13,7 +13,7 @@ import { PartnerStepper } from './partner-stepper';
 /**
  * One product of a melding on step 2: Aantal, the average (or the total) with
  * its live Bruto, and on Veiling "+ Teruggekocht op de klok" for the pieces
- * Verhoeven bought back that day. On Terugkoop the card is the buyback.
+ * Verhoeven bought back that day. On Terugkoop the pe-card is the buyback.
  */
 @Component({
   selector: 'app-partner-entry-card',
@@ -23,17 +23,17 @@ import { PartnerStepper } from './partner-stepper';
     @let e = entry();
     @let p = e.product;
     @let kind = draft().kind();
-    <article class="card" [attr.aria-label]="p.name + (p.variant ? ' ' + p.variant : '')">
-      <header class="card__head">
-        <app-partner-photo class="card__photo" [product]="p" [photoUrl]="photoUrl()" />
-        <div class="card__title">
+    <article class="pe-card" [attr.aria-label]="p.name + (p.variant ? ' ' + p.variant : '')">
+      <header class="pe-card__head">
+        <app-partner-photo class="pe-card__photo" [product]="p" [photoUrl]="photoUrl()" />
+        <div class="pe-card__title">
           <strong>{{ p.name }}</strong>
-          <span class="card__sub">
-            @if (p.variant) { <i class="card__dot" [style.background]="colour()" aria-hidden="true"></i> }
-            <span class="card__sub-text">{{ sub() }}</span>
+          <span class="pe-card__sub">
+            @if (p.variant) { <i class="pe-card__dot" [style.background]="colour()" aria-hidden="true"></i> }
+            <span class="pe-card__sub-text">{{ sub() }}</span>
           </span>
         </div>
-        <button class="card__remove" type="button" [attr.aria-label]="'Weghalen: ' + p.name" (click)="draft().remove(p.productId)">
+        <button class="pe-card__remove" type="button" [attr.aria-label]="'Weghalen: ' + p.name" (click)="draft().remove(p.productId)">
           <app-icon name="close" [size]="18" />
         </button>
       </header>
@@ -42,7 +42,6 @@ import { PartnerStepper } from './partner-stepper';
         <div class="part">
           <ng-container [ngTemplateOutlet]="fields"
                         [ngTemplateOutletContext]="{ which: 'sale', part: e.sale, priceLabel: 'Gemiddelde prijs', limit: max() }" />
-          @if (over()) { <p class="msg msg--bad" role="alert">Er liggen maar {{ unitsOf(max()) }}</p> }
           <div class="sum"><span>Bruto</span><b>{{ eur(money()?.sale?.grossEur) }}</b></div>
           @if (money()?.costsExceedGross) { <p class="msg msg--bad">De kosten zijn hoger dan de opbrengst</p> }
         </div>
@@ -66,20 +65,21 @@ import { PartnerStepper } from './partner-stepper';
           }
           <ng-container [ngTemplateOutlet]="fields"
                         [ngTemplateOutletContext]="{ which: 'buyback', part: e.buyback, priceLabel: 'Klokprijs', limit: null }" />
-          <div class="sum"><span>Terugkoopkost <small>· komt terug op voorraad</small></span><b>{{ eur(money()?.buyback?.grossEur) }}</b></div>
+          <div class="sum"><span>Terugkoopkost<small>komt terug op voorraad</small></span><b>{{ eur(money()?.buyback?.grossEur) }}</b></div>
         </div>
       }
     </article>
 
     <ng-template #fields let-which="which" let-part="part" let-priceLabel="priceLabel" let-limit="limit">
-      <div class="row">
-        <span class="row__label">Aantal</span>
+      <div class="pe-row">
+        <span class="pe-row__label">Aantal</span>
         <app-partner-stepper [value]="part.quantity" [max]="limit" [invalid]="which === 'sale' && over()"
                              [label]="(which === 'sale' ? 'Aantal ' : 'Aantal teruggekocht ') + entry().product.name"
                              (valueChange)="set(which, { quantity: $event })" />
       </div>
+      @if (which === 'sale' && over()) { <p class="msg msg--bad" role="alert">Er liggen maar {{ unitsOf(max()) }}</p> }
       <div class="price">
-        <span class="row__label">{{ part.mode === 'unit' ? priceLabel + ' per ' + entry().product.unitOne : 'Totaal' }}</span>
+        <span class="pe-row__label">{{ part.mode === 'unit' ? priceLabel + ' per ' + entry().product.unitOne : 'Totaal' }}</span>
         <div class="price__row">
           <label class="money">
             <span class="money__sign" aria-hidden="true">€</span>
@@ -95,22 +95,22 @@ import { PartnerStepper } from './partner-stepper';
   `,
   styles: `
     :host{display:block}
-    .card{padding:12px 14px 14px;border-radius:20px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/5%)}
-    .card__head{display:grid;grid-template-columns:52px minmax(0,1fr) 44px;align-items:center;gap:12px;margin-bottom:6px}
-    .card__photo{width:52px;height:52px;border-radius:12px}
-    .card__title{display:grid;gap:2px;min-width:0}
-    .card__title strong{overflow:hidden;font-size:16px;font-weight:650;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
-    .card__sub{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden;color:var(--muted);font-size:13px;white-space:nowrap;text-overflow:ellipsis}
-    .card__sub-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
-    .card__dot{flex:none;width:9px;height:9px;border-radius:50%;background:#c9bfb7;box-shadow:inset 0 0 0 1px rgb(26 22 20/14%)}
-    .card__remove{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
-    .card__remove:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 5%,transparent)}
+    .pe-card{padding:12px 14px 14px;border-radius:20px;background:var(--surface);box-shadow:0 1px 2px rgb(26 22 20/5%)}
+    .pe-card__head{display:grid;grid-template-columns:52px minmax(0,1fr) 44px;align-items:center;gap:12px;margin-bottom:6px}
+    .pe-card__photo{width:52px;height:52px;border-radius:12px}
+    .pe-card__title{display:grid;gap:2px;min-width:0}
+    .pe-card__title strong{overflow:hidden;font-size:16px;font-weight:650;line-height:1.25;text-overflow:ellipsis;white-space:nowrap}
+    .pe-card__sub{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden;color:var(--muted);font-size:13px;white-space:nowrap;text-overflow:ellipsis}
+    .pe-card__sub-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+    .pe-card__dot{flex:none;width:9px;height:9px;border-radius:50%;background:#c9bfb7;box-shadow:inset 0 0 0 1px rgb(26 22 20/14%)}
+    .pe-card__remove{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+    .pe-card__remove:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 5%,transparent)}
     .part{display:grid;gap:10px;padding-top:10px}
     .part--buyback{margin-top:12px;padding:10px 12px 12px;border-radius:16px;background:color-mix(in srgb,#c7851d 8%,var(--surface))}
     .part__head{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;color:#7c4a0b;font-size:14px;font-weight:700}
     .part__close{display:grid;place-items:center;width:44px;height:44px;margin:-6px -10px -6px 0;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}
-    .row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px}
-    .row__label{min-width:0;color:var(--ink-2);font-size:15px;font-weight:600}
+    .pe-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:48px}
+    .pe-row__label{min-width:0;color:var(--ink-2);font-size:15px;font-weight:600}
     .price{display:grid;gap:6px}
     .price__row{display:grid;grid-template-columns:minmax(0,1fr) 156px;align-items:center;gap:8px}
     .mode{height:44px}
@@ -119,7 +119,7 @@ import { PartnerStepper } from './partner-stepper';
     .money__sign{color:var(--muted);font-size:18px;font-weight:600}
     .money__field{flex:1;min-width:0;height:52px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;outline:none}
     .sum{display:flex;align-items:baseline;justify-content:space-between;gap:10px;color:var(--ink-2);font-size:15px}
-    .sum small{color:var(--muted);font-size:13px;font-weight:500}
+    .sum small{display:block;color:var(--muted);font-size:13px;font-weight:500}
     .sum b{color:var(--ink);font-size:17px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
     .msg{margin:-4px 0 0;font-size:13.5px;font-weight:600}.msg--bad{color:var(--danger)}
     .add{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;margin-top:10px;padding:0 12px;border:1.5px dashed color-mix(in srgb,#c7851d 45%,transparent);border-radius:14px;background:transparent;color:#8a520c;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
