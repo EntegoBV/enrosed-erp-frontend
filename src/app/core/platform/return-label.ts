@@ -75,6 +75,7 @@ const SETTINGS_VIEW_LABELS: Readonly<Record<string, string>> = {
   discounts: 'Kortingen',
   'order-discounts': 'Kortingen',
   'catalog-data': 'Catalogusdata',
+  'partner-portal': 'Partnerportaal',
   device: 'Dit toestel',
   appearance: 'Dit toestel',
   notifications: 'Dit toestel',

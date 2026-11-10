@@ -10,6 +10,7 @@ import { DeletedItemsApi } from '../../core/api/deleted-items-api';
 import { messageOf } from '../../core/api/errors';
 import { ActivityEvent, Category, DiscountTier, HsCode } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
+import { PartnerPortalAdminRow, PartnerSalesApi, isMissingEndpoint } from '../../core/api/partner-sales-api';
 import { StaffContact, StaffContactsApi } from '../../core/api/staff-contacts-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { phoneTabForUrl } from '../../core/platform/phone-tabs';
@@ -23,6 +24,7 @@ import {
   websiteSyncValue,
 } from './company-fields';
 import { WebsitePriceStore } from './website-price-store';
+import { portalShort, portalSummary } from './partner-portal-fields';
 import { WebsiteSyncStore } from './website-sync-store';
 import { ActivityNames } from '../activity/activity-names';
 import { activityEntityText, activitySummaryText } from '../activity/activity-format';
@@ -121,6 +123,11 @@ type Link = { path: string; query: Record<string, string> | null };
           <a class="set-row" routerLink="/settings" [queryParams]="{ sectie: 'discounts' }"><span>Lijnkorting</span>
             <span class="set-row__val">@if (lineTiers.value(); as tiers) { <span class="mo-fade">{{ lineText(tiers) }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: lineTiers.error(), retry: 'tiers' }" /> }</span>
             <app-icon name="chevron-right" [size]="14" /></a>
+          @if (!portalMissing()) {
+            <a class="set-row" routerLink="/settings" [queryParams]="{ sectie: 'partner-portal' }"><span>Partnerportaal</span>
+              <span class="set-row__val">@if (partnerPortal.value(); as rows) { <span class="mo-fade">{{ portalText(rows) }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: partnerPortal.error(), retry: 'portal' }" /> }</span>
+              <app-icon name="chevron-right" [size]="14" /></a>
+          }
           <a class="set-row" [routerLink]="dutiesLink().path" [queryParams]="dutiesLink().query"><span>Douane</span>
             <span class="set-row__val">@if (duties.value(); as codes) { <span class="mo-fade">{{ dutyText(codes) }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: duties.error(), retry: 'duties' }" /> }</span>
             <app-icon name="chevron-right" [size]="14" /></a>
@@ -238,6 +245,14 @@ type Link = { path: string; query: Record<string, string> | null };
               <span class="ios-cell__trail"><span class="ios-cell__value">@if (orderTiers.value(); as tiers) { <span class="mo-fade">{{ countText(tiers.length, 'staffel', 'staffels') }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: orderTiers.error(), retry: 'tiers' }" /> }</span></span>
               <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
             </a>
+            @if (!portalMissing()) {
+              <a class="ios-cell" routerLink="/settings" [queryParams]="{ sectie: 'partner-portal' }" [info]="push">
+                <span class="ios-cell__lead"><span class="ios-tile tone-amber" aria-hidden="true"><app-icon name="link" [size]="17" /></span></span>
+                <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Partnerportaal</span></span>
+                <span class="ios-cell__trail"><span class="ios-cell__value" [class.set-warn]="portalAttention()">@if (partnerPortal.value(); as rows) { <span class="mo-fade">{{ portalShortText(rows) }}</span> } @else { <ng-container [ngTemplateOutlet]="pending" [ngTemplateOutletContext]="{ error: partnerPortal.error(), retry: 'portal' }" /> }</span></span>
+                <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+              </a>
+            }
             <a class="ios-cell" [routerLink]="dutiesLink().path" [queryParams]="dutiesLink().query" [info]="rowInfo(dutiesLink().path)">
               <span class="ios-cell__lead"><span class="ios-tile tone-amber" aria-hidden="true"><app-icon name="truck" [size]="17" /></span></span>
               <span class="ios-cell__body"><span class="ios-cell__title ios-cell__title--2">Douane</span></span>
@@ -358,6 +373,7 @@ export class SettingsOverview {
   readonly prices = inject(WebsitePriceStore);
   readonly sync = inject(WebsiteSyncStore);
   private readonly sales = inject(SalesApi);
+  private readonly partnerApi = inject(PartnerSalesApi);
   private readonly catalog = inject(CatalogApi);
   private readonly deleted = inject(DeletedItemsApi);
   private readonly activityApi = inject(ActivityApi);
@@ -402,6 +418,12 @@ export class SettingsOverview {
   readonly devices = new Source<{ id: number; device: string; since: string | null; lastStatus: number | null; lastAt: string | null }[]>();
   readonly activity = new Source<{ items: ActivityEvent[]; nextBefore: number | null }>();
   readonly staff = new Source<StaffContact[]>();
+  /** Partnerportaal: the partners with their login and costs; a backend without the portal (404) hides the row. */
+  readonly partnerPortal = new Source<PartnerPortalAdminRow[]>();
+  readonly portalMissing = signal(false);
+  /** Phone: the value tinted while a partner has no login yet or a settlement still waits to be shipped. */
+  readonly portalAttention = computed(() => (this.partnerPortal.value() ?? [])
+    .some((row) => row.partner && (!row.login || row.unshippedSettlements.length > 0)));
 
   readonly company = this.companyStore.saved;
   /** "Enrosed BV" (the legal name holds the trade name), or the trade name with the legal name under it. */
@@ -453,7 +475,7 @@ export class SettingsOverview {
 
   /** All sources in parallel; none waits for another, the shown values stay until the new ones land. */
   refresh(): void {
-    for (const key of ['company', 'tiers', 'duties', 'prices', 'sync', 'categories', 'trash', 'devices', 'activity', 'staff']) {
+    for (const key of ['company', 'tiers', 'duties', 'prices', 'sync', 'categories', 'trash', 'devices', 'activity', 'staff', 'portal']) {
       this.retryOne(key);
     }
   }
@@ -473,6 +495,13 @@ export class SettingsOverview {
       case 'devices': void this.devices.load(() => this.pushSetup.devices()); break;
       case 'activity': void this.activity.load(() => this.activityApi.list({ limit: 50 })).then(() => void this.names.load(this.newest())); break;
       case 'staff': void this.staff.load(() => this.staffApi.accounts()); break;
+      case 'portal':
+        void this.partnerPortal.load(() => this.partnerApi.adminRows().catch((failure: unknown) => {
+          if (!isMissingEndpoint(failure)) throw failure;
+          this.portalMissing.set(true);
+          return [];
+        }));
+        break;
     }
   }
 
@@ -483,6 +512,8 @@ export class SettingsOverview {
   deviceText(device: { device: string; since: string | null; lastStatus: number | null; lastAt: string | null }) { return deviceLines(device); }
   staffNames(accounts: StaffContact[]): string { return accounts.map((account) => account.displayName).join(', ') || 'Geen accounts'; }
   countText(count: number, one: string, many: string): string { return `${count} ${count === 1 ? one : many}`; }
+  portalText(rows: PartnerPortalAdminRow[]): string { return portalSummary(rows); }
+  portalShortText(rows: PartnerPortalAdminRow[]): string { return portalShort(rows); }
 
   timeOf(at: string): string {
     const date = new Date(at);

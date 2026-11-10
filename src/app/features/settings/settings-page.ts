@@ -43,6 +43,7 @@ import { WebsiteQuoteSettings } from './website-quote-settings';
 import { DateNlPipe, DateTimeNlPipe } from '../../shared/pipes';
 import { CompanyStore } from './company-store';
 import { SettingsDiscounts } from './settings-discounts';
+import { SettingsPartnerPortal } from './settings-partner-portal';
 import { SettingsOverview } from './settings-overview';
 import { SettingsCompany } from './settings-company';
 import { LEGAL_LANGUAGES, SettingsLegal } from './settings-legal';
@@ -63,7 +64,7 @@ const OVERVIEW_URL = '/settings/overzicht';
 
 /** The settings views of this build (the legal view arrives with its own package). */
 const AVAILABLE_VIEWS: readonly SettingsView[] = [
-  'overview', 'company', 'legal', 'website', 'duties', 'discounts', 'catalog-data', 'device',
+  'overview', 'company', 'legal', 'website', 'duties', 'discounts', 'partner-portal', 'catalog-data', 'device',
 ];
 
 interface CategoryFeaturedOption {
@@ -110,6 +111,7 @@ const normalizeCategoryCode = (value: string): string => value
     SettingsOverview,
     Segmented,
     SettingsDiscounts,
+    SettingsPartnerPortal,
     CategoryTranslationEditor,
     FormsModule,
     PageHeader,
@@ -242,6 +244,10 @@ const normalizeCategoryCode = (value: string): string => value
 
       @if (visited().has('discounts')) {
         <app-settings-discounts class="mo-fade" [hidden]="view() !== 'discounts'" />
+      }
+
+      @if (visited().has('partner-portal')) {
+        <app-settings-partner-portal class="mo-fade" [hidden]="view() !== 'partner-portal'" />
       }
 
       @if (visited().has('catalog-data')) {
@@ -1360,6 +1366,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   /* ---------------------------------------------- one save model per view */
 
   private readonly discountsEditor = viewChild(SettingsDiscounts);
+  private readonly partnerPortalEditor = viewChild(SettingsPartnerPortal);
   private readonly companyEditor = viewChild(SettingsCompany);
   readonly legalEditor = viewChild(SettingsLegal);
   readonly legalLanguages = LEGAL_LANGUAGES;
@@ -1368,6 +1375,7 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
   editorFor(view: SettingsView): SettingsEditor | null {
     switch (view) {
       case 'discounts': return this.discountsEditor() ?? null;
+      case 'partner-portal': return this.partnerPortalEditor() ?? null;
       case 'company': return this.companyEditor() ?? null;
       case 'legal': return this.legalEditor() ?? null;
       default: return null;
@@ -1548,6 +1556,8 @@ export class SettingsPage implements AfterViewInit, OnDestroy {
       case 'duties': return Promise.resolve();
       /* Kortingen loads itself when it first shows; a reload goes through it. */
       case 'discounts': return this.discountsEditor()?.load() ?? Promise.resolve();
+      /* Partnerportaal too: it loads itself when it first shows. */
+      case 'partner-portal': return this.partnerPortalEditor()?.load() ?? Promise.resolve();
       case 'device': return this.loadPushDevices();
       default: return Promise.resolve();
     }
