@@ -76,6 +76,13 @@ export const routes: Routes = [
       import('./features/sales/pallet-calculator-page').then((m) => m.PalletCalculatorPage),
   },
   {
+    path: 'veilingverkopen',
+    title: 'Veilingverkopen',
+    canActivate: [authGuard],
+    loadComponent: () =>
+      import('./features/partner-sales/partner-sales-page').then((m) => m.PartnerSalesPage),
+  },
+  {
     path: 'sales/:id/edit',
     title: 'Verkooporder',
     canActivate: [authGuard],
