@@ -321,9 +321,25 @@ export interface InventoryAnalysis {
   slowMovers: { count: number; valueEur: number; rows: SlowMoverRow[] };
 }
 
+/**
+ * One melding x product of Veilingverkopen (GET /api/partner-sales/analytics products): the partner's sale and
+ * buyback of a product on its sold day, in the product's sales unit. Structurally PartnerSalesAnalyticsProduct.
+ */
+export interface PartnerPaceRow {
+  productId: number;
+  soldOn: string;
+  saleQuantity: number;
+  buybackQuantity: number;
+}
+
 export interface InventoryOptions extends Pick<AnalysisOptions, 'topLimit' | 'today'> {
   /** Issued invoices feed the sales pace; without them the pace is simply unknown. */
   sales?: readonly SalesOrderView[];
+  /**
+   * The partner's meldingen (Veilingverkopen): with them the pace counts a reported sale on its sold day (sale minus
+   * buyback) and no longer the invoice made from it (reportBookedQuantities); null/absent = invoices only, as before.
+   */
+  partnerSales?: readonly PartnerPaceRow[] | null;
   velocityDays?: number;
   reorderWeeks?: number;
   /** The last invoice day per product (lastSoldOn): Nulvoorraad lists the most recently sold first. */
@@ -561,7 +577,7 @@ export function inventoryAnalysis(
   const today = isoDayOrNull(options.today) ?? localIsoDay();
   const velocityDays = positiveWhole(options.velocityDays, 90);
   const reorderWeeks = positiveWhole(options.reorderWeeks, 8);
-  const soldByProduct = piecesSoldByProduct(options.sales ?? [], today, velocityDays);
+  const soldByProduct = piecesSoldByProduct(options.sales ?? [], today, velocityDays, options.partnerSales);
   const known = products.filter((product) => product.inventoryKnown === true);
   const positiveKnown = known.filter((product) => finite(product.stockQuantity) > 0);
   const valued = positiveKnown.filter((product) => validMoney(product.landedCostEur));
@@ -785,7 +801,8 @@ function partnerPiecesAwaitingShipment(sales: readonly SalesOrderView[]): Map<nu
   const pieces = new Map<number, number>();
   for (const view of sales) {
     const order = view.order;
-    if (!isIssuedInvoice(view) || !order.partnerPurchaseOrderId || order.goodsShippedAt || isAdvanceDocument(view)) continue;
+    /* An invoice made from the partner's meldingen carries goods that already left stock with them. */
+    if (!isIssuedInvoice(view) || !order.partnerPurchaseOrderId || order.goodsShippedAt || isAdvanceDocument(view) || view.reportBacked === true) continue;
     for (const line of view.priced.lines ?? []) {
       if (line.productId == null) continue;
       pieces.set(line.productId, (pieces.get(line.productId) ?? 0) + finiteNonNegative(line.quantity));
@@ -827,8 +844,13 @@ export interface PartnerFinancingRow {
   settled: boolean;
   settledQuantity: number;
   remainingQuantity: number;
+  /** Veilingverkopen: pieces the partner reported from this container that are not invoiced yet (0 on an older backend). */
+  openReportedQuantity: number;
   costFinalized: boolean;
-  /** Received, but the auction has not been settled yet: the statement is still to come. */
+  /**
+   * Received, but the auction has not been settled yet: the statement is still to come. Not when the partner already
+   * reported every remaining piece: Veilingverkopen › Factureren closes it then (its own Te doen task).
+   */
   awaitingSettlement: boolean;
   documents: { id: number; number: string; docType: 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA'; settlement: boolean; status: string }[];
   /** Issued credit notes on the container's documents, positive; the advance and settlement sums are already net of them. */
@@ -926,8 +948,10 @@ export function partnerFinancingAnalysis(
       settled,
       settledQuantity: summary?.settledQuantity ?? settlements.reduce((total, row) => total + finite(row.priced.totals.pieces), 0),
       remainingQuantity: summary?.remainingQuantity ?? 0,
+      openReportedQuantity: finiteNonNegative(summary?.openReportedQuantity),
       costFinalized: summary?.costFinalized ?? false,
-      awaitingSettlement: purchase.order.status === 'ONTVANGEN' && !settled,
+      awaitingSettlement: purchase.order.status === 'ONTVANGEN' && !settled
+        && !(finite(summary?.remainingQuantity) > 0 && finiteNonNegative(summary?.openReportedQuantity) >= finite(summary?.remainingQuantity)),
       documents: summary ? summary.documents.map((doc) => ({ id: doc.id, number: doc.number, docType: doc.docType === 'FACTUUR' ? 'FACTUUR' : doc.docType === 'CREDITNOTA' ? 'CREDITNOTA' : 'OFFERTE', settlement: doc.purpose === 'PARTNER_SETTLEMENT', status: doc.status })) : docs
         .slice()
         .sort((left, right) => left.order.id - right.order.id)
@@ -993,23 +1017,56 @@ function isSettlementDocument(view: SalesOrderView): boolean {
   return (order.extraLines ?? []).some((line) => (line.description ?? '').startsWith('Winstdeling'));
 }
 
-/** Pieces per product on issued regular invoices whose order date lies in the last `days` days up to today (advances left out). */
+/**
+ * Pieces per product on issued regular invoices whose order date lies in the last `days` days up to today (advances
+ * left out). With the partner's meldingen (`partner`), a reported sale counts on its sold day, sale minus buyback,
+ * and the quantities an invoice made from them carries (reportBookedQuantities) are left out of that invoice, so a
+ * piece counts once, when it was sold; a product never goes below 0.
+ */
 export function piecesSoldByProduct(
   sales: readonly SalesOrderView[],
   today: string,
   days: number,
+  partner?: readonly PartnerPaceRow[] | null,
 ): Map<number, number> {
   const sold = new Map<number, number>();
   const start = shiftIsoDay(today, -(days - 1));
   for (const row of sales) {
     if (!isIssuedInvoice(row) || isAdvanceDocument(row)) continue;
     if (!inOrderDateRange(row.order.orderDate, start, today)) continue;
+    const booked = partner ? reportBooked(row) : null;
     for (const line of row.priced.lines) {
       if (!Number.isInteger(line.productId)) continue;
-      sold.set(line.productId, (sold.get(line.productId) ?? 0) + finiteNonNegative(line.quantity));
+      const quantity = booked ? unbooked(booked, line.productId, finiteNonNegative(line.quantity)) : finiteNonNegative(line.quantity);
+      sold.set(line.productId, (sold.get(line.productId) ?? 0) + quantity);
     }
   }
+  if (!partner) return sold;
+  for (const report of partner) {
+    if (!Number.isInteger(report.productId) || !inOrderDateRange(report.soldOn, start, today)) continue;
+    sold.set(report.productId, (sold.get(report.productId) ?? 0) + finite(report.saleQuantity) - finite(report.buybackQuantity));
+  }
+  for (const [productId, quantity] of sold) if (quantity < 0) sold.set(productId, 0);
   return sold;
+}
+
+/** What the meldingen booked of each product of a report-backed invoice (a fresh map per call: unbooked() spends it). */
+function reportBooked(view: SalesOrderView): Map<number, number> | null {
+  const booked = view.reportBookedQuantities;
+  if (!booked) return null;
+  return new Map(Object.entries(booked).flatMap(([key, value]) => {
+    const productId = Number(key);
+    return Number.isInteger(productId) && finite(value) > 0 ? [[productId, finite(value)] as const] : [];
+  }));
+}
+
+/** A line's quantity less what the meldingen booked of its product (taken from the product's first lines). */
+function unbooked(booked: Map<number, number>, productId: number, quantity: number): number {
+  const left = booked.get(productId) ?? 0;
+  if (left <= 0) return quantity;
+  const take = Math.min(left, quantity);
+  booked.set(productId, left - take);
+  return quantity - take;
 }
 
 function shiftIsoDay(day: string, offset: number): string {
@@ -1598,16 +1655,26 @@ export function missingCostRows(orders: readonly SalesOrderView[], window: Pick<
     .sort((left, right) => right.lines - left.lines || compareName(left.name, right.name));
 }
 
-/** The last day each product was invoiced (regular issued invoices): Nulvoorraad's order and its drill-down. */
-export function lastSoldOn(orders: readonly SalesOrderView[]): Map<number, string> {
+/**
+ * The last day each product was invoiced (regular issued invoices): Nulvoorraad's order and its drill-down. With the
+ * partner's meldingen, a reported sale counts on its sold day and a line the meldingen booked no longer dates it.
+ */
+export function lastSoldOn(orders: readonly SalesOrderView[], partner?: readonly PartnerPaceRow[] | null): Map<number, string> {
   const last = new Map<number, string>();
   for (const row of orders) {
     const day = isoDayOrNull(row.order.orderDate);
     if (!day || !isIssuedInvoice(row) || isAdvanceDocument(row)) continue;
+    const booked = partner ? reportBooked(row) : null;
     for (const line of row.priced.lines) {
       if (!Number.isInteger(line.productId)) continue;
+      if (booked && unbooked(booked, line.productId, finiteNonNegative(line.quantity)) <= 0) continue;
       if ((last.get(line.productId) ?? '') < day) last.set(line.productId, day);
     }
+  }
+  for (const report of partner ?? []) {
+    const day = isoDayOrNull(report.soldOn);
+    if (!day || !Number.isInteger(report.productId) || !(finite(report.saleQuantity) > 0)) continue;
+    if ((last.get(report.productId) ?? '') < day) last.set(report.productId, day);
   }
   return last;
 }

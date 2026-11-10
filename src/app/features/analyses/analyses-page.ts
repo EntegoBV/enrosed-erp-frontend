@@ -19,6 +19,7 @@ import {
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { TicaApi, TicaAnalyticsDay } from '../../core/api/tica-api';
+import { PartnerSalesApi, isMissingEndpoint, type PartnerSalesAnalytics } from '../../core/api/partner-sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
@@ -29,6 +30,8 @@ import {
   salesDocumentRows, salesLineRows, withEnrosedMargin,
 } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
+import { AnPartnerSales, type PartnerSalesUnitFn } from './an-partner-sales';
+import { partnerSalesInPeriod } from './partner-sales-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
@@ -224,6 +227,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-sources.scss', '../../../styles/analyses-drill.scss'],
   host: { '(document:visibilitychange)': 'visible()', '(document:keydown)': 'deskKey($event)' },
   imports: [Icon, TrendChart, AnDrill, CashDesk, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
+    AnPartnerSales,
     RouterLink,
     PageHeader,
     EurPipe,
@@ -399,7 +403,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           </div>
         }
         @case ('inventory') {
-          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: facturen van {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span>
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: {{ partnerPace() ? 'facturen en veilingverkopen' : 'facturen' }} van {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span>
             <div class="an-bar__end"><app-an-how [lines]="how.inventory" /><a class="wk-btn" routerLink="/stock/inventaris">Jaarinventaris ›</a></div></div>
         }
         @case ('purchasing') {
@@ -760,6 +764,10 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               }
             </div>
           </section>
+        }
+        <!-- Veilingverkopen: what the partner reported, by sold day; its own layer, never in Omzet (the invoice from it counts there). -->
+        @if (!loading() && partnerSalesFigures(); as vv) {
+          @if (vv.all.reports) { <app-an-partner-sales [figures]="vv" [scope]="salesScope()" [unitOf]="partnerUnitOf" /> }
         }
       }
 
@@ -1324,6 +1332,7 @@ export class AnalysesPage {
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
   private readonly tica = inject(TicaApi);
+  private readonly partnerSalesApi = inject(PartnerSalesApi);
   private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -1462,6 +1471,23 @@ export class AnalysesPage {
   readonly stockProducts = computed(() => { const levels = this.stockLevels(); return levels ? withAllLocations(this.products(), levels) : this.products(); });
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly ticaDays = signal<TicaAnalyticsDay[]>([]);
+  /**
+   * Veilingverkopen (GET /api/partner-sales/analytics, every non-voided melding by sold day): Verkoop's card and the
+   * stock pace. null while unknown and on a backend without the portal (404: no card, invoices-only pace).
+   */
+  readonly partnerSalesData = signal<PartnerSalesAnalytics | null>(null);
+  /** The melding x product rows the pace and Nulvoorraad read; null = invoices only. */
+  readonly partnerPace = computed(() => this.partnerSalesData()?.products ?? null);
+  readonly partnerSalesFigures = computed(() => {
+    const data = this.partnerSalesData();
+    return data ? partnerSalesInPeriod(data, this.salesFromDate() || null, this.salesToDate() || null) : null;
+  });
+  /** A product's sales unit words for the card ("stuk"/"stuks", "display"/"displays"). */
+  readonly partnerUnitOf: PartnerSalesUnitFn = (productId) => {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    const unit = product ? productSalesUnit(product) : null;
+    return unit ? { one: unit.singular, other: unit.plural } : { one: 'stuk', other: 'stuks' };
+  };
   /**
    * Verkoop's TICA card: the period's lines (loaded when the tab shows and TICA sold in the period), keyed by their
    * range so a newer period wins; omzet and transacties stay in Omzet per kanaal.
@@ -1736,10 +1762,11 @@ export class AnalysesPage {
   readonly categoryLabel = categoryLabel;
 
   /** The last invoice day per product: Nulvoorraad's order and the Aandacht list. */
-  readonly lastSold = computed(() => lastSoldOn(this.salesOrders()));
-  /* A failed sales load leaves the pace unknown (D-V4): never "every valued product is slow". */
+  readonly lastSold = computed(() => lastSoldOn(this.salesOrders(), this.partnerPace()));
+  /* A failed sales load leaves the pace unknown (D-V4): never "every valued product is slow". The partner's meldingen
+     count on their sold day (and not again through the invoice made from them) once they loaded. */
   readonly inventoryMetrics = computed(() => inventoryAnalysis(this.stockProducts(), this.expectedStock(),
-    { topLimit: 10, sales: this.failed('verkoop') ? undefined : this.salesOrders(), today: this.today(), lastSold: this.lastSold() }));
+    { topLimit: 10, sales: this.failed('verkoop') ? undefined : this.salesOrders(), partnerSales: this.partnerPace(), today: this.today(), lastSold: this.lastSold() }));
 
   /** Voorraad's four tiles (C.4): "—" for a source that failed (D-O3); Onderweg in euro and containers (D-V3). */
   readonly stockTiles = computed<KpiTile<StockTileKey>[]>(() => {
@@ -2390,7 +2417,7 @@ export class AnalysesPage {
       this.loadedFilterKey = JSON.stringify(filters);
       const overviewFilters = this.overviewFilters();
       const sameFilters = this.sameFilters(filters, overviewFilters);
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels, tica] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels, tica, partnerSales] = await Promise.allSettled([
         this.sourcing.receiptVariances(filters),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -2404,6 +2431,7 @@ export class AnalysesPage {
         filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null }),
         this.catalog.stockLevels(),
         this.tica.analytics(),
+        this.partnerSalesApi.analytics(),
       ] as const);
       const warnings: string[] = [];
       if (round === this.varianceRound) {
@@ -2420,6 +2448,10 @@ export class AnalysesPage {
       if (products.status === 'fulfilled') this.products.set(products.value); else warnings.push('voorraad');
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
       if (tica.status === 'fulfilled') this.ticaDays.set(tica.value); else warnings.push('TICA verkopen');
+      /* A backend without the portal (404) has none: no card, no warning. Another failure keeps the last rows. */
+      if (partnerSales.status === 'fulfilled') this.partnerSalesData.set(partnerSales.value);
+      else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
+      else warnings.push('veilingverkopen');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');

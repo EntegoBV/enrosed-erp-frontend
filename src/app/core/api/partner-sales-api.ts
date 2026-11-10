@@ -274,9 +274,12 @@ export class PartnerSalesApi {
     return firstValueFrom(this.http.get<PartnerSalesSummary>(api('/api/partner-sales/summary')));
   }
 
-  /** By sold_on, from and to inclusive (yyyy-mm-dd). */
-  analytics(from: string, to: string): Promise<PartnerSalesAnalytics> {
-    return firstValueFrom(this.http.get<PartnerSalesAnalytics>(api('/api/partner-sales/analytics'), { params: { from, to } }));
+  /** By sold_on, from and to inclusive (yyyy-mm-dd); either may be null (open-ended): Analyses asks everything once. */
+  analytics(from: string | null = null, to: string | null = null): Promise<PartnerSalesAnalytics> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    return firstValueFrom(this.http.get<PartnerSalesAnalytics>(api('/api/partner-sales/analytics'), { params }));
   }
 
   async createReport(body: StaffPartnerReportRequest): Promise<StaffPartnerReportResult> {
