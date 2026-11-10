@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { SalesApi } from './sales-api';
+import { Auth } from './auth';
 import { AppNotification } from './models';
 import { messageOf } from './errors';
 import { QUEUE_INTERVAL_MS, reusesQueueRefresh, shouldRefreshQueue } from './work-queue-refresh';
@@ -22,6 +23,7 @@ const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 @Injectable({ providedIn: 'root' })
 export class WorkQueue {
   private readonly sales = inject(SalesApi);
+  private readonly auth = inject(Auth);
 
   readonly items = signal<AppNotification[]>([]);
   readonly loading = signal(false);
@@ -61,6 +63,9 @@ export class WorkQueue {
    * callers force it.
    */
   refresh(force = false): Promise<void> {
+    /* A partner (Verhoeven) has no staff queue: this one choke point keeps the auto refresh, the bell, the push
+       listener and the native host from calling staff endpoints for a partner session. */
+    if (this.auth.isPartner()) return Promise.resolve();
     if (!force && this.refreshPromise) return this.refreshPromise;
     if (!force && !this.error() && reusesQueueRefresh(this.lastRefreshAt, Date.now())) return Promise.resolve();
     this.lastRefreshAt = Date.now();

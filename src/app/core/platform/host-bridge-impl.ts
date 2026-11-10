@@ -22,7 +22,7 @@ import { PHONE_TABS, PHONE_TAB_PAGES, phoneTabForUrl } from './phone-tabs';
 import { navDirection, navInfoDirection } from './nav-direction';
 import { returnLabel, screenLabel } from './return-label';
 import { WorkQueue } from '../api/work-queue';
-import { Auth } from '../api/auth';
+import { Auth, isPartnerUser } from '../api/auth';
 import { api } from '../api/api.config';
 import type { CurrentUser } from '../api/models';
 import { Theme } from './theme';
@@ -513,7 +513,8 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     };
     /* The menu for the native search, sidebar and router (plan 3.6): after ready, then on every change, a second later. */
     effect((onCleanup) => {
-      const user = auth.isLoggedIn() ? auth.user() : null;
+      /* The staff menu only: the partner portal is not offered in the app, a partner session gets no nav. */
+      const user = auth.isLoggedIn() && !auth.isPartner() ? auth.user() : null;
       const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount() };
       if (!user) { this.lastNav = ''; return; }
       if (!queueAnswered()) { askQueue(); return; }
@@ -555,6 +556,8 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     if (!header) { this.lastSession = ''; return; }
     const expiresAt = auth.sessionExpiresAt();
     if (!header.startsWith(prefix) || !user?.username || auth.credentialKind() !== 'session-v1' || !expiresAt) return;
+    /* The native glances call staff endpoints: a partner session never goes to the keychain. */
+    if (isPartnerUser(user)) return;
     const session: HostSession = {
       type: 'session', kind: 'session-v1', username: user.username, credential: header.slice(prefix.length), expiresAt, apiBase: api(''),
     };

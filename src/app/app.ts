@@ -279,7 +279,8 @@ export class App {
     /* The native host (enrosed-erp-ios) first: it marks <html data-host> before anything paints, and the shell then
        leaves the tab bar, the rail, the Duo status bar and the phone motion to the native chrome (host-bridge.ts). */
     installHost(this.document);
-    void this.pushSetup.init();
+    /* A partner (Verhoeven) gets no staff push: no worker, no listener. */
+    if (!this.auth.isPartner()) void this.pushSetup.init();
     /* Smooth scrolls from code turn instant under prefers-reduced-motion. */
     installReducedMotionScroll(window as unknown as ReducedMotionWindow);
     if (this.host.present) {
@@ -418,13 +419,16 @@ export class App {
   /**
    * The login page and the customer portal get no navigation. The terms
    * page too for a customer; staff read it inside the shell, with the tab
-   * bar (Meer lit) as the way back in the iPhone app.
+   * bar (Meer lit) as the way back in the iPhone app. The partner portal
+   * (/partner) is its own app with its own header, and a signed-in partner
+   * never sees the staff chrome anywhere (no flash while a guard redirects).
    */
   readonly bare = computed(() => {
     /* By whole path segment: /login-requests or /offertes are staff addresses (a 404 inside the shell), not the login page. */
     const path = this.url().split(/[?#]/)[0];
     const is = (root: string) => path === root || path.startsWith(root + '/');
-    return is('/login') || is('/offerte') || (is('/voorwaarden') && !this.auth.isLoggedIn());
+    return is('/login') || is('/offerte') || is('/partner') || this.auth.isPartner()
+      || (is('/voorwaarden') && !this.auth.isLoggedIn());
   });
 
   private readonly syncStaffTouch = effect(onCleanup => {
@@ -472,9 +476,9 @@ export class App {
    */
   readonly homeRoute = computed(() => this.url().split('?')[0] === '/dashboard' && !this.desktopViewport.active());
 
-  /* The bell, the tab badges and the Meer counts stay current while someone is logged in. */
+  /* The bell, the tab badges and the Meer counts stay current while staff is logged in (a partner has none). */
   private readonly autoRefreshWork = effect((onCleanup) => {
-    if (this.auth.isLoggedIn()) onCleanup(this.work.startAutoRefresh());
+    if (this.auth.isLoggedIn() && !this.auth.isPartner()) onCleanup(this.work.startAutoRefresh());
   });
 
   /* Every ERP screen is noted, so a workspace knows the way back ("Terug naar inkooporder"). */
