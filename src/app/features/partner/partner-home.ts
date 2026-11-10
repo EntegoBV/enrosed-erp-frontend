@@ -6,7 +6,7 @@ import { messageOf } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
 import { Skeleton } from '../../shared/skeleton';
 import { PartnerData } from './partner-data';
-import { KIND_ICON, KIND_LABEL, KIND_TONE, PARTNER_KINDS, PartnerKind, percent } from './partner-format';
+import { KIND_ICON, KIND_LABEL, KIND_TONE, PARTNER_KINDS, percent } from './partner-format';
 import { GridProduct, PartnerGrid } from './partner-grid';
 import { PartnerReportRows } from './partner-report-rows';
 import { PartnerReportSheet } from './partner-report-sheet';

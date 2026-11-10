@@ -68,7 +68,7 @@ export type GridProduct = PartnerProductTile & { quantity?: number; lastSoldOn?:
     .search input{flex:1;min-width:0;height:44px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;outline:none}
     .search input::-webkit-search-cancel-button{display:none}
     .search:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--rose) 45%,transparent)}
-    .search__clear{display:grid;place-items:center;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+    .search__clear{display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
     .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){.grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}}
     @media (min-width: 600px) and (max-width: 1023.98px) and (hover: none){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}}

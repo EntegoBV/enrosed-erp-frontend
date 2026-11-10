@@ -57,7 +57,7 @@ import { PartnerData } from './partner-data';
     .pt-head__who{display:grid;flex:1;justify-items:end;min-width:0;line-height:1.2;text-align:right}
     .pt-head__who strong{max-width:100%;overflow:hidden;font-size:14.5px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
     .pt-head__who span{max-width:100%;overflow:hidden;color:var(--muted);font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}
-    .pt-head__out{flex:none}
+    .pt-head__out{flex:none;min-height:44px}
     .pt-main{width:100%;max-width:1080px;margin:0 auto;padding:8px var(--pp-gutter) 0}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){:host{--pp-gutter:24px}}
   `,
