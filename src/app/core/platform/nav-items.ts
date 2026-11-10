@@ -21,7 +21,7 @@
 export type NavGroupId = 'verkoop' | 'inkoop' | 'producten' | 'analyses' | 'bedrijf';
 
 /** WorkQueue count signals a navigation item can show. */
-export type NavCountKey = 'actionCount' | 'revisionCount' | 'loginRequestCount';
+export type NavCountKey = 'actionCount' | 'revisionCount' | 'loginRequestCount' | 'partnerSalesOpen';
 
 export type NavTone = 'accent' | 'amber' | 'green' | 'blue' | 'plum' | 'grey';
 
@@ -83,13 +83,15 @@ export const NAV_HOME: NavItem = {
 export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'verkoop', label: 'Verkoop', icon: 'sales', tone: 'accent',
-    hint: 'Palletberekening, wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
+    hint: 'Palletberekening, veilingverkopen, wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
     items: [
       { id: 'sales', label: 'Verkooporders', short: 'Verkoop', icon: 'sales', link: '/sales', countKey: 'actionCount', railMain: true, tabRoot: true },
       { id: 'pallet-calculator', label: 'Palletberekening', icon: 'pallet', link: '/palletberekening',
         hint: 'Wat er op een pallet en in een 20ft of 40ft gaat', newUntil: '2027-01-01' },
       { id: 'tica', label: 'TICA verkopen', short: 'TICA', icon: 'receipt', link: '/tica',
         hint: 'Verkopen per vestiging, automatische import en meldingen' },
+      { id: 'partner-sales', label: 'Veilingverkopen', icon: 'arrow-in', link: '/veilingverkopen', countKey: 'partnerSalesOpen', groupCount: true,
+        hint: 'Meldingen van de partner factureren', newUntil: '2027-01-01' },
       { id: 'revisions', label: 'Wijzigingen', icon: 'pencil', link: '/revisions', countKey: 'revisionCount', groupCount: false,
         hint: 'Wijzigingsvoorstellen van klanten beoordelen' },
       { id: 'customers', label: 'Klanten', icon: 'customers', link: '/customers', hint: 'Contacten, voorwaarden en nieuwe orders' },

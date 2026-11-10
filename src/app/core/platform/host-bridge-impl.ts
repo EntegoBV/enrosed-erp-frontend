@@ -515,7 +515,8 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     effect((onCleanup) => {
       /* The staff menu only: the partner portal is not offered in the app, a partner session gets no nav. */
       const user = auth.isLoggedIn() && !auth.isPartner() ? auth.user() : null;
-      const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount() };
+      const counts = { actionCount: work.actionCount(), revisionCount: work.revisionCount(), loginRequestCount: work.loginRequestCount(),
+        partnerSalesOpen: work.partnerSalesOpen() };
       if (!user) { this.lastNav = ''; return; }
       if (!queueAnswered()) { askQueue(); return; }
       const timer = setTimeout(() => {

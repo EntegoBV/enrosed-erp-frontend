@@ -1,6 +1,11 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SalesApi } from './sales-api';
 import { Auth } from './auth';
+import { api } from './api.config';
+/* Type only: the rest of the partner sales client stays in the lazy screens, out of the first load. */
+import type { PartnerSalesSummary } from './partner-sales-api';
 import { AppNotification } from './models';
 import { messageOf } from './errors';
 import { QUEUE_INTERVAL_MS, reusesQueueRefresh, shouldRefreshQueue } from './work-queue-refresh';
@@ -24,6 +29,7 @@ const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 export class WorkQueue {
   private readonly sales = inject(SalesApi);
   private readonly auth = inject(Auth);
+  private readonly http = inject(HttpClient);
 
   readonly items = signal<AppNotification[]>([]);
   readonly loading = signal(false);
@@ -32,6 +38,13 @@ export class WorkQueue {
   readonly loginRequestCount = signal(0);
   readonly loginIntakeFull = signal(false);
   readonly loginIntakeFullSources = signal<string[]>([]);
+  /**
+   * Veilingverkopen: the partner's meldingen not invoiced yet (GET /api/partner-sales/summary). null while unknown or
+   * on a backend without the portal. The nav count, the home card and the Te doen task all read this one signal.
+   */
+  readonly partnerSales = signal<PartnerSalesSummary | null>(null);
+  /** Open meldingen: the count on Veilingverkopen in the nav (a NavCountKey). */
+  readonly partnerSalesOpen = computed(() => this.partnerSales()?.openReports ?? 0);
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;
@@ -81,6 +94,10 @@ export class WorkQueue {
     const version = ++this.refreshVersion;
     this.loading.set(true);
     this.error.set(null);
+    /* Asked beside the feed, never after it: the summary is cheap and must not wait for the feed's answer. */
+    const partnerSales = firstValueFrom(this.http.get<PartnerSalesSummary>(api('/api/partner-sales/summary'))).then(
+      (summary) => ({ summary, failure: null as unknown }),
+      (failure: unknown) => ({ summary: null, failure }));
     try {
       const feed = await this.sales.notifications();
       if (version !== this.refreshVersion) return;
@@ -105,6 +122,11 @@ export class WorkQueue {
         this.loginIntakeFullSources.set(Array.isArray(summary.intakeFullSources) ? summary.intakeFullSources : []);
       }
     } catch { /* older backend, missing stub method or network: keep the last values */ }
+    const answer = await partnerSales;
+    if (version !== this.refreshVersion) return;
+    /* A backend without the portal answers 404: nothing to count. A network failure keeps the last values. */
+    if (answer.summary) this.partnerSales.set(answer.summary);
+    else if ((answer.failure as { status?: number } | null)?.status === 404) this.partnerSales.set(null);
   }
 
   /**
