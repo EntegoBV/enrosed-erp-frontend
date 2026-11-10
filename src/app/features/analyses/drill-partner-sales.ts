@@ -40,11 +40,13 @@ export function partnerSalesView(key: PartnerSalesFigureKey, figures: PartnerSal
   const value = key === 'pieces' ? 'pieces' : key === 'gross' ? 'gross' : 'net';
   const reports = figures.reports.filter((row) => (key === 'open' ? row.open : true)
     && (key === 'pieces' ? row.saleQuantity !== 0 : key === 'gross' ? row.grossEur !== 0 : true));
+  /* "Open" only tells something beside invoiced rows; when every row is open it is noise. */
+  const mixed = reports.some((row) => row.open) && reports.some((row) => !row.open);
   const rows: DrillRow[] = reports.map((row) => ({
     key: `vv${row.id}`,
     cells: { doc: `${row.number} · ${partnerSaleKind(row)}`, date: row.soldOn, pieces: row.saleQuantity, gross: row.grossEur,
       costs: row.costsEur, buyback: row.buybackEur, net: row.netEur },
-    pill: key !== 'open' && row.open ? 'Open' : null,
+    pill: mixed && row.open ? 'Open' : null,
     tone: value === 'net' && row.netEur < 0 ? 'danger' : null,
     link: melding(row.id),
   }));
@@ -62,14 +64,16 @@ export function partnerSalesView(key: PartnerSalesFigureKey, figures: PartnerSal
 /** A product of the card: its meldingen in the period, summing to its bruto. */
 export function partnerProductView(productId: number, name: string, figures: PartnerSalesFigures, figure: number, scope: string): DrillView {
   const numbers = new Map(figures.reports.map((row) => [row.id, row] as const));
-  const rows: DrillRow[] = figures.productRows.filter((row) => row.productId === productId && row.grossEur !== 0).map((row) => {
+  const mine = figures.productRows.filter((row) => row.productId === productId && row.grossEur !== 0);
+  const mixed = mine.some((row) => row.open) && mine.some((row) => !row.open);
+  const rows: DrillRow[] = mine.map((row) => {
     const report = numbers.get(row.reportId);
     return {
       key: `vv${row.reportId}p${row.productId}`,
       cells: { doc: `${report?.number ?? `VV-${row.reportId}`} · ${report ? partnerSaleKind(report) : row.channel === 'DIRECT' ? 'Direct' : 'Veiling'}`,
         date: row.soldOn, pieces: row.saleQuantity, average: row.saleQuantity > 0 ? Math.round(row.grossEur / row.saleQuantity * 10_000) / 10_000 : null,
         gross: row.grossEur },
-      pill: row.open ? 'Open' : null,
+      pill: mixed && row.open ? 'Open' : null,
       link: melding(row.reportId),
     };
   });
