@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/api/auth.guard';
+import { authGuard, partnerGuard } from './core/api/auth.guard';
 import { unsavedChangesGuard } from './core/guards/unsaved-changes.guard';
 import { settingsOverviewUp } from './features/settings/settings-overview-up';
 
@@ -426,6 +426,14 @@ export const routes: Routes = [
   /* one redirect per level: straight to the section 'analyses' itself redirects to */
   { path: 'analyse', pathMatch: 'full', redirectTo: 'analyses/cash' },
   { path: 'home', pathMatch: 'full', redirectTo: 'dashboard' },
+
+  /* The partner portal (Verhoeven): its own small app for a partner login, a lazy chunk staff never load (canMatch).
+     Before '**', and partnerGuard never answers false, so a refused match cannot fall through to it. */
+  {
+    path: 'partner',
+    canMatch: [partnerGuard],
+    loadChildren: () => import('./features/partner/partner.routes').then((m) => m.PARTNER_ROUTES),
+  },
 
   /* An address without a screen: a page that says so, inside the shell, behind the login. */
   {
