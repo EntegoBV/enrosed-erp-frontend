@@ -27,7 +27,7 @@ export const ARRIVAL_SOON_DAYS = 1;                 // a container arriving toda
 export const PINNED_TASK_AHEAD_DAYS = 7;            // a pinned task dated ≤ 7 d ahead (or undated) → Vandaag
 export const LATER_ESCALATE_COUNT = 3;              // the 3rd "Later" moves the item up one tier
 export const SOURCE_ORDER = ['container-due', 'advance', 'overdue-invoices', 'krap', 'overdue-costs', 'vat', 'customers', 'login',
-  'planner', 'arrival', 'purchase-check', 'settlement', 'bank-lines', 'recurring-due', 'open-credits', 'small-invoices', 'advance-later',
+  'planner', 'arrival', 'purchase-check', 'settlement', 'partner-sales', 'bank-lines', 'recurring-due', 'open-credits', 'small-invoices', 'advance-later',
   'regimes', 'catalog'] as const;
 
 /** Not a home threshold: a copy of finance-attention.ts OVERDUE_COST_DAYS for the "Waarom" text; a test keeps the two equal. */
@@ -103,6 +103,8 @@ export interface HomeTaskInput {
   advances: { count: number; eur: number; overdueEur: number; first: { orderId: number; label: string; due: string | null } | null;
     orderIds?: readonly number[] };
   settlements: number;
+  /** Veilingverkopen: the partner's meldingen not invoiced yet (WorkQueue.partnerSales); null while unknown or on an older backend. */
+  partnerSales: { count: number; eur: number; pieces: number } | null;
   invoicesOverdue: readonly { id: number; number: string; customer: string; dueDate: string; remainingEur: number }[];
   /** The 'overdue-costs' item of financeAttention(): its count, sum, title and target. */
   overdueCosts: { count: number; eur: number; oldestDays: number; title: string; location: Record<string, string> } | null;
@@ -535,6 +537,14 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
     out.push({ ...base, key: 'settlement', source: 'settlement', tier: 'ooknog', title: 'Veilingafrekening maken',
       context: 'Partnercontainers ontvangen; het veilingoverzicht wacht', chip: { label: 'ontvangen', tone: 'grey' }, count: n,
       verb: 'Afrekenen', target: { kind: 'route', path: ['/analyses/purchasing'], query: { deel: 'partners' } }, detail: String(n) });
+  }
+  /* The partner's meldingen wait for an invoice; staff make it whenever they like (owner), so Ook nog, like the settlement. */
+  if (input.partnerSales && input.partnerSales.count > 0) {
+    const open = input.partnerSales;
+    out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: 'Veilingverkopen factureren',
+      context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht`,
+      chip: { label: 'gemeld', tone: 'grey' }, eur: open.eur, count: open.count,
+      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'] }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
   }
   if (input.catalog > 0) {
     const n = input.catalog;

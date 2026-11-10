@@ -98,6 +98,13 @@ app-home-desk-agenda { display: block; }
   .home-desk__more { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .home-desk__more > app-dashboard-search-console, .home-desk__placeholder--wide { grid-column: span 2; }
 }
+/* Veilingverkopen (2026-11-11) sits beside Partners while it shows: Website then fills the rest of its row (the whole
+   row on two columns, two tracks on three) and Search Console takes a row of its own, so no hole opens either way. */
+.home-desk__more > app-home-partner-sales:has(.home-w) + app-home-website .home-w--website { grid-column: 1 / -1; }
+@media (min-width: 1280px) {
+  .home-desk__more > app-home-partner-sales:has(.home-w) + app-home-website .home-w--website { grid-column: span 2; }
+  .home-desk__more:has(> app-home-partner-sales .home-w) > :is(app-dashboard-search-console, .home-desk__placeholder--wide) { grid-column: 1 / -1; }
+}
 
 /* ---- Vandaag te doen and its rows (the card and the Alle sheet). Scoped to the desk page: the phone's task
    cells (home-phone.scss) use the same class names, and neither may restyle the other's rows. :where() keeps

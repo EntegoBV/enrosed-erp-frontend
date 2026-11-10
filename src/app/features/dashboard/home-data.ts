@@ -337,7 +337,7 @@ export class HomeData {
       today: this.today(), nowMs: 0, planner: this.planner.items(), actions: this.work.actions(), loginRequests: this.work.loginRequestCount(),
       purchases: this.purchases(), financing: this.financing(), sales, customers: this.customers(), costs, attention,
       cash: this.homeCash(), forecast: this.forecast(), vatQuarters: this.forecastVat(), headline: this.cash(), milestones: this.milestones(),
-      catalog: this.catalogAttention(),
+      catalog: this.catalogAttention(), partnerSales: this.work.partnerSales(),
       later: {}, sources: this.coverage(),
     });
   });

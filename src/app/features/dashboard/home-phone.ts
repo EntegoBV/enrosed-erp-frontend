@@ -29,6 +29,7 @@ import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
 import { HomeOntvangen } from './widgets/home-ontvangen';
 import { HomePartners } from './widgets/home-partners';
+import { HomePartnerSales } from './widgets/home-partner-sales';
 import { HomeResultaat } from './widgets/home-resultaat';
 import { HomeTica } from './widgets/home-tica';
 import { HomeVerkoop } from './widgets/home-verkoop';
@@ -62,7 +63,7 @@ const MENU: ContextMenuItem[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     NgTemplateOutlet, RouterLink, Icon, IosNav, Skeleton, ContextMenu, NotificationBell, PlannerCards, AgendaStrip, DashboardSearchConsole,
-    HomeAddSheet, HomeTaskCells, HomeKas, HomeVerkoop, HomeInkoop, HomeResultaat, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite,
+    HomeAddSheet, HomeTaskCells, HomeKas, HomeVerkoop, HomeInkoop, HomeResultaat, HomeOntvangen, HomeVoorraad, HomePartners, HomePartnerSales, HomeWebsite,
     HomeMarkt, HomeTica,
   ],
   template: `
@@ -147,6 +148,7 @@ const MENU: ContextMenuItem[] = [
           <app-home-ontvangen variant="phone" />
           <app-home-voorraad variant="phone" />
           <app-home-partners variant="phone" />
+          <app-home-partner-sales variant="phone" />
           <app-home-website variant="phone" />
         </div>
       </section>

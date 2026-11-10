@@ -231,6 +231,8 @@ export interface HomeTaskSources {
   headline: CashHeadline;
   milestones: readonly PlannerMilestone[];
   catalog: number;
+  /** WorkQueue.partnerSales(): the open Veilingverkopen; null while unknown or on a backend without the portal. */
+  partnerSales: { openReports: number; openSaleQuantity: number; openNetEur: number } | null;
   later: LaterState;
   sources: Readonly<Record<CoverageSource, boolean>>;
 }
@@ -244,6 +246,8 @@ export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
     containerDue: containerDueOf(s.purchases),
     advances: advancesOf(s.financing),
     settlements: s.financing.awaitingSettlement,
+    partnerSales: s.partnerSales
+      ? { count: s.partnerSales.openReports, eur: s.partnerSales.openNetEur, pieces: s.partnerSales.openSaleQuantity } : null,
     invoicesOverdue: invoicesOverdueOf(s.sales, s.customers, s.today),
     overdueCosts: overdueCostsOf(s.attention, s.costs, s.today),
     vat: vatOf(s.cash, s.forecast, s.vatQuarters, s.today),
