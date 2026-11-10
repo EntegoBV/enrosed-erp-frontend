@@ -13,6 +13,7 @@ import { escapeHtml, Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { CustomerLoginBlock } from './customer-login-block';
+import { CustomerPartnerPortalRow } from './customer-partner-portal-row';
 import { CustomerPriceBlock } from './customer-price-block';
 import { CustomerAppliedPrices } from './customer-applied-prices';
 import {
@@ -30,7 +31,7 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, Segmented, CountryPicker, CustomerLoginBlock, CustomerPriceBlock, CustomerAppliedPrices, LoadError],
+  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, Segmented, CountryPicker, CustomerLoginBlock, CustomerPartnerPortalRow, CustomerPriceBlock, CustomerAppliedPrices, LoadError],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -232,6 +233,7 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
                            [ngModel]="draft().partnerCostPct ?? 100" (ngModelChange)="patch({ partnerCostPct: $event === '' || $event === null ? null : +$event })" /><i>%</i></span>
                     <span class="hint">100 % = de partner betaalt de container vooraf; 0 % = wij financieren alles en rekenen af na de veiling.</span></div>
                 </div>
+                @if (draft().id; as partnerId) { <app-customer-partner-portal-row [customerId]="partnerId" /> }
               }
             </div>
             <div class="field span-2 partner-field">
