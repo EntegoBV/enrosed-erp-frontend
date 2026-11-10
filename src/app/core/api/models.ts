@@ -101,7 +101,9 @@ export interface StockMovement {
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'DEMO' | 'SHORTAGE';
+  /** PARTNER_SALE / PARTNER_BUYBACK: a partner portal melding (Veilingverkopen), reference "Veilingverkoop VV-12", never deletable. */
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'DEMO' | 'SHORTAGE'
+    | 'PARTNER_SALE' | 'PARTNER_BUYBACK';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
@@ -2275,6 +2277,11 @@ export interface PartnerSettlementAvailability {
   lines: {
     productId: number; productName: string; totalQuantity: number; settledQuantity: number;
     remainingQuantity: number; totalCostEur: number; settledCostEur: number; remainingCostEur: number;
+    /**
+     * Veilingverkopen: pieces of this line the partner reported (sale minus buyback) that are not invoiced yet, and
+     * their net; a manual settlement can only take remainingQuantity minus these. Absent on an older backend (= 0).
+     */
+    openReportedQuantity?: number | null; openReportedNetEur?: number | null;
   }[];
   settlements: {
     invoiceId: number; number: string; status: QuoteStatus; finalSettlement: boolean;
@@ -2320,6 +2327,8 @@ export interface PartnerFinancing {
   payments: IncomingPaymentRow[];
   /** Σ issued live credit notes on this container's documents (positive); invoicedAdvanceEur and settlementEur are already net of them. */
   creditNotesEur?: number;
+  /** Veilingverkopen: reported pieces of this container not invoiced yet (sale minus buyback); absent on an older backend. */
+  openReportedQuantity?: number | null;
 }
 
 /** Frozen, price-free container contents on an advance invoice. Never participates in its monetary claim. */
@@ -2383,6 +2392,13 @@ export interface SalesOrderView {
    * always null on the list, absent on an older backend.
    */
   invoiceCustomer?: SalesInvoiceCustomer | null;
+  /**
+   * Made from the partner's meldingen (Veilingverkopen › Factureren): its stock already left with the meldingen, so
+   * it is never shipped again and its lines stay as invoiced. Absent on an older backend (= false).
+   */
+  reportBacked?: boolean;
+  /** Per product id: the quantity the meldingen already booked out of stock; null when not report-backed. */
+  reportBookedQuantities?: Readonly<Record<string, number>> | null;
 }
 
 export type SalesInvoiceCustomerField = 'ADDRESS' | 'POSTAL_CODE' | 'CITY';

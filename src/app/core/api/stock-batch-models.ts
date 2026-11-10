@@ -7,7 +7,8 @@ export type StockBatchKind = 'RECEIPT' | 'OPENING' | 'COUNT';
 export type StockBatchOwner = 'OWN' | 'PARTNER';
 export type StockBatchCostState = 'APPLIED' | 'CALCULATED' | 'CARD' | 'NONE';
 export type StockBatchMoveKind = 'PURCHASE_RECEIPT' | 'RECEIPT_CORRECTION' | 'OPENING' | 'COUNT_IN' | 'BACKFILL'
-  | 'REPAIR' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'SHORTAGE' | 'DEMO' | 'STOCKTAKE' | 'MANUAL_CORRECTION';
+  | 'REPAIR' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'SHORTAGE' | 'DEMO' | 'STOCKTAKE' | 'MANUAL_CORRECTION'
+  | 'PARTNER_SALE' | 'PARTNER_BUYBACK';
 export interface StockBatchParts { goodsEur: number | null; originEur: number | null; freightEur: number | null;
   dutyEur: number | null; destinationEur: number | null; enrosedEur: number | null; separateEur: number | null }
 export interface StockBatch {
