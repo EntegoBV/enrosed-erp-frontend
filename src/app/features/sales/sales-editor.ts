@@ -32,6 +32,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './partner-settlement';
+import { REPORT_BACKED_LABEL, REPORT_LOCK_NOTE, isReportBacked, shipsViaReports } from './report-backed';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
@@ -242,7 +243,7 @@ function layoutKey(order: SalesOrder): string {
             </div>
           </div>
 
-          @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+          @if (!isPartnerDocument(data.order) && !reportLocked() && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
             <!-- The country's minimum rides with the totals, in view the
                  whole time you build; green the moment it is met. -->
             <div class="hero-min" [class.hero-min--ok]="data.priced.validation.meetsMinimum" role="status">
@@ -433,7 +434,14 @@ function layoutKey(order: SalesOrder): string {
               </div>
             </div>
             <button class="btn btn--sm" type="button" [disabled]="busy()"
-                    (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
+                    (click)="duplicate()">{{ copyActionLabel(data) }}</button>
+          </div>
+        }
+        @if (reportLocked() && canEdit()) {
+          <div class="alert alert--info quote-lock">
+            <span class="alert__icon">✓</span>
+            <div class="grow"><b>{{ reportBackedLabel }}</b><div class="small">{{ reportLockNote }}</div></div>
+            <a class="btn btn--sm" routerLink="/veilingverkopen">Veilingverkopen</a>
           </div>
         }
 
@@ -535,7 +543,7 @@ function layoutKey(order: SalesOrder): string {
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
-                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.customerId"
+                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked() || reportLocked()" [ngModel]="data.order.customerId"
                         (ngModelChange)="setCustomer(+$event)">
                   @for (customer of customers(); track customer.id) {
                     <option [ngValue]="customer.id">{{ customer.company }}</option>
@@ -546,7 +554,7 @@ function layoutKey(order: SalesOrder): string {
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
-                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.countryCode"
+                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked() || reportLocked()" [ngModel]="data.order.countryCode"
                           (ngModelChange)="patch({ countryCode: $event })">
                     @for (country of countries(); track country.code) {
                       <option [ngValue]="country.code">{{ country.name }}</option>
@@ -1118,14 +1126,14 @@ function layoutKey(order: SalesOrder): string {
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                   <div class="desk-partner__actions">
                     <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
-                    <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
+                    <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked() || reportLocked()" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
                     <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
                   </div>
                 }
               </section>
             } @else if (!isWebOrder()) {
               <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
-                <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
+                <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked() || reportLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
             }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
@@ -1182,7 +1190,7 @@ function layoutKey(order: SalesOrder): string {
                 <span>Goederen</span>
                 <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
-              @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
+              @if (!isPartnerDocument(data.order) && !reportLocked() && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
                 <!-- The minimum is a goods matter, so its line lives here. -->
                 <div class="receipt-min receipt-min--goods">
                   <div class="receipt-min__row">
@@ -1216,7 +1224,7 @@ function layoutKey(order: SalesOrder): string {
               }
               <!-- The one commercial lever at check time: an order discount
                    for a fair or a deal, as a percentage or an amount. -->
-              @if (canEdit() && !isCreditNoteDoc() && !advanceLocked()) {
+              @if (canEdit() && !isCreditNoteDoc() && !advanceLocked() && !reportLocked()) {
                 @if (!orderDiscountOpen()) {
                   <button class="receipt-korting__add" type="button"
                           (click)="orderDiscountOpen.set(true)">
@@ -2324,7 +2332,7 @@ export class SalesEditor {
   readonly mobileSplitBusy = signal(false);
   readonly mobileSplitBlockReason = salesSplitBlockReason;
   readonly mobileFinanciallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
-  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked() && !this.advanceLocked());
+  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked() && !this.advanceLocked() && !this.reportLocked());
   readonly mobileCustomerAuthoredMessage = customerMessageIsReadOnly;
   readonly mobileCustomerNote = originalCustomerMessage;
 
@@ -2431,6 +2439,17 @@ export class SalesEditor {
    * advance back). To change it, delete the concept and make a new advance.
    */
   readonly advanceLocked = computed(() => isAdvanceBillingInvoice(this.view()));
+  /** Made from the partner's meldingen (Veilingverkopen): lines, extras and customer follow them and stay as invoiced. */
+  readonly reportLocked = computed(() => isReportBacked(this.view()));
+  readonly reportLockNote = REPORT_LOCK_NOTE;
+  readonly reportBackedLabel = REPORT_BACKED_LABEL;
+  readonly reportBacked = isReportBacked;
+  /** Its stock left with the meldingen: no shipment to offer (the server stamps it at issue). */
+  readonly shipsViaReports = shipsViaReports;
+  /** The way on from a frozen document: a copy, the container's partner invoices, or the meldingen behind it. */
+  copyActionLabel(data: SalesOrderView): string {
+    return isReportBacked(data) ? 'Veilingverkopen' : isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie';
+  }
   readonly advanceLockNote = 'Het bedrag van een voorschotfactuur staat vast; verwijder dit concept en maak een nieuw voorschot vanuit de offerte om het te wijzigen.';
 
   /** A slotfactuur's 'Voorschotfactuur F-… van …' line and every line of a voorschotfactuur are the server's: never edited or removed here. */
@@ -2933,7 +2952,7 @@ export class SalesEditor {
     const data = this.view();
     if (!data || !this.isCreditNoteDoc() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
     return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
-      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt && !isReportBacked(this.creditOriginal());
   });
   readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; pieces: number; number: string } | null>(null);
   /** Every adopted view refetches its context: the open amount changes with each offset or receipt. */
@@ -3374,7 +3393,7 @@ export class SalesEditor {
         && data.order.validUntil < data.order.orderDate) {
       issues.push('Geldig-totdatum ligt vóór de offertedatum');
     }
-    if (!isPartnerDocument(data.order) && !data.priced.validation.meetsMinimum) {
+    if (!isPartnerDocument(data.order) && !isReportBacked(data) && !data.priced.validation.meetsMinimum) {
       issues.push('De minimum orderwaarde is nog niet bereikt');
     }
     return issues;
@@ -4258,6 +4277,8 @@ export class SalesEditor {
   async duplicate(): Promise<void> {
     const data = this.view();
     if (!data || this.busy()) return;
+    /* An invoice from the meldingen is never copied (the server refuses): its way on is Veilingverkopen. */
+    if (isReportBacked(data)) { await this.router.navigate(['/veilingverkopen']); return; }
     const purchaseId = this.advanceAgreement()?.purchaseOrderId ?? data.order.partnerPurchaseOrderId;
     if (this.advanceAgreement() || isPartnerDocument(data.order)) {
       if (purchaseId) await this.router.navigate(['/purchasing', purchaseId], { queryParams: { section: 'payments' } });

@@ -47,6 +47,7 @@ import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-c
 import { blankCustomer, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing } from '../customers/customer-form';
 import { salesDocumentKind } from './partner-settlement';
 import { billingKind, isAdvanceBillingInvoice } from './sales-advance-billing';
+import { shipsViaReports } from './report-backed';
 import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
@@ -1047,7 +1048,8 @@ export class SalesList {
       return items.length ? items : null;
     }
     const fullyCredited = this.fullyCredited(row);
-    const task = this.todo(row.order, row.awaitingResend, fullyCredited, isAdvanceBillingInvoice(row));
+    /* An invoice from the partner's meldingen ships nothing: its stock left with them (shipsViaReports). */
+    const task = this.todo(row.order, row.awaitingResend, fullyCredited, isAdvanceBillingInvoice(row) || shipsViaReports(row));
     if (task) items.push(task);
     /* An overdue invoice already reads "Betaling opvolgen"; no second label. A fully credited one has nothing left to chase. */
     if (!fullyCredited && this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');

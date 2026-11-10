@@ -14,6 +14,7 @@ import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
+import { REPORT_SHIPPED_LABEL, isReportBacked, reportShipSplits, shipsViaReports } from './report-backed';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
@@ -239,6 +240,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if (data.advanceBilling?.stage === 'ADVANCE' && billingQuoteId()) {
                   <span aria-hidden="true"> · </span>voorschot op offerte <a class="sales-hero__link" [routerLink]="['/sales', billingQuoteId()]">{{ data.advanceBilling?.quoteNumber || 'bekijken' }}</a>
                 }
+                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen">uit veilingverkopen</a> }
               </p>
             </div>
             <div class="sales-hero__badges">
@@ -798,7 +800,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                             (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
-                  } @else if (!skipsShipping(data) && !data.order.goodsShippedAt) {
+                  } @else if (!skipsShipping(data) && !data.order.goodsShippedAt && !shipsViaReports(data)) {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="openShipSheet(data)">Bestelling verzonden</button>
                   } @else if (data.order.status !== 'BETAALD') {
@@ -806,8 +808,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   } @else {
                     <button class="btn btn--primary btn--block" type="button"
-                            (click)="openPdfSheet(skipsShipping(data) ? 'DOCUMENT' : 'PACKING_SLIP')">
-                      {{ skipsShipping(data) ? 'Factuur instellen' : 'Pakbon instellen' }}
+                            (click)="openPdfSheet(skipsShipping(data) || reportBacked(data) ? 'DOCUMENT' : 'PACKING_SLIP')">
+                      {{ skipsShipping(data) || reportBacked(data) ? 'Factuur instellen' : 'Pakbon instellen' }}
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
@@ -879,15 +881,17 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
                   }
-                  @if (data.order.status !== 'BETAALD' && !skipsShipping(data) && !data.order.goodsShippedAt) {
+                  @if (data.order.status !== 'BETAALD' && !skipsShipping(data) && !data.order.goodsShippedAt && !shipsViaReports(data)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markPaid(data)">Betaling registreren</button>
                   }
-                  @if (data.order.goodsShippedAt) {
+                  @if (reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data))) {
+                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen">meldingen ›</a></p>
+                  } @else if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
                   }
-                  @if (!skipsShipping(data) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
+                  @if (!skipsShipping(data) && !reportBacked(data) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
                   <button class="btn btn--block" type="button"
                           (click)="openPdfSheet('PACKING_SLIP')">
                     Pakbon instellen
@@ -965,7 +969,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     }
                     <div class="ship-line__copy">
                       <strong>{{ row.name }}</strong>
-                      <span>−{{ row.qty | num }} {{ row.unitLabel }}</span>
+                      <span>@if (row.qty || !row.booked) {−{{ row.qty | num }} {{ row.unitLabel }}}@if (row.booked) {@if (row.qty) { · }{{ row.booked | num }} al afgeboekt}</span>
                     </div>
                     <div class="ship-line__stock"
                          [class.ship-line__stock--negative]="row.after !== null && row.after < 0">
@@ -1319,6 +1323,10 @@ export class SalesView {
   readonly isAdvance = isAdvanceDocument;
   /** A partner advance or a regular voorschotfactuur: no goods, so no shipping step or packing slip. */
   readonly skipsShipping = skipsShipping;
+  /** Made from the partner's meldingen (Veilingverkopen): its stock already left with them, nothing to ship. */
+  readonly reportBacked = isReportBacked;
+  readonly shipsViaReports = shipsViaReports;
+  readonly reportShippedLabel = REPORT_SHIPPED_LABEL;
   readonly isAdvanceInvoice = isAdvanceInvoice;
   readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
@@ -1352,7 +1360,7 @@ export class SalesView {
     const data = this.view();
     if (!data || !this.isCreditNote() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
     return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
-      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt && !isReportBacked(this.creditOriginal());
   });
   readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; number: string } | null>(null);
   private loadCreditOriginal(view: SalesOrderView | null): void {
@@ -1538,7 +1546,7 @@ export class SalesView {
     if (this.pendingRevision()) return true;
     if (data.order.docType === 'CREDITNOTA') return !!this.creditStep()?.label;
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      return data.order.status === 'CONCEPT' || (!this.skipsShipping(data) && !data.order.goodsShippedAt)
+      return data.order.status === 'CONCEPT' || (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data))
         || data.order.status !== 'BETAALD';
     }
     return data.order.status === 'CONCEPT' || data.order.status === 'GEACCEPTEERD';
@@ -1565,7 +1573,7 @@ export class SalesView {
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
       if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
-      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bestelling verzenden';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data)) return 'Bestelling verzenden';
       if (data.order.status !== 'BETAALD') return 'Betaling registreren';
       return 'Order afgerond';
     }
@@ -1593,9 +1601,9 @@ export class SalesView {
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
-      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
-      if (data.order.status !== 'BETAALD') return 'Leg de betaling vast zodra het bedrag ontvangen is.';
-      return this.skipsShipping(data) ? 'Factuur en betaling zijn verwerkt.' : 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data)) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
+      if (data.order.status !== 'BETAALD') return this.reportBacked(data) ? 'De voorraad ging al met de meldingen; leg de betaling vast zodra ze binnen is.' : 'Leg de betaling vast zodra het bedrag ontvangen is.';
+      return this.skipsShipping(data) || this.reportBacked(data) ? 'Factuur en betaling zijn verwerkt.' : 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
     }
     if (data.order.status === 'CONCEPT') return advanceAgreementFor(data)
       ? 'Controleer de afspraken. De voorschotfacturen maak je per termijn bij het betaalplan.'
@@ -1814,7 +1822,7 @@ export class SalesView {
     if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
-    return invoiceJourney(order, this.view()?.paymentSummary?.status);
+    return invoiceJourney(order, this.view()?.paymentSummary?.status, isReportBacked(this.view()));
   }
 
   makeInvoice(data: SalesOrderView): void {
@@ -1879,7 +1887,8 @@ export class SalesView {
   }
 
   readonly shipSheet = signal<{
-    rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string;
+    /** qty = what this sheet books now; booked = what the partner's meldingen already booked ("al afgeboekt"). */
+    rows: { name: string; photoUrl: string | null; qty: number; booked: number; unitLabel: string;
             before: number | null; after: number | null }[];
     pieces: number; number: string;
   } | null>(null);
@@ -1897,10 +1906,14 @@ export class SalesView {
       stockById = new Map(products.filter(product => product.id !== null)
         .map(product => [product.id!, product.stockQuantity ?? 0]));
     } catch { /* stock preview is best-effort; the rows then say "onbekend" */ }
-    const rows = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0).map(line => {
+    const lines = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0);
+    /* A line the meldingen already booked leaves nothing (or only its rest) to book here. */
+    const splits = reportShipSplits(data, lines);
+    const rows = lines.map((line, index) => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
-      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural,
-               before, after: before === null ? null : before - line.quantity };
+      const qty = splits[index].rest;
+      return { name: line.description, photoUrl: line.photoUrl, qty, booked: splits[index].booked, unitLabel: this.lineUnit(line.productId).plural,
+               before, after: before === null ? null : before - qty };
     });
     this.shipSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });
   }
