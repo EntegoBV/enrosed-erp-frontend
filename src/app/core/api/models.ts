@@ -2771,7 +2771,7 @@ export interface ProductPhotoExportResult {
 /** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'OPNIEUW_VERSTUREN'
-    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST';
+    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST' | 'PARTNER_VERKOOP';
   orderId: number | null;
   orderNumber: string;
   customer: string | null;
@@ -2784,6 +2784,8 @@ export interface AppNotification {
   url?: string | null;
   /** Stable identity distinguishes ten-day and three-day arrival reminders. */
   notificationId?: string | null;
+  /** PARTNER_VERKOOP: the melding is not invoiced yet (it counts on the bell). */
+  open?: boolean | null;
 }
 
 export interface NotificationFeed {

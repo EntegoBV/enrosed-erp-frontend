@@ -63,10 +63,12 @@ export class WorkQueue {
   readonly revisionCount = computed(() =>
     this.items().filter((item) => item.kind === 'VOORSTEL' && item.actionNeeded).length);
 
-  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
-  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
+  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded && !ownBucket(item)));
+  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded && !ownBucket(item)));
   /** Purchase alerts must never become customer work or a sales-order link. */
   readonly arrivals = computed(() => this.visible().filter((item) => item.kind === 'CONTAINER_AANKOMST'));
+  /** The partner's meldingen of the last 14 days: their own bell section, never customer work or a sales-order link. */
+  readonly partnerSaleItems = computed(() => this.visible().filter((item) => item.kind === 'PARTNER_VERKOOP'));
 
   /**
    * Fetches the queue. Not forced, it shares a fetch that is under way, and
@@ -193,7 +195,12 @@ export class WorkQueue {
  * whoever dismissed the first does want to see the second.
  */
 function key(item: AppNotification): string {
-  if (item.kind === 'CONTAINER_AANKOMST' && item.notificationId)
+  if ((item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP') && item.notificationId)
     return `${item.kind}|${item.notificationId}|${item.detail ?? ''}`;
   return `${item.kind}|${item.orderNumber}|${item.detail ?? ''}`;
+}
+
+/** Kinds with a bell section of their own: never in "Wij zijn aan zet" or "Van de klant". */
+function ownBucket(item: AppNotification): boolean {
+  return item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP';
 }

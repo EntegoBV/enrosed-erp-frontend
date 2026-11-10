@@ -39,7 +39,7 @@ import { notificationTarget } from './notification-target';
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'container nadert' : 'containers naderen' }}</b>} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'container nadert' : 'containers naderen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> nog te factureren} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -75,6 +75,15 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
+          @if (partnerRows().length) {
+            <h3 class="bell-sec">Veilingverkopen</h3>
+            <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
+              @for (row of partnerRows(); track $index) {
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: row.open ? 'tone-warn' : '',
+                  tile: row.open ? 'tone-warn' : 'tone-grey', aria: row.open ? row.when + ', nog te factureren' : row.when }" />
+              }
+            </ul>
+          }
           @if (newsRows().length) {
             <h3 class="bell-sec">Van de klant</h3>
             <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
@@ -83,7 +92,7 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
-          @if (!actionRows().length && !newsRows().length && !arrivalRows().length) {
+          @if (!actionRows().length && !newsRows().length && !arrivalRows().length && !partnerRows().length) {
             @if (desk()) {
               <div class="wk-empty"><span class="wk-empty__icon" aria-hidden="true"><app-icon name="bell" [size]="20" /></span>
                 <p class="wk-empty__title">Niets openstaand</p><p class="wk-empty__text">Geen klanten die op ons wachten.</p></div>
@@ -232,7 +241,8 @@ export class NotificationBell {
     void this.work.refresh();
   }
 
-  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length);
+  /** What we must do, the arrivals, and the partner's meldingen not invoiced yet (each counted the way arrivals are). */
+  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length + this.partnerOpen());
   readonly actions = this.work.actions;
   readonly news = this.work.news;
   readonly loading = this.work.loading;
@@ -250,6 +260,10 @@ export class NotificationBell {
     return this.news().map((item) => ({ item, when: whenLabel(item.at, now) }));
   });
   readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({ item, when: whenLabel(item.at, this.nowMs()) })));
+  /** The partner's meldingen of the last 14 days, newest first as the feed sends them; open = not invoiced yet. */
+  readonly partnerRows = computed(() => this.work.partnerSaleItems()
+    .map(item => ({ item, when: whenLabel(item.at, this.nowMs()), open: item.open === true })));
+  readonly partnerOpen = computed(() => this.work.partnerSaleItems().filter((item) => item.open === true).length);
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
   /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */
@@ -289,6 +303,7 @@ export class NotificationBell {
       case 'AFGEWEZEN': return 'close';
       case 'BEKEKEN': return 'eye';
       case 'CONTAINER_AANKOMST': return 'purchase';
+      case 'PARTNER_VERKOOP': return 'arrow-in';
       default: return 'bell';
     }
   }

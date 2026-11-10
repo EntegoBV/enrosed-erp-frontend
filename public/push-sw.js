@@ -5,6 +5,8 @@
  * notification, every open app window gets a message with the kind: a new
  * sale makes the app play the cash register even while you are working in it.
  */
+const URL_TAG_KINDS = ['contact-inquiry', 'login-request', 'partner-sale'];
+
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { /* plain text */ }
@@ -28,7 +30,8 @@ self.addEventListener('push', (event) => {
       badge: '/icons/icon-192.png',
       // A stable notice id replaces a retried delivery instead of stacking
       // another system banner. Older senders retain their existing grouping.
-      tag: typeof data.tag === 'string' && data.tag.trim() ? data.tag : kind + ':' + (kind === 'contact-inquiry' || kind === 'login-request' ? url : body.slice(0, 40)),
+      // Kinds whose url names the record (a melding: /veilingverkopen?melding=12) group by it.
+      tag: typeof data.tag === 'string' && data.tag.trim() ? data.tag : kind + ':' + (URL_TAG_KINDS.includes(kind) ? url : body.slice(0, 40)),
       data: { url },
     });
   })());

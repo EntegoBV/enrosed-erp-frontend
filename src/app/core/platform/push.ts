@@ -123,6 +123,8 @@ function base64UrlToBytes(base64Url: string): Uint8Array {
 const SOUND_BY_KIND: Record<string, string> = {
   'sale-quote': '/sounds/offerte.mp3',
   'sale-invoice': '/sounds/factuur.mp3',
+  /* A melding of the partner (Veilingverkopen): sold goods, the cash register of a new sale. */
+  'partner-sale': '/sounds/offerte.mp3',
 };
 
 export async function playSoundFor(kind: string): Promise<void> {
@@ -134,7 +136,7 @@ export async function playSoundFor(kind: string): Promise<void> {
     await audio.play();
   } catch {
     /* Autoplay refused without an earlier gesture: fall back to the synth. */
-    if (kind === 'sale-quote') void playKaching();
+    if (kind === 'sale-quote' || kind === 'partner-sale') void playKaching();
   }
 }
 
