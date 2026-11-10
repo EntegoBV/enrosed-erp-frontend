@@ -26,12 +26,16 @@ const ACTION_LABELS: Record<string, string> = {
   CUSTOMER_CHANGE_REQUESTED: 'Wijziging gevraagd',
   IDENTITY_FINALIZED: 'Identiteit vastgelegd',
   CATALOG_EXPORTED: 'Catalogus met prijzen gemaakt',
+  VOIDED: 'Ingetrokken',
 };
 
 const FINANCE_TYPES = new Set(['COMPANY_COST', 'RECURRING_COST', 'BANK_BALANCE', 'BANK_STATEMENT']);
 
 const ENTITY_CATEGORIES: Record<string, ActivityCategory> = {
   SALES_ORDER: 'SALES',
+  PARTNER_SALE_REPORT: 'SALES',
+  PARTNER_LOGIN: 'SALES',
+  PARTNER_PORTAL_SETTINGS: 'SALES',
   PURCHASE_ORDER: 'PURCHASING',
   SUPPLIER: 'PURCHASING',
   PRODUCT: 'CATALOGUE',
@@ -90,6 +94,9 @@ export function activityEntityLabel(event: ActivityEvent): string {
   if (type === 'SALES_ORDER') {
     return /factuur/i.test(`${event.entityLabel ?? ''} ${event.summary}`) ? 'Factuur' : 'Offerte';
   }
+  if (type === 'PARTNER_SALE_REPORT') return 'Veilingverkoop';
+  if (type === 'PARTNER_LOGIN') return 'Partnerlogin';
+  if (type === 'PARTNER_PORTAL_SETTINGS') return 'Partnerportaal';
   if (type === 'PRODUCT') return 'Product';
   if (type === 'PRODUCT_FAMILY') return 'Productfamilie';
   if (type === 'SUPPLIER') return 'Leverancier';
@@ -119,6 +126,7 @@ export function activityRecordPhrase(event: ActivityEvent): string {
   const type = event.entityType.trim().toUpperCase();
   if (type === 'PRODUCT') return 'dit product';
   if (type === 'PLANNER_ITEM') return 'dit agendapunt';
+  if (type === 'PARTNER_PORTAL_SETTINGS') return 'het partnerportaal';
   if (type === 'BANK_BALANCE') return 'dit banksaldo';
   return `deze ${activityEntityLabel(event).toLocaleLowerCase('nl-BE')}`;
 }
@@ -129,6 +137,9 @@ export function activityRoute(event: ActivityEvent): string[] | null {
   const type = event.entityType.trim().toUpperCase();
   if (type === 'PURCHASE_ORDER') return ['/purchasing', String(event.entityId)];
   if (type === 'SALES_ORDER') return ['/sales', String(event.entityId)];
+  /* A melding opens on Veilingverkopen (?melding=, activityQueryParams); a login or the costs on Instellingen › Partnerportaal. */
+  if (type === 'PARTNER_SALE_REPORT') return ['/veilingverkopen'];
+  if (type === 'PARTNER_LOGIN' || type === 'PARTNER_PORTAL_SETTINGS') return ['/settings'];
   if (type === 'PRODUCT') return ['/products', String(event.entityId)];
   if (type === 'PRODUCT_FAMILY') return ['/website/products'];
   if (FINANCE_TYPES.has(type)) return ['/costs'];
@@ -151,6 +162,10 @@ export function activityQueryParams(event: ActivityEvent): Record<string, string
   if (type === 'RECURRING_COST') return { view: 'costs', tab: 'recurring' };
   if (type === 'BANK_BALANCE') return { view: 'bank' };
   if (type === 'BANK_STATEMENT') return { view: 'bank', tab: 'movements' };
+  if (type === 'PARTNER_SALE_REPORT') return { melding: String(event.entityId) };
+  /* The settings line's id is the partner customer: its card opens (the login line's id is the login's own). */
+  if (type === 'PARTNER_PORTAL_SETTINGS') return { sectie: 'partner-portal', klant: String(event.entityId) };
+  if (type === 'PARTNER_LOGIN') return { sectie: 'partner-portal' };
   /* Customers and suppliers open their list searched on the record's name. */
   if ((type === 'CUSTOMER' || type === 'SUPPLIER') && event.entityLabel?.trim()) return { q: event.entityLabel.trim() };
   return null;
