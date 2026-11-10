@@ -476,9 +476,12 @@ export class App {
    */
   readonly homeRoute = computed(() => this.url().split('?')[0] === '/dashboard' && !this.desktopViewport.active());
 
-  /* The bell, the tab badges and the Meer counts stay current while staff is logged in (a partner has none). */
+  /* The bell, the tab badges and the Meer counts stay current while staff is logged in (a partner has none). It waits
+     for the identity: with only a credential stored, a partner's first address (say /sales) would ask the staff
+     queue while the guard is still asking /api/auth/me who this is. */
+  private readonly staffSignedIn = computed(() => this.auth.isLoggedIn() && this.auth.user() !== null && !this.auth.isPartner());
   private readonly autoRefreshWork = effect((onCleanup) => {
-    if (this.auth.isLoggedIn() && !this.auth.isPartner()) onCleanup(this.work.startAutoRefresh());
+    if (this.staffSignedIn()) onCleanup(this.work.startAutoRefresh());
   });
 
   /* Every ERP screen is noted, so a workspace knows the way back ("Terug naar inkooporder"). */
