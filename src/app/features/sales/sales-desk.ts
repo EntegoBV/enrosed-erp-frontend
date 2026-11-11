@@ -1161,7 +1161,7 @@ interface JourneyStep {
           <div body>
             <app-shipping-planner [view]="data" [canEdit]="canEditShipping() && !financiallyLocked()" [carriers]="carriers()"
                                   [splitFreight]="financiallyLocked() && canEdit()" [pricing]="pricingStale()"
-                                  [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()"
+                                  [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()" [issued]="issuedBefore()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
           </div>
           <div foot style="display:contents">

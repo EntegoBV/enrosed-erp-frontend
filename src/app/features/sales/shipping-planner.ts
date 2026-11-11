@@ -260,7 +260,7 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </span>
     </ng-template>
     <ng-template #load>
-      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [maxCm]="heightLimit()" [overridden]="heightOverridden()"
+      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [maxCm]="heightLimit()" [overridden]="heightOverridden()" [fieldKey]="heightField()"
                         [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
                         (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)" />
     </ng-template>
@@ -366,6 +366,8 @@ export class ShippingPlanner {
   readonly splitFreight = input(false);
   /** The figures are being worked out again: no layout may be cut from the ones on screen. */
   readonly pricing = input(false);
+  /** An invoice that was issued before (or whose history is not known yet): only its history tells once it is back on concept. */
+  readonly issued = input(false);
   readonly patch = output<ShippingOrderPatch>();
   readonly action = output<ShippingPalletAction>();
 
@@ -415,10 +417,11 @@ export class ShippingPlanner {
   /**
    * "Standaard" (and an emptied field meaning it) while the document carries a height other than the
    * standard. A document from before 2026-11-07 has none, reads 260 and gets no button. The 220 cm of
-   * 7-10 November was the standard of those days: what was sent, invoiced, advanced, split or ordered
-   * on it never moves by one tap, so it offers "Standaard" only on a concept nothing has come from
-   * (the server's own line for its one-time move, as far as this screen knows it); stepping or typing
-   * another height stays possible everywhere.
+   * 7-10 November was the standard of those days: what was sent, issued, invoiced, advanced, split or
+   * ordered on it never moves by one tap, so it offers "Standaard" only on a concept nothing has come
+   * from (the server's own line for its one-time move, as far as this screen knows it). An invoice
+   * issued without mail and put back on concept has no sent date: its history says it (issued).
+   * Stepping or typing another height stays possible everywhere.
    */
   readonly heightOverridden = computed(() => {
     const view = this.view();
@@ -426,9 +429,11 @@ export class ShippingPlanner {
     const own = order.maxPalletHeightCm;
     if (own == null || own === PALLET_MAX_HEIGHT_CM) return false;
     if (own !== PALLET_FORMER_STANDARD_CM) return true;
-    return order.status === 'CONCEPT' && !order.sentAt && !order.sourceQuoteId && !view.webOrder
+    return order.status === 'CONCEPT' && !order.sentAt && !this.issued() && !order.sourceQuoteId && !view.webOrder
       && !view.invoicedAsId && !view.advanceInvoices?.length && !view.advanceBilling && !view.fulfillment;
   });
+  /** Raised when a height from the field was not taken (the question below answered with Annuleren). */
+  readonly heightField = signal(0);
   readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
   readonly modeOptions = computed<SegmentOption[]>(() => [
     { id: 'auto', label: 'Automatisch' },
@@ -725,11 +730,16 @@ export class ShippingPlanner {
     /* A height the new type does not allow comes down with it (a europallet stops at 260 cm): the server
        would refuse the switch otherwise. */
     const changes: ShippingOrderPatch = { palletProfile: profile };
-    if (this.heightCm() > palletHeightLimit(profile)) changes.maxPalletHeightCm = palletHeightLimit(profile);
+    const limit = palletHeightLimit(profile);
+    if (this.heightCm() <= limit) { this.switchProfile(changes); return; }
+    this.askBeforeLowering(limit, limit, () => this.switchProfile({ ...changes, maxPalletHeightCm: limit }));
+  }
+
+  private switchProfile(changes: ShippingOrderPatch): void {
     const pallets = this.order().pallets;
     if (!pallets.length) { this.patch.emit(changes); return; }
     const from = palletTypeLabel(this.spec().profile);
-    const to = palletTypeLabel(profile);
+    const to = palletTypeLabel(changes.palletProfile!);
     this.patch.emit({ ...changes,
       pallets: pallets.map((pallet) => (normalizeManualPalletType(pallet.type) === from ? { ...pallet, type: to } : pallet)) });
     this.profileOffer.set(true);
@@ -741,9 +751,26 @@ export class ShippingPlanner {
    * none is sent.
    */
   setMaxHeight(value: number | null): void {
-    if (this.canEdit()) {
-      this.patch.emit({ maxPalletHeightCm: value === null ? PALLET_MAX_HEIGHT_CM : clampPalletHeight(value, this.spec().profile) });
-    }
+    if (!this.canEdit()) return;
+    const height = value === null ? PALLET_MAX_HEIGHT_CM : clampPalletHeight(value, this.spec().profile);
+    const limit = this.heightLimit();
+    if (this.heightCm() <= limit) { this.patch.emit({ maxPalletHeightCm: height }); return; }
+    this.askBeforeLowering(height, limit, () => this.patch.emit({ maxPalletHeightCm: height }));
+  }
+
+  /**
+   * A height above what the pallet type allows was picked before the limit (a europallet stops at 260 cm
+   * since 2026-11-10) and stays as it is. Once it comes down the server takes no height above the limit
+   * again, so that one step cannot be undone and is asked first: a stray tap on "−", "Standaard" or the
+   * pallet type must not change what an old document counts with. Annuleren leaves everything as it was,
+   * the field included (heightField).
+   */
+  private askBeforeLowering(height: number, limit: number, lower: () => void): void {
+    this.ui.confirm({
+      title: `Max. hoogte naar ${height} cm?`,
+      message: `Nu ${this.heightCm()} cm. Hoger dan ${limit} cm kan daarna niet meer.`,
+      confirmLabel: 'Verlagen',
+    }, lower, undefined, () => this.heightField.update((key) => key + 1));
   }
 
   /* ---- desk: drag a card by its glyph */

@@ -1522,6 +1522,7 @@ function layoutKey(order: SalesOrder): string {
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
+                [issued]="issuedBefore()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -3145,6 +3146,18 @@ export class SalesEditor {
     return this.customers().find((c) => c.id === id)?.language ?? 'NL';
   });
   readonly history = signal<QuoteEvent[]>([]);
+  /** The document the history on screen was read for; null while none could be read. */
+  private readonly historyOf = signal<number | null>(null);
+  /**
+   * An invoice that was issued before. "Uitgeven zonder e-mail" leaves no sent date, and putting the
+   * invoice back on concept leaves only the step in its history; while that history is not in, the
+   * invoice counts as issued. The planner's one-tap return of a 220 cm height asks this.
+   */
+  readonly issuedBefore = computed(() => {
+    const order = this.view()?.order;
+    if (!order || order.docType !== 'FACTUUR') return false;
+    return this.historyOf() !== order.id || this.history().some((step) => step.type === 'UITGEREIKT');
+  });
 
   /** The pick-lists and the catalogue, loaded once; an order waits for them before it shows. */
   private referenceLoad: Promise<void> = Promise.resolve();
@@ -4300,8 +4313,10 @@ export class SalesEditor {
   protected async loadHistory(orderId: number): Promise<void> {
     try {
       this.history.set(await this.sales.history(orderId));
+      this.historyOf.set(orderId);
     } catch {
       this.history.set([]);
+      this.historyOf.set(null);
     }
   }
 
