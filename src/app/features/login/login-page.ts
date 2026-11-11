@@ -1,9 +1,12 @@
-import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import type { HostPageInput } from '../../core/platform/host-bridge';
 import { HostPage } from '../../shared/host-page';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Auth, isPartnerUser } from '../../core/api/auth';
+import { PARTNER_PASSWORD_HINT } from '../../core/api/partner-password';
+import { useAppManifest } from '../../core/platform/app-manifest';
 import { HostBridge } from '../../core/platform/host-bridge';
 import { Icon } from '../../shared/icon';
 import {
@@ -13,6 +16,11 @@ import {
 /** localStorage, or null where the browser blocks it. */
 function deviceStore(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+}
+
+/** The password goes out through btoa (Basic auth), which takes no character above U+00FF; a partner's is printable ASCII. */
+function unsendable(password: string, partner: boolean): boolean {
+  return partner ? !/^[\x20-\x7E]*$/.test(password) : /[^\u0000-\u00ff]/.test(password);
 }
 
 /** A path inside the partner portal (where a partner may return to; staff never). */
@@ -86,8 +94,9 @@ function isPartnerPath(url: string): boolean {
         <div class="field">
           <label for="password">Wachtwoord</label>
           <div class="login__password">
+            <!-- With the eye on it is a text field: no capital, autocorrect or curly quote may change what he types. -->
             <input #passwordField class="input" id="password" name="password" [type]="showPassword() ? 'text' : 'password'"
-                   autocomplete="current-password" required
+                   autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required
                    [attr.aria-invalid]="error() ? 'true' : null"
                    [attr.aria-describedby]="error() ? 'login-error' : null"
                    [ngModel]="password()" (ngModelChange)="password.set($event)" />
@@ -117,6 +126,7 @@ function isPartnerPath(url: string): boolean {
           <button class="login__other" type="button" (click)="otherAccount()">Ander account</button>
         } @else {
           <p class="login__private"><span aria-hidden="true">●</span> Privé werkruimte voor Emre en Berat</p>
+          @if (!host.present) { <button class="login__other login__other--partner" type="button" (click)="pickAccount('partner')">Aanmelden als partner</button> }
         }
       </form>
     </main>
@@ -129,7 +139,7 @@ function isPartnerPath(url: string): boolean {
     @media (max-width: 679.98px) and (max-height: 650px), (hover: none) and (max-width: 1023.98px) and (max-height: 650px) {.login{align-items:flex-start;padding-top:145px}.login__card{padding-block:21px 17px}.login__head p{display:none}.login__head{margin-bottom:14px}.login__logo{margin-bottom:8px}.login__head h1{font-size:23px}}
     @media (min-width: 1024px) and (max-height: 650px), (min-width: 680px) and (hover: hover) and (max-height: 650px) {.login{align-items:flex-start;padding-block:24px}.login__card{padding-block:25px 21px}.login__head{margin-bottom:17px}.login__logo{margin-bottom:9px}.login__head p{margin-top:4px}}
     @media(prefers-reduced-motion:reduce){.login__spinner{animation-duration:1.4s}}
-    .login__other{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin-top:8px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.login__other:hover{color:var(--ink)}
+    .login__other--partner{margin-top:2px}.login__other{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin-top:8px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.login__other:hover{color:var(--ink)}
   `,
 })
 export class LoginPage {
@@ -153,6 +163,10 @@ export class LoginPage {
   private readonly passwordField = viewChild<ElementRef<HTMLInputElement>>('passwordField');
 
   constructor() {
+    /* "Zet op beginscherm" from the partner login gives an app that starts in the portal (core/platform/app-manifest.ts). */
+    const doc = inject(DOCUMENT);
+    effect(() => useAppManifest(doc, this.partnerMode() ? 'partner' : 'staff'));
+    inject(DestroyRef).onDestroy(() => useAppManifest(doc, 'staff'));
     /* Straight to the password when the account is known; otherwise the account first. */
     afterNextRender(() => {
       const field = this.partnerMode()
@@ -207,6 +221,10 @@ export class LoginPage {
       this.error.set(partner ? 'Vul je gebruikersnaam en wachtwoord in.' : 'Kies je account en vul je wachtwoord in.');
       return;
     }
+    if (unsendable(this.password(), partner)) {
+      this.error.set(`Dit wachtwoord heeft een teken dat niet kan. ${PARTNER_PASSWORD_HINT}.`);
+      return;
+    }
     this.error.set('');
     this.busy.set(true);
     try {
@@ -226,6 +244,10 @@ export class LoginPage {
       await this.router.navigateByUrl(target, { replaceUrl: true });
     } catch (failure: unknown) {
       const status = (failure as { status?: number }).status;
+      if (failure instanceof DOMException && failure.name === 'InvalidCharacterError') {
+        this.error.set(`Dit wachtwoord heeft een teken dat niet kan. ${PARTNER_PASSWORD_HINT}.`);
+        return;
+      }
       this.error.set(status === 401
         ? (partner ? 'Gebruikersnaam of wachtwoord klopt niet.' : 'Account of wachtwoord klopt niet.')
         : status === 0

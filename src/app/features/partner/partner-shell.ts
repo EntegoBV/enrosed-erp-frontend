@@ -3,6 +3,7 @@ import { DOCUMENT } from '@angular/common';
 import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { Auth } from '../../core/api/auth';
 import { PartnerPortalApi } from '../../core/api/partner-portal-api';
+import { useAppManifest } from '../../core/platform/app-manifest';
 import { HostBridge } from '../../core/platform/host-bridge';
 import { BrandMark } from '../../shared/brand-mark';
 import { PartnerData } from './partner-data';
@@ -80,6 +81,8 @@ export class PartnerShell {
     void this.data.load();
     const doc = inject(DOCUMENT);
     const win = doc.defaultView;
+    /* Added to the Home Screen from here, the app starts in the portal (core/platform/app-manifest.ts). */
+    useAppManifest(doc, 'partner');
     /* Back in the portal (Safari brought to the front, the tab shown again, the page out of the back cache): today's
        stock and today's date, not those of when the page was loaded. A page left open in front reads again after midnight. */
     const back = () => { if (doc.visibilityState === 'visible') this.data.refreshIfStale(); };
@@ -92,6 +95,7 @@ export class PartnerShell {
       win?.removeEventListener('focus', back);
       win?.removeEventListener('pageshow', back);
       if (timer !== undefined) win?.clearInterval(timer);
+      useAppManifest(doc, 'staff');
     });
   }
 
