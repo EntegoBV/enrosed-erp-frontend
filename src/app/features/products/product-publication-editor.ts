@@ -515,6 +515,8 @@ interface FamilyFeaturedOption {
     .identity-variant b { overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .identity-variant small { color: var(--muted); font: 9.5px var(--mono); }
     .identity-variant .input { background: var(--surface); }
+    /* The codes are no .field: without this a final code stays white and silently takes no typing. */
+    .identity-variant .input[readonly] { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
     .url-field {
       min-width: 0;
       display: flex;
