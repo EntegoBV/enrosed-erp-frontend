@@ -1,8 +1,9 @@
 /*
- * The figures the product screens add up: the margin on a price, what is on
- * the way for a product or a series, and stock value at landed cost. Sums
- * stay unit-safe: quantities are only added within one product or series,
- * across products the screens add euros. Pure and import-free: node-tested.
+ * The figures the product screens add up: the margin on a price and stock
+ * value at landed cost. Sums stay unit-safe: quantities are only added
+ * within one product or series, across products the screens add euros.
+ * Pure and import-free. What is coming for a product or a series lives in
+ * shared/product-incoming.ts.
  */
 
 export interface Margin {
@@ -18,54 +19,6 @@ export function productMargin(price: number | null | undefined, landed: number |
   if (landed === null || landed === undefined || !(landed > 0)) return null;
   const eur = Math.round((price - landed) * 100) / 100;
   return { eur, pct: Math.round((eur / price) * 100) };
-}
-
-/** What sourcing says is on the way for one product (ExpectedStock). */
-export interface ExpectedLike {
-  productId: number;
-  quantity: number;
-  expectedArrival: string | null;
-  orderNumbers: string[];
-  orderIds: number[];
-}
-
-export interface Onderweg {
-  quantity: number;
-  /** The earliest known arrival (yyyy-mm-dd), else null. */
-  earliest: string | null;
-  orderNumbers: string[];
-  orderIds: number[];
-}
-
-/** One product's or one series' pieces on the way, its earliest date and its orders (each once, in order). */
-export function onderwegSummary(items: readonly (ExpectedLike | null | undefined)[]): Onderweg | null {
-  let quantity = 0;
-  let earliest: string | null = null;
-  const numbers: string[] = [];
-  const ids: number[] = [];
-  for (const item of items) {
-    if (!item || !(item.quantity > 0)) continue;
-    quantity += item.quantity;
-    if (item.expectedArrival && (earliest === null || item.expectedArrival < earliest)) earliest = item.expectedArrival;
-    item.orderNumbers.forEach((number, index) => {
-      if (numbers.includes(number)) return;
-      numbers.push(number);
-      const id = item.orderIds[index];
-      if (id !== undefined) ids.push(id);
-    });
-  }
-  return quantity > 0 ? { quantity, earliest, orderNumbers: numbers, orderIds: ids } : null;
-}
-
-/** "PO-2026-013", or "PO-2026-013 +1" when more orders carry it. */
-export function onderwegOrdersLabel(orderNumbers: readonly string[]): string {
-  if (!orderNumbers.length) return '';
-  return orderNumbers.length > 1 ? `${orderNumbers[0]} +${orderNumbers.length - 1}` : orderNumbers[0];
-}
-
-/** How many distinct purchase orders carry anything on the way. */
-export function distinctOrderCount(items: readonly ExpectedLike[]): number {
-  return new Set(items.flatMap((item) => item.orderIds)).size;
 }
 
 export interface ValueRow {

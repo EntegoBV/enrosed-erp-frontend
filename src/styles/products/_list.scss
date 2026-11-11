@@ -51,8 +51,6 @@ app-product-list .plp-end {
 app-product-list .plp-end strong { font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; font-variant-numeric: tabular-nums; }
 app-product-list .plp-end strong.zero { color: var(--muted-2); font-weight: 550; }
 app-product-list .plp-end small { color: var(--muted); font-size: 11.5px; line-height: 1.25; }
-app-product-list .plp-end .exp { margin-top: 2px; color: var(--rose-dark); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
-app-product-list .plp-end .plp-date { font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* The demo fold: its head is the toggle. */
 app-product-list .plp-demo__head {
@@ -177,7 +175,6 @@ app-product-list-table .pl-num { font-size: 13.5px; font-weight: 650; font-varia
 app-product-list-table .pl-num--zero { color: var(--muted-2); font-weight: 550; }
 app-product-list-table .pl-cell__sub { color: var(--muted); font-size: 11.5px; line-height: 1.3; text-align: right; }
 app-product-list-table .pl-varies { margin-left: 2px; color: var(--muted); font-size: 10px; font-style: normal; vertical-align: top; cursor: help; }
-app-product-list-table .pl-exp { color: var(--rose-dark); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 app-product-list-table .pl-margin { color: var(--ok); }
 app-product-list-table .pl-margin--bad { color: var(--danger); }
 app-product-list-table .pl-pub { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
@@ -208,9 +205,6 @@ app-product-list-table .pl-demo .wk-group__toggle[aria-expanded=false] app-icon 
   app-product-list-table .pl-pubdot { display: inline-block; }
   app-product-list-table .pl-col--pub { justify-items: center; }
   app-product-list-table .pl-pill--narrow { display: inline-flex; }
-  app-product-list-table .pl-under {
-    display: grid; justify-items: end; font-size: 11.5px; line-height: 1.3; text-align: right;
-  }
-  app-product-list-table .pl-under > span { white-space: nowrap; }
-  app-product-list-table .pl-under__date { color: var(--muted); }
+  /* The shared status pill (shared/incoming-pill) under the stock figure. */
+  app-product-list-table .pl-under { display: block; margin-top: 3px; }
 }
