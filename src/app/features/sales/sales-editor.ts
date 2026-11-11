@@ -11,6 +11,8 @@ import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
 import type { CreditNoteProposal, ExpectedStock, SalesSplitResult } from '../../core/api/models';
+import { IncomingPill } from '../../shared/incoming-pill';
+import { brusselsToday, incomingMap, type Incoming } from '../../shared/product-incoming';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -101,7 +103,7 @@ function layoutKey(order: SalesOrder): string {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -847,15 +849,19 @@ function layoutKey(order: SalesOrder): string {
                       @if (!line.inventoryKnown) {
                         <b>Voorraad nog niet bevestigd</b>
                         <span>Vul de leverweek in zodra de beschikbaarheid is bevestigd.</span>
+                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                       } @else if (line.inStock) {
                         <b>Op voorraad</b>
                         <span>Leverbaar vanaf {{ line.deliveryDate | dateNl }}@if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }</span>
                       } @else if (line.deliveryWeek) {
                         <b>Levering {{ line.deliveryWeek | weekNl }}</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
+                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                       } @else {
                         <b class="danger-text">Levertermijn nodig</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
+                        <!-- Short of stock: what is coming, and when, answers the delivery term. -->
+                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
@@ -4077,16 +4083,31 @@ export class SalesEditor {
     this.picking.set(true);
   }
 
-  /* ---- what is coming (purchase orders): the picker's status ---- */
+  /* ---- what is coming (purchase orders): the picker's status and a short line's ---- */
   /** Per product id, as GET expected-stock?arrived=true answers; empty until loaded and after a failed load (then nothing shows). */
   readonly incomingItems = signal<ReadonlyMap<number, ExpectedStock>>(new Map());
+  private readonly incomingToday = brusselsToday();
+  private readonly incomingByProduct = computed(() => incomingMap([...this.incomingItems().values()], this.incomingToday));
   private incomingAsk = 0;
+  /** A line that is not covered by stock: its status needs the answer before the picker was ever opened. */
+  private readonly incomingWanted = computed(() => {
+    const data = this.view();
+    return !!data && !this.isCreditNoteDoc() && data.priced.lines.some((line) => !line.inStock);
+  });
+  private readonly incomingLoader = effect(() => {
+    if (this.incomingWanted()) untracked(() => this.loadIncoming());
+  });
 
   private loadIncoming(): void {
     const ask = ++this.incomingAsk;
     this.sourcing.incomingStock().then((items) => {
       if (ask === this.incomingAsk) this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
     }, () => undefined);
+  }
+
+  /** What is coming for the product of a line that stock does not cover (short, or not confirmed); null when nothing is. */
+  lineComing(productId: number | null): Incoming | null {
+    return productId === null ? null : this.incomingByProduct().get(productId) ?? null;
   }
 
   /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */

@@ -1,3 +1,4 @@
+import { IncomingPill } from '../../shared/incoming-pill';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
@@ -75,7 +76,7 @@ interface JourneyStep {
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, LinePriceSource,
+            ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
@@ -608,6 +609,8 @@ interface JourneyStep {
                             @else if (line.inStock) { <b>Op voorraad</b><small>vanaf {{ line.deliveryDate | dateNl }}</small> }
                             @else if (line.deliveryWeek) { <b>{{ line.deliveryWeek | weekNl: 'short' }}</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} te leveren</small> }
                             @else { <b>Levertermijn nodig</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} niet op voorraad</small> }
+                            <!-- Not covered by stock: what is coming, and when, answers the delivery term. -->
+                            @if (!line.inStock) { @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> } }
                           </span>
                           }
                           @if (canEditTerms() && !isCreditNoteDoc()) {
