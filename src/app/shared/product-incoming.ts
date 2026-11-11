@@ -7,7 +7,7 @@
  */
 import type { ExpectedStock, ExpectedStockOrder } from '../core/api/models';
 
-/** In reading order: what arrives first leads. */
+/** The four states; which order leads is decided by its arrival (arrivalKey), not by its state. */
 export type IncomingState = 'AANGEKOMEN' | 'BINNENKORT' | 'ONDERWEG' | 'BESTELD';
 
 /** The one fixed set of words. */
@@ -15,6 +15,7 @@ export const INCOMING_WORD: Readonly<Record<IncomingState, string>> = {
   AANGEKOMEN: 'Aangekomen', BINNENKORT: 'Binnenkort', ONDERWEG: 'Onderweg', BESTELD: 'Besteld',
 };
 
+/** Breaks a tie only: on one date, and among orders without a date that can hold, the nearer state goes first. */
 const RANK: Readonly<Record<IncomingState, number>> = { AANGEKOMEN: 0, BINNENKORT: 1, ONDERWEG: 2, BESTELD: 3 };
 
 /** A departed container expected at most this many days ahead, or this many days overdue, reads "Binnenkort". */
@@ -31,6 +32,11 @@ export interface IncomingOrder {
   /** Null from a backend that sends no breakdown yet. */
   quantity: number | null;
   expectedArrival: string | null;
+  /**
+   * The expected date while it can still hold: today or later, or a departed container at most SOON_DAYS overdue.
+   * Null without a date and for a date nobody can count on any more (long overdue, or passed before the order left).
+   */
+  due: string | null;
   partner: boolean;
   /** "verwacht 20/11/2026", "verwacht sinds 02/11/2026", "datum nog open", "ontvangen 05/11/2026 · nog bij te boeken". */
   when: string;
@@ -39,10 +45,16 @@ export interface IncomingOrder {
 export interface Incoming {
   /** Every order together: what sorting, the filter and "Leeg verbergen" go by. */
   total: number;
-  /** The first arrival only: the pieces of the orders that share the lead's state and date. */
+  /** The first arrival only: the pieces of the orders that arrive with the lead (same state and date; without a date that can hold, same state). */
   quantity: number;
-  /** What comes after the first arrival (total minus quantity). */
+  /** What comes besides the first arrival (total minus quantity). */
   later: number;
+  /**
+   * What the pill says behind "+later": the date of the next arrival ("· 15/01"; "vanaf 15/01" when more than one
+   * moment follows), else the state those orders share ("Onderweg"), else "meer". Never a guess about the order
+   * of arrival. Empty when nothing follows.
+   */
+  laterNote: string;
   state: IncomingState;
   word: string;
   /** The first arrival's date when it is today or later (yyyy-mm-dd); a past date is never shown bare. */
@@ -53,11 +65,13 @@ export interface Incoming {
   when: string;
   /** First arrival first. */
   orders: IncomingOrder[];
+  /** Sorts one status against another, first arrival first (compareIncoming). */
+  arrivalKey: string;
   /** False when built from a backend without the per-order breakdown. */
   detailed: boolean;
   /** One line per order, for a tooltip. */
   title: string;
-  /** Read aloud: "+240 Binnenkort, verwacht 20/11/2026, +3.000 later". */
+  /** Read aloud: "+240 Binnenkort, verwacht 20/11/2026, +3.000 op 15/01". */
   label: string;
 }
 
@@ -83,6 +97,11 @@ function long(day: string): string {
   return day.split('-').reverse().join('/');
 }
 
+/** yyyy-mm-dd as dd/mm. */
+function short(day: string): string {
+  return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+}
+
 function figure(value: number): string {
   return value.toLocaleString('nl-BE');
 }
@@ -103,6 +122,41 @@ function stateOf(order: Pick<ExpectedStockOrder, 'status' | 'expectedArrival' | 
   return date && date >= plusDays(today, -SOON_DAYS) && date <= plusDays(today, SOON_DAYS) ? 'BINNENKORT' : 'ONDERWEG';
 }
 
+/** The date an order can still be counted on for, see IncomingOrder.due. */
+function dueOf(state: IncomingState, expectedArrival: string | null, today: string): string | null {
+  if (!expectedArrival || state === 'AANGEKOMEN') return null;
+  return expectedArrival >= today || state === 'BINNENKORT' ? expectedArrival : null;
+}
+
+/**
+ * The arrival an order belongs to, in arrival order: what is here; then a date that can still hold, the earliest
+ * first whatever the state; then the orders without such a date, departed before not departed. A state alone
+ * never puts an order in front of a nearer date. Orders of one arrival are one figure on the pill.
+ */
+function arrivalOf(order: Pick<IncomingOrder, 'state' | 'due'>): string {
+  if (order.state === 'AANGEKOMEN') return '0';
+  return order.due ? `1${order.due}${RANK[order.state]}` : `2${RANK[order.state]}`;
+}
+
+/** First arrival first; within an arrival without a date the longest overdue goes first. */
+function arrivalKey(order: Pick<IncomingOrder, 'state' | 'due' | 'expectedArrival'>): string {
+  return `${arrivalOf(order)}${order.due ? '' : order.expectedArrival ?? '9'}`;
+}
+
+function byArrival(a: IncomingOrder, b: IncomingOrder): number {
+  const left = arrivalKey(a);
+  const right = arrivalKey(b);
+  return left < right ? -1 : left > right ? 1 : a.orderId - b.orderId;
+}
+
+/** What the pill says behind the pieces that come besides the first arrival, see Incoming.laterNote. */
+function laterNoteOf(rest: IncomingOrder[], today: string): string {
+  const next = rest[0];
+  if (!next) return '';
+  if (next.due && next.due >= today) return rest.every((order) => order.due === next.due) ? `· ${short(next.due)}` : `vanaf ${short(next.due)}`;
+  return rest.every((order) => order.state === next.state) ? next.word : 'meer';
+}
+
 function whenOf(state: IncomingState, expectedArrival: string | null, receivedOn: string | null | undefined, today: string): string {
   if (state === 'AANGEKOMEN') return receivedOn ? `ontvangen ${long(receivedOn)} · nog bij te boeken` : 'nog bij te boeken';
   if (!expectedArrival) return 'datum nog open';
@@ -117,8 +171,8 @@ function ordersOf(item: ExpectedStock, today: string): { orders: IncomingOrder[]
       const expectedArrival = state === 'AANGEKOMEN' ? null : order.expectedArrival ?? null;
       return {
         orderId: order.orderId, orderNumber: order.orderNumber ?? '', name: order.name?.trim() || order.orderNumber || `Inkoop #${order.orderId}`,
-        state, word: INCOMING_WORD[state], quantity: order.quantity, expectedArrival, partner: order.partner === true,
-        when: whenOf(state, expectedArrival, order.receivedOn, today),
+        state, word: INCOMING_WORD[state], quantity: order.quantity, expectedArrival, due: dueOf(state, expectedArrival, today),
+        partner: order.partner === true, when: whenOf(state, expectedArrival, order.receivedOn, today),
       };
     });
     return { orders, total: orders.reduce((sum, order) => sum + (order.quantity ?? 0), 0), detailed: true };
@@ -131,7 +185,8 @@ function ordersOf(item: ExpectedStock, today: string): { orders: IncomingOrder[]
     const number = item.orderNumbers?.[index] ?? '';
     orders.push({
       orderId, orderNumber: number, name: number || `Inkoop #${orderId}`, state: 'ONDERWEG', word: INCOMING_WORD.ONDERWEG, quantity: null,
-      expectedArrival: item.expectedArrival ?? null, partner: false, when: whenOf('ONDERWEG', item.expectedArrival ?? null, null, today),
+      expectedArrival: item.expectedArrival ?? null, due: dueOf('ONDERWEG', item.expectedArrival ?? null, today), partner: false,
+      when: whenOf('ONDERWEG', item.expectedArrival ?? null, null, today),
     });
   });
   return { orders, total, detailed: false };
@@ -139,23 +194,25 @@ function ordersOf(item: ExpectedStock, today: string): { orders: IncomingOrder[]
 
 function build(orders: IncomingOrder[], total: number, detailed: boolean, fallbackDate: string | null, today: string): Incoming | null {
   if (!(total > 0)) return null;
-  const sorted = [...orders].sort((a, b) => RANK[a.state] - RANK[b.state]
-    || (a.expectedArrival === b.expectedArrival ? 0 : a.expectedArrival === null ? 1 : b.expectedArrival === null ? -1 : a.expectedArrival < b.expectedArrival ? -1 : 1)
-    || a.orderId - b.orderId);
+  const sorted = [...orders].sort(byArrival);
   const lead = sorted[0];
   const state = lead?.state ?? 'ONDERWEG';
   const arrival = lead ? lead.expectedArrival : fallbackDate;
-  /* The first arrival: the orders that share the lead's state and date. Without figures per order it is everything. */
-  const first = detailed && lead ? sorted.filter((order) => order.state === lead.state && order.expectedArrival === lead.expectedArrival) : sorted;
+  /* The first arrival: the orders that arrive with the lead (see arrivalOf). Without figures per order it is everything. */
+  const first = detailed && lead ? sorted.filter((order) => arrivalOf(order) === arrivalOf(lead)) : sorted;
   const quantity = detailed && lead ? first.reduce((sum, order) => sum + (order.quantity ?? 0), 0) : total;
   const later = Math.max(0, total - quantity);
+  const laterNote = later ? laterNoteOf(sorted.filter((order) => !first.includes(order)), today) : '';
   const date = arrival && arrival >= today ? arrival : null;
-  const when = lead?.when ?? whenOf(state, arrival, null, today);
+  /* In words: the lead's own, unless the orders of the first arrival differ (receipt days, or one overdue and one without a date). */
+  const when = !lead ? whenOf(state, arrival, null, today)
+    : first.every((order) => order.when === lead.when) ? lead.when : whenOf(state, null, null, today);
   const word = INCOMING_WORD[state];
   const title = sorted.map((order) => order.quantity === null ? order.name : `${order.name} · +${figure(order.quantity)} · ${order.word} · ${order.when}`).join('\n');
   return {
-    total, quantity, later, state, word, date, dateShort: date ? `${date.slice(8, 10)}/${date.slice(5, 7)}` : null, when, orders: sorted, detailed,
-    title, label: `+${figure(quantity)} ${word}, ${when}${later ? `, +${figure(later)} later` : ''}`,
+    total, quantity, later, laterNote, state, word, date, dateShort: date ? short(date) : null, when, orders: sorted, detailed,
+    arrivalKey: arrivalKey(lead ?? { state, due: dueOf(state, arrival, today), expectedArrival: arrival }),
+    title, label: `+${figure(quantity)} ${word}, ${when}${later ? `, +${figure(later)} ${laterNote.replace(/^· /, 'op ')}` : ''}`,
   };
 }
 
@@ -205,12 +262,8 @@ export function incomingOrderCount(values: Iterable<Incoming | null | undefined>
   return ids.size;
 }
 
-/** First arrival first: by state, then by date (an open date last), then the most pieces. */
+/** First arrival first (see arrivalKey), then the most pieces. */
 export function compareIncoming(a: Incoming | null | undefined, b: Incoming | null | undefined): number {
   if (!a || !b) return a ? -1 : b ? 1 : 0;
-  const left = a.orders[0]?.expectedArrival ?? null;
-  const right = b.orders[0]?.expectedArrival ?? null;
-  return RANK[a.state] - RANK[b.state]
-    || (left === right ? 0 : left === null ? 1 : right === null ? -1 : left < right ? -1 : 1)
-    || b.total - a.total;
+  return (a.arrivalKey < b.arrivalKey ? -1 : a.arrivalKey > b.arrivalKey ? 1 : 0) || b.total - a.total;
 }

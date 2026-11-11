@@ -6,9 +6,10 @@ import type { Incoming } from './product-incoming';
 
 /**
  * What is coming for a product or a series, as one pill: the pieces of the
- * first arrival, the state word and the date, and "+N later" when more
- * follows. The same on Voorraad, Producten, the sales picker and the sales
- * line; the words and the figure come from product-incoming.ts.
+ * first arrival, the state word and the date, and when more comes a last
+ * line with those pieces and their date ("+12.000 · 15/01"; their state
+ * when no date is known). The same on Voorraad, Producten, the sales picker
+ * and the sales line; the words and the figure come from product-incoming.ts.
  *
  * stack: desk tables (pill, then word and date). phone: tinted pill with
  * figure and date, the word under it. inline: one line beside other text.
@@ -33,7 +34,7 @@ import type { Incoming } from './product-incoming';
     <ng-template #body let-inc>
       <b class="inc__n">+{{ inc.quantity | num }}@if (dateInPill(inc)) { · {{ inc.dateShort }}}</b>
       <span class="inc__l"><span class="inc__w">{{ inc.word }}</span>@if (inc.dateShort && !dateInPill(inc)) { <span class="inc__d">{{ inc.dateShort }}</span> }</span>
-      @if (inc.later) { <span class="inc__more">+{{ inc.later | num }} later</span> }
+      @if (inc.later) { <span class="inc__more">+{{ inc.later | num }} {{ inc.laterNote }}</span> }
     </ng-template>
   `,
   styles: `
