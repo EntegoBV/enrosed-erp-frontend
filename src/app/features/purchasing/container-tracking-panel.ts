@@ -5,8 +5,10 @@ import { ContainerTrackingApi } from '../../core/api/container-tracking-api';
 import type { ContainerTracking } from '../../core/api/container-tracking-models';
 import { messageOf } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
-import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, trackingMapUrl, trackingRefreshNotice,
-  trackingStale, trackingTime, trackingWebUrl, validatedContainerReference, vesselMapFrameUrl } from './container-tracking-model';
+import { carrierLookup, normalizedVesselImo, recognisedOf, trackingAge, trackingArrival, trackingArrived, trackingFailure, trackingMapLink,
+  trackingMapUrl, trackingMove, trackingRefreshNotice, trackingStale, trackingStatus, trackingTime, trackingWebUrl,
+  validatedContainerReference, vesselMapFrameUrl } from './container-tracking-model';
+import { trackingReferenceHint } from './tracking-reference';
 
 /** One tracking detail, shared by the purchase overview and the all-container screen. */
 @Component({
@@ -22,20 +24,19 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
           <h2>{{ showOrderLink() ? item.containerName || item.orderNumber : item.vessel || 'Container volgen' }}</h2>
           <div class="tp-status-line">
             @if (showOrderLink() && item.vessel) { <span class="tp-ship"><app-icon name="globe" [size]="15" />{{ item.vessel }}</span> }
-            <span class="tp-status" [class.tp-status--ok]="arrived(item)" [class.tp-status--warn]="!!item.error && !!item.source">
-              {{ item.source || item.dateSource ? item.statusLabel : 'Schip nog niet gekoppeld' }}
-            </span>
+            <span class="tp-status" [class.tp-status--ok]="status().tone === 'ok'" [class.tp-status--warn]="status().tone === 'warn'">{{ status().text }}</span>
           </div>
         </div>
         @if (showOrderLink()) { <a class="tp-order" [routerLink]="['/purchasing', item.orderId]">Inkooporder <app-icon name="chevron-right" [size]="15" /></a> }
       </header>
 
       @if (!configured()) { <div class="tp-notice" role="status"><app-icon name="info" [size]="17" /><span>Automatische controles staan uit. Je ziet de bewaarde gegevens.</span></div> }
-      @if (item.error && item.source) {
-        <div class="tp-notice tp-notice--warn" role="status"><app-icon name="alert" [size]="17" /><span>{{ item.error }} @if (item.updatedAt) { <span>Gegevens bewaard van {{ time(item.updatedAt) }}.</span> }</span></div>
-      } @else if (stale() && item.automatic) {
+      @if (failure(); as text) {
+        <div class="tp-notice tp-notice--warn" role="status"><app-icon name="alert" [size]="17" /><span>{{ text }} @if (item.updatedAt) { <span>Gegevens bewaard van {{ time(item.updatedAt) }}.</span> }</span></div>
+      } @else if (stale() && item.automatic && configured()) {
         <div class="tp-notice tp-notice--warn" role="status"><app-icon name="info" [size]="17" /><span>De laatste controle is langer dan {{ intervalHours() }} uur geleden.</span></div>
       }
+      @if (referenceNotice(); as text) { <div class="tp-notice tp-notice--warn" role="status"><app-icon name="info" [size]="17" /><span>{{ text }}</span></div> }
 
       <div class="tp-body" [class.tp-body--without-map]="!mapUrl()">
         @if (mapUrl(); as map) {
@@ -63,17 +64,17 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
 
         <aside class="tp-info">
           <div class="tp-check-head"><span class="tp-schedule" [class.tp-schedule--off]="!configured() || !item.automatic"><i></i>{{ item.automatic && configured() ? 'Controle elke ' + intervalHours() + ' uur' : arrived(item) ? 'Opvolging afgerond' : !configured() ? 'Controles uit' : 'Nog geen automatische opvolging' }}</span>
-            @if (item.automatic) { <button class="tp-icon-button" type="button" aria-label="Tracking nu controleren" title="Meldingen nu controleren" [disabled]="!!busy() || !configured()" (click)="refresh()"><app-icon name="refresh" [size]="17" /></button> }
+            @if (!finished()) { <button class="tp-icon-button" type="button" aria-label="Tracking nu controleren" [attr.title]="!configured() ? 'Controles staan uit' : item.automatic ? 'Meldingen nu controleren' : 'Koppel eerst een schip'" [disabled]="!!busy() || !configured() || !item.automatic" (click)="refresh()"><app-icon name="refresh" [size]="17" /></button> }
           </div>
           <dl class="tp-facts">
             <div class="tp-fact-wide"><dt>{{ item.source === 'VOYDAR' ? 'Laatste havenmelding' : 'Laatst gemelde locatie' }}</dt><dd>{{ item.location || 'Nog geen melding' }}</dd></div>
-            @if (arrivalDate(); as date) { <div class="tp-fact-wide"><dt>Verwachte aankomst container</dt><dd>{{ time(date, false) }}</dd></div> }
+            @if (arrivalDate(); as date) { <div class="tp-fact-wide"><dt>Verwachte aankomst container</dt><dd><span [class.tp-arrival--later]="move()?.news && move()?.later" [class.tp-arrival--earlier]="move()?.news && move()?.later === false">{{ time(date, false) }}</span>@if (move(); as change) { <small [attr.title]="item.arrivalMovedAt ? 'Gewijzigd op ' + time(item.arrivalMovedAt) : null">was {{ time(change.from, false) }} · {{ change.text }}</small> }</dd></div> }
             @if (item.orderShippedOn) { <div class="tp-fact-wide"><dt>Vertrokken volgens order</dt><dd>{{ time(item.orderShippedOn, false) }}</dd></div> }
-            <div><dt>Gecontroleerd</dt><dd>{{ item.checkedAt ? time(item.checkedAt) : 'Nog niet gecontroleerd' }}</dd></div>
+            <div><dt>Gecontroleerd</dt><dd>{{ item.checkedAt ? time(item.checkedAt) : 'Nog niet gecontroleerd' }}@if (checkedAge(); as age) { <small>{{ age }}</small> }</dd></div>
             <div><dt>Volgende controle</dt><dd>{{ nextCheck() }}</dd></div>
           </dl>
           @if (item.dateSource) { <p class="tp-small">Datumbron: {{ item.dateSource }}@if (item.dateSourceCheckedAt) { · bron gecontroleerd {{ time(item.dateSourceCheckedAt) }} }</p> }
-          @if (item.dateError) { <p class="tp-feedback" role="status">{{ item.dateError }}</p> }
+          @if (item.dateError && item.dateError !== failure()) { <p class="tp-feedback" role="status">{{ item.dateError }}</p> }
           @if (carrier(); as provider) {
             <div class="tp-carrier">
               <div class="tp-carrier-title"><app-icon name="purchase" [size]="18" /><strong>Container bij {{ provider.carrier }}</strong></div>
@@ -122,6 +123,7 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
             @if (item.source === 'VOYDAR' || !item.source) { <p>De kaart toont het gekoppelde schip, niet de exacte positie van de container. Een ETA in de kaart hoort bij het schip. De rederij bevestigt containerstatus, aankomst en overslag.</p><p>Havenmeldingen via <a href="https://www.voydar.com" target="_blank" rel="noopener noreferrer">Voydar</a> · kaart via <a href="https://www.vesselfinder.com" target="_blank" rel="noopener noreferrer">VesselFinder</a>.</p> }
             @else { <p>Containergegevens via ShipsGo. Aankomsttijden zijn verwachtingen van de vervoerder.</p> }
             <p class="tp-full-reference">{{ item.trackingReference }}</p>
+            @if (referenceRead(); as read) { <p>{{ read }}</p> }
             @if (item.providerUpdatedAt) { <p>Laatste bronmelding: {{ time(item.providerUpdatedAt) }}.</p> }
             @if (item.providerCheckedAt) { <p>Bron gecontroleerd: {{ time(item.providerCheckedAt) }}.</p> }
           </div>
@@ -132,7 +134,7 @@ import { carrierLookup, normalizedVesselImo, trackingArrived, trackingMapLink, t
   styles: [`
     :host{display:block;min-width:0}.tp{border:1px solid var(--line);border-radius:18px;background:var(--surface);overflow:hidden;color:var(--ink)}
     .tp-head{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 24px}.tp-identity{min-width:0}.tp-kicker{font-size:10px;font-weight:700;letter-spacing:.65px;color:var(--muted);text-transform:uppercase}.tp-kicker span{font-family:ui-monospace,monospace;letter-spacing:0}.tp h2{font-size:21px;line-height:1.25;letter-spacing:-.5px;margin:7px 0 10px;overflow-wrap:anywhere}.tp-status-line{display:flex;flex-wrap:wrap;gap:9px;align-items:center}.tp-ship{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600}.tp-status{font-size:10px;font-weight:650;padding:4px 7px;border-radius:6px;background:var(--surface-2);color:var(--muted)}.tp-status--ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 9%,var(--surface))}.tp-status--warn{color:var(--warn)}.tp-order{display:flex;align-items:center;white-space:nowrap;font-size:12px;font-weight:600;min-height:44px}
-    .tp-body{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(245px,.8fr);border-top:1px solid var(--line)}.tp-map-area{min-width:0;background:var(--surface-2)}.tp-map{display:block;width:100%;height:400px;border:0;background:#dce8ed}.tp-map-bar{display:flex;justify-content:space-between;gap:10px;padding:11px 15px;font-size:10px;line-height:1.4}.tp-map-bar>a{display:flex;align-items:center;gap:5px;white-space:nowrap}.tp-map-note{font-size:10px;line-height:1.5;color:var(--muted);padding:0 15px 13px;margin:0}.tp-map-note span{display:block;margin-top:5px}.tp-info{min-width:0;padding:18px 20px;border-left:1px solid var(--line)}.tp-check-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.tp-schedule{font-size:10px;font-weight:650;display:flex;align-items:center;gap:6px;color:var(--ok)}.tp-schedule i{width:5px;height:5px;border-radius:50%;background:currentColor}.tp-schedule--off{color:var(--muted)}.tp-icon-button{border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-2);width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:pointer}.tp-icon-button:disabled{opacity:.45;cursor:default}.tp-facts{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;margin:18px 0 22px}.tp-facts>div{min-width:0}.tp-fact-wide{grid-column:1/-1}.tp-facts dt{font-size:10px;color:var(--muted);margin-bottom:5px}.tp-facts dd{font-size:12px;font-weight:600;line-height:1.5;margin:0;overflow-wrap:anywhere}
+    .tp-body{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(245px,.8fr);border-top:1px solid var(--line)}.tp-map-area{min-width:0;background:var(--surface-2)}.tp-map{display:block;width:100%;height:400px;border:0;background:#dce8ed}.tp-map-bar{display:flex;justify-content:space-between;gap:10px;padding:11px 15px;font-size:10px;line-height:1.4}.tp-map-bar>a{display:flex;align-items:center;gap:5px;white-space:nowrap}.tp-map-note{font-size:10px;line-height:1.5;color:var(--muted);padding:0 15px 13px;margin:0}.tp-map-note span{display:block;margin-top:5px}.tp-info{min-width:0;padding:18px 20px;border-left:1px solid var(--line)}.tp-check-head{display:flex;align-items:center;justify-content:space-between;gap:8px}.tp-schedule{font-size:10px;font-weight:650;display:flex;align-items:center;gap:6px;color:var(--ok)}.tp-schedule i{width:5px;height:5px;border-radius:50%;background:currentColor}.tp-schedule--off{color:var(--muted)}.tp-icon-button{border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-2);width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:pointer}.tp-icon-button:disabled{opacity:.45;cursor:default}.tp-facts{display:grid;grid-template-columns:1fr 1fr;gap:18px 12px;margin:18px 0 22px}.tp-facts>div{min-width:0}.tp-fact-wide{grid-column:1/-1}.tp-facts dt{font-size:10px;color:var(--muted);margin-bottom:5px}.tp-facts dd{font-size:12px;font-weight:600;line-height:1.5;margin:0;overflow-wrap:anywhere}.tp-facts dd small{display:block;margin-top:2px;font-size:10px;font-weight:500;color:var(--muted)}.tp-arrival--later,.tp-arrival--earlier{display:inline-block;margin-left:-6px;padding:1px 6px;border-radius:6px}.tp-arrival--later{color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--surface))}.tp-arrival--earlier{color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,var(--surface))}
     .tp-carrier{border-top:1px solid var(--line);padding-top:18px}.tp-carrier-title{display:flex;align-items:center;gap:8px;font-size:12px}.tp-carrier p{font-size:11px;line-height:1.5;color:var(--muted);margin:8px 0}.tp-ref{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:9px 0}.tp-ref>span{min-width:0}.tp-ref small{display:block;font-size:9px;color:var(--muted);margin-bottom:3px}.tp-ref code{font-size:12px;overflow-wrap:anywhere;user-select:all}.tp-carrier>.btn{width:100%;font-size:12px;min-height:42px}.tp-carrier>.tp-small{display:block;text-align:center;margin-top:7px}.tp-small{font-size:10px;color:var(--muted);line-height:1.5}.tp-feedback{font-size:11px;line-height:1.5;margin:12px 0 0;color:var(--muted)}.tp-feedback--error{color:var(--danger)}
     .tp-connect{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 25px;gap:12px;text-align:center;background:var(--surface-2)}.tp-connect-icon{padding:14px;background:var(--surface);border-radius:17px;color:var(--rose)}.tp-connect h3{margin:0;font-size:17px}.tp-connect p{font-size:12px;line-height:1.6;color:var(--muted);max-width:280px;margin:0}.tp-connect .btn{font-size:12px;min-height:44px;margin-top:4px}.tp-notice{display:flex;gap:8px;align-items:flex-start;padding:12px 22px;font-size:11px;line-height:1.5;background:var(--surface-2);color:var(--muted)}.tp-notice app-icon{flex:none}.tp-notice--warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 6%,var(--surface))}
     .tp-details{border-top:1px solid var(--line)}.tp-details>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px;font-size:12px;font-weight:650;cursor:pointer;list-style:none;min-height:52px}.tp-details>summary::-webkit-details-marker{display:none}.tp-details>summary>span{display:flex;align-items:center;gap:8px}.tp-details[open]>summary>app-icon{transform:rotate(180deg)}.tp-count{font-size:10px;background:var(--surface-2);padding:2px 6px;border-radius:5px;color:var(--muted)}.tp-details-body{padding:0 22px 20px}.tp-empty-events{font-size:12px;color:var(--muted);margin:0;line-height:1.6}.tp-timeline{list-style:none;margin:0 0 10px;padding:0}.tp-timeline li{display:flex;justify-content:space-between;gap:15px;border-left:2px solid var(--line);padding:0 0 18px 16px;position:relative}.tp-timeline li::before{content:'';position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--rose)}.tp-timeline li:last-child{padding-bottom:0}.tp-timeline strong{font-size:12px}.tp-timeline p{margin:4px 0;font-size:11px}.tp-timeline time{font-size:10px;color:var(--muted);line-height:1.6;flex-shrink:0}.tp-timeline .tp-planned::before{background:var(--surface);border:2px solid var(--muted)}
@@ -174,8 +176,25 @@ export class ContainerTrackingPanel {
   });
   readonly mapHref = computed(() => this.vesselHref() || trackingMapLink(this.row().position));
   readonly sourceLink = computed(() => trackingWebUrl(this.row().trackingUrl) || trackingWebUrl(this.row().trackingReference));
-  readonly arrivalDate = computed(() => this.row().orderExpectedArrival !== undefined ? this.row().orderExpectedArrival : this.row().source !== 'VOYDAR' ? this.row().eta : null);
+  readonly arrivalDate = computed(() => trackingArrival(this.row()));
+  /** The scheduled check did not come by; a failed check has its own notice. */
   readonly stale = computed(() => trackingStale(this.row(), Date.now(), this.intervalHours()));
+  /** The same status as the overview list shows for this container. */
+  readonly status = computed(() => trackingStatus(this.row(), this.configured()));
+  readonly failure = computed(() => this.configured() ? trackingFailure(this.row()) : null);
+  readonly move = computed(() => trackingMove(this.row()));
+  readonly checkedAge = computed(() => trackingAge(this.row().checkedAt));
+  readonly finished = computed(() => arrivedTerminal(this.row()));
+  private readonly referenceHint = computed(() => trackingReferenceHint(this.row().trackingReference, recognisedOf(this.row())));
+  /** What the reference was read as, for "Wat deze tracking laat zien". */
+  readonly referenceRead = computed(() => { const hint = this.referenceHint(); return hint && !hint.warn ? hint.text : null; });
+  /** The reference cannot be followed and nothing else is linked: where to put it right. */
+  readonly referenceNotice = computed(() => {
+    const item = this.row(), hint = this.referenceHint();
+    if (!hint?.warn || item.orderStatus === 'ONTVANGEN' || item.vesselImo) return null;
+    const kind = recognisedOf(item).kind;
+    return kind === 'UNKNOWN' || kind === 'MULTIPLE' ? 'Pas de referentie aan in de inkooporder.' : hint.text;
+  });
   readonly nextCheck = computed(() => {
     const item = this.row();
     if (!this.configured()) return 'Gepauzeerd';
