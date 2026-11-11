@@ -44,8 +44,12 @@ interface Owner {
 }
 
 const COMMAND_TYPES: readonly HostCommand['type'][] = ['action', 'back', 'open', 'tabRoot', 'lifecycle', 'refresh', 'insets', 'sessionCheck'];
-/** The commands a person causes on the native chrome; the page sees no pointer event for them (HostBridge.touchedAt). */
-const PERSON_COMMANDS: ReadonlySet<HostCommand['type']> = new Set(['action', 'back', 'open', 'tabRoot', 'refresh']);
+/**
+ * The commands a person causes on the native chrome; the page sees no pointer event for them (HostBridge.touchedAt).
+ * Not `refresh`: the shell also sends it by itself when the app comes to the front with a stale Home (NativeHub
+ * askHomeIfStale), and a pull to refresh is a drag on the page, whose touches the page sees.
+ */
+const PERSON_COMMANDS: ReadonlySet<HostCommand['type']> = new Set(['action', 'back', 'open', 'tabRoot']);
 /** An action that arrives while no page has bound yet waits this long for one. */
 const HELD_ACTION_MS = 3000;
 /** After a reload with a kept stack the bare page waits this long for the first navigation to end; then it goes out as on a cold start. */

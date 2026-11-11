@@ -123,7 +123,7 @@ export class HostBridge {
   /* What the reload for a newer build reads (fresh-build-service.ts); plain fields, nothing renders from them. */
   /** The app's state as the host last said it (`lifecycle`); null until it says so. */
   lifecycle: 'active' | 'background' | null = null;
-  /** When the person last used the native chrome (a bar button, back, a tab, pull to refresh, a link): the page sees no pointer for those. */
+  /** When the person last used the native chrome (a bar button, back, a tab, a link): the page sees no pointer for those. */
   touchedAt = 0;
   private asks = 0;
   private readonly lifecycleListeners = new Set<(state: 'active' | 'background') => void>();
