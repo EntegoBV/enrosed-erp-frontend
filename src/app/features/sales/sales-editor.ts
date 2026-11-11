@@ -1575,6 +1575,7 @@ function layoutKey(order: SalesOrder): string {
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
           [priceMarkOf]="priceMarkOf"
+          [perPieceOnLine]="perPieceOnLines()"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -4038,6 +4039,17 @@ export class SalesEditor {
       return next;
     });
   }
+
+  /**
+   * The picker may end its hint with "Per stuk kies je daarna op de regel": the server offers that choice on this
+   * document (a line carries perPieceChoice, so it rounds and the server knows the choice) and the draft did not
+   * just turn to exact pieces. An empty document, an exempt one or an older server: the hint does not promise it.
+   */
+  readonly perPieceOnLines = computed(() => {
+    const data = this.view();
+    return !!data && !isPartnerDocument(data.order) && data.order.markupMode !== 'CONTAINER_COST'
+      && data.priced.lines.some((line) => line.perPieceChoice === true);
+  });
 
   /**
    * After an answer: a quantity the server rounds up that nothing announced yet (a line added through the picker,

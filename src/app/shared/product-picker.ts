@@ -842,6 +842,12 @@ export class ProductPicker implements OnDestroy {
    * real money.
    */
   readonly enforceCartons = input(true);
+  /**
+   * Selling: the document's lines offer "per stuk" for a product that rounds, so the hint may point there. The
+   * sales screens set it from what the server offers on the document; elsewhere it stays false and the hint
+   * promises nothing (an exempt document keeps exact pieces, an older server has no choice).
+   */
+  readonly perPieceOnLine = input(false);
 
   readonly picked = output<{ product: Product; quantity: number }>();
   /** Multi mode: the whole batch at once, each with its quantity. */
@@ -899,12 +905,15 @@ export class ProductPicker implements OnDestroy {
 
   /**
    * Under the numbers of a batch: buying may take half a carton; selling starts each product on its own step, and
-   * loose pieces are a choice on the sales line itself (a number off the step gets "houden" there).
+   * loose pieces are a choice on the sales line itself (a number off the step gets "houden" there) - said only
+   * where that line offers it: perPieceOnLine, and a picked product that rounds.
    */
   readonly batchHint = computed(() => !this.enforceCartons()
     ? 'Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.'
     : this.batch().every((entry) => orderStepOf(entry.product) === 'CARTON')
-      ? 'Aantal stuks per product; start op één doos. Per stuk kies je daarna op de regel.'
+      ? this.perPieceOnLine() && this.batch().some((entry) => unitsPerOrderStep(entry.product) > 1)
+        ? 'Aantal stuks per product; start op één doos. Per stuk kies je daarna op de regel.'
+        : 'Aantal stuks per product; start op één doos.'
       : 'Aantal per product; elk product start op zijn eigen bestelveelvoud (volle doos, display of stuk).');
 
   isSelected(product: Product): boolean {
