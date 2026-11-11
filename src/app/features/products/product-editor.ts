@@ -3041,7 +3041,11 @@ export class ProductEditor implements OnDestroy {
       issues.push('Start gedeelde websitegegevens voor deze productreeks.');
     } else {
       if (!family.name.trim()) issues.push('Vul de publieke productnaam in.');
-      if (!family.publicHandle?.trim()) issues.push('Vul een stabiele publieke URL in.');
+      /* The server already counts a saved series without URL; twice was one point too many, and
+         the local half followed the draft, so the count dropped on the first typed character. */
+      if (!family.publicHandle?.trim() && !server.includes(MISSING_PUBLIC_URL_ISSUE)) {
+        issues.push('Vul een stabiele publieke URL in.');
+      }
       if (!family.images.length) issues.push('Voeg minstens één publieke productfoto toe.');
     }
     if (this.salesPrice() <= 0) issues.push('Stel een verkoopprijs in.');
@@ -4229,6 +4233,9 @@ export class ProductEditor implements OnDestroy {
   }
 }
 
+
+/** How the server lists a saved series without a public URL (ProductFamilyDto.publicationIssues). */
+const MISSING_PUBLIC_URL_ISSUE = 'Publieke handle ontbreekt';
 
 /** The server's own sentence of a refused request (409 or 422); null for anything else, a dropped connection included. */
 function refusalReason(failure: unknown): string | null {
