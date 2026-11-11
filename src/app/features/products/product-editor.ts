@@ -3764,8 +3764,9 @@ export class ProductEditor implements OnDestroy {
       return;
     }
     /* The series identity is checked before any question is asked: its message comes first. */
+    let identityFinalization: ProductFamilyIdentityFinalization | null;
     try {
-      this.plannedIdentityFinalization();
+      identityFinalization = this.plannedIdentityFinalization();
     } catch (failure: unknown) {
       const message = messageOf(failure, 'Opslaan mislukt');
       this.saveError.set(message);
@@ -3786,6 +3787,17 @@ export class ProductEditor implements OnDestroy {
         message: escapeHtml(priceBasisConfirmation(this.savedDraft(), draft, basisChange, this.salesPrice(),
           draft.carton.piecesPerCarton || this.autoCartonPieces(), draft.stockQuantity)),
         confirmLabel: 'Bewaren',
+      }, () => resolve(true), undefined, () => resolve(false)));
+      if (!confirmed || busy()) return;
+    }
+    /* The URL can be typed in any order now, so any Opslaan, on any tab, may be the one that makes
+       it permanent: one last look. Annuleren leaves everything typed and editable. */
+    if (identityFinalization) {
+      const url = `/products/${identityFinalization.publicHandle}`;
+      const confirmed = await new Promise<boolean>((resolve) => this.ui.confirm({
+        title: 'URL vastleggen?',
+        message: `<b>${escapeHtml(url)}</b> is daarna definitief, samen met de reeks- en variantcodes.`,
+        confirmLabel: 'Vastleggen',
       }, () => resolve(true), undefined, () => resolve(false)));
       if (!confirmed || busy()) return;
     }
