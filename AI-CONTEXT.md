@@ -3883,6 +3883,20 @@ contract `redesign/products/design.md` + `critique.md`).
 - `Location.replaceState(path, query)` without a third argument wipes the entry's
   router state: pass `this.location.getState()` (see "A refused back"), and never write
   another path than the router's into the address bar.
+- A field's editability or visibility never follows the draft value that same field edits.
+  The series identity in `product-publication-editor.ts` (Vaste koppeling & URL) closed itself
+  on the first typed character of the URL (2026-11-10): `canEditProductFamilyIdentity(draft,
+  saved)` reads the SAVED series (the `savedFamily` input), so key, URL and variant codes stay
+  open in any order until the finalising save succeeds. Around it in `product-editor.ts`:
+  `save()` plans the identity first (a refusal carries `field`, `showIdentityField` jumps to it,
+  server refusals are put in the form's labels by `identityRefusedByServer`), asks "URL
+  vastleggen?" once, and `persistFamilyDraft` takes a finalised identity into draft, baseline,
+  the `families` list and the product's own key and code at once (`adoptFinalizedIdentity`);
+  when the rest of that save is refused the message reads "Vaste koppeling & URL opgeslagen ·
+  <reden>". A photo save, a linked or unlinked colour and a copy keep the identity that is
+  being typed (`keepTypedVariantKeys`, `keepTypedIdentity`). A series made by linking colours
+  is in the same no-URL state as an imported one (`model-<id>-<id>`). Same rule for the
+  colour's name field (`setProductColour` keeps `customColour`, reset per product).
 
 ## Jaarinventaris (2026-10-09)
 
