@@ -279,7 +279,8 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
     .spp-input:focus { border-color: var(--rose); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 18%, transparent); }
     .spp-input::placeholder { color: var(--muted-2); font-style: italic; }
     .mono { font-family: var(--mono, ui-monospace, monospace); }
-    .spp-input--num { width: 96px; text-align: right; font-variant-numeric: tabular-nums; }
+    /* Room for the placeholder "standaard 4,5" in the italic placeholder face. */
+    .spp-input--num { width: 136px; text-align: right; font-variant-numeric: tabular-nums; }
     .spp-pct { display: inline-flex; align-items: center; gap: 6px; }
     .spp-pct i { color: var(--muted); font-style: normal; }
     .spp-pw { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -288,7 +289,9 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
     .spp-hint, .spp-err { grid-column: 2; margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
     .spp-err { color: var(--danger); font-weight: 600; }
     .spp-err--block { margin: 0 16px 8px; font-size: 13px; }
-    .spp-hint--block { margin: 4px 16px 6px; }
+    /* A hint of the whole block (not of one field): the block is a one-column grid, so it spans that column. A
+       grid-column: 2 here made an implicit second column and squeezed every field beside it. */
+    .spp-hint--block { grid-column: auto; margin: 4px 16px 6px; }
     .spp-switch { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 6px 16px 4px; padding: 9px 12px;
       border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); cursor: pointer; }
     .spp-switch b { display: block; font-size: 13.5px; }
@@ -303,7 +306,7 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
     .spp-address__main { display: grid; flex: 1; gap: 3px; min-width: 0; }
     .spp-address__label { color: var(--ink-2); font-size: 13px; font-weight: 650; }
     .spp-address__url { overflow-wrap: anywhere; color: var(--ink); font: 600 14px var(--mono, ui-monospace, monospace); }
-    .spp-address .spp-hint { margin: 0; }
+    .spp-address .spp-hint { grid-column: auto; margin: 0; }
     .spp-phone { --ios-inset: 0px; }
     .spp-phone .ios-banner { margin-inline: 0; }
     .spp-textbtn { flex: none; min-width: 44px; min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--rose-dark); font: inherit; font-size: 15px; font-weight: 650; cursor: pointer; }
