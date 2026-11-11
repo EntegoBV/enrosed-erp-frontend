@@ -1572,13 +1572,34 @@ export interface Payable {
   supplierFreightEur?: number;
 }
 
+/** One purchase order behind a product's coming pieces; ONTVANGEN = received, stock not booked yet. */
+export interface ExpectedStockOrder {
+  orderId: number;
+  orderNumber: string;
+  /** The container as sales names it (Herkenbare naam, else the number). */
+  name?: string | null;
+  status: 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
+  quantity: number;
+  expectedArrival: string | null;
+  /** The day the container sailed; null until then. */
+  shippedOn: string | null;
+  receivedOn?: string | null;
+  /** A partner container: its pieces are booked into the same stock. */
+  partner?: boolean;
+}
+
 /** Pieces on the water for one product. */
 export interface ExpectedStock {
   productId: number;
+  /** Ordered and departed containers only, as always. */
   quantity: number;
   expectedArrival: string | null;
   orderNumbers: string[];
   orderIds: number[];
+  /** Usable pieces of received containers that wait for their stock booking; absent from a backend before 2026-11-10. */
+  arrivedQuantity?: number;
+  /** Every order behind the figure; absent from a backend before 2026-11-10. */
+  orders?: ExpectedStockOrder[];
 }
 
 /** One named cost booked apart from the piece price, next to the inspection. */

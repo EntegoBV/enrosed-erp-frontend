@@ -1,6 +1,7 @@
 import type { Category, Product, ProductFamily } from '../core/api/models';
 import type { ProductPickerCategoryKey } from './product-picker-filters';
 import { salesPhotoUrl } from './sales-photo';
+import { matchesWords } from './search-words';
 
 const UNCATEGORISED_PICKER_CATEGORY = '__uncategorised__' as const;
 
@@ -92,9 +93,10 @@ export function productPickerFamilySections(
   }
 
   const needle = normalize(filter.query);
+  /* Every typed word, in any order: "slim dome" finds the series "Rose Dome Slim 23 cm". */
   const visibleGroups = [...groups.values()]
-    .filter((group) => !needle || groupSearchText(
-      group, categories, filter.searchTextOf).includes(needle))
+    .filter((group) => !needle || matchesWords(groupSearchText(
+      group, categories, filter.searchTextOf), needle))
     .sort((left, right) => compareGroups(left, right, sourceRank))
     .slice(0, filter.limit ?? 50);
 

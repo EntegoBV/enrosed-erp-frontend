@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnDestroy, computed, input, output,
 import { CartonQuantity } from './carton-quantity';
 import { FormsModule } from '@angular/forms';
 import { AuthImage } from '../core/api/auth-image';
-import { Category, Currency, Product, ProductFamily } from '../core/api/models';
+import { Category, Currency, ExpectedStock, Product, ProductFamily } from '../core/api/models';
 import { Sheet } from './ui';
 import { CurPipe, NumPipe } from './pipes';
 import { orderPickerBatch, orderPickerProducts } from './product-picker-order';
@@ -28,6 +28,8 @@ import {
 } from './product-picker-family-groups';
 import { salesPhotoUrl } from './sales-photo';
 import { PickerPriceHold } from './picker-price-hold';
+import { IncomingPill } from './incoming-pill';
+import { brusselsToday, incomingOf, incomingSum, type Incoming } from './product-incoming';
 
 /**
  * Picking a product with a search field instead of a dropdown.
@@ -66,7 +68,7 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
 @Component({
   selector: 'app-product-picker',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe, PickerPriceHold],
+  imports: [FormsModule, AuthImage, Sheet, CurPipe, NumPipe, PickerPriceHold, IncomingPill],
   template: `
     <app-sheet [title]="heading()" [wide]="groupByFamily()" [variant]="variant()" (closed)="cancelled.emit()">
       <div body>
@@ -81,6 +83,12 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             (ngModelChange)="searchAgain($event)"
           />
         </div>
+        <!-- What is coming could not be read: said once, here, so an empty colour is not taken for "nothing is coming". -->
+        @if (stockAware() && incomingState() !== 'ready') {
+          <button class="picker-coming-failed" type="button" [disabled]="incomingState() === 'loading'" (click)="incomingRetry.emit()">
+            {{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}
+          </button>
+        }
         @if (!chosen() && !quantityStep() && !groupByFamily()) {
           <div class="picker-filters" aria-label="Producten filteren">
             <div class="picker-filter">
@@ -320,6 +328,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                           @if (cartonNotice(entry.quantity, entry.product); as cartonNote) {
                             <div class="carton-quantity-note" role="status">{{ cartonNote }}</div>
                           }
+                          <!-- More asked than there is: what is coming answers the delivery term. -->
+                          @if (comingShort(entry); as inc) {
+                            <div class="small picker-coming"><span class="muted">{{ stockShort(entry.product) }}</span> <app-incoming-pill variant="inline" [value]="inc" /></div>
+                          }
                         </div>
                         <input class="input num right picker-batch__qty" type="number" min="0" step="1" inputmode="numeric"
                                [attr.aria-label]="'Aantal ' + salesUnit(entry.product).plural + ' ' + variantLabel(entry.product) + ' van ' + group.name"
@@ -409,6 +421,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                               </span>
                             }
                           </span>
+                          <!-- A folded series says what is coming for its colours that are empty or tight. -->
+                          @if (groupComing(group); as inc) {
+                            <span class="picker-coming"><app-incoming-pill variant="inline" [value]="inc" /></span>
+                          }
                         </span>
                         <svg class="picker-family__chevron" viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
                           <path d="m6.5 8 3.5 3.5L13.5 8" fill="none" stroke="currentColor"
@@ -458,9 +474,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
                                 {{ product.sku }} · {{ product.carton.piecesPerCarton }}/doos
                               </span>
                               @if (stockAware()) {
-                                <span class="picker-item__meta row" style="gap:5px">
+                                <span class="picker-item__meta row wrap" style="gap:3px 5px">
                                   <span class="stock-dot" [class]="'stock-dot--' + stockLevel(product)"></span>
                                   <span>{{ stockLabel(product) }}</span>
+                                  @if (coming(product); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                                 </span>
                               }
                             </span>
@@ -660,6 +677,10 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-family__dots { min-width: 0; display: inline-flex; align-items: center; gap: 3px; }
     .picker-family__dots i { width: 9px; height: 9px; flex: none; border: 1px solid rgb(0 0 0 / 14%); border-radius: 50%; }
     .picker-family__dots small { font-size: 9px; }
+    .picker-coming { display: block; min-width: 0; font-size: 11px; line-height: 1.35; }
+    .picker-coming-failed { display: block; width: 100%; min-height: 44px; margin: -8px 0 4px; padding: 0 2px; border: 0; background: none;
+      color: var(--rose-dark); font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
+    .picker-coming-failed:disabled { color: var(--muted); cursor: default; }
     .picker-family__chevron { color: var(--muted); transition: transform .16s ease; }
     .picker-family--open .picker-family__chevron { transform: rotate(180deg); }
     .picker-family__select { width: 44px; min-height: 44px; display: grid; place-items: center; border: 0;
@@ -851,6 +872,15 @@ export class ProductPicker implements OnDestroy {
   readonly mode = input<'single' | 'multi'>('single');
   /** Whether stock levels and shortfall warnings are shown - selling from stock cares, buying does not. */
   readonly stockAware = input(true);
+  /**
+   * What is coming per product id (GET expected-stock?arrived=true), from a host that sells from stock. A product
+   * that is empty or tight then says so in its stock line, summed on its folded series; empty for every other host.
+   */
+  readonly incoming = input<ReadonlyMap<number, ExpectedStock>>(new Map());
+  /** 'failed': the host has no answer to pass in `incoming`; one line under the search says so. 'loading': its retry runs. */
+  readonly incomingState = input<'ready' | 'loading' | 'failed'>('ready');
+  /** The line under the search was pressed: the host loads what is coming again. */
+  readonly incomingRetry = output<void>();
   /** Purchasing opts in because its source is already in canonical catalogue order. */
   readonly preserveSourceOrder = input(false);
 
@@ -1107,9 +1137,56 @@ export class ProductPicker implements OnDestroy {
     return product.stockQuantity < (product.carton.piecesPerCarton ?? 1) * 10 ? 'low' : 'ok';
   }
 
+  private readonly today = brusselsToday();
+  private readonly comingByProduct = computed(() => {
+    const map = new Map<number, Incoming>();
+    if (!this.stockAware()) return map;
+    for (const [id, item] of this.incoming()) {
+      const value = incomingOf(item, this.today);
+      if (value) map.set(id, value);
+    }
+    return map;
+  });
+  /** Per series key: its colours that are empty or tight, together. */
+  private readonly comingByGroup = computed(() => {
+    const map = new Map<string, Incoming>();
+    if (!this.comingByProduct().size) return map;
+    for (const section of this.familySections()) {
+      for (const group of section.groups) {
+        const value = incomingSum(group.products.filter((product) => this.coming(product)).map((product) => this.incoming().get(product.id!)), this.today);
+        if (value) map.set(group.key, value);
+      }
+    }
+    return map;
+  });
+
+  /** What is coming for a product whose stock is empty, tight or unconfirmed; null when it has plenty or nothing comes. */
+  coming(product: Product): Incoming | null {
+    if (product.id == null || this.stockLevel(product) === 'ok') return null;
+    return this.comingByProduct().get(product.id) ?? null;
+  }
+
+  groupComing(group: ProductPickerFamilyGroup): Incoming | null {
+    return this.comingByGroup().get(group.key) ?? null;
+  }
+
+  /** The quantity step: what is coming once more is asked than there is in stock (or the stock is not confirmed). */
+  comingShort(entry: { product: Product; quantity: number }): Incoming | null {
+    const product = entry.product;
+    if (product.id == null || (product.inventoryKnown && entry.quantity <= Math.max(0, product.stockQuantity))) return null;
+    return this.comingByProduct().get(product.id) ?? null;
+  }
+
+  /** "40 op voorraad" beside what is coming: stockLabel's words, without the unit (the quantity field beside it shows none either). */
+  stockShort(product: Product): string {
+    if (!product.inventoryKnown) return 'voorraad nog niet bevestigd';
+    return product.stockQuantity > 0 ? `${product.stockQuantity.toLocaleString('nl-BE')} op voorraad` : 'geen voorraad';
+  }
+
   stockLabel(product: Product): string {
     if (!product.inventoryKnown) return 'voorraad nog niet bevestigd';
-    if (product.stockQuantity <= 0) return 'geen voorraad — op bestelling';
+    /* What is coming says more than "op bestelling". */
+    if (product.stockQuantity <= 0) return this.coming(product) ? 'geen voorraad' : 'geen voorraad — op bestelling';
     return `${product.stockQuantity.toLocaleString('nl-BE')} ${productSalesUnit(product).plural} op voorraad`;
   }
 

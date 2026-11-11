@@ -11,7 +11,7 @@ import { HostBridge, type HostActionEvent, type HostPageInput } from '../../core
 import { menuRows } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
-import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { EurPipe } from '../../shared/pipes';
 import { escapeHtml, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { COLOUR_SWATCHES } from '../../core/api/geo';
@@ -24,7 +24,9 @@ import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import {
   SORT_OPTIONS, STATUS_OPTIONS, listQueryString, readListQuery, sortButtonLabel, type ListCategory, type ListSort, type ListState, type ListStatus,
 } from './product-list-query';
-import { onderwegSummary, type Onderweg } from './product-figures';
+import { IncomingPill } from '../../shared/incoming-pill';
+import { brusselsToday, incomingMap, incomingSum, type Incoming } from '../../shared/product-incoming';
+import { matchesWords } from '../../shared/search-words';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { Sheet } from '../../shared/ui';
@@ -82,9 +84,9 @@ interface ProductSwipe {
   selector: 'app-product-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
-  imports: [Skeleton, RouterLink, AuthImage, PageHeader, Icon, EurPipe, NumPipe, DateNlPipe, NgTemplateOutlet,
+  imports: [Skeleton, RouterLink, AuthImage, PageHeader, Icon, EurPipe, NgTemplateOutlet,
     PhotoExportSheet, LoadError, ContextMenu, Sheet, ProductListTable,
-    ProductListStyles],
+    ProductListStyles, IncomingPill],
   template: `
     <app-page-header title="Producten" [subtitle]="listSubtitle()" [host]="hostPage" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
@@ -152,6 +154,13 @@ interface ProductSwipe {
             <span>Publicatiestatus en varianten zijn niet geladen.</span>
             <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="familyLoading()" [disabled]="familyLoading()"
                     (click)="retryFamilies()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
+          </div>
+        }
+        @if (incomingFailed()) {
+          <div class="family-load-warning pl-warning" role="status">
+            <span>Onderweg is niet geladen.</span>
+            <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="incomingLoading()" [disabled]="incomingLoading()"
+                    (click)="retryIncoming()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
           </div>
         }
 
@@ -238,6 +247,13 @@ interface ProductSwipe {
             </button>
           }
         </div>
+        @if (incomingFailed()) {
+          <div class="family-load-warning plp-warning" role="status">
+            <span>Onderweg is niet geladen.</span>
+            <button class="wk-btn wk-btn--sm" type="button" [class.is-busy]="incomingLoading()" [disabled]="incomingLoading()"
+                    (click)="retryIncoming()"><app-icon name="refresh" [size]="13" />Opnieuw proberen</button>
+          </div>
+        }
         @if (familyLoadError()) {
           <div class="family-load-warning plp-warning" role="alert">
             <span>Publicatiestatus en varianten zijn niet geladen.</span>
@@ -302,7 +318,7 @@ interface ProductSwipe {
         <ng-container *ngTemplateOutlet="phoneRow; context: { $implicit: group.products[0], nested: false }" />
       } @else {
         <!-- The series head folds its colours open in place; the whole row is the toggle. -->
-        @let onway = groupOnderweg(group);
+        @let onway = groupIncoming(group);
         <button class="plp-row plp-head" type="button" [class.plp-head--open]="isOpen(group)"
                 [attr.aria-expanded]="isOpen(group)" (click)="toggle(group)">
           @if (group.photo) {
@@ -342,10 +358,7 @@ interface ProductSwipe {
           <span class="plp-end" [attr.aria-label]="endLabel(group.stock, group.lead, onway)">
             <strong [class.zero]="!group.stock">{{ stockLabel(group.stock) }}</strong>
             <small>{{ group.stock === 1 ? salesUnit(group.lead).singular : salesUnit(group.lead).plural }}</small>
-            @if (onway) {
-              <span class="exp">+{{ onway.quantity | num }}</span>
-              @if (onway.earliest) { <small class="plp-date">{{ onway.earliest | dateNl }}</small> }
-            }
+            @if (onway) { <app-incoming-pill variant="phone" [value]="onway" [strong]="!group.stock" /> }
           </span>
         </button>
         @if (isOpen(group)) {
@@ -357,7 +370,7 @@ interface ProductSwipe {
     </ng-template>
 
     <ng-template #phoneRow let-product let-nested="nested">
-      @let exp = expectedFor(product);
+      @let onway = incomingFor(product);
       <div class="swipe plp-swipe" [class.plp-swipe--nested]="nested"
            [class.swipe--open]="swiped() === product.id"
            [class.swipe--dragging]="draggingProductId() === product.id"
@@ -402,13 +415,10 @@ interface ProductSwipe {
             </span>
           </span>
           <span class="plp-end" [attr.title]="stockBreakdown(product)"
-                [attr.aria-label]="endLabel(stockOf(product), product, exp ? { quantity: exp.quantity, earliest: exp.expectedArrival } : null)">
+                [attr.aria-label]="endLabel(stockOf(product), product, onway)">
             <strong [class.zero]="!stockOf(product)">{{ stockLabel(stockOf(product)) }}</strong>
             <small>{{ stockOf(product) === 1 ? salesUnit(product).singular : salesUnit(product).plural }}</small>
-            @if (exp) {
-              <span class="exp" [attr.title]="'Op ' + exp.orderNumbers.join(', ')">+{{ exp.quantity | num }}</span>
-              @if (exp.expectedArrival) { <small class="plp-date">{{ exp.expectedArrival | dateNl }}</small> }
-            }
+            @if (onway) { <app-incoming-pill variant="phone" [value]="onway" [strong]="!stockOf(product)" /> }
           </span>
         </a>
         <button class="swipe__delete" type="button"
@@ -799,19 +809,16 @@ export class ProductList implements ProductListTableHost {
     return [...groups.values()].filter((allDemo) => !allDemo).length;
   });
 
-  /** What a series has on the way: the sum, the earliest date, its orders. */
-  groupOnderweg(group: ProductGroup): Onderweg | null {
-    return onderwegSummary(group.products.map((product) => this.expectedFor(product)));
+  /** What a series has coming: its colours together, as one status. */
+  groupIncoming(group: ProductGroup): Incoming | null {
+    return this.groupIncomingByKey().get(group.key) ?? null;
   }
 
-  /** The end column read aloud: "6.000 bowls, +15.000 verwacht, 20/12/2026". */
-  endLabel(stock: number, product: Product, onway: { quantity: number; earliest: string | null } | null): string {
+  /** The end column read aloud: "6.000 bowls, +15.000 Onderweg, verwacht 20/12/2026". */
+  endLabel(stock: number, product: Product, onway: Incoming | null): string {
     const unit = this.salesUnit(product);
     const parts = [`${this.stockLabel(stock)} ${stock === 1 ? unit.singular : unit.plural}`];
-    if (onway) {
-      parts.push(`+${onway.quantity.toLocaleString('nl-BE')} verwacht`);
-      if (onway.earliest) parts.push(onway.earliest.split('-').reverse().join('/'));
-    }
+    if (onway) parts.push(onway.label);
     return parts.join(', ');
   }
 
@@ -855,10 +862,24 @@ export class ProductList implements ProductListTableHost {
         this.activeLocations.set(locations.filter((l) => l.active && l.id !== null).sort((a, b) => a.position - b.position));
       })
       .catch(() => undefined);
-    void this.sourcing.expectedStock()
-      .then((expected) => this.expected.set(new Map(expected.map((item) => [item.productId, item]))))
-      .catch(() => undefined);
+    this.loadIncoming();
     this.loading.set(false);
+  }
+
+  /** What is coming per product; a failure says so with a retry and keeps what the list already had. */
+  private loadIncoming(): void {
+    this.incomingLoading.set(true);
+    void this.sourcing.incomingStock()
+      .then((expected) => {
+        this.expected.set(new Map(expected.map((item) => [item.productId, item])));
+        this.incomingFailed.set(false);
+      })
+      .catch(() => this.incomingFailed.set(true))
+      .finally(() => this.incomingLoading.set(false));
+  }
+
+  retryIncoming(): void {
+    if (!this.incomingLoading()) this.loadIncoming();
   }
 
   async retryFamilies(): Promise<void> {
@@ -896,11 +917,12 @@ export class ProductList implements ProductListTableHost {
         && (!this.publicationActive(product) || this.orderAppStatus(product) !== 'PUBLISHED')) return false;
     if (status === 'INACTIVE' && product.active) return false;
     if (!needle) return true;
-    return [
+    /* Every typed word, in any order: "slim dome" finds "Rose Dome Slim 23 cm". */
+    return matchesWords([
       product.sku, product.name, product.colour, product.variantSize,
       product.barcodeInner, product.barcodeOuter, product.hsCode,
       this.familyFor(product)?.name, this.familyFor(product)?.familyKey,
-    ].join(' ').toLowerCase().includes(needle);
+    ].join(' ').toLowerCase(), needle);
   }
 
   /**
@@ -974,7 +996,7 @@ export class ProductList implements ProductListTableHost {
        top (most first), then what is on the water, then the empty shelves,
        and demo pieces - not for sale - at the very bottom. */
     const tier = (p: Product) =>
-      p.demo ? 3 : (this.stockOf(p) > 0 ? 0 : (this.expectedFor(p) ? 1 : 2));
+      p.demo ? 3 : (this.stockOf(p) > 0 ? 0 : (this.incomingFor(p) ? 1 : 2));
     switch (this.sortKey()) {
       case 'STOCK_SMART': return (a, b) => tier(a) - tier(b)
         || (this.stockOf(b) - this.stockOf(a))
@@ -1010,7 +1032,7 @@ export class ProductList implements ProductListTableHost {
     }
     if (key === 'STOCK_SMART') {
       const tier = (g: ProductGroup) => g.products.every((p) => p.demo) ? 3
-        : (g.stock > 0 ? 0 : (g.products.some((p) => this.expectedFor(p)) ? 1 : 2));
+        : (g.stock > 0 ? 0 : (g.products.some((p) => this.incomingFor(p)) ? 1 : 2));
       return tier(a) - tier(b) || (b.stock - a.stock)
         || a.name.localeCompare(b.name, 'nl', { numeric: true, sensitivity: 'base' });
     }
@@ -1088,12 +1110,18 @@ export class ProductList implements ProductListTableHost {
   private readonly levels = signal<StockLevel[]>([]);
   private readonly expected = signal(new Map<number, ExpectedStock>());
 
-  expectedFor(product: Product): ExpectedStock | null {
-    return this.expected().get(product.id!) ?? null;
-  }
+  /** Today in Belgium: what "Binnenkort" and a passed date are measured against. */
+  private readonly today = brusselsToday();
+  private readonly incoming = computed(() => incomingMap([...this.expected().values()], this.today));
+  private readonly groupIncomingByKey = computed(() => new Map(this.groups().map((group) =>
+    [group.key, incomingSum(group.products.map((product) => this.expected().get(product.id!)), this.today)])));
+  /** The expected-stock call failed: the list says so with a retry instead of an empty Onderweg. */
+  readonly incomingFailed = signal(false);
+  readonly incomingLoading = signal(false);
 
-  expectedForGroup(group: ProductGroup): number {
-    return group.products.reduce((sum, product) => sum + (this.expectedFor(product)?.quantity ?? 0), 0);
+  /** What is coming for one product: state, word, figure and date; null when nothing is. */
+  incomingFor(product: Product): Incoming | null {
+    return this.incoming().get(product.id!) ?? null;
   }
   private readonly locationNames = signal(new Map<number, string>());
   private readonly stockTotals = computed(() => {

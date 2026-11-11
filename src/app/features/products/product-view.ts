@@ -13,6 +13,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../../core/api/product-supplier-agreement-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { brusselsToday, incomingOf } from '../../shared/product-incoming';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Category, StockLevel, Product, ProductCostHistoryEntry, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
@@ -181,11 +182,26 @@ export type { ReceivedContainer } from './received-containers';
           </section>
         </app-ios-nav>
 
-        @if (expected(); as exp) {
-          <a class="pph-onway" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
-            <span>+{{ exp.quantity | num }} {{ unitFor(product, exp.quantity) }} onderweg</span>
-            <small>@for (order of exp.orderNumbers; track order) {@if (!$first) {, }<span class="pph-nw">{{ order }}</span>}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
-          </a>
+        <!-- What is coming: one bar per purchase order, first arrival first, in the tone of its state. -->
+        @if (incoming(); as inc) {
+          @if (inc.detailed) {
+            @for (order of inc.orders; track order.orderId) {
+              <a class="pph-onway" [class.pph-onway--warn]="order.state === 'AANGEKOMEN'" [class.pph-onway--quiet]="order.state === 'BESTELD'"
+                 [routerLink]="['/purchasing', order.orderId]">
+                <span>+{{ order.quantity | num }} {{ unitFor(product, order.quantity ?? 0) }} · {{ order.word }}</span>
+                <small><span class="pph-nw">{{ order.name }}</span> · {{ order.when }} ›</small>
+              </a>
+            }
+          } @else if (inc.orders.length) {
+            <a class="pph-onway" [routerLink]="['/purchasing', inc.orders[0].orderId]" [attr.title]="inc.title">
+              <span>+{{ inc.total | num }} {{ unitFor(product, inc.total) }} · {{ inc.word }}</span>
+              <small>@for (order of inc.orders; track order.orderId) {@if (!$first) {, }<span class="pph-nw">{{ order.name }}</span>} · {{ inc.when }} ›</small>
+            </a>
+          }
+        } @else if (incomingFailed()) {
+          <!-- Stays while its retry runs, so a press is answered and the bar does not come and go. -->
+          <button class="pph-onway pph-onway--quiet" type="button" [disabled]="incomingLoading()" (click)="retryIncoming()">
+            <span>Onderweg niet geladen</span><small>{{ incomingLoading() ? 'laden…' : 'Opnieuw ›' }}</small></button>
         }
 
         <!-- 1 · what customers see for this colour -->
@@ -823,6 +839,15 @@ export class ProductView {
   /* The stock book, fetched the first time the tile is opened. */
   /** Pieces on the water for this product, from ordered and shipped containers. */
   readonly expected = signal<ExpectedStock | null>(null);
+  /** Today in Belgium: what "Binnenkort" and a passed date are measured against. */
+  private readonly today = brusselsToday();
+  /** The same as one status: state, word, figure, date and every order behind it. */
+  readonly incoming = computed(() => incomingOf(this.expected(), this.today));
+  /** The expected-stock call failed: the page says so with a retry instead of "niets besteld". Stays set while the retry runs. */
+  readonly incomingFailed = signal(false);
+  /** The call is out: "niets besteld" is only said once it answered without an entry for this product. */
+  readonly incomingLoading = signal(false);
+  private incomingAsk = 0;
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
@@ -1306,13 +1331,39 @@ export class ProductView {
     void this.loadProduct(this.loadedId);
   }
 
+  /**
+   * What is coming for this product; the previous product's status never lingers and a late answer is dropped.
+   * While the call is out the page says "laden…", never "niets besteld"; a retry keeps its failed notice until it answers.
+   */
+  private loadIncoming(id: number, version: number, retry = false): void {
+    const ask = ++this.incomingAsk;
+    const current = () => version === this.loadVersion && ask === this.incomingAsk;
+    this.expected.set(null);
+    if (!retry) this.incomingFailed.set(false);
+    this.incomingLoading.set(true);
+    void this.sourcing.incomingStock()
+      .then((items) => {
+        if (!current()) return;
+        this.expected.set(items.find((item) => item.productId === id) ?? null);
+        this.incomingFailed.set(false);
+        this.incomingLoading.set(false);
+      })
+      .catch(() => {
+        if (!current()) return;
+        this.incomingFailed.set(true);
+        this.incomingLoading.set(false);
+      });
+  }
+
+  retryIncoming(): void {
+    if (this.loadedId !== null && !this.incomingLoading()) this.loadIncoming(this.loadedId, this.loadVersion, true);
+  }
+
   private async loadProduct(id: number): Promise<void> {
     void this.loadCatalogueNavigation();
     this.loadStockHistory(id);
-    void this.sourcing.expectedStock()
-      .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
-      .catch(() => this.expected.set(null));
     const version = ++this.loadVersion;
+    this.loadIncoming(id, version);
     this.loadedId = id;
     this.loadError.set(null);
     this.product.set(null);
