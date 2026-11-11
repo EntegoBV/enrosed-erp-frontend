@@ -63,7 +63,7 @@ import { PartnerReportSheet } from './partner-report-sheet';
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" (closed)="open.set(null)" (changed)="changed($event)" />
+      <app-partner-report-sheet [report]="report" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" />
     }
   `,
   styles: `

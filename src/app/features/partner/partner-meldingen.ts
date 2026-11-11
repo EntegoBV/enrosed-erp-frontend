@@ -36,7 +36,7 @@ import { PartnerReportSheet } from './partner-report-sheet';
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" (closed)="open.set(null)" (changed)="changed($event)" />
+      <app-partner-report-sheet [report]="report" [related]="reports() ?? []" (closed)="open.set(null)" (changed)="changed($event)" />
     }
   `,
   styles: `
@@ -101,6 +101,16 @@ export class PartnerMeldingen {
     this.reports.update((list) => list?.map((item) => (item.id === report.id ? report : item)) ?? list);
     this.data.upsertReport(report);
     void this.data.load();
+    void this.refreshShown();
+  }
+
+  /** Undoing one melding can free another (a buyback let go of its sale): the first page is read again into the list. */
+  private async refreshShown(): Promise<void> {
+    try {
+      const page = await this.api.reports(null, PARTNER_REPORT_PAGE_SIZE);
+      const fresh = new Map(page.reports.map((report) => [report.id, report]));
+      this.reports.update((list) => list?.map((item) => fresh.get(item.id) ?? item) ?? list);
+    } catch { /* the list keeps what it showed; the next visit reads it again */ }
   }
 
   home(): void {

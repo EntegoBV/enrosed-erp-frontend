@@ -64,6 +64,7 @@ const UNIT_PRICE = new Intl.NumberFormat('nl-BE', { style: 'currency', currency:
           }
           <div class="line line--total"><span>Netto</span><b>{{ eur(t.netEur) }}</b></div>
         </div>
+        @if (undoBlocker(); as why) { <p class="why">{{ why }}</p> }
         @if (error()) { <div class="error" role="alert">{{ error() }}</div> }
       </div>
       <div foot class="foot">
@@ -98,6 +99,7 @@ const UNIT_PRICE = new Intl.NumberFormat('nl-BE', { style: 'currency', currency:
     .line--total{margin-top:4px;padding-top:10px;border-top:1px solid var(--line);color:var(--ink);font-size:17px;font-weight:700}
     .line--total b{font-size:20px;font-weight:800}
     .error{padding:12px 14px;border-radius:16px;background:var(--danger-soft);color:#83261e;font-size:15px;line-height:1.4}
+    .why{margin:0;padding:0 4px;color:var(--ink-2);font-size:14.5px;line-height:1.4}
     .foot{display:grid;width:100%}
     .undo{color:var(--danger)}
   `,
@@ -107,6 +109,8 @@ export class PartnerReportSheet {
   private readonly ui = inject(Ui);
 
   readonly report = input.required<PartnerReport>();
+  /** The other meldingen on the screen: to name the buyback that keeps this one from being undone. */
+  readonly related = input<readonly PartnerReport[]>([]);
   readonly closed = output<void>();
   /** The melding after Ongedaan maken (status VOIDED). */
   readonly changed = output<PartnerReport>();
@@ -120,6 +124,22 @@ export class PartnerReportSheet {
   readonly label = computed(() => KIND_LABEL[this.kind()]);
   readonly icon = computed(() => KIND_ICON[this.kind()]);
   readonly tone = computed(() => KIND_TONE[this.kind()]);
+
+  /**
+   * Why an open melding cannot be undone: a later buyback of one of its products took back pieces of this sale
+   * (the server mirrors a buyback on the newest open sale). He can undo that buyback himself; the line names it
+   * when exactly one shown melding fits.
+   */
+  readonly undoBlocker = computed<string | null>(() => {
+    const report = this.report();
+    if (report.canUndo || report.status !== 'OPEN') return null;
+    const sold = new Set(report.entries.filter((entry) => entry.sale).map((entry) => entry.productId));
+    const later = this.related().filter((other) => other.id > report.id && other.status === 'OPEN' && other.canUndo
+      && other.entries.some((entry) => entry.buyback && sold.has(entry.productId)));
+    return later.length === 1
+      ? `Terugkoop ${later[0].number} hoort bij deze verkoop. Maak eerst ${later[0].number} ongedaan.`
+      : 'Een latere terugkoop hoort bij deze verkoop. Maak die eerst ongedaan.';
+  });
 
   askUndo(): void {
     const report = this.report();
