@@ -378,7 +378,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
         </div>
         <span class="pc-set__hint">cm</span>
       </div>
-      <p class="pc-set__hint">incl. pallet · max {{ pallet().maxWeightKg | num }} kg per pallet</p>
+      <p class="pc-set__hint">max {{ pallet().maxWeightKg | num }} kg per pallet</p>
     </ng-template>
 
     @if (palletSheet() && !desktop.active()) {
