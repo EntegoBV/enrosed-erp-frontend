@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import type {
   PartnerRecentSale, PartnerReportRequest, PartnerReportResult, PartnerStockTile,
@@ -107,8 +107,8 @@ const PRICE_JUMP = 5;
           @if (money.costsExceedGross) { <p class="bad" role="alert">De kosten zijn hoger dan de opbrengst</p> }
         </section>
 
-        @if (error()) { <div class="error" role="alert">{{ error() }}</div> }
         @if (desk.active()) {
+          @if (error()) { <div class="error" role="alert">{{ error() }}</div> }
           <button class="ios-capsule ios-capsule--accent ios-capsule--block send" type="button" [disabled]="!d.complete() || busy()" (click)="send()">
             {{ busy() ? 'Bezig…' : submitLabel() }}
           </button>
@@ -119,6 +119,8 @@ const PRICE_JUMP = 5;
 
     @if (!desk.active()) {
       <div class="bar">
+        <!-- A refusal stands right above Melden: on the phone the side column is far below the cards. -->
+        @if (error()) { <p class="bar__error" role="alert">{{ error() }}</p> }
         <div class="bar__sum"><small>Netto</small><b [class.is-neg]="t.netEur < 0">{{ eur(t.netEur) }}</b></div>
         <button class="ios-capsule ios-capsule--accent bar__send" type="button" [disabled]="!d.complete() || busy()" (click)="send()">
           {{ busy() ? 'Bezig…' : submitLabel() }}
@@ -176,8 +178,9 @@ const PRICE_JUMP = 5;
     .send{min-height:54px;font-size:17px}
     .hint{margin:0;color:var(--muted);font-size:13.5px;text-align:center}
     .layout{margin-bottom:16px}
-    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
+    .bar{position:sticky;bottom:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
     .bar::before{content:'';position:absolute;inset:0;z-index:-1;backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
+    .bar__error{flex:1 0 100%;max-height:30dvh;margin:0;overflow-y:auto;padding:10px 12px;border-radius:14px;background:var(--danger-soft);color:#83261e;font-size:14.5px;font-weight:500;line-height:1.4}
     .bar__sum{display:grid;flex:1;min-width:0}
     .bar__sum small{color:var(--muted);font-size:12.5px;font-weight:600}
     .bar__sum b{font-size:21px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -201,6 +204,8 @@ export class PartnerEntry {
   /** Sends the body; a refusal's message is shown in place, the draft stays for a retry (same clientRef). */
   readonly submit = input.required<(body: PartnerReportRequest) => Promise<PartnerReportResult>>();
   readonly done = output<PartnerReportResult>();
+  /** Melden was refused (shown in place): the screen may read the stock again, the cards then say which is too many. */
+  readonly refused = output<void>();
   readonly kindChanged = output<PartnerKind>();
 
   readonly busy = signal(false);
@@ -209,6 +214,15 @@ export class PartnerEntry {
 
   readonly kindOptions: SegmentOption[] = PARTNER_KINDS.map((kind) => ({ id: kind, label: KIND_SHORT[kind] }));
   readonly extraModes: SegmentOption[] = [{ id: 'AMOUNT', label: '€' }, { id: 'PCT', label: '%' }];
+
+  constructor() {
+    /* A refusal is about what was sent: once the form changes it goes (a card still too many says so itself). */
+    effect(() => {
+      const draft = this.draft();
+      draft.entries(); draft.soldOn(); draft.extra();
+      untracked(() => this.error.set(null));
+    });
+  }
 
   private readonly stockById = computed(() => new Map(this.stock().map((tile) => [tile.productId, tile])));
   private readonly recentById = computed(() => new Map(this.recent().map((tile) => [tile.productId, tile])));
@@ -225,10 +239,13 @@ export class PartnerEntry {
     return source.filter((tile) => !draft.has(tile.productId));
   });
 
-  /** Why Melden waits, in one line (only once something is on the form). */
+  /**
+   * Melden waits for a quantity or a price: one line that says so. Not when everything is filled in: then the
+   * card, the date, the extra kost or the costs say in red what stops it, and this line would send him looking.
+   */
   readonly hint = computed<string | null>(() => {
     const draft = this.draft();
-    if (!draft.entries().length || draft.complete()) return null;
+    if (!draft.entries().length || draft.filled()) return null;
     return draft.kind() === 'terugkoop'
       ? 'Vul bij elk product het aantal en de klokprijs in.'
       : 'Vul bij elk product het aantal en de prijs in.';
@@ -304,6 +321,7 @@ export class PartnerEntry {
       this.done.emit(result);
     } catch (failure: unknown) {
       this.error.set(messageOf(failure, 'Melden lukt nu niet. Probeer het opnieuw.'));
+      this.refused.emit();
     } finally {
       this.busy.set(false);
     }

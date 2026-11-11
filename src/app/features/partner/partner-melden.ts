@@ -80,7 +80,7 @@ const DAYS_BACK = 90;
     } @else {
       <app-partner-head title="Melden" backLabel="Terug" (back)="back()" />
       <app-partner-entry [draft]="draft" [stock]="o.stock" [recent]="o.recentSales" [today]="o.serverDate"
-                         [submit]="send" (done)="sent($event)" (kindChanged)="kindChanged($event)" />
+                         [submit]="send" (done)="sent($event)" (refused)="reload()" (kindChanged)="kindChanged($event)" />
     }
   `,
   styles: `
@@ -239,6 +239,7 @@ export class PartnerMelden implements HasUnsavedChanges {
     void this.router.navigate(['/partner']);
   }
 
+  /** A retry of the overview, and after a refusal of Melden: the stock may have changed meanwhile (the cards then say where). */
   reload(): void {
     void this.data.load();
   }

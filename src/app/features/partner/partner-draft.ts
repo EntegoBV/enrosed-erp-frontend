@@ -144,16 +144,19 @@ export class MeldingDraft {
     return null;
   });
 
-  /** Every product has a quantity and a price for what it shows, nothing is over the stock, no refusal ahead. */
-  readonly complete = computed(() => {
+  /** Every product has a quantity and a price for what it shows (the sale, the buyback once it shows). */
+  readonly filled = computed(() => {
     const entries = this.entries();
-    if (!entries.length) return false;
     const kind = this.kind();
-    const filled = entries.every((entry) =>
-      (kind === 'terugkoop' || (partComplete(entry.sale) && !this.overLimit(entry)))
+    return entries.length > 0 && entries.every((entry) =>
+      (kind === 'terugkoop' || partComplete(entry.sale))
       && (!this.showsBuyback(entry, kind) || partComplete(entry.buyback)));
-    return filled && !this.extraProblem() && !this.dateProblem() && !this.money().costsExceedGross;
   });
+
+  /** Filled in, nothing is over the stock, no refusal ahead. */
+  readonly complete = computed(() =>
+    this.filled() && !this.entries().some((entry) => this.overLimit(entry))
+    && !this.extraProblem() && !this.dateProblem() && !this.money().costsExceedGross);
 
   /** Something was typed that a swipe back would lose. */
   readonly dirty = computed(() =>
