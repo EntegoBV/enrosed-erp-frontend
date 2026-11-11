@@ -261,6 +261,7 @@ interface FamilyFeaturedOption {
                 <input
                   class="input mono"
                   [id]="keyFieldId"
+                  maxlength="255"
                   [ngModel]="family.familyKey"
                   [readOnly]="!identityEditable()"
                   (ngModelChange)="patch({ familyKey: $event })"
@@ -277,6 +278,7 @@ interface FamilyFeaturedOption {
                   <input
                     class="input mono"
                     [id]="urlFieldId"
+                    maxlength="255"
                     [ngModel]="family.publicHandle"
                     [readOnly]="!identityEditable()"
                     (ngModelChange)="patch({ publicHandle: $event })"
@@ -306,6 +308,7 @@ interface FamilyFeaturedOption {
                       <input
                         class="input mono"
                         [id]="variantFieldId(member.productId)"
+                        maxlength="255"
                         [ngModel]="member.canonicalVariantKey ?? ''"
                         [readOnly]="!identityEditable()"
                         (ngModelChange)="patchCanonicalVariantKey(member.productId, $event)"

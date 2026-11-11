@@ -5,6 +5,8 @@ import type {
 } from '../../core/api/models';
 
 const TECHNICAL_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Codes of the old webshop; the server takes no new one (ProductValidator.validateCanonicalVariantKey). */
+const RETIRED_VARIANT_KEY_PREFIX = 'shopify-';
 
 /** The heading of the section "Vaste koppeling & URL": where a refusal without a field of its own lands. */
 export const IDENTITY_SECTION_ID = 'publication-identity-title';
@@ -129,6 +131,13 @@ export function planProductFamilyIdentityFinalization(
       `De interne variantcode van SKU ${sku}`,
       field,
     );
+    /* The server refuses these with "herlaad het product", which helps nobody in this form. */
+    if (canonicalVariantKey.startsWith(RETIRED_VARIANT_KEY_PREFIX)) {
+      throw new ProductFamilyIdentityFinalizationError(
+        `De interne variantcode van SKU ${sku} mag niet met ${RETIRED_VARIANT_KEY_PREFIX} beginnen.`,
+        field,
+      );
+    }
     if (seenTargetKeys.has(canonicalVariantKey)) {
       throw new ProductFamilyIdentityFinalizationError(
         `De interne variantcode ${canonicalVariantKey} is meer dan één keer ingevuld.`,
