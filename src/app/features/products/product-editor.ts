@@ -58,7 +58,7 @@ import {
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
 import {
-  hasFinalizableDraftIdentity, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
+  hasFinalizableDraftIdentity, identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
   planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError,
 } from './product-family-identity';
 import {
@@ -3918,7 +3918,14 @@ export class ProductEditor implements OnDestroy {
     } else {
       const finalization = planProductFamilyIdentityFinalization(previous, desired);
       if (finalization) {
-        const finalized = await this.catalog.finalizeDraftProductFamilyIdentity(desired.id, finalization);
+        let finalized: ProductFamily;
+        try {
+          finalized = await this.catalog.finalizeDraftProductFamilyIdentity(desired.id, finalization);
+        } catch (failure: unknown) {
+          /* Refused as a whole, nothing changed: said in the words of the form, at its field. */
+          const reason = refusalReason(failure);
+          throw reason ? identityRefusedByServer(reason, desired) : failure;
+        }
         /* The identity is permanent on the server from here on, whatever happens to the rest of
            this save: the draft and its baseline take it now, so a refusal below leaves the
            fields read-only and makes the next save an ordinary update. */
@@ -4208,6 +4215,17 @@ export class ProductEditor implements OnDestroy {
       'Je hebt vertalingen die nog niet zijn opgeslagen. Deze vertaalwijzigingen laten vervallen? Andere productwijzigingen worden daarna apart gecontroleerd.',
     );
   }
+}
+
+
+/** The server's own sentence of a refused request (409 or 422); null for anything else, a dropped connection included. */
+function refusalReason(failure: unknown): string | null {
+  const response = failure as { status?: number; error?: { message?: unknown } | string | null } | null;
+  const body = response?.error;
+  const message = body && typeof body === 'object' ? body.message : null;
+  return (response?.status === 409 || response?.status === 422) && typeof message === 'string' && message.trim()
+    ? message.trim()
+    : null;
 }
 
 

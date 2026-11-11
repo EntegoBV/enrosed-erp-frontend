@@ -148,6 +148,39 @@ export function planProductFamilyIdentityFinalization(
   return { expectedFamilyKey, familyKey, publicHandle, variants };
 }
 
+/** The server's words for the three identity values, and the form's label and input for each. */
+const SERVER_SUBJECTS: readonly (readonly [RegExp, string, string])[] = [
+  [/^Publieke handle\b/, 'De permanente publieke URL', IDENTITY_URL_FIELD_ID],
+  [/^(?:Nieuwe familiecode|Familiecode)\b/, 'De vaste productreeks-sleutel', IDENTITY_KEY_FIELD_ID],
+  [/^Canonieke variantcode\b/, 'De interne variantcode', IDENTITY_SECTION_ID],
+];
+
+/**
+ * The server refused the one-time identity (nothing was changed). It names the values
+ * "Publieke handle", "Familiecode" and "Canonieke variantcode"; the refusal is put in the
+ * labels of the form and points at that field, so it reads like the local checks above. Any
+ * other refusal keeps its text and points at the section.
+ */
+export function identityRefusedByServer(
+  reason: string,
+  desired: ProductFamily,
+): ProductFamilyIdentityFinalizationError {
+  for (const [subject, label, field] of SERVER_SUBJECTS) {
+    if (!subject.test(reason)) continue;
+    const rest = reason.replace(subject, '');
+    /* "Canonieke variantcode <code> bestaat al": the row that holds that code. */
+    const code = field === IDENTITY_SECTION_ID ? /^ (\S+) /.exec(rest)?.[1] : undefined;
+    const member = code
+      ? desired.members.find((item) => clean(item.canonicalVariantKey) === code)
+      : undefined;
+    return new ProductFamilyIdentityFinalizationError(
+      `${label}${rest}${/[.!?]$/.test(rest) ? '' : '.'}`,
+      member ? identityVariantFieldId(member.productId) : field,
+    );
+  }
+  return new ProductFamilyIdentityFinalizationError(reason, IDENTITY_SECTION_ID);
+}
+
 /** The identity became final on the server but the rest of the save was refused: both are said. */
 export function identitySavedRestRefused(reason: string): ProductFamilyIdentityFinalizationError {
   return new ProductFamilyIdentityFinalizationError(`Vaste koppeling & URL opgeslagen · ${reason}`);
