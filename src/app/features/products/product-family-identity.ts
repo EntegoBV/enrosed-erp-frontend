@@ -125,6 +125,29 @@ export function identitySavedRestRefused(reason: string): ProductFamilyIdentityF
   return new ProductFamilyIdentityFinalizationError(`Vaste koppeling & URL opgeslagen · ${reason}`);
 }
 
+/**
+ * The server's members with the variant codes that are still being typed laid back over them.
+ * `draft` and `saved` are the members before the refresh; a code counts as typed where they differ.
+ */
+export function keepTypedVariantKeys(
+  fresh: ProductFamilyMember[],
+  draft: ProductFamilyMember[],
+  saved: ProductFamilyMember[],
+): ProductFamilyMember[] {
+  const savedKeys = new Map(
+    saved.map((member) => [member.productId, optional(member.canonicalVariantKey)] as const),
+  );
+  const typed = new Map<number, string | null>();
+  for (const member of draft) {
+    if (optional(member.canonicalVariantKey) !== (savedKeys.get(member.productId) ?? null)) {
+      typed.set(member.productId, member.canonicalVariantKey);
+    }
+  }
+  return fresh.map((member) => typed.has(member.productId)
+    ? { ...member, canonicalVariantKey: typed.get(member.productId) ?? null }
+    : { ...member });
+}
+
 function identityWasEdited(previous: ProductFamily, desired: ProductFamily): boolean {
   if (clean(previous.familyKey) !== clean(desired.familyKey)) return true;
   if (clean(previous.publicHandle) !== clean(desired.publicHandle)) return true;

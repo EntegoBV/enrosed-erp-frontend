@@ -22,7 +22,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyMember, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
@@ -57,7 +57,10 @@ import {
   ProductFamilySharedFieldsSheet,
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
-import { identitySavedRestRefused, planProductFamilyIdentityFinalization } from './product-family-identity';
+import {
+  hasFinalizableDraftIdentity, identitySavedRestRefused, keepTypedVariantKeys,
+  planProductFamilyIdentityFinalization,
+} from './product-family-identity';
 import {
   productCatalogNavigation,
   productVariantNavigation,
@@ -3477,15 +3480,24 @@ export class ProductEditor implements OnDestroy {
    * the whole family is replaced; with them, only the photo fields move into
    * both the draft and its baseline, so the pending edits stay pending. The
    * product draft is left alone: photo work never changes its membership.
+   * The members and their count come along (photo state, and a colour copied
+   * in meanwhile); variant codes that are being typed stay in the draft.
    */
   private mergeFamilyPhotoState(fresh: ProductFamily): void {
     if (this.family()?.id !== fresh.id) return;
+    /* The identity became final elsewhere (another tab, or a save whose answer got lost): the
+       fields follow what the server has, so they close here too, whatever was being typed. */
+    if (hasFinalizableDraftIdentity(this.savedFamily()) && !hasFinalizableDraftIdentity(fresh)) {
+      this.adoptFinalizedIdentity(fresh);
+    }
     this.families.update((families) => families.map((item) => item.id === fresh.id ? fresh : item));
     if (!this.familyDirty()) {
       this.setFamilyDraft(fresh);
       return;
     }
-    const withPhotoState = (family: ProductFamily | null): ProductFamily | null => family && {
+    const draftMembers = this.family()?.members ?? [];
+    const savedMembers = this.savedFamily()?.members ?? [];
+    const withPhotoState = (family: ProductFamily | null, members: ProductFamilyMember[]): ProductFamily | null => family && {
       ...family,
       images: structuredClone(fresh.images),
       cataloguePhotoOptions: structuredClone(fresh.cataloguePhotoOptions),
@@ -3494,11 +3506,13 @@ export class ProductEditor implements OnDestroy {
       catalogueDetailSize: fresh.catalogueDetailSize,
       websiteQuotePhotoId: fresh.websiteQuotePhotoId,
       effectiveWebsiteQuotePhotoId: fresh.effectiveWebsiteQuotePhotoId,
-      members: structuredClone(fresh.members),
+      members,
+      variantCount: fresh.variantCount,
       publicationIssues: [...fresh.publicationIssues],
     };
-    this.family.update(withPhotoState);
-    this.savedFamily.update(withPhotoState);
+    /* The server's members, with a variant code that is being typed kept in the draft. */
+    this.family.update((family) => withPhotoState(family, keepTypedVariantKeys(fresh.members, draftMembers, savedMembers)));
+    this.savedFamily.update((family) => withPhotoState(family, structuredClone(fresh.members)));
   }
 
   setSupplier(supplierId: number): void {
