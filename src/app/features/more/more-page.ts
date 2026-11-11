@@ -124,7 +124,8 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
         <div class="ios-group">
           <button class="ios-cell ios-cell--danger" type="button" (click)="logout()">Afmelden</button>
         </div>
-        <!-- The code after the name is the build this app runs (fresh-build.ts buildCode): the one way to see on a phone whether a release has arrived. -->
+        <!-- The code after the name is the build this document runs (fresh-build.ts buildCode). In a browser tab and the home-screen app that is the app;
+             in the native shell every tab is its own web view that loads on its own, so it is the Meer tab's build only (another tab may be older). -->
         <p class="ios-section__foot">Aangemeld als {{ auth.username() }}@if (build) { · {{ build }} }</p>
       </section>
     </div>
@@ -159,7 +160,10 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
 })
 export class MorePage {
   readonly auth = inject(Auth);
-  /** The running build in a few characters ("D5NX-SZC5": the first four of the main script's and the stylesheet's hash); '' in a development build. */
+  /**
+   * The running build of this document in a few characters ("D5NX-SZC5": the first four of the main script's and the
+   * stylesheet's hash); '' in a development build. In the native shell: the Meer tab's web view only.
+   */
   readonly build = buildCode(buildIdOf(Array.from(inject(DOCUMENT).querySelectorAll('script[src], link[rel="stylesheet"][href]'),
     (element) => element.getAttribute('src') ?? element.getAttribute('href'))));
   readonly theme = inject(Theme);
