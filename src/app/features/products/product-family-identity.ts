@@ -120,6 +120,11 @@ export function planProductFamilyIdentityFinalization(
   return { expectedFamilyKey, familyKey, publicHandle, variants };
 }
 
+/** The identity became final on the server but the rest of the save was refused: both are said. */
+export function identitySavedRestRefused(reason: string): ProductFamilyIdentityFinalizationError {
+  return new ProductFamilyIdentityFinalizationError(`Vaste koppeling & URL opgeslagen · ${reason}`);
+}
+
 function identityWasEdited(previous: ProductFamily, desired: ProductFamily): boolean {
   if (clean(previous.familyKey) !== clean(desired.familyKey)) return true;
   if (clean(previous.publicHandle) !== clean(desired.publicHandle)) return true;

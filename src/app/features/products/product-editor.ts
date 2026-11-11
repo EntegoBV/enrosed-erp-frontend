@@ -57,7 +57,7 @@ import {
   ProductFamilySharedFieldsSheet,
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
-import { planProductFamilyIdentityFinalization } from './product-family-identity';
+import { identitySavedRestRefused, planProductFamilyIdentityFinalization } from './product-family-identity';
 import {
   productCatalogNavigation,
   productVariantNavigation,
@@ -3843,44 +3843,18 @@ export class ProductEditor implements OnDestroy {
     } else {
       const finalization = planProductFamilyIdentityFinalization(previous, desired);
       if (finalization) {
-        const finalized = await this.catalog.finalizeDraftProductFamilyIdentity(
-          desired.id,
-          finalization,
-        );
-        /* The one-time command owns immutable identity. Feed its authoritative result into the
-           ordinary editable-fields update, never the stale pre-finalization projection. */
-        saved = await this.catalog.updateProductFamily(desired.id, {
-          ...desired,
-          familyKey: finalized.familyKey,
-          publicHandle: finalized.publicHandle,
-          members: finalized.members,
-          variantCount: finalized.variantCount,
-        });
-      } else {
-        saved = await this.catalog.updateProductFamily(desired.id, desired);
-      }
-    }
-
-    if (saved.id !== null && desired.id !== null && previous?.id === desired.id) {
-      const familyId = saved.id;
-      const desiredImages = [...desired.images].sort((left, right) => left.position - right.position);
-      const previousImages = [...previous.images].sort((left, right) => left.position - right.position);
-      const desiredIds = desiredImages.map((image) => image.id);
-      const previousIds = previousImages.map((image) => image.id);
-      if (desiredIds.join(',') !== previousIds.join(',')) {
-        saved = await this.catalog.reorderProductFamilyImages(familyId, desiredIds);
-      }
-
-      for (const image of desired.images) {
-        const before = previous.images.find((item) => item.id === image.id);
-        for (const alt of image.altTexts) {
-          const oldAlt = before?.altTexts.find((item) => item.language === alt.language)?.alt ?? '';
-          const nextAlt = alt.alt ?? '';
-          if (oldAlt !== nextAlt) {
-            saved = await this.catalog.updateProductFamilyImageAlt(
-              familyId, image.id, alt.language, nextAlt);
-          }
+        const finalized = await this.catalog.finalizeDraftProductFamilyIdentity(desired.id, finalization);
+        /* The identity is permanent on the server from here on, whatever happens to the rest of
+           this save: the draft and its baseline take it now, so a refusal below leaves the
+           fields read-only and makes the next save an ordinary update. */
+        this.adoptFinalizedIdentity(finalized);
+        try {
+          saved = await this.saveFamilyFields(desired.id, this.family() ?? desired, previous, desired);
+        } catch (failure: unknown) {
+          throw identitySavedRestRefused(messageOf(failure, 'de rest is nog niet opgeslagen'));
         }
+      } else {
+        saved = await this.saveFamilyFields(desired.id, desired, previous, desired);
       }
     }
 
@@ -3902,6 +3876,83 @@ export class ProductEditor implements OnDestroy {
           }
         : {}),
       ...this.variantPublicationFields(),
+    });
+  }
+
+  /**
+   * The ordinary series update with `body`, then the photo order and the alt texts of `desired`
+   * that differ from `previous`. `body` is `desired`, or `desired` with a just finalised identity.
+   */
+  private async saveFamilyFields(
+    familyId: number,
+    body: ProductFamily,
+    previous: ProductFamily | null,
+    desired: ProductFamily,
+  ): Promise<ProductFamily> {
+    let saved = await this.catalog.updateProductFamily(familyId, body);
+    if (saved.id === null || previous?.id !== desired.id) return saved;
+
+    const desiredImages = [...desired.images].sort((left, right) => left.position - right.position);
+    const previousImages = [...previous.images].sort((left, right) => left.position - right.position);
+    const desiredIds = desiredImages.map((image) => image.id);
+    const previousIds = previousImages.map((image) => image.id);
+    if (desiredIds.join(',') !== previousIds.join(',')) {
+      saved = await this.catalog.reorderProductFamilyImages(familyId, desiredIds);
+    }
+
+    for (const image of desired.images) {
+      const before = previous.images.find((item) => item.id === image.id);
+      for (const alt of image.altTexts) {
+        const oldAlt = before?.altTexts.find((item) => item.language === alt.language)?.alt ?? '';
+        const nextAlt = alt.alt ?? '';
+        if (oldAlt !== nextAlt) {
+          saved = await this.catalog.updateProductFamilyImageAlt(
+            familyId, image.id, alt.language, nextAlt);
+        }
+      }
+    }
+    return saved;
+  }
+
+  /**
+   * The one-time identity is on the server (finalised by this save, or seen in a fresh copy). The
+   * draft and its baseline both take it, as the photo fields do in mergeFamilyPhotoState, so
+   * other pending edits stay pending and the fields close. This product's own copy of the key
+   * and code follows in draft and baseline too: a product PUT with the old code would put the
+   * old code back, and nothing here is left to save.
+   */
+  private adoptFinalizedIdentity(finalized: ProductFamily): void {
+    const withIdentity = (family: ProductFamily | null): ProductFamily | null =>
+      family && family.id === finalized.id
+        ? {
+            ...family,
+            familyKey: finalized.familyKey,
+            publicHandle: finalized.publicHandle,
+            members: structuredClone(finalized.members),
+            variantCount: finalized.variantCount,
+            publicationIssues: [...finalized.publicationIssues],
+          }
+        : family;
+    this.family.update(withIdentity);
+    this.savedFamily.update(withIdentity);
+    /* A sibling opened next takes the series from this list (loadFamilyForProduct). */
+    this.families.update((families) =>
+      families.map((item) => item.id === finalized.id ? structuredClone(finalized) : item));
+    const member = finalized.members.find((item) => item.productId === this.draft().id);
+    const withProductIdentity = (product: Product): Product => product.familyId === finalized.id
+      ? {
+          ...product,
+          familyKey: finalized.familyKey,
+          ...(member ? { canonicalVariantKey: member.canonicalVariantKey } : {}),
+        }
+      : product;
+    this.draft.update(withProductIdentity);
+    this.baseline.update((saved) => {
+      try {
+        return saved ? JSON.stringify(withProductIdentity(JSON.parse(saved) as Product)) : saved;
+      } catch {
+        return saved;
+      }
     });
   }
 
