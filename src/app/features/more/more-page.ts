@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api/auth';
+import { buildCode, buildIdOf } from '../../core/platform/fresh-build';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { THEMES, Theme } from '../../core/platform/theme';
@@ -122,7 +124,8 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
         <div class="ios-group">
           <button class="ios-cell ios-cell--danger" type="button" (click)="logout()">Afmelden</button>
         </div>
-        <p class="ios-section__foot">Aangemeld als {{ auth.username() }}</p>
+        <!-- The code after the name is the build this app runs (fresh-build.ts buildCode): the one way to see on a phone whether a release has arrived. -->
+        <p class="ios-section__foot">Aangemeld als {{ auth.username() }}@if (build) { · {{ build }} }</p>
       </section>
     </div>
   `,
@@ -156,6 +159,9 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
 })
 export class MorePage {
   readonly auth = inject(Auth);
+  /** The running build in a few characters ("D5NX-SZC5": the first four of the main script's and the stylesheet's hash); '' in a development build. */
+  readonly build = buildCode(buildIdOf(Array.from(inject(DOCUMENT).querySelectorAll('script[src], link[rel="stylesheet"][href]'),
+    (element) => element.getAttribute('src') ?? element.getAttribute('href'))));
   readonly theme = inject(Theme);
   readonly themes = THEMES;
   private readonly router = inject(Router);
