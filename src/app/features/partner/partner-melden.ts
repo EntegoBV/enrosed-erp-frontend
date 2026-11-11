@@ -151,7 +151,10 @@ export class PartnerMelden implements HasUnsavedChanges {
       const step = this.step();
       const product = Number(this.product());
       untracked(() => {
-        this.draft.kind.set(kind);
+        /* Once products are on the form its kind is what he chose last (on step 2): an older history entry (back to
+           step 1) never puts the old kind back; the address follows the form instead. */
+        if (step !== 3 && this.draft.entries().length && kind !== this.draft.kind()) this.followKind();
+        else this.draft.kind.set(kind);
         if (!this.productTaken && Number.isSafeInteger(product) && product > 0) this.pendingProduct = product;
         this.productTaken = true;
         /* Back from Gemeld (or a fresh step 1/2 after it): a new melding. */
@@ -210,6 +213,13 @@ export class PartnerMelden implements HasUnsavedChanges {
     });
   }
 
+  /** The address takes the form's kind (in place), so the step's title, its list and the next step agree with it. */
+  private followKind(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route, queryParams: { soort: this.draft.kind() }, queryParamsHandling: 'merge', replaceUrl: true,
+    });
+  }
+
   sent(result: PartnerReportResult): void {
     this.result.set(result);
     this.draft.reset(this.data.overview()?.serverDate);
@@ -222,7 +232,7 @@ export class PartnerMelden implements HasUnsavedChanges {
     this.result.set(null);
     this.draft.reset(this.data.overview()?.serverDate);
     void this.data.load();
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: this.kind(), stap: 1 }, replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: this.draft.kind(), stap: 1 }, replaceUrl: true });
   }
 
   home(): void {
@@ -236,7 +246,7 @@ export class PartnerMelden implements HasUnsavedChanges {
   private go(step: Step, replace = false): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { soort: this.kind(), stap: step, product: step === 2 ? this.route.snapshot.queryParamMap.get('product') : null },
+      queryParams: { soort: this.draft.kind(), stap: step, product: step === 2 ? this.route.snapshot.queryParamMap.get('product') : null },
       replaceUrl: replace,
     });
   }
