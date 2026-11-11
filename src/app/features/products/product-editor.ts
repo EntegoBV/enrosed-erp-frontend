@@ -58,7 +58,7 @@ import {
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
 import {
-  hasFinalizableDraftIdentity, identitySavedRestRefused, keepTypedVariantKeys,
+  hasFinalizableDraftIdentity, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
   planProductFamilyIdentityFinalization,
 } from './product-family-identity';
 import {
@@ -3168,7 +3168,17 @@ export class ProductEditor implements OnDestroy {
   async onVariantLinked(family: ProductFamily): Promise<void> {
     if (this.translationDirty() || this.translationSaving()) return;
     const productId = this.draft().id;
+    /* The server reloads the series; unsaved series edits go with that, as always. Not the identity
+       of the same series while it is still open: a colour is linked or taken out half way the code
+       list, and the key, URL and codes typed so far must still be there afterwards. */
+    const draft = this.family();
+    const saved = this.savedFamily();
+    const typed = draft && saved && draft.id !== null && draft.id === family.id && saved.id === family.id
+        && hasFinalizableDraftIdentity(saved) && hasFinalizableDraftIdentity(family)
+      ? structuredClone(keepTypedIdentity(family, draft, saved))
+      : null;
     this.replaceFamily(family);
+    if (typed) this.onFamilyChange(typed);
     this.savedProductFamilyId.set(family.id);
     if (productId === null) return;
 

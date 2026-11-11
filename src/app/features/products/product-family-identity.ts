@@ -148,6 +148,27 @@ export function keepTypedVariantKeys(
     : { ...member });
 }
 
+/**
+ * A fresh server copy of the same series, with the identity that is being typed laid back over
+ * it: key and URL where they differ from the last saved ones, and the typed variant codes. For a
+ * server action that reloads the series while its identity is still open (a colour linked or
+ * taken out half way the code list).
+ */
+export function keepTypedIdentity(
+  fresh: ProductFamily,
+  draft: ProductFamily,
+  saved: ProductFamily,
+): ProductFamily {
+  return {
+    ...fresh,
+    familyKey: clean(draft.familyKey) !== clean(saved.familyKey) ? draft.familyKey : fresh.familyKey,
+    publicHandle: clean(draft.publicHandle) !== clean(saved.publicHandle)
+      ? draft.publicHandle
+      : fresh.publicHandle,
+    members: keepTypedVariantKeys(fresh.members, draft.members, saved.members),
+  };
+}
+
 function identityWasEdited(previous: ProductFamily, desired: ProductFamily): boolean {
   if (clean(previous.familyKey) !== clean(desired.familyKey)) return true;
   if (clean(previous.publicHandle) !== clean(desired.publicHandle)) return true;
