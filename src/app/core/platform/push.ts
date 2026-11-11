@@ -43,11 +43,30 @@ export class PushSetup {
         /* Only the fronted app speaks: sound plus a toast instead of the
            suppressed system banner. */
         if (document.visibilityState !== 'visible') return;
-        void playSoundFor(data.kind);
+        void this.ring(data);
         this.ui.toast(data.title + (data.body ? ' — ' + data.body : ''));
       });
     } catch {
       /* An old browser without workers simply has no notifications. */
+    }
+  }
+
+  /**
+   * The app's own sound for a sale. A browser only plays sound in a page someone has touched since it loaded, and the
+   * app loads again by itself for a newer build (fresh-build-service.ts): a window that stands untouched after that
+   * would stay silent while the worker has already held back the system banner for it. So when the sound is refused,
+   * the banner speaks after all.
+   */
+  private async ring(data: { kind: string; title?: string; body?: string; url?: string; tag?: string }): Promise<void> {
+    if (!SOUND_BY_KIND[data.kind] || await playSoundFor(data.kind)) return;
+    const body = data.body || '';
+    try {
+      await this.registration?.showNotification(data.title || 'Enrosed', {
+        body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',
+        tag: data.tag || data.kind + ':' + body.slice(0, 40), data: { url: data.url || '/' },
+      });
+    } catch {
+      /* No permission any more: the toast is all there is. */
     }
   }
 
@@ -125,16 +144,18 @@ const SOUND_BY_KIND: Record<string, string> = {
   'sale-invoice': '/sounds/factuur.mp3',
 };
 
-export async function playSoundFor(kind: string): Promise<void> {
+/** Plays the sound of this kind of news; false when it has none or the browser refused to play (no gesture in this page yet). */
+export async function playSoundFor(kind: string): Promise<boolean> {
   const source = SOUND_BY_KIND[kind];
-  if (!source) return;
+  if (!source) return false;
   try {
     const audio = new Audio(source);
     audio.volume = 0.8;
     await audio.play();
+    return true;
   } catch {
     /* Autoplay refused without an earlier gesture: fall back to the synth. */
-    if (kind === 'sale-quote') void playKaching();
+    return kind === 'sale-quote' ? playKaching() : false;
   }
 }
 
@@ -145,10 +166,17 @@ export async function playSoundFor(kind: string): Promise<void> {
  * twice in quick succession - the shop-app sound everyone knows, without
  * shipping anyone's audio file.
  */
-export async function playKaching(): Promise<void> {
+export async function playKaching(): Promise<boolean> {
   try {
     const context = new AudioContext();
-    if (context.state === 'suspended') await context.resume();
+    if (context.state === 'suspended') {
+      /* Without a gesture in this page resume() stays pending until one comes, and the register would ring at that later tap. */
+      await Promise.race([context.resume(), new Promise((done) => setTimeout(done, 300))]);
+      if ((context.state as AudioContextState) !== 'running') {
+        void context.close();
+        return false;
+      }
+    }
     const master = context.createGain();
     master.gain.value = 0.5;
     master.connect(context.destination);
@@ -172,7 +200,9 @@ export async function playKaching(): Promise<void> {
     ding(now, 0.55);        /* cha */
     ding(now + 0.12, 1);    /* ching */
     setTimeout(() => void context.close(), 1600);
+    return true;
   } catch {
     /* No audio without a prior user gesture on some platforms; fine. */
+    return false;
   }
 }

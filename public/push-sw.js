@@ -16,8 +16,9 @@ self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const appVisible = clients.some((client) => client.visibilityState === 'visible');
+    // url and tag travel along: a visible window whose sound the browser refuses shows the banner itself (push.ts ring).
     for (const client of clients) {
-      client.postMessage({ source: 'enrosed-push', kind, title, body, appVisible });
+      client.postMessage({ source: 'enrosed-push', kind, title, body, appVisible, url, tag: typeof data.tag === 'string' ? data.tag : '' });
     }
     /* With the app in front, the in-app sound and toast carry the news;
        a system banner on top would ring twice and say it twice. */
