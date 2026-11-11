@@ -27,6 +27,7 @@ import { PricedLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
+import { Segmented } from '../../shared/segmented';
 import { DateField } from '../../shared/date-field';
 import { WeekField } from '../../shared/week-field';
 import { Sheet, escapeHtml } from '../../shared/ui';
@@ -75,7 +76,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -488,13 +489,29 @@ interface JourneyStep {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="desk-product__note is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
+                                  <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" [attr.data-per-piece-line]="line.productId" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>
                                 }
                                 }
                               </div>
+                              <!-- Per piece: the remark on the last omdoos and the switch stand under the meta, not in it. A child
+                                   more in the meta gives the cartons a "·" and widens the narrow column at 1070 px. -->
+                              @let partCarton = lineUnavailable(line.productId) ? null : linePartCarton(line);
+                              @let perSwitch = !lineUnavailable(line.productId) && perPieceSwitch(line.productId);
+                              @if (partCarton || perSwitch) {
+                                <div class="desk-per-row">
+                                  @if (partCarton) { <span>{{ partCarton }}</span> }
+                                  @if (perSwitch) {
+                                    <span class="desk-per" [title]="perPieceTitle(line.productId)" [attr.data-per-piece-line]="line.productId">
+                                      <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
+                                                     [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                                     (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                                    </span>
+                                  }
+                                </div>
+                              }
                               @if (creditLineHint(line.productId, line.quantity); as hint) { <div class="desk-line-cap">{{ hint }}</div> }
                             </div>
                           </div>
@@ -1232,7 +1249,7 @@ interface JourneyStep {
       @if (picking()) {
         <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
                             [families]="families()" [groupByFamily]="true" [preserveSourceOrder]="true"
-                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" [incoming]="incomingItems()" [incomingState]="incomingState()" (incomingRetry)="retryIncoming()" mode="multi" (picked)="addLine($event)"
+                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" [incoming]="incomingItems()" [incomingState]="incomingState()" (incomingRetry)="retryIncoming()" [perPieceOnLine]="perPieceOnLines()" mode="multi" (picked)="addLine($event)"
                             (pickedMany)="addLines($event)" (cancelled)="picking.set(false)" />
       }
 
