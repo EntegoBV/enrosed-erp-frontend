@@ -2839,6 +2839,19 @@ pinned price as to a typed one.
   The phone editor tints the price field of a CUSTOMER line
   (`.input-affix--agreed`, global) and its K is 18 px; the picker shows an
   agreed price as a pill (`picker-price--agreed`). The desk is unchanged.
+- Product picker and sales line, what is coming (2026-11-10): the sales
+  editor and desk pass `[incoming]="incomingItems()"` (the expected-stock
+  answer per product id; loaded when a line is short of stock and again
+  on every picker open; a failed load shows nothing). In the picker
+  (`stockAware` hosts only) a colour whose stock is empty, tight or
+  unconfirmed (`stockLevel` not 'ok') gets the inline status pill in its
+  stock line ("geen voorraad [+1.750] Onderweg 20/12"); the folded
+  series head sums those colours on a line of its own; the quantity step
+  shows "N op voorraad [+…]" once more is asked than there is. A sales
+  line that is short ("Levertermijn nodig" / a leverweek with a
+  shortfall) shows the same pill under its "niet op voorraad" line, phone
+  and desk. Nothing is stored and nothing reaches the customer's
+  document or portal. Picker search takes every typed word in any order.
 - Product picker (same evening): "Producten toevoegen" shows what a new line
   gets. `SalesEditor.pinsAgreedPrices` copies the server's
   `pinsCustomerPrices` (also no advance invoice, no split part); there
@@ -3760,10 +3773,35 @@ contract `redesign/products/design.md` + `critique.md`).
   takes Tab once the focused one is deleted, folded or filtered away), ↑ ↓,
   → ←, Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
   filter sheet (Publicatie, Volgorde), category chips + Aandacht, the swipe
-  rows laid out as `plp-row` (names never clamped; "+n" with its date).
+  rows laid out as `plp-row` (names never clamped; what is coming is the
+  status pill). Search takes every typed word in any order
+  (`shared/search-words.ts`), as Voorraad and the product picker do.
   Default order label: "Standaardvolgorde (voorraad eerst)".
-- **`product-figures.ts`** (node-tested): `productMargin` (the desk
-  rounding), `onderwegSummary` (series sum, earliest date, each order once),
+- **What is coming: one status** (2026-11-10). `shared/product-incoming.ts`
+  (pure) turns `SourcingApi.incomingStock()` (`GET /purchase-orders/
+  expected-stock?arrived=true`) into `Incoming`: state, word, figure,
+  date, every order behind it. Fixed words: **Besteld** (not departed),
+  **Onderweg** (departed: status Vertrokken, or `shippedOn` has come),
+  **Binnenkort** (departed and expected within `SOON_DAYS` = 14 days of
+  today, either side), **Aangekomen** (received, stock not booked;
+  detail "ontvangen dd/mm/jjjj · nog bij te boeken"). The first arrival
+  leads: `quantity` is the pieces of the orders that share its state and
+  date, `later` the rest ("+N later"), `total` everything (sorting,
+  filter, "Leeg verbergen"). A past date is never printed bare: the pill
+  drops it, the detail reads "verwacht sinds dd/mm/jjjj". `incomingSum`
+  merges a series' colours (an order counted once). Against a backend
+  without `orders` every order reads "Onderweg" and the figure is the
+  total. `shared/incoming-pill.ts` (`app-incoming-pill`, variants
+  `stack` desk tables, `phone` tinted pill with figure and date - from
+  five digits the date moves to the word line, `inline`; `strong` =
+  the row has no stock: filled and ringed; `link` = desk tables open
+  the first order) draws it on Voorraad, Producten, the sales picker and
+  a short sales line; the product page uses the same words in its own
+  KPI and one bar per order. `expectedStock()` (no parameter) stays for
+  Analyses. A failed call says so with a retry on Voorraad (tile /
+  phone banner), Producten (warning line) and the product page (KPI /
+  bar); the sales screens stay quiet.
+- **`product-figures.ts`**: `productMargin` (the desk rounding),
   `stockValue` (rows without cost counted apart), `locationValues`,
   `totalsByProduct`, `locationSplit` (screens render one inline-block part
   per location, so a name never parts from its figure), `knownValueSum`
@@ -3825,7 +3863,15 @@ contract `redesign/products/design.md` + `critique.md`).
   roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
   fold chevron (or kleur · SKU), line 2 the location split and the value;
   a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
-  its back falls back to "‹ Producten".
+  its back falls back to "‹ Producten". The Onderweg tile is a filter
+  (`onwayOnly`, not in the URL; phone: chip "Onderweg · N" right after
+  "Alle"): only products with something coming, one list, first arrival
+  first; its N and M are counted from the rows the page shows. The
+  status pill sits in the Onderweg column (≥1360), under Totaal (below)
+  and in the phone end column; the product sheet has one tile per
+  purchase order. Search knows the series name. Inactive products stay
+  off this page, also when something is coming for them (Producten
+  shows them).
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from
   `catalog.products()`).
