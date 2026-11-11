@@ -3690,10 +3690,23 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     phone tints the quantity field (`input--per-piece`, state on the
     figure), the meta says "11 dozen, laatste niet vol" (`partCartonNote`; a
     part omdoos still counts as a full one). The switch is deliberately NOT
-    on every line: per piece only matters for a number off the step, and
-    that number brings the notice. Desk: the remark and the switch stand in
-    `.desk-per-row` UNDER `.desk-product__meta`, not in it - at 1070 px the
-    product copy is only as wide as its widest unbroken meta (about 100 px;
+    on every line (all products are per omdoos: it would sit on every line
+    for a rare choice); a number off the step always brings the notice and
+    its "houden". Per piece does matter on a line at whole cartons too (the
+    customer's quote link then takes any number for it, his documents count
+    it in pieces), and there the way in is a detour: a number off the step,
+    "houden", then the number wanted. To put the switch on every line that
+    can switch: `perPieceSwitch` returns `mobileCommercialEditable() &&
+    perPieceChoice(id)`; `canKeepPieces` then never draws "houden" (the
+    switch is the way out). "houden" also waits while its own line's number
+    is typed (`typedLine` + `figuresWaiting`, cleared where the figures
+    come back), so the 44 px button does not come and go per digit; the
+    notice still shows at once. A press that removes the pressed control
+    moves focus to what took its place (`keepPerPieceFocus`: the switch's
+    chosen side, else "houden", else the quantity field when focus sat on
+    the control; both controls carry `data-per-piece-line`). Desk: the
+    remark and the switch stand in `.desk-per-row` UNDER
+    `.desk-product__meta`, not in it - at 1070 px the product copy is only as wide as its widest unbroken meta (about 100 px;
     the table is 800 px in a 792 px wrap) and one more meta child gives the
     cartons a "·" that widens the column and pushes the name under the
     quantity field; `.desk-per` has inline-size containment and asks for
@@ -3715,8 +3728,12 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     order step (`defaultQuantity`, also for a whole family), single mode
     snaps to it, and the carton notices show only for CARTON products. The
     sales screens use multi mode, which never rounds: its hint ends "Per
-    stuk kies je daarna op de regel." (buying keeps "Een halve doos mag bij
-    inkoop."). Purchasing is unchanged.
+    stuk kies je daarna op de regel." only where the line offers it - the
+    editor's `perPieceOnLines` (a priced line carries `perPieceChoice`, not
+    a partner deal or container-cost draft) bound to `[perPieceOnLine]`,
+    and a picked product that rounds; else "Aantal stuks per product; start
+    op één doos." (an exempt document, an empty one, an older server).
+    Buying keeps "Een halve doos mag bij inkoop.". Purchasing is unchanged.
   - Analyses "Minder dan één outer carton" lists CARTON products only.
   - Rollout: no production product leaves CARTON before the website build
     that sends `quantity` items is live - the older site drops or inflates
