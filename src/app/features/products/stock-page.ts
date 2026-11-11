@@ -262,10 +262,11 @@ function mediaSignal(query: string) {
         <div class="ios-search skp-search"><label class="ios-search__field"><app-icon name="search" [size]="16" />
           <input type="search" placeholder="Zoek naam, SKU of kleur" aria-label="Voorraad zoeken" [value]="query()" (input)="setQuery($any($event.target).value)" />
           <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="14" /></button></label></div>
-        <div class="ios-chips" role="group" aria-label="Categorie">
-          <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="categoryFilter.set(null)">Alle</button>
-          @if (onwayProducts() || onwayOnly()) {
-            <button class="ios-chip skp-onway" type="button" [attr.aria-pressed]="onwayOnly()" (click)="onwayOnly.set(!onwayOnly())">Onderweg · {{ onwayProducts() }}</button>
+        <!-- "Alle" is lit only while the list is not cut down by any chip of this row, and pressing it shows everything again. -->
+        <div class="ios-chips" role="group" aria-label="Categorie en filters">
+          <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null && !onwayShown() && !noCostOnly()" (click)="showAll()">Alle</button>
+          @if (onwayProducts() || onwayShown()) {
+            <button class="ios-chip skp-onway" type="button" [attr.aria-pressed]="onwayShown()" (click)="onwayOnly.set(!onwayOnly())">Onderweg · {{ onwayProducts() }}</button>
           }
           @for (category of usedCategories(); track category.key) {
             <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === category.id" (click)="categoryFilter.set(category.id)">{{ category.name }}</button>
@@ -648,8 +649,16 @@ export class StockPage {
   readonly hideEmpty = signal(false);
   /** "Zonder kostprijs" clicked: only products with stock and no landed cost. */
   readonly noCostOnly = signal(false);
-  /** "Onderweg" clicked: only products with something coming, first arrival first. Not in the URL, like its neighbours. */
+  /**
+   * "Onderweg" clicked: only products with something coming, first arrival first. Kept in the address (?onderweg=1):
+   * its rows lead to a purchase order, and Back returns to the same list.
+   */
   readonly onwayOnly = signal(false);
+  /**
+   * The filter as the list applies it: not while the answer it needs is missing (opened from the address and the
+   * load failed). The page then shows everything under its "niet geladen" notice, and the filter is back after the retry.
+   */
+  readonly onwayShown = computed(() => this.onwayOnly() && (this.incomingState() === 'ready' || this.expected().size > 0));
   readonly sortKey = signal<StockSort>('STOCK_SMART');
   readonly demoOpen = signal(false);
   readonly editing = signal(false);
@@ -661,19 +670,21 @@ export class StockPage {
   constructor() {
     /* Names each product's unit ("bowls", "displays"); "stuks" until the list arrives. */
     void this.catalog.unitNames().catch(() => undefined);
-    /* ?locatie=&q=&categorie= read once, written back with replaceState (no history entry). */
+    /* ?locatie=&q=&categorie=&onderweg= read once, written back with replaceState (no history entry). */
     const params = this.route.snapshot.queryParamMap;
     this.query.set(params.get('q') ?? '');
     const location = Number(params.get('locatie'));
     if (Number.isSafeInteger(location) && location > 0) this.view.set(location);
     const category = params.get('categorie');
     this.categoryFilter.set(category === 'geen' ? 'none' : category && /^\d+$/.test(category) ? Number(category) : null);
+    this.onwayOnly.set(params.get('onderweg') === '1');
     effect(() => {
       const parts: string[] = [];
       if (this.query().trim()) parts.push(`q=${encodeURIComponent(this.query().trim())}`);
       if (this.view() !== null) parts.push(`locatie=${this.view()}`);
       const cat = this.categoryFilter();
       if (cat !== null) parts.push(`categorie=${cat === 'none' ? 'geen' : cat}`);
+      if (this.onwayOnly()) parts.push('onderweg=1');
       const search = parts.join('&');
       untracked(() => {
         const [path, current = ''] = this.location.path().split('?');
@@ -884,7 +895,7 @@ export class StockPage {
       (category === null || (category === 'none' ? product.categoryId == null : product.categoryId === category))
       && (!this.hideEmpty() || total !== 0 || loosePieces !== 0 || !!this.incomingFor(product.id))
       && (!this.noCostOnly() || lacksCost({ quantity: total, loosePieces, piecesPerUnit, cost: product.landedCostEur }))
-      && (!this.onwayOnly() || !!this.incomingFor(product.id))
+      && (!this.onwayShown() || !!this.incomingFor(product.id))
       && (!needle || matchesWords(text(product), needle)));
   });
 
@@ -927,7 +938,7 @@ export class StockPage {
   private compareRows(a: StockRow, b: StockRow): number {
     const tier = (row: StockRow) => row.product.demo ? 3 : (row.total > 0 || row.loosePieces > 0) ? 0 : this.incomingFor(row.product.id) ? 1 : 2;
     /* Only what is coming, in the standard order: the first arrival on top. */
-    if (this.onwayOnly() && this.sortKey() === 'STOCK_SMART') {
+    if (this.onwayShown() && this.sortKey() === 'STOCK_SMART') {
       return compareIncoming(this.incomingFor(a.product.id), this.incomingFor(b.product.id)) || this.byName(a.product.name, b.product.name);
     }
     switch (this.sortKey()) {
@@ -945,7 +956,7 @@ export class StockPage {
   /** The list's default order (Standaardvolgorde): stock first, then on the way, then empty, demo last. */
   private compareGroups(a: StockGroup, b: StockGroup): number {
     const tier = (group: StockGroup) => group.demo ? 3 : (group.total > 0 || group.loosePieces > 0) ? 0 : group.onway ? 1 : 2;
-    if (this.onwayOnly() && this.sortKey() === 'STOCK_SMART') return compareIncoming(a.onway, b.onway) || this.byName(a.name, b.name);
+    if (this.onwayShown() && this.sortKey() === 'STOCK_SMART') return compareIncoming(a.onway, b.onway) || this.byName(a.name, b.name);
     switch (this.sortKey()) {
       case 'NAME_ASC': return this.byName(a.name, b.name);
       case 'NAME_DESC': return this.byName(b.name, a.name);
@@ -960,7 +971,7 @@ export class StockPage {
 
   /** Fully-demo series and loose demo pieces (also "Zonder categorie" ones) live in the fold at the end. */
   readonly demoGroups = computed(() => this.groups().filter((group) => group.demo));
-  readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0 || this.onwayOnly());
+  readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0 || this.onwayShown());
   readonly demoCount = computed(() => this.demoGroups().reduce((sum, group) => sum + group.rows.length, 0));
   readonly demoValue = computed(() => knownValueSum(this.demoGroups().map((group) => group.value)));
 
@@ -971,7 +982,7 @@ export class StockPage {
     const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
     const value = (list: StockGroup[]) => knownValueSum(list.map((group) => group.value));
     /* Only what is coming is one list too: its order is the arrival, not the category. */
-    if (this.query().trim() || this.categoryFilter() !== null || this.onwayOnly()) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
+    if (this.query().trim() || this.categoryFilter() !== null || this.onwayShown()) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
     const order = new Map(this.categories().map((category, index) => [category.id, index]));
     const byCategory = new Map<number | null, StockGroup[]>();
     for (const group of groups) {
@@ -1013,6 +1024,13 @@ export class StockPage {
 
   readonly hasFilters = computed(() => this.query().trim().length > 0 || this.categoryFilter() !== null || this.view() !== null || this.hideEmpty()
     || this.noCostOnly() || this.onwayOnly());
+
+  /** The phone's "Alle": every category and none of the row's own filters (Onderweg, Zonder kostprijs). */
+  showAll(): void {
+    this.categoryFilter.set(null);
+    this.onwayOnly.set(false);
+    this.noCostOnly.set(false);
+  }
 
   resetFilters(): void {
     this.query.set('');
