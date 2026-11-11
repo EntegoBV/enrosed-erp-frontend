@@ -1,6 +1,7 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { purchaseTrackedOrder } from './purchase-tracking-model';
+import { trackingMove } from './container-tracking-model';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -124,9 +125,9 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="mpo-progress__bar" aria-hidden="true"></span>
                   @if (data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
-                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
+                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
                       <span class="mpo-progress__label">{{ step.label }}</span>
-                      <span class="mpo-progress__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                      <span class="mpo-progress__date" [class.mpo-moved--later]="arrivalMove()?.news && arrivalMove()?.later" [class.mpo-moved--earlier]="arrivalMove()?.news && arrivalMove()?.later === false">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
                     </button>
                   } @else {
                     <span class="mpo-progress__label">{{ step.label }}</span>
@@ -276,7 +277,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <span class="ios-cell__sub mpo-wrap">{{ planLabel() }}</span></span></div>
                 @if (data.order.trackingReference) {
                   <button class="ios-cell" type="button" (click)="trackingPanel()?.showDetails()">
-                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span>
+                      @if (arrivalMove(); as move) { <span class="ios-cell__sub mpo-wrap mpo-moved" [class.mpo-moved--later]="move.news && move.later" [class.mpo-moved--earlier]="move.news && !move.later">Aankomst was {{ move.from | dateNl }} · {{ move.text }}</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                 }
@@ -810,6 +812,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
     .mpo-progress__tracking{display:grid;gap:3px;padding:0;min-height:44px;align-content:start;text-align:left}
     .mpo-progress__tracking .mpo-progress__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
     .mpo-track-link:focus-visible,.mpo-progress__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
+    .mpo-progress__tracking .mpo-progress__date.mpo-moved--later,.ios-cell__sub.mpo-moved--later{color:var(--warn);font-weight:650}
+    .mpo-progress__tracking .mpo-progress__date.mpo-moved--earlier,.ios-cell__sub.mpo-moved--earlier{color:var(--ok);font-weight:650}
     .mpo-stale{margin:0 16px 14px}.mpo-stale__link{color:inherit;font-weight:700;white-space:nowrap}
   `,
 })
@@ -818,6 +822,8 @@ export class PurchaseView {
   readonly containerName = containerName;
   readonly pdfOpen = signal(false);
   readonly trackingPanel = viewChild(PurchaseTracking);
+  /** Tracking moved the expected arrival: the date that stood and the difference. */
+  readonly arrivalMove = computed(() => trackingMove(this.trackingPanel()?.row() ?? null));
   readonly quoteOpen = signal(false);
   readonly quoteLinesOf = quoteLinesOf;
   /** The section the screen shows: a tab's root, or a deep link's card (the screen sets it for ?section=). */

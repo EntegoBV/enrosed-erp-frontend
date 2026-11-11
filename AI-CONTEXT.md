@@ -5286,3 +5286,53 @@ CRM status and contact moments" and "Klanten: the prices charged per product").
   "standaard".
 - Checked live against a dev jar with the Nov-6 H2 dataset (desk at 800 px,
   phone at 375 px): list, filter, sort, sheet, picker, popup, K marker.
+
+## Track & trace: what the field reads, one status, moved arrivals (2026-11-10)
+
+Emre: "Bekijk ook of de track trace beter kan." No paid provider: everything works with the Evergreen
+date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
+`docs/integrations/container-tracking.md` (section 2026-11-10).
+
+- **`features/purchasing/tracking-reference.ts`** (pure, erasable TypeScript so Node can load it) is
+  the rule the backend also runs (`ContainerTracking.recognise`): change both or neither.
+  `recogniseTrackingReference`, `trackingReferenceHint` (the line under the field),
+  `trackingReferenceAsBill` ("Dit is een B/L"), `stepTrackingReference` (what "Container vertrokken"
+  saves: one number from the B/L field, also typed in groups, as `BL: number`; other text is never
+  glued into one number; behind a filled Track & trace text an Evergreen bill as it is, another B/L
+  as ` BL: number`, in front of a text that is not recognised; never behind a link, or when the row
+  read for the saved text has a ship). `recogniseTrackingReference` first asks a copy of the
+  backend's parser of 2026-10-26 (`strictReading`), as the tracker does, so the line names what is
+  followed.
+- **`tracking-reference-hint.ts`** (`app-tracking-reference-hint`) stands under the four inputs: desk
+  form, desk "Container vertrokken" prompt (one line after both fields), phone editor, phone step
+  sheet. What was read shows at once; a warning only 900 ms after the last keystroke. The phone
+  tints the field from the line's state (`.mpo-input:has(+ app-tracking-reference-hint
+  .tt-hint--warn)` in `styles/purchase-phone.scss`), no glyph. `quiet` (received orders): no warning
+  and no button. `offerBill` false in the step prompt while its B/L field holds text (the button
+  rewrites the Track & trace field).
+- **`container-tracking-model.ts`** holds the shared answers: `trackingStatus` (one status for the
+  overview list and the panel), `trackingArrival`, `trackingFailure`, `trackingMove` (`news` = two
+  days or more and moved under 14 days ago: only news is tinted), `trackingAge`, `trackingListLine`,
+  `trackingProblems`, `trackingRefreshNotice` (reads the server's `refreshOutcome`).
+  `trackingStale` reads the last attempt; an error is its own notice.
+- **Overview** (`container-tracking.ts`): rows of three lines (name + expected arrival, status,
+  reference + age of the last check; "12 → 15 nov" and "+3 d" while a move is news), one summary
+  "Controle niet gelukt bij N containers" (a labelled section, not a live region: its ages change
+  every minute; pressing a line focuses the panel), no header "Vernieuwen" (it only re-read stored rows).
+- **Panel** (`container-tracking-panel.ts`): "was … · 3 dagen later" under the expected arrival, the
+  age under "Gecontroleerd", the check button until the container is finished (disabled with a
+  title when there is nothing to check), the refresh message from the outcome. That message goes
+  when the row shows a newer check or its time passed (`trackingRefreshNoticeUntil`: "Opnieuw kan
+  vanaf 14:32" at 14:32). No failure notice for an arrived container (as the list). "Gegevens
+  bewaard van" reads `failureDataAt` (the failing source's own last success).
+- **Order pages**: `purchase-tracking.ts` reads `?orderId=` every minute, also with the sheet closed,
+  because `PurchaseDesk` keeps its order equal to dates tracking wrote (`PurchaseTrackingBaseline`);
+  without that read the next save would put the old date back. `arrivalMove` on `PurchaseDesk`
+  (Ontvangen step + "Verwacht op" fact) and `PurchaseView` (step date tint + the Track & trace row).
+- **Bell**: container section is "Containers"; a moved arrival is a `CONTAINER_AANKOMST` row
+  ("Aankomst 15/11/2026 · 3 dagen later", detail "was 12/11/2026"; the tone reads the title's end).
+- **Older backend**: every new row field is optional. Without them: status and hint are computed
+  here, failure is the error of a linked source, no move is shown, the refresh message is the old
+  one, and `?orderId=` is ignored (the whole feed comes back and the row is found in it).
+- **Native app**: untouched. It reads the feed itself with its own port of the rules; host
+  messages, the today snapshot and `tools/host-contract.json` did not change.

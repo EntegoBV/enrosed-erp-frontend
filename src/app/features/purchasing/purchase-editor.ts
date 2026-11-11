@@ -129,6 +129,7 @@ import { Icon } from '../../shared/icon';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
+import { TrackingReferenceHint } from './tracking-reference-hint';
 
 /**
  * Landed-cost calculation of a container.
@@ -175,7 +176,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
-            IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet],
+            IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet, TrackingReferenceHint],
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--edit">
@@ -298,8 +299,9 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <label class="ios-cell mpo-field-row mpo-field-row--stack" for="mpo-tracking">
                       <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span>
                         @if (data.order.shippedOn) { <span class="ios-cell__sub">Vertrokken op {{ data.order.shippedOn | dateNl }}</span> }</span>
-                      <input class="mpo-input mpo-input--wide" id="mpo-tracking" type="text" autocomplete="off" placeholder="Containernummer, B/L of link van de rederij"
+                      <input class="mpo-input mpo-input--wide" id="mpo-tracking" type="text" autocomplete="off" placeholder="Containernummer of BL: nummer"
                              [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
+                      <app-tracking-reference-hint variant="ios" [value]="data.order.trackingReference" [quiet]="data.order.status === 'ONTVANGEN'" (rewrite)="patch({ trackingReference: $event })" />
                     </label>
                   }
                 </div>
