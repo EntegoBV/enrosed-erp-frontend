@@ -1935,6 +1935,11 @@ export interface SalesOrderLine {
   readonly unitsPerOrderStep?: number | null;
   /** Server stamp: what the pieces cost that left stock at shipment, by batch. Absent before shipment and on older servers. */
   readonly stockCostEur?: number | null;
+  /**
+   * This line counts per piece: its quantity is never rounded up to the product's order step. Absent = not chosen.
+   * In a write an absent or null value keeps what is stored on the line, true or false sets it.
+   */
+  perPiece?: boolean | null;
 }
 
 /** A hand-built pallet: label plus product/carton assignments. */
@@ -2103,6 +2108,13 @@ export interface PricedLine {
   standardUnitPriceEur?: number | null;
   /** The customer's active price for the product; null when there is none. */
   customerUnitPriceEur?: number | null;
+  /** The line counts per piece (SalesOrderLine.perPiece); true or absent. */
+  perPiece?: boolean | null;
+  /**
+   * True where the line may be switched between its product's order step and per piece: the document rounds and
+   * the product's step is above 1. Absent elsewhere and from an older server, where nothing is offered.
+   */
+  perPieceChoice?: boolean | null;
 }
 
 export interface PricedOrder {

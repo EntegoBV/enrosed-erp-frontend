@@ -26,6 +26,7 @@ import { PricedLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
+import { Segmented } from '../../shared/segmented';
 import { DateField } from '../../shared/date-field';
 import { WeekField } from '../../shared/week-field';
 import { Sheet, escapeHtml } from '../../shared/ui';
@@ -74,7 +75,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, LinePriceSource,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -485,9 +486,18 @@ interface JourneyStep {
                                   @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} {{ lineUnit(line.productId).short }} aangevraagd</span> }
                                 } @else {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
+                                <!-- Per piece: the remark and the switch are meta children of their own, so they wrap inside the column. -->
+                                @if (linePartCarton(line); as part) { <span class="desk-product__note">{{ part }}</span> }
+                                @if (perPieceSwitch(line.productId)) {
+                                  <span class="desk-per" [title]="perPieceTitle(line.productId)">
+                                    <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
+                                                   [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                                   (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                                  </span>
+                                }
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="desk-product__note is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
+                                  <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>

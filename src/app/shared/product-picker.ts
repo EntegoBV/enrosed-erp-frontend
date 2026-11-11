@@ -897,11 +897,15 @@ export class ProductPicker implements OnDestroy {
     return orderStepSentence(product, productSalesUnit(product));
   }
 
-  /** Under the numbers of a batch: buying may take half a carton; selling starts each product on its own step. */
+  /**
+   * Under the numbers of a batch: buying may take half a carton; selling starts each product on its own step, and
+   * loose pieces are a choice on the sales line itself (a number off the step gets "houden" there).
+   */
   readonly batchHint = computed(() => !this.enforceCartons()
-    || this.batch().every((entry) => orderStepOf(entry.product) === 'CARTON')
     ? 'Aantal stuks per product; start op één doos. Een halve doos mag bij inkoop.'
-    : 'Aantal per product; elk product start op zijn eigen bestelveelvoud (volle doos, display of stuk).');
+    : this.batch().every((entry) => orderStepOf(entry.product) === 'CARTON')
+      ? 'Aantal stuks per product; start op één doos. Per stuk kies je daarna op de regel.'
+      : 'Aantal per product; elk product start op zijn eigen bestelveelvoud (volle doos, display of stuk).');
 
   isSelected(product: Product): boolean {
     return this.selected().has(product.id!);

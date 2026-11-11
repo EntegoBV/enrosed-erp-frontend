@@ -1,0 +1,31 @@
+/* ==========================================================================
+   "Aantal per stuk" on one sales line (2026-11-10): the switch of a line that counts per piece, its tinted number
+   and the "houden" under a rounding notice, on the phone editor and on the desk. Global on purpose: the rules reach
+   inside app-segmented, and both components sit at their component-style budget. Scoped under the two hosts.
+   Loaded from styles.scss after sales-phone. No scroller here, so nothing about overflow scrolling.
+   ========================================================================== */
+
+/* Phone editor. The 36 px control holds 30 px options (3 px padding): 7 px above and below make the 44 px to press.
+   The cap keeps both from stretching over a 300 px column on the unfolded Duo. */
+app-sales-editor .line-per { max-width: 200px; margin: 2px 0; }
+app-sales-editor .line-per .ios-seg__opt { position: relative; padding: 0 4px; font-size: 12.5px; }
+app-sales-editor .line-per .ios-seg__opt::before { content: ''; position: absolute; inset: -7px 0; }
+/* The state sits on the figure itself: a glyph beside it is too small on a phone. */
+app-sales-editor .input.input--per-piece { border-color: color-mix(in srgb, var(--blue) 35%, var(--line-strong)); background: var(--blue-soft); color: var(--blue); font-weight: 650; }
+app-sales-editor .line-keep { display: flex; align-items: center; justify-content: center; width: 100%; max-width: 200px; min-height: 44px; padding: 0 12px;
+  border: 1px solid #eddcb9; border-radius: 999px; background: var(--warn-soft); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+app-sales-editor .line-keep:active { background: color-mix(in srgb, var(--warn) 14%, var(--warn-soft)); }
+app-sales-editor .line-keep:focus-visible { outline: 3px solid color-mix(in srgb, var(--rose) 55%, transparent); outline-offset: 2px; }
+/* The editor in a wider window with a pointer has a 110 px quantity column: the two words get a little less air. */
+@media (min-width: 1024px), (min-width: 680px) and (hover: hover) {
+  app-sales-editor .line-per .ios-seg__opt { padding: 0 2px; font-size: 11.5px; }
+}
+
+/* Desk: a 20 px control in the product's meta line, in the meta's own small type. The wrapper is the meta child, so
+   the "·" separator lands after it and not inside the control's grid. */
+app-sales-desk .desk-per { display: inline-flex; align-items: center; }
+app-sales-desk .desk-per .wk-seg { height: 20px; border-radius: 7px; }
+app-sales-desk .desk-per .wk-seg::before { border-radius: 5px; }
+app-sales-desk .desk-per .wk-seg__opt { padding: 0 7px; border-radius: 5px; font-size: 10.5px; }
+app-sales-desk .desk-keep { margin-left: 6px; white-space: nowrap; }

@@ -31,7 +31,8 @@ function revisionQuery(webOrderRevision: number | null | undefined): string {
 /**
  * A line's applied order step (unitsPerOrderStep) is stamped by the server
  * when it rounds, its stock cost (stockCostEur) at shipment; neither travels
- * back, so a client cannot choose them.
+ * back, so a client cannot choose them. The per-piece choice (perPiece) is
+ * the client's to send and travels as it is.
  */
 function orderWriteBody(order: SalesOrder): SalesOrder {
   if (!order.lines?.some((line) => 'unitsPerOrderStep' in line || 'stockCostEur' in line)) return order;
