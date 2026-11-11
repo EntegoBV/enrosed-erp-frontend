@@ -93,7 +93,9 @@ export class PurchaseTracking {
       else this.invalidateRequest();
     };
     document.addEventListener('visibilitychange', visible);
-    // This GET reads stored snapshots. The backend owns the six-hour source checks.
+    // This GET reads the stored row of this one order (the whole feed only from an older server). It also runs
+    // while the sheet is closed: the desk keeps its order equal to a date tracking wrote (purchase-desk.ts,
+    // PurchaseTrackingBaseline), or the next save would put the old date back. The backend owns the source checks.
     const timer = window.setInterval(() => void this.reload(), 60_000);
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
@@ -134,7 +136,7 @@ export class PurchaseTracking {
     const version = ++this.requestVersion;
     this.loading.set(true);
     try {
-      const feed = await this.api.list();
+      const feed = await this.api.list(this.orderId());
       if (!this.accepts(version, scope)) return;
       this.feed.set(feed);
       this.error.set(null);
