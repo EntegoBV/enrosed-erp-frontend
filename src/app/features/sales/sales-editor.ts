@@ -3307,10 +3307,11 @@ export class SalesEditor {
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
   });
 
+  /** Transport & levering may change: never on a document made from Veilingverkopen (it ships nothing; the server freezes its freight). */
   readonly canEditShipping = computed(() => {
     const data = this.view();
     return !!data && this.canEditTerms() && !data.invoicedAsId && !data.order.paidAt
-      && !data.order.signedByName && !data.order.goodsShippedAt && !isAdvanceBillingInvoice(data)
+      && !data.order.signedByName && !data.order.goodsShippedAt && !isAdvanceBillingInvoice(data) && !isReportBacked(data)
       && (data.order.docType !== 'FACTUUR' || data.order.status === 'CONCEPT');
   });
 
