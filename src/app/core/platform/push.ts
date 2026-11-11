@@ -41,10 +41,12 @@ export class PushSetup {
         if (data?.source !== 'enrosed-push') return;
         void this.work.refresh(true);
         /* Only the fronted app speaks: sound plus a toast instead of the
-           suppressed system banner. */
+           suppressed system banner; when the banner speaks after all, it is
+           the one message. */
         if (document.visibilityState !== 'visible') return;
-        void this.ring(data);
-        this.ui.toast(data.title + (data.body ? ' — ' + data.body : ''));
+        void this.ring(data).then((banner) => {
+          if (!banner) this.ui.toast(data.title + (data.body ? ' — ' + data.body : ''));
+        });
       });
     } catch {
       /* An old browser without workers simply has no notifications. */
@@ -55,18 +57,22 @@ export class PushSetup {
    * The app's own sound for a sale. A browser only plays sound in a page someone has touched since it loaded, and the
    * app loads again by itself for a newer build (fresh-build-service.ts): a window that stands untouched after that
    * would stay silent while the worker has already held back the system banner for it. So when the sound is refused,
-   * the banner speaks after all.
+   * the banner speaks after all. True when it did (the toast is then left out). An older worker's message names no
+   * address: its banner would open the dashboard instead of the sale, so that one keeps the toast.
    */
-  private async ring(data: { kind: string; title?: string; body?: string; url?: string; tag?: string }): Promise<void> {
-    if (!SOUND_BY_KIND[data.kind] || await playSoundFor(data.kind)) return;
+  private async ring(data: { kind: string; title?: string; body?: string; url?: string; tag?: string }): Promise<boolean> {
+    if (!SOUND_BY_KIND[data.kind] || await playSoundFor(data.kind)) return false;
+    if (!this.registration || typeof data.url !== 'string' || !data.url) return false;
     const body = data.body || '';
     try {
-      await this.registration?.showNotification(data.title || 'Enrosed', {
+      await this.registration.showNotification(data.title || 'Enrosed', {
         body, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',
-        tag: data.tag || data.kind + ':' + body.slice(0, 40), data: { url: data.url || '/' },
+        tag: data.tag || data.kind + ':' + body.slice(0, 40), data: { url: data.url },
       });
+      return true;
     } catch {
       /* No permission any more: the toast is all there is. */
+      return false;
     }
   }
 

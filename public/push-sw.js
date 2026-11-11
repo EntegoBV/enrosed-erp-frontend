@@ -4,7 +4,15 @@
  * The backend sends {kind, title, body, url, tag?}. Beyond showing the native
  * notification, every open app window gets a message with the kind: a new
  * sale makes the app play the cash register even while you are working in it.
+ *
+ * A new version takes over at once: it keeps no caches and handles no fetch,
+ * and an open window reloads itself for a newer build (fresh-build-service.ts)
+ * instead of being closed, so a waiting worker would wait for good and the
+ * page would keep getting the old worker's messages.
  */
+self.addEventListener('install', () => { self.skipWaiting(); });
+self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()); });
+
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { /* plain text */ }
