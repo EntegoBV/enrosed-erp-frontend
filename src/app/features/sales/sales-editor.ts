@@ -888,7 +888,7 @@ function layoutKey(order: SalesOrder): string {
                         }
                       }
                     </span>
-                    <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
+                    <button class="delivery-edit" type="button" [disabled]="!canEditTerms() || reportLocked()"
                             [attr.aria-label]="editingDelivery() === line.productId
                               ? 'Leverweek sluiten voor ' + line.description
                               : (!line.inStock && !line.deliveryWeek

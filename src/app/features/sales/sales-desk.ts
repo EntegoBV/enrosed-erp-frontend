@@ -639,7 +639,7 @@ interface JourneyStep {
                             }
                           </span>
                           }
-                          @if (canEditTerms() && !isCreditNoteDoc()) {
+                          @if (canEditTerms() && !isCreditNoteDoc() && !reportBacked(data)) {
                             <button class="desk-product__link" type="button" (click)="toggleDelivery(line.productId)"
                                     [attr.aria-expanded]="editingDelivery() === line.productId">
                               {{ editingDelivery() === line.productId ? 'Sluiten' : (line.deliveryWeek ? 'Week wijzigen' : 'Leverweek') }}
