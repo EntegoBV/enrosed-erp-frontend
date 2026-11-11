@@ -488,7 +488,7 @@ interface JourneyStep {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
+                                  <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" [attr.data-per-piece-line]="line.productId" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>
@@ -503,7 +503,7 @@ interface JourneyStep {
                                 <div class="desk-per-row">
                                   @if (partCarton) { <span>{{ partCarton }}</span> }
                                   @if (perSwitch) {
-                                    <span class="desk-per" [title]="perPieceTitle(line.productId)">
+                                    <span class="desk-per" [title]="perPieceTitle(line.productId)" [attr.data-per-piece-line]="line.productId">
                                       <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
                                                      [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
                                                      (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
