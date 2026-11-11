@@ -48,6 +48,8 @@ const COMMAND_TYPES: readonly HostCommand['type'][] = ['action', 'back', 'open',
 const PERSON_COMMANDS: ReadonlySet<HostCommand['type']> = new Set(['action', 'back', 'open', 'tabRoot', 'refresh']);
 /** An action that arrives while no page has bound yet waits this long for one. */
 const HELD_ACTION_MS = 3000;
+/** After a reload with a kept stack the bare page waits this long for the first navigation to end; then it goes out as on a cold start. */
+const KEPT_STACK_WAIT_MS = 10_000;
 const FALLBACK_MS = 300;
 const REFRESH_TIMEOUT_MS = 15000;
 /** `nav` goes out a second after its last change. */
@@ -121,6 +123,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
    */
   private heldActions: { id: string; at: number }[] = [];
   private everBound = false;
+  private readonly createdAt = Date.now();
 
   /** The URL the router settled on; read by the compose effect so a navigation republishes. */
   private readonly navUrl = toSignal(
@@ -336,7 +339,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
       /* After a reload of our own NavHistory's kept stack has the reloaded screen on top while router.url still reads '/':
          a bare page for '/' would go out one deeper and the shell would push a screen that does not exist. A cold start
          has no kept stack and is unchanged. */
-      if (this.history.kept && !this.router.navigated) { this.scheduleFallback(); return; }
+      if (this.history.kept && !this.router.navigated && Date.now() - this.createdAt < KEPT_STACK_WAIT_MS) { this.scheduleFallback(); return; }
       const url = this.router.url;
       if (this.owner && this.publishedUrl === url) return;
       const title = screenLabel(url) || returnLabel(url) || 'Enrosed';
