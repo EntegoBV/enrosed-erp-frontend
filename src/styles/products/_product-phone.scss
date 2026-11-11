@@ -74,6 +74,7 @@ app-product-view .pph-onway--warn { background: var(--warn-soft); color: var(--w
 app-product-view .pph-onway--quiet { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-2); }
 app-product-view .pph-onway + .pph-onway { margin-top: -10px; }
 app-product-view button.pph-onway { width: calc(100% - 32px); min-height: 44px; border: 0; font: inherit; font-size: 14.5px; font-weight: 650; text-align: left; cursor: pointer; }
+app-product-view button.pph-onway:disabled { cursor: default; }
 
 /* ---- sections ---- */
 app-product-view .pph-group { overflow: visible; }

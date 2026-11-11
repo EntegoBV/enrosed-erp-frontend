@@ -155,13 +155,17 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                    [routerLink]="['/purchasing', inc.orders[0].orderId]" [attr.title]="inc.title">
                   <small>{{ inc.word }}</small>
                   <strong>+{{ inc.quantity | num }}</strong>
-                  <span>{{ inc.when }}@if (inc.later) { · <span class="pdk-nw">+{{ inc.later | num }} later</span> }</span>
+                  <span>{{ inc.when }}@if (inc.later) { · <span class="pdk-nw">+{{ inc.later | num }} {{ inc.laterNote }}</span> }</span>
                 </a>
               } @else {
                 <div class="pdk-kpi pdk-kpi--static pdk-kpi--accent"><small>{{ inc.word }}</small><strong>+{{ inc.quantity | num }}</strong><span>{{ inc.when }}</span></div>
               }
             } @else if (incomingFailed()) {
-              <button class="pdk-kpi" type="button" (click)="retryIncoming()"><small>Onderweg</small><strong>—</strong><span>niet geladen · opnieuw ›</span></button>
+              <!-- Stays while its retry runs: "niets besteld" is only said after an answer. -->
+              <button class="pdk-kpi" type="button" [disabled]="incomingLoading()" (click)="retryIncoming()">
+                <small>Onderweg</small><strong>—</strong><span>{{ incomingLoading() ? 'laden…' : 'niet geladen · opnieuw ›' }}</span></button>
+            } @else if (incomingLoading()) {
+              <div class="pdk-kpi pdk-kpi--static"><small>Onderweg</small><strong>—</strong><span>laden…</span></div>
             } @else {
               <div class="pdk-kpi pdk-kpi--static">
                 <small>Onderweg</small>

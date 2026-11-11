@@ -198,7 +198,9 @@ export type { ReceivedContainer } from './received-containers';
             </a>
           }
         } @else if (incomingFailed()) {
-          <button class="pph-onway pph-onway--quiet" type="button" (click)="retryIncoming()"><span>Onderweg niet geladen</span><small>Opnieuw ›</small></button>
+          <!-- Stays while its retry runs, so a press is answered and the bar does not come and go. -->
+          <button class="pph-onway pph-onway--quiet" type="button" [disabled]="incomingLoading()" (click)="retryIncoming()">
+            <span>Onderweg niet geladen</span><small>{{ incomingLoading() ? 'laden…' : 'Opnieuw ›' }}</small></button>
         }
 
         <!-- 1 · what customers see for this colour -->
@@ -840,8 +842,11 @@ export class ProductView {
   private readonly today = brusselsToday();
   /** The same as one status: state, word, figure, date and every order behind it. */
   readonly incoming = computed(() => incomingOf(this.expected(), this.today));
-  /** The expected-stock call failed: the page says so with a retry instead of "niets besteld". */
+  /** The expected-stock call failed: the page says so with a retry instead of "niets besteld". Stays set while the retry runs. */
   readonly incomingFailed = signal(false);
+  /** The call is out: "niets besteld" is only said once it answered without an entry for this product. */
+  readonly incomingLoading = signal(false);
+  private incomingAsk = 0;
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
@@ -1324,17 +1329,32 @@ export class ProductView {
     void this.loadProduct(this.loadedId);
   }
 
-  /** What is coming for this product; the previous product's status never lingers and a late answer is dropped. */
-  private loadIncoming(id: number, version: number): void {
+  /**
+   * What is coming for this product; the previous product's status never lingers and a late answer is dropped.
+   * While the call is out the page says "laden…", never "niets besteld"; a retry keeps its failed notice until it answers.
+   */
+  private loadIncoming(id: number, version: number, retry = false): void {
+    const ask = ++this.incomingAsk;
+    const current = () => version === this.loadVersion && ask === this.incomingAsk;
     this.expected.set(null);
-    this.incomingFailed.set(false);
+    if (!retry) this.incomingFailed.set(false);
+    this.incomingLoading.set(true);
     void this.sourcing.incomingStock()
-      .then((items) => { if (version === this.loadVersion) this.expected.set(items.find((item) => item.productId === id) ?? null); })
-      .catch(() => { if (version === this.loadVersion) this.incomingFailed.set(true); });
+      .then((items) => {
+        if (!current()) return;
+        this.expected.set(items.find((item) => item.productId === id) ?? null);
+        this.incomingFailed.set(false);
+        this.incomingLoading.set(false);
+      })
+      .catch(() => {
+        if (!current()) return;
+        this.incomingFailed.set(true);
+        this.incomingLoading.set(false);
+      });
   }
 
   retryIncoming(): void {
-    if (this.loadedId !== null) this.loadIncoming(this.loadedId, this.loadVersion);
+    if (this.loadedId !== null && !this.incomingLoading()) this.loadIncoming(this.loadedId, this.loadVersion, true);
   }
 
   private async loadProduct(id: number): Promise<void> {
