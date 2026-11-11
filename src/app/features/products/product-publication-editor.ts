@@ -285,7 +285,7 @@ interface FamilyFeaturedOption {
                     maxlength="255"
                     [ngModel]="family.publicHandle"
                     [readOnly]="!identityEditable()"
-                    (ngModelChange)="patch({ publicHandle: $event })"
+                    (ngModelChange)="patchPublicHandle($event)"
                     placeholder="rose-in-dome-xl"
                   />
                 </span>
@@ -867,10 +867,20 @@ export class ProductPublicationEditor {
     this.familyChange.emit({ ...family, ...changes });
   }
 
-  patchCanonicalVariantKey(productId: number, canonicalVariantKey: string): void {
+  /**
+   * A saved series keeps "no URL" as null. A URL typed and wiped again is that same null, not an
+   * unsaved change. A new series keeps the text as typed.
+   */
+  patchPublicHandle(value: string): void {
+    this.patch({ publicHandle: value === '' && this.family()?.id != null ? null : value });
+  }
+
+  patchCanonicalVariantKey(productId: number, value: string): void {
     if (this.busy() || !this.identityEditable()) return;
     const family = this.family();
     if (!family) return;
+    /* As for the URL: a wiped code of a saved series is its saved null. */
+    const canonicalVariantKey = value === '' && family.id !== null ? null : value;
     this.familyChange.emit({
       ...family,
       members: family.members.map((member) => member.productId === productId
