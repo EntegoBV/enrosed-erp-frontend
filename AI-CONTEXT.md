@@ -3817,7 +3817,9 @@ contract `redesign/products/design.md` + `critique.md`).
   Analyses. A failed call says so with a retry on Voorraad (tile /
   phone banner), Producten (warning line), the product page (KPI /
   bar; "laden…" while the call is out, "niets besteld" only after an
-  answer) and the sales screens (see the picker bullet).
+  answer) and the sales screens (see the picker bullet). Every notice
+  stays, disabled, while its retry runs, and its phone retry is a 44 px
+  target.
 - **`product-figures.ts`**: `productMargin` (the desk rounding),
   `stockValue` (rows without cost counted apart), `locationValues`,
   `totalsByProduct`, `locationSplit` (screens render one inline-block part
