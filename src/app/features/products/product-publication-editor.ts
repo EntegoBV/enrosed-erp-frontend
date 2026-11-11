@@ -18,7 +18,10 @@ import {
 } from '../../shared/product-featured-eligibility';
 import {
   canEditProductFamilyIdentity,
-  hasFinalizableDraftIdentity,
+  CHANNEL_FIELD_IDS,
+  IDENTITY_KEY_FIELD_ID,
+  IDENTITY_URL_FIELD_ID,
+  identityVariantFieldId,
 } from './product-family-identity';
 
 interface FamilyFeaturedOption {
@@ -143,6 +146,7 @@ interface FamilyFeaturedOption {
                 <p>Geldt voor alle kleuren en maten van deze reeks.</p>
               </div>
               <select class="select select--status"
+                      [id]="channelFieldIds.websiteStatus"
                       [class.select--status-off]="visiblePublicationStatus(family.websiteStatus) !== 'PUBLISHED'"
                       [ngModel]="visiblePublicationStatus(family.websiteStatus)"
                       (ngModelChange)="patch({ websiteStatus: $event })"
@@ -194,6 +198,7 @@ interface FamilyFeaturedOption {
                 <label class="channel-card">
                   <span><b>Orderapp</b><small>Bestelbaar voor klanten (later)</small></span>
                   <select class="select select--sm"
+                          [id]="channelFieldIds.orderAppStatus"
                           [ngModel]="visiblePublicationStatus(family.orderAppStatus)"
                           (ngModelChange)="patch({ orderAppStatus: $event })">
                     <option value="DRAFT">Concept</option>
@@ -203,6 +208,7 @@ interface FamilyFeaturedOption {
                 <label class="channel-card">
                   <span><b>Catalogus</b><small>Catalogussync (later)</small></span>
                   <select class="select select--sm"
+                          [id]="channelFieldIds.catalogueStatus"
                           [ngModel]="visiblePublicationStatus(family.catalogueStatus)"
                           (ngModelChange)="patch({ catalogueStatus: $event })">
                     <option value="DRAFT">Concept</option>
@@ -248,7 +254,7 @@ interface FamilyFeaturedOption {
             <div class="stable-identity-note" role="note">
               <span aria-hidden="true">🔗</span>
               @if (identityFinalizationPending()) {
-                <p><b>Deze geïmporteerde conceptreeks mist nog haar vaste identiteit.</b> Vul de reeks-sleutel, URL en alle variantcodes één keer in. Opslaan finaliseert ze samen; de reeks en alle SKU's moeten daarvoor op elk kanaal Concept staan.</p>
+                <p><b>Deze conceptreeks mist nog haar vaste identiteit.</b> Vul de reeks-sleutel, URL en alle variantcodes één keer in. Opslaan finaliseert ze samen; de reeks en alle SKU's moeten daarvoor op elk kanaal Concept staan.</p>
               } @else {
                 <p><b>De klanttitel mag later veranderen.</b> De vaste reeks-sleutel en URL worden één keer bij het aanmaken gekozen. Een latere URL-migratie hoort buiten dit formulier en vereist een gecontroleerde redirect.</p>
               }
@@ -258,13 +264,15 @@ interface FamilyFeaturedOption {
                 <span>Vaste productreeks-sleutel</span>
                 <input
                   class="input mono"
+                  [id]="keyFieldId"
+                  maxlength="255"
                   [ngModel]="family.familyKey"
                   [readOnly]="!identityEditable()"
                   (ngModelChange)="patch({ familyKey: $event })"
                   placeholder="bijv. rose-in-dome-xl"
                 />
                 <small class="field__hint">{{ identityFinalizationPending()
-                  ? 'Nog één keer te kiezen omdat deze geïmporteerde conceptreeks geen publieke URL heeft.'
+                  ? 'Nog één keer te kiezen omdat deze conceptreeks geen publieke URL heeft.'
                   : 'Permanente technische koppeling tussen varianten; alleen te kiezen wanneer een nieuwe reeks wordt aangemaakt.' }}</small>
               </label>
               <label class="field">
@@ -273,9 +281,11 @@ interface FamilyFeaturedOption {
                   <small>/products/</small>
                   <input
                     class="input mono"
+                    [id]="urlFieldId"
+                    maxlength="255"
                     [ngModel]="family.publicHandle"
                     [readOnly]="!identityEditable()"
-                    (ngModelChange)="patch({ publicHandle: $event })"
+                    (ngModelChange)="patchPublicHandle($event)"
                     placeholder="rose-in-dome-xl"
                   />
                 </span>
@@ -301,6 +311,8 @@ interface FamilyFeaturedOption {
                       </span>
                       <input
                         class="input mono"
+                        [id]="variantFieldId(member.productId)"
+                        maxlength="255"
                         [ngModel]="member.canonicalVariantKey ?? ''"
                         [readOnly]="!identityEditable()"
                         (ngModelChange)="patchCanonicalVariantKey(member.productId, $event)"
@@ -368,8 +380,9 @@ interface FamilyFeaturedOption {
                 <span>Standaardtags (zonder vertaling)</span>
                 <input
                   class="input"
-                  [ngModel]="family.tags.join(', ')"
+                  [ngModel]="tagsText()"
                   (ngModelChange)="patchTags($event)"
+                  (blur)="typedTags.set(null)"
                   placeholder="gift, preserved, premium"
                 />
                 <small class="field__hint">Voor alle varianten. Stel vertaalde tags per taal in onder Productvertalingen; deze standaardtags blijven beschikbaar als terugval.</small>
@@ -507,6 +520,8 @@ interface FamilyFeaturedOption {
     .identity-variant b { overflow: hidden; color: var(--ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .identity-variant small { color: var(--muted); font: 9.5px var(--mono); }
     .identity-variant .input { background: var(--surface); }
+    /* The codes are no .field: without this a final code stays white and silently takes no typing. */
+    .identity-variant .input[readonly] { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
     .url-field {
       min-width: 0;
       display: flex;
@@ -713,6 +728,8 @@ export class ProductPublicationEditor {
 
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
+  /** The series as the server has it. It decides whether the identity can still be chosen, never the draft. */
+  readonly savedFamily = input<ProductFamily | null>(null);
   readonly categories = input<Category[]>([]);
   readonly busy = input(false);
   readonly familyLoading = input(false);
@@ -733,8 +750,12 @@ export class ProductPublicationEditor {
   readonly readableIssues = computed(() => {
     const family = this.family();
     if (!family) return [];
+    /* The server names a variant by its saved code, or by its id without one: a code that is
+       being typed must not turn "Kleurnaam van Rood" into "variant 346". */
+    const saved = this.savedFamily();
+    const members = saved !== null && saved.id === family.id ? saved.members : family.members;
     const names = new Map<string, string>();
-    for (const member of family.members ?? []) {
+    for (const member of members ?? []) {
       const key = member.canonicalVariantKey || String(member.productId);
       names.set(key, [member.colour, member.size].filter(Boolean).join(' · ') || member.name || key);
     }
@@ -764,12 +785,19 @@ export class ProductPublicationEditor {
   readonly issueCount = computed(
     () => (this.family()?.publicationIssues ?? []).length,
   );
-  readonly identityFinalizationPending = computed(
-    () => hasFinalizableDraftIdentity(this.family()),
-  );
+  /** Follows the saved series: typing the URL must not close the fields. */
   readonly identityEditable = computed(
-    () => canEditProductFamilyIdentity(this.family()),
+    () => canEditProductFamilyIdentity(this.family(), this.savedFamily()),
   );
+  /** A saved series whose identity is still open: the texts of the one-time choice. */
+  readonly identityFinalizationPending = computed(
+    () => this.family()?.id != null && this.identityEditable(),
+  );
+  /** The editor jumps to these inputs when a save refuses the identity. */
+  readonly keyFieldId = IDENTITY_KEY_FIELD_ID;
+  readonly urlFieldId = IDENTITY_URL_FIELD_ID;
+  readonly variantFieldId = identityVariantFieldId;
+  readonly channelFieldIds = CHANNEL_FIELD_IDS;
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
     const family = this.family();
@@ -840,10 +868,20 @@ export class ProductPublicationEditor {
     this.familyChange.emit({ ...family, ...changes });
   }
 
-  patchCanonicalVariantKey(productId: number, canonicalVariantKey: string): void {
+  /**
+   * A saved series keeps "no URL" as null. A URL typed and wiped again is that same null, not an
+   * unsaved change. A new series keeps the text as typed.
+   */
+  patchPublicHandle(value: string): void {
+    this.patch({ publicHandle: value === '' && this.family()?.id != null ? null : value });
+  }
+
+  patchCanonicalVariantKey(productId: number, value: string): void {
     if (this.busy() || !this.identityEditable()) return;
     const family = this.family();
     if (!family) return;
+    /* As for the URL: a wiped code of a saved series is its saved null. */
+    const canonicalVariantKey = value === '' && family.id !== null ? null : value;
     this.familyChange.emit({
       ...family,
       members: family.members.map((member) => member.productId === productId
@@ -852,17 +890,21 @@ export class ProductPublicationEditor {
     });
   }
 
+  /**
+   * The tags field as typed. It stays on screen as long as it means the draft's tags: rebuilding
+   * the text from the de-duplicated list on every keystroke swallowed "gift, gift-box" at
+   * "gift, gift". On leaving the field it shows the list again.
+   */
+  readonly typedTags = signal<string | null>(null);
+  readonly tagsText = computed(() => {
+    const tags = this.family()?.tags ?? [];
+    const typed = this.typedTags();
+    return typed !== null && JSON.stringify(parseTags(typed)) === JSON.stringify(tags) ? typed : tags.join(', ');
+  });
+
   patchTags(value: string): void {
-    this.patch({
-      tags: [
-        ...new Set(
-          value
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-        ),
-      ],
-    });
+    this.typedTags.set(value);
+    this.patch({ tags: parseTags(value) });
   }
 
   numberOrNull(value: number | string | null): number | null {
@@ -871,4 +913,9 @@ export class ProductPublicationEditor {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+}
+
+/** Comma-separated tags, trimmed, without empties or repeats. */
+function parseTags(value: string): string[] {
+  return [...new Set(value.split(',').map((tag) => tag.trim()).filter(Boolean))];
 }

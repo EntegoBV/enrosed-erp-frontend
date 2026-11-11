@@ -3985,6 +3985,29 @@ contract `redesign/products/design.md` + `critique.md`).
 - `Location.replaceState(path, query)` without a third argument wipes the entry's
   router state: pass `this.location.getState()` (see "A refused back"), and never write
   another path than the router's into the address bar.
+- A field's editability or visibility never follows the draft value that same field edits.
+  The series identity in `product-publication-editor.ts` (Vaste koppeling & URL) closed itself
+  on the first typed character of the URL (2026-11-10): `canEditProductFamilyIdentity(draft,
+  saved)` reads the SAVED series (the `savedFamily` input), so key, URL and variant codes stay
+  open in any order until the finalising save succeeds. Around it in `product-editor.ts`:
+  `save()` plans the identity first (a refusal carries `field`, `showIdentityField` jumps to it,
+  server refusals are put in the form's labels by `identityRefusedByServer`), asks "URL
+  vastleggen?" once, and `persistFamilyDraft` takes a finalised identity into draft, baseline,
+  the `families` list and the product's own key and code at once (`adoptFinalizedIdentity`);
+  when the rest of that save is refused the message reads "Vaste koppeling & URL opgeslagen ·
+  <reden>". A photo save, a linked or unlinked colour and a copy keep the identity that is
+  being typed (`keepTypedVariantKeys`, `keepTypedIdentity`). A series made by linking colours
+  is in the same no-URL state as an imported one (`model-<id>-<id>`). Same rule for the
+  colour's name field (`setProductColour` keeps `customColour`, reset per product).
+  A refused finalisation, or a 422 on the ordinary series PUT, fetches the series once
+  (`seriesChangedElsewhere`): when its identity differs from the copy the request was built
+  from (finalised in another tab, a lost answer, a colour copied in), `mergeFamilyPhotoState`
+  takes it over and the message points at no field; "is gewijzigd; verwacht" is never a key-field
+  error. The server finalises only a series stored as concept on every channel: a channel the
+  form puts on Concept (or a stored READY, shown as Concept) is saved first
+  (`conceptBeforeIdentity`); one still on live is a local message at its select. A wiped URL or
+  code of a saved series is null, like the saved value; the tags field keeps its typed text
+  while it means the draft's tags.
 
 ## Jaarinventaris (2026-10-09)
 
