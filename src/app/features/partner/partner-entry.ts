@@ -5,7 +5,6 @@ import type {
 } from '../../core/api/partner-portal-api';
 import { messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
-import { DecimalInput } from '../../shared/decimal-input';
 import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
@@ -16,6 +15,7 @@ import {
   KIND_SHORT, PARTNER_KINDS, PartnerKind, dayLabel, escapeHtml, euro, minusEuro, parseKind, percent, productTitle,
 } from './partner-format';
 import { averageOf } from './partner-money';
+import { PartnerMoneyField } from './partner-money-field';
 import { PhotoUrlFn, partnerPhoto } from './partner-photo';
 
 /** How far the average may rise above the partner's last one before Melden asks "Klopt de prijs?". */
@@ -34,7 +34,7 @@ const PRICE_JUMP = 5;
 @Component({
   selector: 'app-partner-entry',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, DecimalInput, Icon, Segmented, Sheet, PartnerEntryCard, PartnerGrid],
+  imports: [FormsModule, Icon, PartnerMoneyField, Segmented, Sheet, PartnerEntryCard, PartnerGrid],
   template: `
     @let d = draft();
     @let kind = d.kind();
@@ -86,13 +86,15 @@ const PRICE_JUMP = 5;
                                  (changed)="d.extra.set({ mode: $event === 'PCT' ? 'PCT' : 'AMOUNT', value: extra.value })" />
                   <label class="extra__field">
                     @if (extra.mode === 'AMOUNT') { <span aria-hidden="true">€</span> }
-                    <input appDecimal placeholder="0" [attr.aria-label]="extra.mode === 'PCT' ? 'Extra kost in procent' : 'Extra kost in euro'"
+                    <input appPartnerMoney #extraField="partnerMoney" [decimals]="extra.mode === 'PCT' ? 0 : 2" placeholder="0"
+                           [attr.aria-label]="extra.mode === 'PCT' ? 'Extra kost in procent' : 'Extra kost in euro'"
                            [ngModel]="extra.value" (ngModelChange)="d.extra.set({ mode: extra.mode, value: $event })" />
                     @if (extra.mode === 'PCT') { <span aria-hidden="true">%</span> }
                   </label>
                   <span class="fig">{{ minus(t.extraCostEur) }}</span>
                 </div>
-                @if (d.extraProblem(); as problem) { <p class="bad">{{ problem }}</p> }
+                @if (extraField.unreadable()) { <p class="bad">Geen getal: typ het als 12,50</p> }
+                @else if (d.extraProblem(); as problem) { <p class="bad">{{ problem }}</p> }
               </div>
             } @else {
               <button class="link" type="button" (click)="d.extra.set({ mode: 'AMOUNT', value: null })">

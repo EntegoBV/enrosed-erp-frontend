@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DecimalInput } from '../../shared/decimal-input';
 import { Icon } from '../../shared/icon';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { DraftEntry, DraftPart, MeldingDraft, PriceMode } from './partner-draft';
 import { count, euro, shortDate, units } from './partner-format';
 import { EntryMoney, convertPrice } from './partner-money';
+import { PartnerMoneyField } from './partner-money-field';
 import { PartnerPhoto, PhotoUrlFn, partnerPhoto, safeColour } from './partner-photo';
 import { PartnerStepper } from './partner-stepper';
 
@@ -18,7 +18,7 @@ import { PartnerStepper } from './partner-stepper';
 @Component({
   selector: 'app-partner-entry-card',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, DecimalInput, Icon, Segmented, PartnerPhoto, PartnerStepper],
+  imports: [NgTemplateOutlet, FormsModule, Icon, PartnerMoneyField, Segmented, PartnerPhoto, PartnerStepper],
   template: `
     @let e = entry();
     @let p = e.product;
@@ -83,13 +83,14 @@ import { PartnerStepper } from './partner-stepper';
         <div class="price__row">
           <label class="money">
             <span class="money__sign" aria-hidden="true">€</span>
-            <input class="money__field" appDecimal placeholder="0,00" enterkeyhint="done"
+            <input class="money__field" appPartnerMoney #priceField="partnerMoney" placeholder="0,00" enterkeyhint="done"
                    [attr.aria-label]="(part.mode === 'unit' ? priceLabel + ' per ' + entry().product.unitOne : 'Totaal') + ' ' + entry().product.name"
                    [ngModel]="part.price" (ngModelChange)="set(which, { price: $event })" />
           </label>
           <app-segmented class="mode" variant="ios" [label]="priceLabel + ' invullen als'" [options]="modes()"
                          [value]="part.mode" (changed)="setMode(which, part, $event)" />
         </div>
+        @if (priceField.unreadable()) { <p class="msg msg--bad" role="alert">Geen bedrag: typ het als 3,20 of 1.250,00</p> }
       </div>
     </ng-template>
   `,
@@ -116,6 +117,9 @@ import { PartnerStepper } from './partner-stepper';
     .mode{height:44px}
     .money{display:flex;align-items:center;gap:6px;min-height:52px;padding:0 14px;border-radius:14px;background:color-mix(in srgb,var(--ink) 6%,var(--surface));cursor:text}
     .money:focus-within{box-shadow:0 0 0 2px color-mix(in srgb,var(--rose) 50%,transparent)}
+    .money:has(.money__field[aria-invalid=true]){background:var(--danger-soft)}
+    .money__field[aria-invalid=true]{color:var(--danger)}
+    .price .msg{margin:0}
     .money__sign{color:var(--muted);font-size:18px;font-weight:600}
     .money__field{flex:1;min-width:0;height:52px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;outline:none}
     .sum{display:flex;align-items:baseline;justify-content:space-between;gap:10px;color:var(--ink-2);font-size:15px}
