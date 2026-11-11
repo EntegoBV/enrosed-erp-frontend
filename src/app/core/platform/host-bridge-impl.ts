@@ -44,6 +44,10 @@ interface Owner {
 }
 
 const COMMAND_TYPES: readonly HostCommand['type'][] = ['action', 'back', 'open', 'tabRoot', 'lifecycle', 'refresh', 'insets', 'sessionCheck'];
+/** The commands a person causes on the native chrome; the page sees no pointer event for them (HostBridge.touchedAt). */
+const PERSON_COMMANDS: ReadonlySet<HostCommand['type']> = new Set(['action', 'back', 'open', 'tabRoot', 'refresh']);
+/** An action that arrives while no page has bound yet waits this long for one. */
+const HELD_ACTION_MS = 3000;
 const FALLBACK_MS = 300;
 const REFRESH_TIMEOUT_MS = 15000;
 /** `nav` goes out a second after its last change. */
@@ -109,6 +113,14 @@ export class HostBridgeImpl implements HostBridgeImplementation {
   /** The last `session` and `nav` this web view sent (JSON): each goes out again only when it changed. */
   private lastSession = '';
   private lastNav = '';
+  /**
+   * Actions that arrived before this document's first page had bound: the native bar keeps its buttons while the page
+   * loads again (a reload for a newer build), and a tap on one reaches the new document before its first page. Each runs
+   * once a page names its id, or is logged after HELD_ACTION_MS. Between two pages of a running document nothing is
+   * held: an action for the page that just left must not run on the next one.
+   */
+  private heldActions: { id: string; at: number }[] = [];
+  private everBound = false;
 
   /** The URL the router settled on; read by the compose effect so a navigation republishes. */
   private readonly navUrl = toSignal(
@@ -236,11 +248,34 @@ export class HostBridgeImpl implements HostBridgeImplementation {
 
   private publish(owner: Owner, page: HostPage): void {
     this.owner = owner;
+    this.everBound = true;
     owner.page = page;
     this.pending = page;
     this.markBar(page);
     this.cancelFallback();
     this.scheduleFlush();
+    if (this.heldActions.length) this.runHeldActions(owner);
+  }
+
+  /** The held actions this page knows run now, in a microtask of their own (publish runs inside the compose effect). */
+  private runHeldActions(owner: Owner): void {
+    const now = Date.now();
+    /* The header's own bell is no page id (compose takes it out of `ids`): it runs once the header has one. */
+    const known = (id: string): boolean => owner.ids.has(id) || (id === 'bell' && !!owner.source.bell?.());
+    const due = this.heldActions.filter((held) => now - held.at <= HELD_ACTION_MS && known(held.id));
+    if (!due.length) return;
+    this.heldActions = this.heldActions.filter((held) => !due.includes(held));
+    queueMicrotask(() => { for (const held of due) this.runAction(held.id); });
+  }
+
+  private holdAction(id: string): void {
+    const held = { id, at: Date.now() };
+    this.heldActions.push(held);
+    setTimeout(() => {
+      if (!this.heldActions.includes(held)) return;
+      this.heldActions = this.heldActions.filter((other) => other !== held);
+      this.bridge.send({ type: 'log', level: 'warn', text: `action ${id} without a page` });
+    }, HELD_ACTION_MS);
   }
 
   /**
@@ -298,6 +333,10 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     this.cancelFallback();
     this.fallbackTimer = setTimeout(() => {
       this.fallbackTimer = null;
+      /* After a reload of our own NavHistory's kept stack has the reloaded screen on top while router.url still reads '/':
+         a bare page for '/' would go out one deeper and the shell would push a screen that does not exist. A cold start
+         has no kept stack and is unchanged. */
+      if (this.history.kept && !this.router.navigated) { this.scheduleFallback(); return; }
       const url = this.router.url;
       if (this.owner && this.publishedUrl === url) return;
       const title = screenLabel(url) || returnLabel(url) || 'Enrosed';
@@ -321,6 +360,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
   /* ------------------------------------------------------------- commands */
 
   private dispatch(command: HostCommand): void {
+    if (PERSON_COMMANDS.has(command.type)) this.bridge.touchedAt = Date.now();
     switch (command.type) {
       case 'action': this.runAction(command.id); break;
       case 'back': this.history.popScreens(command.count ?? 1, () => this.webBack()); break;
@@ -330,7 +370,10 @@ export class HostBridgeImpl implements HostBridgeImplementation {
         break;
       }
       case 'tabRoot': this.win?.scrollTo({ top: 0, behavior: scrollBehavior() }); break;
-      case 'lifecycle': if (command.state === 'active') void this.injector.get(WorkQueue).refresh(); break;
+      case 'lifecycle':
+        if (command.state === 'active') void this.injector.get(WorkQueue).refresh();
+        if (command.state === 'active' || command.state === 'background') this.bridge.noteLifecycle(command.state);
+        break;
       case 'refresh': this.runRefresh(); break;
       case 'insets': {
         const { top, right, bottom, left } = command;
@@ -363,6 +406,7 @@ export class HostBridgeImpl implements HostBridgeImplementation {
     for (const contribution of this.bridge.contributions().values()) if (contribution.action?.(id)) return;
     if (id === 'bell' && owner?.source.bell) { owner.source.bell()?.open(); return; }
     if (owner) owner.source.onAction({ id, finish: () => undefined });
+    else if (!this.everBound) this.holdAction(id);
     else this.bridge.send({ type: 'log', level: 'warn', text: `action ${id} without a page` });
   }
 
