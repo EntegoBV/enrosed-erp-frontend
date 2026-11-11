@@ -1723,7 +1723,10 @@ the rows behind it; **the rows add up to the clicked figure** (A.4).
   two-step share; "Toon in map" opens the folder list, not the file.
 - Uploads: a finished tray with failures, failed links or files the
   library already had never closes by itself; a toast, the phone's pill
-  and the desk status bar lead back to it.
+  and the desk status bar lead back to it. While the tray holds files only
+  in memory (picked and not sent, on their way, failed or not linked) the
+  page carries `data-unsaved` (`trayHoldsWork`), so the reload for a newer
+  build waits.
 - Records link back with "In Documenten & media ›" (product card here;
   cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 
