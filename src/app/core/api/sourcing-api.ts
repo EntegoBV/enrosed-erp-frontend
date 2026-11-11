@@ -373,6 +373,14 @@ export class SourcingApi {
     return firstValueFrom(this.http.get<ExpectedStock[]>(api('/api/purchase-orders/expected-stock')));
   }
 
+  /**
+   * What is coming per product, with every order behind it and the received containers that still wait for their
+   * stock booking. A backend before 2026-11-10 ignores the parameter and answers as expectedStock() does.
+   */
+  incomingStock(): Promise<ExpectedStock[]> {
+    return firstValueFrom(this.http.get<ExpectedStock[]>(api('/api/purchase-orders/expected-stock'), { params: { arrived: 'true' } }));
+  }
+
   /** Copies the calculation to price a variant quickly. */
   duplicatePurchaseOrder(id: number): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.post<PurchaseOrderView>(
