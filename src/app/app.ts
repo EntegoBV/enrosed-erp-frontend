@@ -737,6 +737,21 @@ export class App {
     void import('./core/platform/shell-loading').then((m) => m.startIdlePreload(this.router, this.document));
   });
 
+  /*
+   * A newer build loads by itself at a moment when nothing can be lost (core/platform/fresh-build.ts has the rules),
+   * from a lazy chunk. Only for a signed-in person on a staff screen, like the preloading above: the login page, the
+   * customer portal and the terms page for a customer never take part, not even with a listener.
+   */
+  private readonly freshBuild = effect((onCleanup) => {
+    if (!preloadWanted(this.auth.isLoggedIn(), this.bare())) return;
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+    void import('./core/platform/fresh-build-service').then((m) => {
+      if (!cancelled) stop = m.installFreshBuild(this.injector);
+    }).catch(() => undefined);
+    onCleanup(() => { cancelled = true; stop?.(); });
+  });
+
   logout(): void {
     this.auth.logout();
     this.router.navigate(['/login']);

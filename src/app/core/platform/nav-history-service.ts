@@ -2,10 +2,14 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Location, ViewportScroller } from '@angular/common';
 import { NavigationCancel, NavigationCancellationCode, NavigationEnd, NavigationStart, Router, Scroll } from '@angular/router';
 import {
-  currentNavEntry, emptyNavStack, hostStack, lastUrlFor, navPath, recordNavigation, screenBelow, screensBelow, upTarget,
+  adoptNavStack, currentNavEntry, emptyNavStack, hostStack, keepNavStack, lastUrlFor, navPath, recordNavigation, screenBelow, screensBelow,
+  upTarget,
 } from './nav-history';
-import type { NavRecord } from './nav-history';
+import type { NavRecord, NavStack } from './nav-history';
 import { screenLabel } from './return-label';
+
+/** sessionStorage: the stack kept across a reload the app starts itself (nav-history.ts keepNavStack). */
+const KEPT_KEY = 'enrosed.nav.kept';
 
 /**
  * The in-app history as the browser keeps it (see nav-history.ts), for back
@@ -23,13 +27,23 @@ import { screenLabel } from './return-label';
  *
  * Navigations it starts carry info { nav: 'pop' } for the phone motion.
  * Instantiated by the App shell so it records from the first navigation.
+ *
+ * A reload the app starts itself (a newer build, a missing chunk) calls
+ * keepForReload() first; the page that loads next adopts that stack, so the
+ * back label, the way up and the native host's stack depth are what they
+ * were. A reload by hand keeps nothing and starts the stack over, as before.
  */
 @Injectable({ providedIn: 'root' })
 export class NavHistory {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly scroller = inject(ViewportScroller);
-  private readonly stack = signal(emptyNavStack());
+  private readonly stack = signal(this.adoptKept() ?? emptyNavStack());
+  /**
+   * The stack was adopted from before a reload the app started itself: until the first navigation has ended, its top is
+   * the reloaded screen while router.url still reads '/'.
+   */
+  readonly kept = this.stack().index >= 0;
   private pending: Omit<NavRecord, 'url'> | null = null;
   /** A back the guard refused: where the page stood, until its way forward again has passed the router's scroller. */
   private refused: { path: string; position: [number, number] } | null = null;
@@ -60,7 +74,8 @@ export class NavHistory {
           ? this.pending
           : { id: event.id, trigger: 'imperative' as const, replace: false, restoredId: null };
         this.pending = null;
-        this.stack.update((stack) => recordNavigation(stack, { ...pending, url: event.urlAfterRedirects }));
+        const page = this.pageId();
+        this.stack.update((stack) => recordNavigation(stack, { ...pending, url: event.urlAfterRedirects, page }));
       } else if (event instanceof NavigationCancel) {
         if (event.code === NavigationCancellationCode.GuardRejected && this.pending?.id === event.id && this.pending.trigger === 'popstate') {
           this.refused = { path: navPath(this.router.url), position: this.scroller.getScrollPosition() };
@@ -81,6 +96,54 @@ export class NavHistory {
     this.refused = null;
     if (refused && navPath(this.router.url) === refused.path) {
       queueMicrotask(() => this.scroller.scrollToPosition(refused.position, { behavior: 'instant' }));
+    }
+  }
+
+  /** The current browser entry's place in history: the router writes it into every entry's state (canceledNavigationResolution 'computed'). */
+  private pageId(): number | null {
+    const state = this.location.getState() as { ɵrouterPageId?: unknown } | null;
+    return typeof state?.ɵrouterPageId === 'number' ? state.ɵrouterPageId : null;
+  }
+
+  /** The stack a reload of our own left behind, once: the key goes whether it fits or not. */
+  private adoptKept(): NavStack | null {
+    try {
+      const store = globalThis.sessionStorage;
+      const raw = store?.getItem(KEPT_KEY);
+      if (!raw) return null;
+      store.removeItem(KEPT_KEY);
+      return adoptNavStack(JSON.parse(raw), {
+        path: this.location.path(true), page: this.pageId(), length: globalThis.history?.length ?? 0, now: Date.now(),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Keeps the stack for the page about to reload itself. False when it could not be kept: the stack then starts over,
+   * as after any reload, and inside the native host the caller must not reload a pushed screen (the shell would slide
+   * back to a root that shows it).
+   */
+  keepForReload(): boolean {
+    const kept = keepNavStack(this.stack(), Date.now(), globalThis.history?.length ?? 0);
+    if (!kept) return false;
+    try {
+      const store = globalThis.sessionStorage;
+      if (!store) return false;
+      store.setItem(KEPT_KEY, JSON.stringify(kept));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The reload did not happen after all: a later reload by hand must not adopt this stack. */
+  dropKept(): void {
+    try {
+      globalThis.sessionStorage?.removeItem(KEPT_KEY);
+    } catch {
+      /* Nothing was kept then. */
     }
   }
 

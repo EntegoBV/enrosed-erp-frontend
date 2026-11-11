@@ -483,6 +483,14 @@ export class DouanePage implements HasUnsavedChanges {
     else if ((event.key === 'n' || event.key === 'N') && !event.shiftKey) { event.preventDefault(); this.startNew(); }
   }
 
+  /** A reload or a closing tab with an unsaved row asks first, like every other editor; the app's own reload for a newer build reads the same answer (reload-guard.ts unsavedWork). */
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.dirty() && !this.saving()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
   /** Leaving with an unsaved row asks first (the foundation's leave dialog: Opslaan / Niet opslaan / Annuleren). */
   canDeactivate(): boolean | Promise<boolean> {
     return this.dirty() ? confirmLeave(this.ui, () => this.save()) : true;

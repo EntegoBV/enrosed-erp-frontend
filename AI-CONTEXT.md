@@ -377,7 +377,12 @@ never shows the form again.
   (history back when the parent is below, else its last URL), `back(fallback)`.
   On a pop the restored entry takes the pop's id (Angular rewrites the
   browser entry's navigationId) and must show the same path (after a
-  reload ids restart at 1). "Below" is the first entry that shows another
+  reload ids restart at 1). Every entry also carries `page`, the router's
+  `ɵrouterPageId` (its place in the browser's history): a pop finds its
+  entry by that first (`restoredEntry`), by the restored id only where no
+  page is known. `keepForReload()` / `dropKept()` / `kept`: the stack
+  survives a reload the app starts itself (see "A newer build in an open
+  app"). "Below" is the first entry that shows another
   screen: the sections of `/analyses/:section` count as one
   (`navScreen`, `screenBelow`; back goes there with `historyGo(-n)`);
   `/settings?sectie=…` and other query views stay entries of their own.
@@ -411,6 +416,100 @@ render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
 (check the first Vercel deployment of that change once: if it fails on
 vercel.json, drop only the headers block).
+
+## A newer build in an open app (2026-11-10)
+
+Nothing used to make an open session load a new build: the web app only
+reloaded when a lazy chunk was gone, the native shell loads its pages once
+and iOS keeps an app for days. A fix that was live was not on the phone that
+reported the bug. Now the app notices a newer build and reloads itself for
+it, silently, at a moment when nothing can be lost.
+
+- **Files**: `core/platform/fresh-build.ts` (pure: the constants, the build
+  id, `decideBuildReload(situation)`, the rules in its head comment),
+  `fresh-build-service.ts` (lazy chunk: reads the page, asks, reloads),
+  `reload-guard.ts` (main bundle: the per-tab record and the questions both
+  reloads share), `core/api/in-flight.ts` (requests that have not answered),
+  the effect `freshBuild` in `app.ts` (signed in and not `bare()` only).
+- **Build id**: the sorted hashed entry files,
+  `main-D5NXTMQC.js|styles-SZC5YEUP.css`. Not the main script alone: a
+  release that only changes `styles.scss` renames only the stylesheet. A
+  development build (unhashed) has no id and nothing is installed.
+  `buildCode(id)` is the short form on Meer's foot ("Aangemeld als emre ·
+  D5NX-SZC5"): the build of that document. In the native shell every tab is
+  its own web view and loads on its own, so it is the Meer tab's build only;
+  the device log's `build … -> …: reload (…)` names each web view's reload.
+- **Asking**: `fetch('/index.html', {cache: 'no-store'})`, parsed for the
+  entry files. When the page comes back in view (`visibilitychange`,
+  `pageshow`, the host's `lifecycle active`), every 5 minutes in view, on
+  arrival at another screen; never more often than every 3 minutes. A failed
+  check is silent and may be repeated after 20 s. A newer build's files
+  (entry files and modulepreload chunks) are fetched into the HTTP cache
+  first; only then is it "ready", so the reload itself needs one small file.
+- **Young build**: taken only once it has been live 10 minutes (the backend
+  of a release goes live minutes after its frontend). Its age is the longer
+  of two lower bounds: since this device first saw it (`localStorage
+  enrosed.build.seen`, shared by the tabs) and the host's `Age` header on
+  index.html (Vercel's edge sends it). A roll-back to a build seen before is
+  not young.
+- **The API answers** (public `GET /api/auth/ping` within 1.5 s, any status
+  below 500) right before every reload, else "server": a page given up while
+  the backend is down comes back empty, with blank counts.
+- **The two moments**. Arrival: a navigation ended on another path, the
+  screen came to rest (no HttpClient request for 300 ms) within 2.5 s, and
+  nobody touched it since it appeared. Quiet: away (hidden, the app in the
+  background) and untouched for 5 minutes, and within 5 s of coming back,
+  before anyone reads; after those seconds the time away no longer counts.
+  In view: untouched for 30 minutes (someone may read without a touch; the
+  pointer on an embedded frame such as a PDF preview, or the focus in one,
+  counts as a touch). In the native shell also a tab that is not on screen,
+  untouched for 5 minutes, while the app is in front. A search, filter,
+  tick or sort set on this screen makes every quiet time 30 minutes. The
+  shell's `refresh` is not a touch (it also sends one by itself for a stale
+  Home); a pull to refresh is seen through its touches.
+- **Never** over a sheet, popup, menu or toast (`OPEN_SURFACE`), a focused
+  text field (a search field or select does not count), text typed into a
+  field that is still on screen, an open file picker, a save or upload, a
+  native question, unsaved work; never hidden in a browser, never with the
+  native app in the background, never on `/login`, `/offerte`,
+  `/voorwaarden`.
+- **Once per build** per tab (`sessionStorage enrosed.build.reloaded`, shared
+  with the missing-chunk reload); twice when the load never got through. A
+  page that still runs another build after it stays as it is until a
+  different build appears.
+- **Same screen after it**: the address, the browser's history, NavHistory's
+  stack (`enrosed.nav.kept`: the native shell gets the same depth and
+  replaces in place), the window's scroll position and the workspace panes'
+  (`enrosed.build.scroll`). Not kept: a search older than 30 minutes,
+  unfolded groups, selections made by clicks.
+- **Two rules for new screens**: (1) an editor with unsaved state listens to
+  `window:beforeunload` and only calls `preventDefault()` while dirty or
+  busy; that is also the reload's question (`unsavedWork` dispatches a
+  synthetic event, no browser prompt). Work made by clicks without such an
+  editor marks an element with `data-unsaved` while it exists; also work
+  kept only in memory after its field or sheet is gone (Jaarinventaris
+  telling: a typed count a chip or the search hides; Kosten & bank: a
+  bank-cost registration or bank link waiting for its retry; the Documenten
+  tray). A typed field that left the page counts as closed. (2) A popup
+  that is not an `app-sheet`, `.cm`, `.wk-popover` or `[role="dialog"]` gets
+  `data-kit-overlay`.
+- **Try it locally** (development build only; a production build never reads
+  the hook): in the console
+  `sessionStorage.setItem('enrosed.build.debug', JSON.stringify({running:
+  'main-AAAAAAAA.js|styles-AAAAAAAA.css', latest:
+  'main-AAAAAAAA.js|styles-BBBBBBBB.css', checkMs: 2000, quietMs: 15000,
+  viewMs: 30000, watchMs: 2000})); location.reload()`. Every decision is
+  printed as `[build] arrival|quiet reload|none <why>`. Change `latest` to
+  see the next build; remove the key to end. `ageMs` (default 0 with the
+  hook) shows the young hold.
+- Every release reaches open sessions within minutes, 10 minutes after it
+  went live at the earliest: by then its backend is live too. "The new
+  frontend works against the old backend" still holds for the minutes in
+  between (cold starts, a missing-chunk reload).
+- `push-sw.js` takes over at once (`skipWaiting`, `clients.claim`): it keeps
+  no caches and handles no fetch, and windows that reload themselves would
+  otherwise keep an old worker for good. When a sale's sound is refused in
+  a visible window, the page shows the system banner itself and no toast.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
@@ -1651,7 +1750,10 @@ the rows behind it; **the rows add up to the clicked figure** (A.4).
   two-step share; "Toon in map" opens the folder list, not the file.
 - Uploads: a finished tray with failures, failed links or files the
   library already had never closes by itself; a toast, the phone's pill
-  and the desk status bar lead back to it.
+  and the desk status bar lead back to it. While the tray holds files only
+  in memory (picked and not sent, on their way, failed or not linked) the
+  page carries `data-unsaved` (`trayHoldsWork`), so the reload for a newer
+  build waits.
 - Records link back with "In Documenten & media ›" (product card here;
   cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 

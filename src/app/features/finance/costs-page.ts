@@ -79,7 +79,12 @@ const DETAIL_COMMANDS: ReadonlySet<string> = new Set(['split', 'book-as', 'unlin
   selector: 'app-costs-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [FinanceState, OdooSyncState, InvoiceFinderState],
-  host: { id: 'finance-workspace', '(document:keydown)': 'onKey($event)' },
+  host: {
+    id: 'finance-workspace', '(document:keydown)': 'onKey($event)',
+    /* A bank-cost registration or bank link whose answer was lost waits for its retry in memory only, also with its sheet
+       closed: the app's own reload for a newer build waits (core/platform/reload-guard.ts). */
+    '[attr.data-unsaved]': "state.costBankCreatePending() || state.bankCostLinkPending() ? '' : null",
+  },
   imports: [NgTemplateOutlet, Icon, IosNav, Segmented, Skeleton, Sheet, ContextMenu, FinanceToolbar, FinanceFilters, FinanceStatusBar, FinanceTabbar,
     FinanceCreateMenu, FinanceInspector, PayablesPanel, ReceivablesPanel, BankPanel, CostList, ContainerPaymentsPanel,
     RecurringPanel, CostListsPanel, CostAnalysis, VatReturnPanel, CostSheet, RecurringSheet, BankAccountSheet, BankSheet, BankMovementSheet, PaySheet, AccountCheckSheet,

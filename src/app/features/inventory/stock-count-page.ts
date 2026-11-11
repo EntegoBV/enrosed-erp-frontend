@@ -71,6 +71,7 @@ const whole = (value: number) => value.toLocaleString('nl-BE');
     '(document:visibilitychange)': 'refresh()',
     '(window:beforeprint)': 'beforePrint()',
     '(window:afterprint)': 'printing.set(false)',
+    '[attr.data-unsaved]': "hasDrafts() ? '' : null",
   },
   template: `
     <app-page-header [showBack]="true" backTo="/stock/inventaris" [showBell]="false" [title]="title()" [subtitle]="subtitle()">
@@ -491,6 +492,11 @@ export class StockCountPage {
   readonly conflict = computed(() => this.conflicts()[0] ?? null);
   /** What is typed in a count field and not saved yet, per line: the field is drawn from it. */
   readonly drafts = signal<Readonly<Record<number, string>>>({});
+  /**
+   * A count typed and not saved, also one a chip or the search has hidden (its field left the page, the draft stays):
+   * the host then carries data-unsaved, so the app's own reload for a newer build waits (core/platform/reload-guard.ts).
+   */
+  readonly hasDrafts = computed(() => Object.values(this.drafts()).some((text) => text.trim() !== ''));
   /** The last background reload failed: the list says how old it is until one succeeds. */
   readonly reloadFailed = signal(false);
   private readonly lastReadAt = signal<string | null>(null);
