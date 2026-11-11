@@ -2886,7 +2886,11 @@ and on copies. Without the blocks (older backend) every screen is as before.
   order now on screen. `persistOrder` sends `maxPalletHeightCm` only when it
   differs from the last saved document (else null: the server keeps the stored
   height), so a screen opened before the server's one-time 220 to 260 move
-  (2026-11-10) adopts 260 with its next save instead of writing 220 back.
+  (2026-11-10) adopts 260 with its next save instead of writing 220 back. A
+  height it does send goes with `?heightPicked=true` (`SalesApi.updateOrder` /
+  `updateShipping`, `saveQuery`): the server takes an unmarked 220 on a document
+  that stores another height for the echo of a bundle from before 2026-11-10
+  and keeps the stored one; a server from before that day ignores the mark.
   `persistOrder` and `saveDeliveryWeek` refuse to write
   while `customerEditable`: no save or autosave takes an order by itself.
 - **Wording.** A web order never shows request wording: `Websitebestelling`,
@@ -4686,8 +4690,9 @@ a 240 someone chose stays; the pre-2026-11-07 field `maxHeightCm` is not read);
 nothing goes to the server. A europallet stops at 260 cm (`palletHeightLimit`: the
 "+" dims, a typed or stored higher number shows 260), blok and half go to 300; the
 page holds the pick (`pickedHeight`) and shows `min(pick, limit)`, so Blok 280, Euro,
-Blok shows 280 again while the page stays open. The settings hint reads "incl.
-pallet · max 700 kg per pallet" (Emre asked for 2,60 m with the pallet itself). Built for the fair: photo first, one tap
+Blok shows 280 again while the page stays open. The settings hint keeps "max 700 kg
+per pallet" (no wording beyond the number changes; the caption and the catalogue say
+the height includes the pallet). Built for the fair: photo first, one tap
 adds, the answer stays in sight.
 
 - **Choosing by photo** (`pallet-browser.ts`, `app-pallet-browser`; pure
@@ -4836,7 +4841,7 @@ are tiles, hand pallets are cards edited in place.
 | `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
 | `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
 | `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
-| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, no source quote, no web order, invoice, advance or split) so nothing sent or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; switching to Euro above 260 sends 260 in the same patch), "incl. pallet 14,4 cm" | 1.0 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, not `issued`: an invoice whose history holds UITGEREIKT or is not loaded yet, `SalesEditor.issuedBefore`; no source quote, no web order, invoice, advance or split) so nothing sent, issued or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; a height above the type's limit (an old europallet at 280) comes down only after "Max. hoogte naar 260 cm?" with Verlagen, for "−", typing, Standaard and the switch to Euro alike, since it cannot go back up; Annuleren keeps everything and `fieldKey` renews the field), "incl. pallet 14,4 cm" | 1.0 kB |
 | `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
 | `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
 
