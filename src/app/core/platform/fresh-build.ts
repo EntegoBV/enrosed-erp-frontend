@@ -21,16 +21,31 @@
  *   files and preloaded chunks). Only then is it "ready": the reload itself
  *   then needs one small file and takes a fraction of a second, also on a
  *   weak connection.
+ * - A build is only taken once it has been live for BUILD_MIN_AGE_MS
+ *   ("young"): the frontend goes live first and the backend that belongs to
+ *   it minutes later, and a page that moved to the new frontend in between
+ *   would send the new fields to the old server. Its age is the longest of
+ *   two lower bounds: since this device first saw it (localStorage, shared
+ *   by the tabs) and the host's `Age` for index.html (the edge cannot have
+ *   held this content longer than it has been live).
+ * - Right before a reload the API must answer too (GET /api/auth/ping within
+ *   BUILD_CONFIRM_SLOW_MS, "server"): a page given up while the backend is
+ *   down comes back with empty screens and blank counts.
  * - The page reloads at one of two moments, and only when nothing can be
  *   lost and nobody is interrupted (decideBuildReload):
  *   arrival: a navigation ended on another screen, that screen has come to
  *     rest (no request for BUILD_ARRIVAL_REST_MS) within BUILD_ARRIVAL_MAX_MS,
  *     and nobody touched it since it appeared;
- *   quiet: nobody touched the page for BUILD_QUIET_MS (BUILD_VIEW_QUIET_MS
- *     when a search, filter or sort was set on this screen, which a reload
- *     would clear). In view: the app picked up after a while, a desk window
- *     beside other work. In the native shell also a tab that is not on
- *     screen while the app is in front.
+ *   quiet: the page was away (hidden, or the app in the background) and
+ *     untouched for BUILD_QUIET_MS and is reloaded within BUILD_WAKE_WINDOW_MS
+ *     of coming back, before anyone reads it; after that window the time away
+ *     no longer counts. In view, nobody touched it for BUILD_VIEW_QUIET_MS: a
+ *     desk window beside other work may be read without a touch, and a
+ *     pointer or the focus inside an embedded frame (a PDF, the website
+ *     preview) counts as a touch. In the native shell also a tab that is not
+ *     on screen and untouched for BUILD_QUIET_MS while the app is in front.
+ *     A search, filter or sort set on this screen (a reload clears it) makes
+ *     every quiet time BUILD_VIEW_QUIET_MS.
  * - Never over a sheet, popup, menu or toast, a field someone is in, text in
  *   a field, an open file picker, a running save or upload, unsaved work, a
  *   native question; never while hidden in a browser or while the app is in
@@ -59,10 +74,17 @@ export const BUILD_CONFIRM_SLOW_MS = 1_500;
 export const BUILD_FETCH_TIMEOUT_MS = 8_000;
 /** The new build's files must all arrive within this, or it is not ready yet. */
 export const BUILD_PREFETCH_TIMEOUT_MS = 20_000;
-/** Nobody touched the page for this long: quiet. */
+/** Away (or, in the native shell, a tab not on screen) and untouched this long: quiet. */
 export const BUILD_QUIET_MS = 5 * 60_000;
-/** Quiet for a screen with a search, filter or sort set by hand: a reload clears those. */
+/**
+ * The long quiet time: for a page in view that did not just come back (someone may be reading it without a touch), and
+ * for a screen with a search, filter or sort set by hand (a reload clears those).
+ */
 export const BUILD_VIEW_QUIET_MS = 30 * 60_000;
+/** Back in view: the time away counts as quiet only this long after the return; after that, whoever opened it is reading. */
+export const BUILD_WAKE_WINDOW_MS = 5_000;
+/** A build is taken only once it has been live this long: the backend that belongs to it goes live minutes after the frontend. */
+export const BUILD_MIN_AGE_MS = 10 * 60_000;
 /** While a newer build waits for its moment, the page looks again this often. */
 export const BUILD_WATCH_MS = 30_000;
 /** After coming back in view the page settles this long before the quiet reload. */
@@ -142,10 +164,10 @@ export function pendingBuild(running: string, latest: string, reloadedFor: strin
 
 export type BuildMoment = 'arrival' | 'quiet';
 
-/** Why nothing happens. */
+/** Why nothing happens. `slow` and `server` come from the confirming step right before a reload (the service). */
 export type BuildHold =
-  | 'dev' | 'nostore' | 'customer' | 'current' | 'fetching' | 'hidden' | 'offline' | 'navigating' | 'surface' | 'focus' | 'saving'
-  | 'asking' | 'picking' | 'unsaved' | 'typed' | 'late' | 'handed' | 'acted' | 'present' | 'view' | 'slow';
+  | 'dev' | 'nostore' | 'customer' | 'current' | 'young' | 'fetching' | 'hidden' | 'offline' | 'navigating' | 'surface' | 'focus'
+  | 'saving' | 'asking' | 'picking' | 'unsaved' | 'typed' | 'late' | 'handed' | 'acted' | 'present' | 'view' | 'slow' | 'server';
 
 export type BuildVerdict = { act: 'reload' } | { act: 'confirm' } | { act: 'none'; why: BuildHold };
 
@@ -158,6 +180,9 @@ export interface BuildSituation {
   latest: string;
   /** The build this tab already reloaded for. */
   reloadedFor: string | null;
+  /** How long the latest build has been live at least (first seen on this device, or the host's Age). */
+  seenForMs: number;
+  minAgeMs: number;
   /** The latest build's files are in the browser's cache. */
   ready: boolean;
   /** sessionStorage works: the one-reload record can be kept. */
@@ -191,8 +216,10 @@ export interface BuildSituation {
   acted: boolean;
   /** Arrival: more than BUILD_ARRIVAL_MAX_MS ago. */
   late: boolean;
-  /** Since the last sign of a person on this page. */
+  /** Since the last sign of a person on this page, time away included (0 while a pointer or the focus is in an embedded frame). */
   quietForMs: number;
+  /** Since the page last came back in view; Infinity when it has been in view since it loaded. */
+  backForMs: number;
   quietMs: number;
   /** A search, filter or sort was set by hand on this screen. */
   viewTouched: boolean;
@@ -207,6 +234,7 @@ export function decideBuildReload(s: BuildSituation): BuildVerdict {
   if (!s.canRemember) return hold('nostore');
   if (!s.staff) return hold('customer');
   if (!pendingBuild(s.running, s.latest, s.reloadedFor)) return hold('current');
+  if (s.seenForMs < s.minAgeMs) return hold('young');
   if (!s.ready) return hold('fetching');
   if (s.appAway) return hold('hidden');
   if (!s.visible && !(s.moment === 'quiet' && s.backstage)) return hold('hidden');
@@ -224,8 +252,11 @@ export function decideBuildReload(s: BuildSituation): BuildVerdict {
     if (s.handed) return hold('handed');
     if (s.acted) return hold('acted');
   } else {
-    if (s.quietForMs < s.quietMs) return hold('present');
-    if (s.viewTouched && s.quietForMs < s.viewQuietMs) return hold('view');
+    /* Just back in view, the time away counts; later in view only the time since the return, and the long quiet time. */
+    const inView = s.visible && s.backForMs > BUILD_WAKE_WINDOW_MS;
+    const quietFor = inView ? Math.min(s.quietForMs, s.backForMs) : s.quietForMs;
+    if (quietFor < (inView ? s.viewQuietMs : s.quietMs)) return hold('present');
+    if (s.viewTouched && quietFor < s.viewQuietMs) return hold('view');
   }
   return s.confirmedAgoMs > BUILD_CONFIRM_MS ? { act: 'confirm' } : { act: 'reload' };
 }
