@@ -3685,12 +3685,21 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     (`canKeepPieces`, `setLinePerPiece(id, true)`) keeps the typed number.
     A line that counts per piece shows its switch "Stolp | Omdoos"
     (`perPieceSwitch`, `app-segmented`, unit first like the product editor;
-    also on a line just switched back, until it is saved), the phone tints
-    the quantity field (`input--per-piece`, state on the figure), the meta
-    says "11 dozen, laatste niet vol" (`partCartonNote`; a part omdoos still
-    counts as a full one). The switch is deliberately NOT on every line: per
-    piece only matters for a number off the step, and that number brings the
-    notice. `unitsPerStep` returns 1 for a per-piece draft line at once (the
+    also on a saved choice just switched back, until it is saved - there
+    the switch is the way back and "houden" is not drawn beside it), the
+    phone tints the quantity field (`input--per-piece`, state on the
+    figure), the meta says "11 dozen, laatste niet vol" (`partCartonNote`; a
+    part omdoos still counts as a full one). The switch is deliberately NOT
+    on every line: per piece only matters for a number off the step, and
+    that number brings the notice. Desk: the remark and the switch stand in
+    `.desk-per-row` UNDER `.desk-product__meta`, not in it - at 1070 px the
+    product copy is only as wide as its widest unbroken meta (about 100 px;
+    the table is 800 px in a 792 px wrap) and one more meta child gives the
+    cartons a "·" that widens the column and pushes the name under the
+    quantity field; `.desk-per` has inline-size containment and asks for
+    96 px, so it never widens the column (looked at in a headless browser at
+    1070 px, and the phone at 382, 669 and 867 px with hover none).
+    `unitsPerStep` returns 1 for a per-piece draft line at once (the
     answer lags a press by 250 ms); `stepWhenRounded` is the step without
     the choice. `announceRounding` runs after every preview answer and in
     `adopt` (which now also clears `linePending`): a quantity the server

@@ -486,15 +486,6 @@ interface JourneyStep {
                                   @if (lineRequestedQuantity(line.productId); as requested) { <span>{{ requested | num }} {{ lineUnit(line.productId).short }} aangevraagd</span> }
                                 } @else {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
-                                <!-- Per piece: the remark and the switch are meta children of their own, so they wrap inside the column. -->
-                                @if (linePartCarton(line); as part) { <span class="desk-product__note">{{ part }}</span> }
-                                @if (perPieceSwitch(line.productId)) {
-                                  <span class="desk-per" [title]="perPieceTitle(line.productId)">
-                                    <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
-                                                   [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
-                                                   (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
-                                  </span>
-                                }
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
                                   <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
@@ -504,6 +495,22 @@ interface JourneyStep {
                                 }
                                 }
                               </div>
+                              <!-- Per piece: the remark on the last omdoos and the switch stand under the meta, not in it. A child
+                                   more in the meta gives the cartons a "·" and widens the narrow column at 1070 px. -->
+                              @let partCarton = lineUnavailable(line.productId) ? null : linePartCarton(line);
+                              @let perSwitch = !lineUnavailable(line.productId) && perPieceSwitch(line.productId);
+                              @if (partCarton || perSwitch) {
+                                <div class="desk-per-row">
+                                  @if (partCarton) { <span>{{ partCarton }}</span> }
+                                  @if (perSwitch) {
+                                    <span class="desk-per" [title]="perPieceTitle(line.productId)">
+                                      <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
+                                                     [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                                     (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                                    </span>
+                                  }
+                                </div>
+                              }
                               @if (creditLineHint(line.productId, line.quantity); as hint) { <div class="desk-line-cap">{{ hint }}</div> }
                             </div>
                           </div>

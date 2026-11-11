@@ -3996,9 +3996,13 @@ export class SalesEditor {
     return this.view()?.order.lines.find((line) => line.productId === productId)?.perPiece != null;
   }
 
-  /** The way out under a rounding notice: keep the typed number, per piece. */
+  /**
+   * The way out under a rounding notice: keep the typed number, per piece. Not beside the switch (a saved choice
+   * just switched back): there the switch is the way back, one control at a time.
+   */
   canKeepPieces(productId: number): boolean {
-    return this.mobileCommercialEditable() && this.perPieceChoice(productId) && !this.linePerPiece(productId);
+    return this.mobileCommercialEditable() && this.perPieceChoice(productId) && !this.linePerPiece(productId)
+      && !this.perPieceSwitch(productId);
   }
 
   /** "Stolp | Omdoos": the unit, then the product's order step, in the words of the notice beside it. */

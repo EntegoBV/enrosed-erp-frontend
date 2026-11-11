@@ -22,10 +22,14 @@ app-sales-editor .line-keep:focus-visible { outline: 3px solid color-mix(in srgb
   app-sales-editor .line-per .ios-seg__opt { padding: 0 2px; font-size: 11.5px; }
 }
 
-/* Desk: a 20 px control in the product's meta line, in the meta's own small type. The wrapper is the meta child, so
-   the "·" separator lands after it and not inside the control's grid. */
-app-sales-desk .desk-per { display: inline-flex; align-items: center; }
-app-sales-desk .desk-per .wk-seg { height: 20px; border-radius: 7px; }
+/* Desk: under the product's meta line, in its small type: "laatste niet vol" and a 20 px control. At a 1070 px
+   window the product column is narrow (the copy is as wide as its widest unbroken meta, about 100 px), and a
+   control with a width of its own would widen it and push the name under the quantity field. So the control asks
+   for 96 px (its content asks for nothing: inline-size containment) and grows to the line, 124 px at most. */
+app-sales-desk .desk-per-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.3; }
+app-sales-desk .desk-per { contain: inline-size; flex: 1 1 96px; min-width: 96px; max-width: 124px; }
+app-sales-desk .desk-per .wk-seg { display: grid; grid-auto-columns: minmax(0, 1fr); height: 20px; border-radius: 7px; }
 app-sales-desk .desk-per .wk-seg::before { border-radius: 5px; }
-app-sales-desk .desk-per .wk-seg__opt { padding: 0 7px; border-radius: 5px; font-size: 10.5px; }
+app-sales-desk .desk-per .wk-seg__opt { padding: 0 2px; border-radius: 5px; font-size: 10.5px; overflow: hidden; }
+app-sales-desk .desk-per .wk-seg__opt > span { overflow: hidden; text-overflow: ellipsis; }
 app-sales-desk .desk-keep { margin-left: 6px; white-space: nowrap; }
