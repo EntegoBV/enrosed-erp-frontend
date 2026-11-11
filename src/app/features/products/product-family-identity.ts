@@ -18,14 +18,28 @@ export class ProductFamilyIdentityFinalizationError extends Error {
   }
 }
 
-/** Persisted imports without a handle are the only existing families editable here. */
-export function hasFinalizableDraftIdentity(family: ProductFamily | null): boolean {
-  return family !== null && family.id !== null && !clean(family.publicHandle);
+/**
+ * A saved series without a public URL can still choose its identity, once. That is an imported
+ * concept series and also every series made by linking colours (the server creates those as
+ * model-<id>-<id> without a URL). Pass the SAVED series, what the server has: with the draft,
+ * the first typed character of the URL closed every field (2026-11-10).
+ */
+export function hasFinalizableDraftIdentity(saved: ProductFamily | null): boolean {
+  return saved !== null && saved.id !== null && !clean(saved.publicHandle);
 }
 
-/** New families choose their identity; existing ones get one guarded completion opportunity. */
-export function canEditProductFamilyIdentity(family: ProductFamily | null): boolean {
-  return family !== null && (family.id === null || hasFinalizableDraftIdentity(family));
+/**
+ * Whether the identity fields take input. A new series (no id yet) chooses freely; a saved one
+ * only while the server has no public URL for it. `draft` is what the form shows, `saved` what
+ * the server has, so the answer changes on a save, never while someone types.
+ */
+export function canEditProductFamilyIdentity(
+  draft: ProductFamily | null,
+  saved: ProductFamily | null,
+): boolean {
+  if (draft === null) return false;
+  if (draft.id === null) return true;
+  return saved !== null && saved.id === draft.id && hasFinalizableDraftIdentity(saved);
 }
 
 /**

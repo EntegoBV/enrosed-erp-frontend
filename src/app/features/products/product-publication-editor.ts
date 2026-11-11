@@ -18,7 +18,6 @@ import {
 } from '../../shared/product-featured-eligibility';
 import {
   canEditProductFamilyIdentity,
-  hasFinalizableDraftIdentity,
 } from './product-family-identity';
 
 interface FamilyFeaturedOption {
@@ -713,6 +712,8 @@ export class ProductPublicationEditor {
 
   readonly product = input.required<Product>();
   readonly family = input<ProductFamily | null>(null);
+  /** The series as the server has it. It decides whether the identity can still be chosen, never the draft. */
+  readonly savedFamily = input<ProductFamily | null>(null);
   readonly categories = input<Category[]>([]);
   readonly busy = input(false);
   readonly familyLoading = input(false);
@@ -733,8 +734,12 @@ export class ProductPublicationEditor {
   readonly readableIssues = computed(() => {
     const family = this.family();
     if (!family) return [];
+    /* The server names a variant by its saved code, or by its id without one: a code that is
+       being typed must not turn "Kleurnaam van Rood" into "variant 346". */
+    const saved = this.savedFamily();
+    const members = saved !== null && saved.id === family.id ? saved.members : family.members;
     const names = new Map<string, string>();
-    for (const member of family.members ?? []) {
+    for (const member of members ?? []) {
       const key = member.canonicalVariantKey || String(member.productId);
       names.set(key, [member.colour, member.size].filter(Boolean).join(' · ') || member.name || key);
     }
@@ -764,11 +769,13 @@ export class ProductPublicationEditor {
   readonly issueCount = computed(
     () => (this.family()?.publicationIssues ?? []).length,
   );
-  readonly identityFinalizationPending = computed(
-    () => hasFinalizableDraftIdentity(this.family()),
-  );
+  /** Follows the saved series: typing the URL must not close the fields. */
   readonly identityEditable = computed(
-    () => canEditProductFamilyIdentity(this.family()),
+    () => canEditProductFamilyIdentity(this.family(), this.savedFamily()),
+  );
+  /** A saved series whose identity is still open: the texts of the one-time choice. */
+  readonly identityFinalizationPending = computed(
+    () => this.family()?.id != null && this.identityEditable(),
   );
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {

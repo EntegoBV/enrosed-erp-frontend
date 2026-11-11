@@ -1179,6 +1179,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [expanded]="activeTab() === 'publication'"
         [product]="draft()"
         [family]="family()"
+        [savedFamily]="savedFamily()"
         [categories]="categories()"
         [busy]="saving() || photoUploading() || agreementBusy() || translationSaving()"
         [familyLoading]="familyLoading()"
@@ -2338,7 +2339,8 @@ export class ProductEditor implements OnDestroy {
   readonly sharedFieldsInitial = signal<readonly ProductFamilySharedField[] | null>(null);
   readonly sharedFieldsBusy = signal(false);
   private familyLoadVersion = 0;
-  private readonly savedFamily = signal<ProductFamily | null>(null);
+  /** The series as last loaded or saved (the server's). The publication editor reads it: the identity fields follow this, not the draft. */
+  readonly savedFamily = signal<ProductFamily | null>(null);
   private readonly savedProductFamilyId = signal<number | null>(null);
   private productLoadVersion = 0;
   private activeProductId: number | null = null;
