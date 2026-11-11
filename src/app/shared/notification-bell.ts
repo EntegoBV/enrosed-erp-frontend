@@ -249,7 +249,7 @@ export class NotificationBell {
     const now = this.nowMs();
     return this.news().map((item) => ({ item, when: whenLabel(item.at, now) }));
   });
-  /** Containers: a nearing arrival, or an arrival tracking moved ("Aankomst 3 dagen later"; an earlier one reads green). */
+  /** Containers: a nearing arrival, or an arrival tracking moved ("Aankomst 15/11/2026 · 3 dagen later"; an earlier one reads green). */
   readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({
     item, when: whenLabel(item.at, this.nowMs()), tone: !item.actionNeeded && item.title.endsWith(' eerder') ? 'tone-ok' : 'tone-warn',
   })));
