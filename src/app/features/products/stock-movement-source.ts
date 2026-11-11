@@ -19,6 +19,11 @@ export function partnerMovementReport(move: Pick<StockMovement, 'kind' | 'refere
   return match ? Number(match[1]) : null;
 }
 
+/** A withdrawal's reversal ("Ingetrokken: VV-12"): the pieces of a withdrawn melding going back, nothing sold or bought back. */
+export function isPartnerWithdrawal(move: Pick<StockMovement, 'kind' | 'reference'>): boolean {
+  return isPartnerMovement(move) && /^\s*Ingetrokken\b/i.test(move.reference ?? '');
+}
+
 @Component({
   selector: 'app-stock-movement-source',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -28,7 +33,11 @@ export function partnerMovementReport(move: Pick<StockMovement, 'kind' | 'refere
       @if (move().sourceSoldAt) { <span>Verkoop {{ moment(move().sourceSoldAt!) }}</span> }
       <a routerLink="/tica" [queryParams]="{ sale: saleId }">TICA-bron en geschiedenis ›</a>
     } @else if (partner()) {
-      @if (move().sourceSoldAt) { <span>{{ move().kind === 'PARTNER_BUYBACK' ? 'Teruggekocht' : 'Verkocht' }} op {{ day(move().sourceSoldAt!) }}</span> }
+      @if (move().sourceSoldAt) {
+        <!-- A reversal carries the melding's day (sourceSoldAt = its sold_on), not the day it was withdrawn. -->
+        @if (withdrawal()) { <span>Ingetrokken · melding van {{ day(move().sourceSoldAt!) }}</span> }
+        @else { <span>{{ move().kind === 'PARTNER_BUYBACK' ? 'Teruggekocht' : 'Verkocht' }} op {{ day(move().sourceSoldAt!) }}</span> }
+      }
       <a routerLink="/veilingverkopen" [queryParams]="report() ? { melding: report() } : null">Veilingverkopen ›</a>
     }
   `,
@@ -39,6 +48,7 @@ export class StockMovementSource {
   readonly moment = ticaMoment;
   readonly partner = computed(() => isPartnerMovement(this.move()));
   readonly report = computed(() => partnerMovementReport(this.move()));
+  readonly withdrawal = computed(() => isPartnerWithdrawal(this.move()));
 
   /** The melding's sold day ("10-11-2026"): a partner movement's sourceSoldAt is the day Frans sold, not a moment. */
   day(value: string): string {
