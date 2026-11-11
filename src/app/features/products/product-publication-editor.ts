@@ -380,8 +380,9 @@ interface FamilyFeaturedOption {
                 <span>Standaardtags (zonder vertaling)</span>
                 <input
                   class="input"
-                  [ngModel]="family.tags.join(', ')"
+                  [ngModel]="tagsText()"
                   (ngModelChange)="patchTags($event)"
+                  (blur)="typedTags.set(null)"
                   placeholder="gift, preserved, premium"
                 />
                 <small class="field__hint">Voor alle varianten. Stel vertaalde tags per taal in onder Productvertalingen; deze standaardtags blijven beschikbaar als terugval.</small>
@@ -889,17 +890,21 @@ export class ProductPublicationEditor {
     });
   }
 
+  /**
+   * The tags field as typed. It stays on screen as long as it means the draft's tags: rebuilding
+   * the text from the de-duplicated list on every keystroke swallowed "gift, gift-box" at
+   * "gift, gift". On leaving the field it shows the list again.
+   */
+  readonly typedTags = signal<string | null>(null);
+  readonly tagsText = computed(() => {
+    const tags = this.family()?.tags ?? [];
+    const typed = this.typedTags();
+    return typed !== null && JSON.stringify(parseTags(typed)) === JSON.stringify(tags) ? typed : tags.join(', ');
+  });
+
   patchTags(value: string): void {
-    this.patch({
-      tags: [
-        ...new Set(
-          value
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-        ),
-      ],
-    });
+    this.typedTags.set(value);
+    this.patch({ tags: parseTags(value) });
   }
 
   numberOrNull(value: number | string | null): number | null {
@@ -908,4 +913,9 @@ export class ProductPublicationEditor {
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+}
+
+/** Comma-separated tags, trimmed, without empties or repeats. */
+function parseTags(value: string): string[] {
+  return [...new Set(value.split(',').map((tag) => tag.trim()).filter(Boolean))];
 }
