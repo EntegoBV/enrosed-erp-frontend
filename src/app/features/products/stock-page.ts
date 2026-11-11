@@ -18,7 +18,7 @@ import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { keyContext } from '../../shared/key-context';
 import { rovingRow } from './product-list-query';
-import { DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
+import { DateTimeNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Sheet, Ui } from '../../shared/ui';
 import { salesPhotoUrl } from '../../shared/sales-photo';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
@@ -27,7 +27,10 @@ import { stockCellEdit, undoAllowed, type BookingKind, type BookingLevel } from 
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { StockMovementSource } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementDelta, stockMovementAfter } from './stock-quantity';
-import { distinctOrderCount, knownValueSum, lacksCost, locationSplit, locationValues, onderwegOrdersLabel, onderwegSummary, stockValue, type Onderweg } from './product-figures';
+import { knownValueSum, lacksCost, locationSplit, locationValues, stockValue } from './product-figures';
+import { IncomingPill } from '../../shared/incoming-pill';
+import { brusselsToday, compareIncoming, incomingMap, incomingOrderCount, incomingSum, type Incoming } from '../../shared/product-incoming';
+import { matchesWords } from '../../shared/search-words';
 import { checkLinkShown, statusBanner, type StockBatchSheetMode } from './stock-batch-start';
 import { StockBatchStartSheet } from './stock-batch-start-sheet';
 
@@ -54,7 +57,8 @@ interface StockGroup {
   loosePieces: number;
   total: number;
   value: number | null;
-  onway: Onderweg | null;
+  /** What is coming for the series: its colours together. */
+  onway: Incoming | null;
   /** The unit word for the series' sums, only when every variant shares it. */
   unit: { singular: string; plural: string } | null;
   demo: boolean;
@@ -82,7 +86,9 @@ function mediaSignal(query: string) {
  * Voorraad: what lies where, in each product's own unit, and what it is
  * worth at landed cost. The desk is one kit table (category group rows with
  * their value, the series fold, a column per location, Totaal, Onderweg,
- * Waarde); the phone is inset groups with a location segment. Every booking
+ * Waarde); the phone is inset groups with a location segment. What is
+ * coming is one status pill (shared/incoming-pill) at every width, and the
+ * Onderweg tile (phone: chip) filters the list to it. Every booking
  * goes through Voorraad boeken; the "Aantallen bewerken" mode books a typed
  * count on leaving the field, guarded and with undo. Styles:
  * styles/products/_stock.scss (styleUrl, scoped under app-stock-page).
@@ -91,8 +97,8 @@ function mediaSignal(query: string) {
   selector: 'app-stock-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
-  imports: [NgTemplateOutlet, RouterLink, AuthImage, PageHeader, Skeleton, Icon, Segmented, ContextMenu, NumPipe, EurPipe, DateNlPipe, DateTimeNlPipe,
-    Sheet, LoadError, StockBookingSheet, StockMovementSource, StockBatchStartSheet],
+  imports: [NgTemplateOutlet, RouterLink, AuthImage, PageHeader, Skeleton, Icon, Segmented, ContextMenu, NumPipe, EurPipe, DateTimeNlPipe,
+    Sheet, LoadError, StockBookingSheet, StockMovementSource, StockBatchStartSheet, IncomingPill],
   template: `
     <app-page-header [showBack]="true" backTo="/products" title="Voorraad" [subtitle]="loading() || loadError() ? '' : (desktop.active() ? subtitle() : phoneCaption())">
       @if (desktop.active()) {
@@ -135,7 +141,17 @@ function mediaSignal(query: string) {
             @if (moreLocations(); as more) {
               <div><small>Andere locaties</small><strong>+{{ more }} locaties</strong><span>kies ze in de keuzebalk</span></div>
             }
-            <div><small>Onderweg</small><strong>{{ onwayProducts() }} product{{ onwayProducts() === 1 ? '' : 'en' }}</strong><span>op {{ onwayOrders() }} inkooporder{{ onwayOrders() === 1 ? '' : 's' }}</span></div>
+            <!-- What is coming: a click shows exactly these products, first arrival first; again shows everything. A failed load says so. -->
+            @if (incomingState() !== 'ready') {
+              <div class="sk-sum__pick"><button type="button" [disabled]="incomingState() === 'loading'" (click)="retryIncoming()">
+                <small>Onderweg</small><strong>—</strong><span>{{ incomingState() === 'loading' ? 'laden…' : 'niet geladen · opnieuw ›' }}</span></button></div>
+            } @else if (onwayProducts() || onwayOnly()) {
+              <div class="sk-sum__pick sk-sum__pick--onway"><button type="button" [attr.aria-pressed]="onwayOnly()" (click)="onwayOnly.set(!onwayOnly())">
+                <small>Onderweg</small><strong>{{ onwayProducts() }} product{{ onwayProducts() === 1 ? '' : 'en' }}</strong>
+                <span>{{ onwayOnly() ? 'getoond in de lijst · alles tonen ›' : 'op ' + onwayOrders() + ' inkooporder' + (onwayOrders() === 1 ? '' : 's') + ' · tonen ›' }}</span></button></div>
+            } @else {
+              <div><small>Onderweg</small><strong>0 producten</strong><span>niets besteld</span></div>
+            }
             @if (totalValue().withoutCost; as missing) {
               <!-- A click shows exactly these products in the list; again (or the chip) shows everything. -->
               <div class="sk-sum__warn sk-sum__pick"><button type="button" [attr.aria-pressed]="noCostOnly()" (click)="noCostOnly.set(!noCostOnly())">
@@ -195,7 +211,7 @@ function mediaSignal(query: string) {
                 <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('STOCK_DESC', 'STOCK_ASC')"><button class="wk-th__btn" type="button" (click)="sortBy('STOCK_DESC', 'STOCK_ASC')">Totaal</button></span>
                 @if (!narrow()) {
                   <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="sortKey() === 'EXPECTED' ? 'descending' : null">
-                    <button class="wk-th__btn" type="button" title="Te verwachten eerst" (click)="sortBy('EXPECTED', null)">Onderweg</button></span>
+                    <button class="wk-th__btn" type="button" title="Eerst wat eerst aankomt" (click)="sortBy('EXPECTED', null)">Onderweg</button></span>
                 }
                 <span class="wk-th wk-th--num" role="columnheader" [attr.aria-sort]="ariaSort('VALUE_DESC', 'VALUE_ASC')"><button class="wk-th__btn" type="button" (click)="sortBy('VALUE_DESC', 'VALUE_ASC')">Waarde</button></span>
                 <span class="wk-th" role="columnheader"><span class="sr-only">Acties</span></span>
@@ -234,6 +250,10 @@ function mediaSignal(query: string) {
           <div class="ios-banner skp-batches" [class.ios-banner--info]="!banner.warn" role="status"><span>{{ banner.text }}</span>
             <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="batchSheet.set(banner.mode)">{{ banner.link }}</button></div>
         }
+        @if (incomingState() === 'failed' && !loading() && !loadError()) {
+          <div class="ios-banner ios-banner--info skp-batches" role="status"><span>Onderweg niet geladen.</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="retryIncoming()">Opnieuw</button></div>
+        }
         @if (activeLocations().length > 1 && activeLocations().length <= 3) {
           <div class="skp-seg"><app-segmented variant="ios" label="Locatie" [options]="phoneLocationOptions()" [value]="view() === null ? 'all' : '' + view()" (changed)="setView($event)" /></div>
         } @else if (activeLocations().length > 3) {
@@ -244,6 +264,9 @@ function mediaSignal(query: string) {
           <button class="ios-search__clear" type="button" aria-label="Zoekterm wissen" (click)="setQuery('')"><app-icon name="close" [size]="14" /></button></label></div>
         <div class="ios-chips" role="group" aria-label="Categorie">
           <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === null" (click)="categoryFilter.set(null)">Alle</button>
+          @if (onwayProducts() || onwayOnly()) {
+            <button class="ios-chip skp-onway" type="button" [attr.aria-pressed]="onwayOnly()" (click)="onwayOnly.set(!onwayOnly())">Onderweg · {{ onwayProducts() }}</button>
+          }
           @for (category of usedCategories(); track category.key) {
             <button class="ios-chip" type="button" [attr.aria-pressed]="categoryFilter() === category.id" (click)="categoryFilter.set(category.id)">{{ category.name }}</button>
           }
@@ -326,10 +349,12 @@ function mediaSignal(query: string) {
             <span class="sk-total">{{ group.total | num }}</span>@if (group.loosePieces) { <small class="sk-unit">+ {{ looseText(group.loosePieces, group.rows[0].product) }}</small> }
             @if (group.unit) { <span class="sk-unit">{{ group.total === 1 ? group.unit.singular : group.unit.plural }}</span> }
             @if (splitLine(group.byLocation, group.looseByLocation); as split) { <span class="sk-unit">{{ split }}</span> }
-            @if (narrow() && group.onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: group.onway }" /> }
+            @if (narrow() && group.onway) { <span class="sk-under"><app-incoming-pill [value]="group.onway" [strong]="!group.total && !group.loosePieces" [link]="true" /></span> }
           </span>
           @if (!narrow()) {
-            <span class="wk-td wk-td--num sk-cell" role="cell"><ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: group.onway }" /></span>
+            <span class="wk-td wk-td--num sk-cell" role="cell">
+              @if (group.onway) { <app-incoming-pill [value]="group.onway" [strong]="!group.total && !group.loosePieces" [link]="true" /> } @else { <span class="sk-loc zero">—</span> }
+            </span>
           }
           <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-value" [class.none]="group.value === null">{{ group.value === null ? '—' : (group.value | eur: 0) }}</span></span>
           <span class="wk-td" role="cell"></span>
@@ -343,8 +368,7 @@ function mediaSignal(query: string) {
     </ng-template>
 
     <ng-template #deskRow let-row let-nested="nested">
-      @let exp = expectedFor(row.product.id);
-      @let onway = exp ? { quantity: exp.quantity, earliest: exp.expectedArrival, orderNumbers: exp.orderNumbers, orderIds: exp.orderIds } : null;
+      @let onway = incomingFor(row.product.id);
       <div class="wk-tr wk-tr--link sk-tr" role="row" [attr.tabindex]="rowTab('p:' + row.product.id)" [class.wk-tr--sub]="nested" [class.sk-tr--variant]="nested"
            [attr.data-row]="'p:' + row.product.id" (click)="rowClick($event, row)"
            [animate.enter]="nested ? 'mo-enter' : ''">
@@ -379,10 +403,12 @@ function mediaSignal(query: string) {
           <span class="sk-total">{{ row.total | num }}</span>@if (row.loosePieces) { <small class="sk-unit">+ {{ looseText(row.loosePieces, row.product) }}</small> }
           <span class="sk-unit">{{ row.total === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</span>
           @if (splitLine(row.byLocation, row.looseByLocation); as split) { <span class="sk-unit">{{ split }}</span> }
-          @if (narrow() && onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: onway }" /> }
+          @if (narrow() && onway) { <span class="sk-under"><app-incoming-pill [value]="onway" [strong]="!row.total && !row.loosePieces" [link]="true" /></span> }
         </span>
         @if (!narrow()) {
-          <span class="wk-td wk-td--num sk-cell" role="cell"><ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: onway }" /></span>
+          <span class="wk-td wk-td--num sk-cell" role="cell">
+            @if (onway) { <app-incoming-pill [value]="onway" [strong]="!row.total && !row.loosePieces" [link]="true" /> } @else { <span class="sk-loc zero">—</span> }
+          </span>
         }
         <span class="wk-td wk-td--num sk-cell" role="cell"><span class="sk-value" [class.none]="row.value === null">{{ row.value === null ? '—' : (row.value | eur: 0) }}</span></span>
         <span class="wk-td wk-td--actions sk-act" role="cell">
@@ -399,18 +425,6 @@ function mediaSignal(query: string) {
           }
         </span>
       </div>
-    </ng-template>
-
-    <!-- Below 1360 Onderweg folds under Totaal (B4), the date on its own line. -->
-    <ng-template #under let-onway>
-      <span class="sk-under" [attr.title]="'Op ' + onway.orderNumbers.join(', ')"><span class="sk-exp">+{{ onway.quantity | num }} verwacht</span>
-        @if (onway.earliest) { <span>{{ onway.earliest | dateNl }}</span> }</span>
-    </ng-template>
-    <ng-template #onwayCell let-onway>
-      @if (onway) {
-        <span class="sk-exp" [attr.title]="'Op ' + onway.orderNumbers.join(', ')">+{{ onway.quantity | num }}</span>
-        <span class="sk-unit">{{ onway.earliest ? (onway.earliest | dateNl) : ordersLabel(onway.orderNumbers) }}</span>
-      } @else { <span class="sk-loc zero">—</span> }
     </ng-template>
 
     <!-- ===== phone rows ===== -->
@@ -436,7 +450,7 @@ function mediaSignal(query: string) {
             <strong [class.zero]="!figureOf(group.byLocation, group.total)">{{ figureOf(group.byLocation, group.total) | num }}</strong>
             @if (group.unit) { <small>{{ figureOf(group.byLocation, group.total) === 1 ? group.unit.singular : group.unit.plural }}</small> }
             @if (figureOf(group.looseByLocation, group.loosePieces); as loose) { <small>+ {{ looseText(loose, group.rows[0].product) }}</small> }
-            @if (group.onway) { <span class="exp">+{{ group.onway.quantity | num }}</span> }
+            @if (group.onway) { <app-incoming-pill variant="phone" [value]="group.onway" [strong]="!group.total && !group.loosePieces" /> }
           </span>
         </button>
         @if (open) {
@@ -448,7 +462,7 @@ function mediaSignal(query: string) {
     </ng-template>
 
     <ng-template #phoneRow let-row let-nested="nested">
-      @let exp = expectedFor(row.product.id);
+      @let onway = incomingFor(row.product.id);
       <div class="skp-row skp-row--product" [class.skp-row--nested]="nested" role="button" tabindex="0"
            (click)="rowClick($event, row)" (keydown.enter)="openBook(row)" [animate.enter]="nested ? 'mo-enter' : ''">
         @if (salesPhotoUrl(row.product); as photo) { <img class="ios-thumb" [class.ios-thumb--sm]="nested" [appAuthSrc]="photo" alt="" draggable="false" /> }
@@ -472,7 +486,7 @@ function mediaSignal(query: string) {
           }
           <small>{{ figureOf(row.byLocation, row.total) === 1 ? unitOf(row.product).singular : unitOf(row.product).plural }}</small>
           @if (figureOf(row.looseByLocation, row.loosePieces); as loose) { <small>+ {{ looseText(loose, row.product) }}</small> }
-          @if (exp) { <span class="exp">+{{ exp.quantity | num }}</span> }
+          @if (onway) { <app-incoming-pill variant="phone" [value]="onway" [strong]="!row.total && !row.loosePieces" /> }
         </span>
         <!-- One tap to move between locations, as before the redesign. -->
         @if (!editing() && activeLocations().length > 1) {
@@ -505,12 +519,21 @@ function mediaSignal(query: string) {
                 <b class="history-levels__qty num">{{ stockAmount({ quantity: book.row.byLocation.get(location.id!) ?? 0, loosePieces: book.row.looseByLocation.get(location.id!) ?? 0 }, book.row.product) }}</b>
               </button>
             }
-            @if (expectedFor(book.row.product.id!); as exp) {
-              <a class="history-levels__link" [routerLink]="['/purchasing', exp.orderIds[0]]" (click)="closeBook()"
-                 [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
-                <small>Te verwachten</small><b class="num expected">+{{ exp.quantity | num }}</b>
-                <em>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · ' + (exp.expectedArrival | dateNl) : '' }} ›</em>
-              </a>
+            @if (incomingFor(book.row.product.id); as inc) {
+              <!-- One tile per purchase order, first arrival first; each opens its order. -->
+              @if (inc.detailed) {
+                @for (order of inc.orders; track order.orderId) {
+                  <a [class]="'history-levels__link history-levels__link--' + order.state.toLowerCase()" [routerLink]="['/purchasing', order.orderId]" (click)="closeBook()">
+                    <small>{{ order.word }}</small><b class="num expected">+{{ order.quantity | num }}</b>
+                    <em>{{ order.name }} · {{ order.when }} ›</em>
+                  </a>
+                }
+              } @else if (inc.orders.length) {
+                <a class="history-levels__link" [routerLink]="['/purchasing', inc.orders[0].orderId]" (click)="closeBook()" [attr.title]="inc.title">
+                  <small>{{ inc.word }}</small><b class="num expected">+{{ inc.total | num }}</b>
+                  <em>{{ orderNames(inc) }} · {{ inc.when }} ›</em>
+                </a>
+              }
             }
           </div>
           <p class="hint">{{ desktop.active() ? 'Klik' : 'Tik' }} een locatie aan voor een hertelling.</p>
@@ -600,7 +623,6 @@ export class StockPage {
   readonly salesPhotoUrl = salesPhotoUrl;
   /** "bowl" / "bowls": every figure here is in the product's own unit, never "stuks" for all. */
   readonly unitOf = productSalesUnit;
-  readonly ordersLabel = onderwegOrdersLabel;
 
   readonly loading = signal(true);
   /** The page could not load: it says so, with a retry, instead of "Geen producten gevonden". */
@@ -610,6 +632,12 @@ export class StockPage {
   readonly levels = signal<StockLevel[]>([]);
   readonly categories = signal<Category[]>([]);
   readonly expected = signal<Map<number, ExpectedStock>>(new Map());
+  /** Today in Belgium: what "Binnenkort" and a passed date are measured against. */
+  private readonly today = brusselsToday();
+  /** What is coming per product, as the status every screen shows. */
+  private readonly incoming = computed(() => incomingMap([...this.expected().values()], this.today));
+  /** The expected-stock call: 'failed' says so with a retry instead of an empty Onderweg. */
+  readonly incomingState = signal<'ready' | 'loading' | 'failed'>('ready');
   readonly families = signal<ProductFamily[]>([]);
   private readonly familyNames = computed(() => new Map(this.families().map((family) => [family.id, family.name])));
 
@@ -620,6 +648,8 @@ export class StockPage {
   readonly hideEmpty = signal(false);
   /** "Zonder kostprijs" clicked: only products with stock and no landed cost. */
   readonly noCostOnly = signal(false);
+  /** "Onderweg" clicked: only products with something coming, first arrival first. Not in the URL, like its neighbours. */
+  readonly onwayOnly = signal(false);
   readonly sortKey = signal<StockSort>('STOCK_SMART');
   readonly demoOpen = signal(false);
   readonly editing = signal(false);
@@ -680,7 +710,7 @@ export class StockPage {
       const [products, locations, levels, categories, expected, families] = await Promise.all([
         this.catalog.products(), this.catalog.stockLocations(), this.catalog.stockLevels(),
         this.catalog.categories().catch(() => [] as Category[]),
-        this.sourcing.expectedStock().catch(() => [] as ExpectedStock[]),
+        this.sourcing.incomingStock().catch(() => null),
         this.catalog.productFamilies({ maxAgeMs: 20_000 }).catch(() => [] as ProductFamily[]),
       ]);
       this.families.set(families);
@@ -688,7 +718,7 @@ export class StockPage {
       this.locations.set(locations);
       this.levels.set(levels);
       this.categories.set(categories);
-      this.expected.set(new Map(expected.map((item) => [item.productId, item])));
+      this.setIncoming(expected);
       if (this.view() !== null && !this.activeLocations().some((location) => location.id === this.view())) this.view.set(null);
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
@@ -701,8 +731,26 @@ export class StockPage {
     return this.locations().find((location) => location.id === id)?.name ?? '';
   }
 
-  expectedFor(productId: number | null): ExpectedStock | null {
-    return productId === null ? null : this.expected().get(productId) ?? null;
+  /** A failed (re)load keeps what the page already had and says it failed. */
+  private setIncoming(items: ExpectedStock[] | null): void {
+    this.incomingState.set(items ? 'ready' : 'failed');
+    if (items) this.expected.set(new Map(items.map((item) => [item.productId, item])));
+  }
+
+  async retryIncoming(): Promise<void> {
+    if (this.incomingState() === 'loading') return;
+    this.incomingState.set('loading');
+    this.setIncoming(await this.sourcing.incomingStock().catch(() => null));
+  }
+
+  /** What is coming for one product: state, word, figure and date; null when nothing is. */
+  incomingFor(productId: number | null): Incoming | null {
+    return productId === null ? null : this.incoming().get(productId) ?? null;
+  }
+
+  /** "PO-2026-013, PO-2026-015": the orders of a figure that came without its breakdown. */
+  orderNames(value: Incoming): string {
+    return value.orders.map((order) => order.name).join(', ');
   }
 
   colourHex(product: Product): string | null {
@@ -748,8 +796,9 @@ export class StockPage {
     new Map(this.rows().map((row) => [row.product.id!, row.product.landedCostEur]))));
   readonly summaryLocations = computed(() => this.activeLocations().slice(0, 3));
   readonly moreLocations = computed(() => Math.max(0, this.activeLocations().length - 3));
-  readonly onwayProducts = computed(() => this.rows().filter((row) => (this.expectedFor(row.product.id)?.quantity ?? 0) > 0).length);
-  readonly onwayOrders = computed(() => distinctOrderCount([...this.expected().values()]));
+  /** Both counted from the rows this page shows, so the tile and its filter always agree. */
+  readonly onwayProducts = computed(() => this.rows().filter((row) => this.incomingFor(row.product.id)).length);
+  readonly onwayOrders = computed(() => incomingOrderCount(this.rows().map((row) => this.incomingFor(row.product.id))));
 
   readonly subtitle = computed(() => {
     const families = new Map<number, number>();
@@ -791,7 +840,7 @@ export class StockPage {
     const count = this.shownLocations().length;
     if (!this.narrow()) return `40px minmax(0,1fr) ${'100px '.repeat(count)}112px 132px 104px 64px`;
     /* Below 1100 (and with the rail) the columns tighten so the table fits the card. */
-    if (this.cramped()) return `40px minmax(150px,1fr) ${'88px '.repeat(count)}96px 88px 56px`;
+    if (this.cramped()) return `40px minmax(150px,1fr) ${'88px '.repeat(count)}104px 88px 56px`;
     return `40px minmax(220px,1fr) ${'88px '.repeat(count)}104px 96px 56px`;
   });
 
@@ -828,11 +877,15 @@ export class StockPage {
   readonly filtered = computed(() => {
     const needle = this.query().trim().toLowerCase();
     const category = this.categoryFilter();
+    /* The search knows the series name the row shows and takes the words in any order ("slim dome"). */
+    const text = (product: Product) => [product.name, product.familyId != null ? this.familyNames().get(product.familyId) : null,
+      product.sku, product.colour, product.variantSize].join(' ').toLowerCase();
     return this.rows().filter(({ product, total, loosePieces, piecesPerUnit }) =>
       (category === null || (category === 'none' ? product.categoryId == null : product.categoryId === category))
-      && (!this.hideEmpty() || total !== 0 || loosePieces !== 0 || (this.expectedFor(product.id)?.quantity ?? 0) > 0)
+      && (!this.hideEmpty() || total !== 0 || loosePieces !== 0 || !!this.incomingFor(product.id))
       && (!this.noCostOnly() || lacksCost({ quantity: total, loosePieces, piecesPerUnit, cost: product.landedCostEur }))
-      && (!needle || [product.name, product.sku, product.colour, product.variantSize].join(' ').toLowerCase().includes(needle)));
+      && (!this.onwayOnly() || !!this.incomingFor(product.id))
+      && (!needle || matchesWords(text(product), needle)));
   });
 
   private readonly groups = computed<StockGroup[]>(() => {
@@ -859,7 +912,7 @@ export class StockPage {
     }
     const groups = [...byKey.values()];
     for (const group of groups) {
-      group.onway = onderwegSummary(group.rows.map((row) => this.expectedFor(row.product.id)));
+      group.onway = incomingSum(group.rows.map((row) => this.expected().get(row.product.id!)), this.today);
       const units = new Set(group.rows.map((row) => productSalesUnit(row.product).plural));
       group.unit = units.size === 1 ? productSalesUnit(group.rows[0].product) : null;
       group.rows.sort((a, b) => this.compareRows(a, b));
@@ -872,7 +925,11 @@ export class StockPage {
   }
 
   private compareRows(a: StockRow, b: StockRow): number {
-    const tier = (row: StockRow) => row.product.demo ? 3 : (row.total > 0 || row.loosePieces > 0) ? 0 : this.expectedFor(row.product.id) ? 1 : 2;
+    const tier = (row: StockRow) => row.product.demo ? 3 : (row.total > 0 || row.loosePieces > 0) ? 0 : this.incomingFor(row.product.id) ? 1 : 2;
+    /* Only what is coming, in the standard order: the first arrival on top. */
+    if (this.onwayOnly() && this.sortKey() === 'STOCK_SMART') {
+      return compareIncoming(this.incomingFor(a.product.id), this.incomingFor(b.product.id)) || this.byName(a.product.name, b.product.name);
+    }
     switch (this.sortKey()) {
       case 'NAME_ASC': return this.byName(a.product.name, b.product.name);
       case 'NAME_DESC': return this.byName(b.product.name, a.product.name);
@@ -880,7 +937,7 @@ export class StockPage {
       case 'STOCK_ASC': return a.total - b.total || this.byName(a.product.name, b.product.name);
       case 'VALUE_DESC': return (b.value ?? -1) - (a.value ?? -1) || this.byName(a.product.name, b.product.name);
       case 'VALUE_ASC': return (a.value ?? Infinity) - (b.value ?? Infinity) || this.byName(a.product.name, b.product.name);
-      case 'EXPECTED': return (this.expectedFor(b.product.id)?.quantity ?? 0) - (this.expectedFor(a.product.id)?.quantity ?? 0) || this.byName(a.product.name, b.product.name);
+      case 'EXPECTED': return compareIncoming(this.incomingFor(a.product.id), this.incomingFor(b.product.id)) || this.byName(a.product.name, b.product.name);
       default: return tier(a) - tier(b) || b.total - a.total || this.byName(a.product.name, b.product.name);
     }
   }
@@ -888,6 +945,7 @@ export class StockPage {
   /** The list's default order (Standaardvolgorde): stock first, then on the way, then empty, demo last. */
   private compareGroups(a: StockGroup, b: StockGroup): number {
     const tier = (group: StockGroup) => group.demo ? 3 : (group.total > 0 || group.loosePieces > 0) ? 0 : group.onway ? 1 : 2;
+    if (this.onwayOnly() && this.sortKey() === 'STOCK_SMART') return compareIncoming(a.onway, b.onway) || this.byName(a.name, b.name);
     switch (this.sortKey()) {
       case 'NAME_ASC': return this.byName(a.name, b.name);
       case 'NAME_DESC': return this.byName(b.name, a.name);
@@ -895,14 +953,14 @@ export class StockPage {
       case 'STOCK_ASC': return a.total - b.total || this.byName(a.name, b.name);
       case 'VALUE_DESC': return (b.value ?? -1) - (a.value ?? -1) || this.byName(a.name, b.name);
       case 'VALUE_ASC': return (a.value ?? Infinity) - (b.value ?? Infinity) || this.byName(a.name, b.name);
-      case 'EXPECTED': return (b.onway?.quantity ?? 0) - (a.onway?.quantity ?? 0) || this.byName(a.name, b.name);
+      case 'EXPECTED': return compareIncoming(a.onway, b.onway) || this.byName(a.name, b.name);
       default: return tier(a) - tier(b) || b.total - a.total || this.byName(a.name, b.name);
     }
   }
 
   /** Fully-demo series and loose demo pieces (also "Zonder categorie" ones) live in the fold at the end. */
   readonly demoGroups = computed(() => this.groups().filter((group) => group.demo));
-  readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0);
+  readonly showDemo = computed(() => this.demoOpen() || this.query().trim().length > 0 || this.onwayOnly());
   readonly demoCount = computed(() => this.demoGroups().reduce((sum, group) => sum + group.rows.length, 0));
   readonly demoValue = computed(() => knownValueSum(this.demoGroups().map((group) => group.value)));
 
@@ -912,7 +970,8 @@ export class StockPage {
     if (!groups.length) return [];
     const count = (list: StockGroup[]) => list.reduce((sum, group) => sum + group.rows.length, 0);
     const value = (list: StockGroup[]) => knownValueSum(list.map((group) => group.value));
-    if (this.query().trim() || this.categoryFilter() !== null) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
+    /* Only what is coming is one list too: its order is the arrival, not the category. */
+    if (this.query().trim() || this.categoryFilter() !== null || this.onwayOnly()) return [{ key: 'all', name: null, groups, count: count(groups), value: value(groups) }];
     const order = new Map(this.categories().map((category, index) => [category.id, index]));
     const byCategory = new Map<number | null, StockGroup[]>();
     for (const group of groups) {
@@ -953,7 +1012,7 @@ export class StockPage {
   }
 
   readonly hasFilters = computed(() => this.query().trim().length > 0 || this.categoryFilter() !== null || this.view() !== null || this.hideEmpty()
-    || this.noCostOnly());
+    || this.noCostOnly() || this.onwayOnly());
 
   resetFilters(): void {
     this.query.set('');
@@ -961,6 +1020,7 @@ export class StockPage {
     this.view.set(null);
     this.hideEmpty.set(false);
     this.noCostOnly.set(false);
+    this.onwayOnly.set(false);
     this.sortKey.set('STOCK_SMART');
   }
 
@@ -974,7 +1034,7 @@ export class StockPage {
     this.query.set('');
   }
 
-  /** A header click: its order, the reverse, then back to the standard order (Onderweg: "Te verwachten eerst" or standard). */
+  /** A header click: its order, the reverse, then back to the standard order (Onderweg: the first arrival first, or standard). */
   sortBy(first: StockSort, second: StockSort | null): void {
     const current = this.sortKey();
     this.sortKey.set(current === first ? (second ?? 'STOCK_SMART') : current === second ? 'STOCK_SMART' : first);
