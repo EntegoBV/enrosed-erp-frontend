@@ -6,7 +6,7 @@ import type { ContainerTracking } from '../../core/api/container-tracking-models
 import { messageOf } from '../../core/api/errors';
 import { Icon } from '../../shared/icon';
 import { carrierLookup, normalizedVesselImo, recognisedOf, trackingAge, trackingArrival, trackingArrived, trackingFailure, trackingMapLink,
-  trackingMapUrl, trackingMove, trackingRefreshNotice, trackingStale, trackingStatus, trackingTime, trackingWebUrl,
+  trackingMapUrl, trackingMove, trackingRefreshNotice, trackingRefreshNoticeUntil, trackingStale, trackingStatus, trackingTime, trackingWebUrl,
   validatedContainerReference, vesselMapFrameUrl } from './container-tracking-model';
 import { trackingReferenceHint } from './tracking-reference';
 
@@ -32,7 +32,7 @@ import { trackingReferenceHint } from './tracking-reference';
 
       @if (!configured()) { <div class="tp-notice" role="status"><app-icon name="info" [size]="17" /><span>Automatische controles staan uit. Je ziet de bewaarde gegevens.</span></div> }
       @if (failure(); as text) {
-        <div class="tp-notice tp-notice--warn" role="status"><app-icon name="alert" [size]="17" /><span>{{ text }} @if (item.updatedAt) { <span>Gegevens bewaard van {{ time(item.updatedAt) }}.</span> }</span></div>
+        <div class="tp-notice tp-notice--warn" role="status"><app-icon name="alert" [size]="17" /><span>{{ text }} @if (failureKept(); as kept) { <span>Gegevens bewaard van {{ time(kept) }}.</span> }</span></div>
       } @else if (stale() && item.automatic && configured()) {
         <div class="tp-notice tp-notice--warn" role="status"><app-icon name="info" [size]="17" /><span>De laatste controle is langer dan {{ intervalHours() }} uur geleden.</span></div>
       }
@@ -74,7 +74,7 @@ import { trackingReferenceHint } from './tracking-reference';
             <div><dt>Volgende controle</dt><dd>{{ nextCheck() }}</dd></div>
           </dl>
           @if (item.dateSource) { <p class="tp-small">Datumbron: {{ item.dateSource }}@if (item.dateSourceCheckedAt) { · bron gecontroleerd {{ time(item.dateSourceCheckedAt) }} }</p> }
-          @if (item.dateError && item.dateError !== failure()) { <p class="tp-feedback" role="status">{{ item.dateError }}</p> }
+          @if (item.dateError && item.dateError !== lastFailure() && item.orderStatus !== 'ONTVANGEN') { <p class="tp-feedback" role="status">{{ item.dateError }}</p> }
           @if (carrier(); as provider) {
             <div class="tp-carrier">
               <div class="tp-carrier-title"><app-icon name="purchase" [size]="18" /><strong>Container bij {{ provider.carrier }}</strong></div>
@@ -161,7 +161,13 @@ export class ContainerTrackingPanel {
   readonly draft = signal<string | null>(null);
   readonly vesselError = signal<string | null>(null);
   readonly actionError = signal<string | null>(null);
-  readonly feedback = signal<string | null>(null);
+  /** What the last action said, with the check it is about: it goes once the row shows a newer check or its time passed. */
+  private readonly said = signal<{ text: string; checkedAt: string | null; until: number | null } | null>(null);
+  readonly feedback = computed(() => {
+    const said = this.said();
+    if (!said || (this.row().checkedAt ?? null) !== said.checkedAt || (said.until !== null && Date.now() >= said.until)) return null;
+    return said.text;
+  });
   readonly copyMessage = signal<string | null>(null);
   readonly settingsOpen = signal(false);
   readonly identity = computed(() => `${this.row().orderId}:${this.row().trackingReference}`);
@@ -181,7 +187,11 @@ export class ContainerTrackingPanel {
   readonly stale = computed(() => trackingStale(this.row(), Date.now(), this.intervalHours()));
   /** The same status as the overview list shows for this container. */
   readonly status = computed(() => trackingStatus(this.row(), this.configured()));
-  readonly failure = computed(() => this.configured() ? trackingFailure(this.row()) : null);
+  /** The last attempt failed. A container that arrived is not followed for it any more: the list says nothing then. */
+  readonly lastFailure = computed(() => this.configured() ? trackingFailure(this.row()) : null);
+  readonly failure = computed(() => trackingArrived(this.row()) ? null : this.lastFailure());
+  /** Since when the failing source's data is kept. An older server: the row's last success, as before. */
+  readonly failureKept = computed(() => { const item = this.row(); return item.failureDataAt !== undefined ? item.failureDataAt : item.updatedAt; });
   readonly move = computed(() => trackingMove(this.row()));
   readonly checkedAge = computed(() => trackingAge(this.row().checkedAt));
   readonly finished = computed(() => arrivedTerminal(this.row()));
@@ -213,7 +223,7 @@ export class ContainerTrackingPanel {
         this.operation++;
         this.busy.set(null); this.busyChange.emit(false);
         this.draft.set(null); this.vesselError.set(null); this.actionError.set(null);
-        this.feedback.set(null); this.copyMessage.set(null); this.settingsOpen.set(false);
+        this.said.set(null); this.copyMessage.set(null); this.settingsOpen.set(false);
       });
     });
     this.destroyRef.onDestroy(() => { this.operation++; });
@@ -256,13 +266,14 @@ export class ContainerTrackingPanel {
     const operation = ++this.operation;
     const current = () => !this.destroyRef.destroyed && operation === this.operation && identity === this.identity();
     this.busy.set(kind); this.busyChange.emit(true);
-    this.vesselError.set(null); this.actionError.set(null); this.feedback.set(null);
+    this.vesselError.set(null); this.actionError.set(null); this.said.set(null);
     try {
       const updated = await action();
       if (!current()) return;
       if (`${updated.orderId}:${updated.trackingReference}` !== identity) throw new Error('De trackingreferentie is gewijzigd. Vernieuw eerst de inkooporder.');
       this.rowUpdated.emit(updated);
-      this.feedback.set(message(updated));
+      const text = message(updated);
+      this.said.set(text ? { text, checkedAt: updated.checkedAt ?? null, until: trackingRefreshNoticeUntil(updated) } : null);
       if (kind === 'save') { this.draft.set(null); this.settingsOpen.set(false); }
     } catch (error) {
       if (current()) (kind === 'save' ? this.vesselError : this.actionError).set(messageOf(error, 'De controle is niet gelukt. Probeer opnieuw.'));

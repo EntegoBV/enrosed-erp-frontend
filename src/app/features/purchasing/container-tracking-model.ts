@@ -274,6 +274,15 @@ export function trackingRefreshNotice(before: Pick<ContainerTracking, 'checkedAt
     : 'Controle afgerond. Er zijn geen nieuwe wijzigingen gemeld.';
 }
 
+/**
+ * Until when the notice of a manual check holds (ms), or null: until the row shows a newer check. "Opnieuw kan
+ * vanaf 14:32" is over at 14:32; "de automatische controle is bezig" after a few minutes.
+ */
+export function trackingRefreshNoticeUntil(after: Pick<ContainerTracking, 'refreshOutcome' | 'manualCheckAt'>, now = Date.now()): number | null {
+  if (after.refreshOutcome === 'COOLDOWN') { const at = Date.parse(after.manualCheckAt ?? ''); return Number.isFinite(at) ? at : now + 60_000; }
+  return after.refreshOutcome === 'BUSY' ? now + 5 * 60_000 : null;
+}
+
 export function trackingTime(value: string | null | undefined, includeTime = true): string {
   if (!value) return 'Nog niet bekend';
   const date = new Date(value);

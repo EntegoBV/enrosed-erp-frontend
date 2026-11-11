@@ -34,8 +34,9 @@ import { trackingArrived, trackingListLine, trackingProblems, trackingRows, type
             <label class="ct-search"><app-icon name="search" [size]="17" /><input type="search" aria-label="Container, schip of referentie zoeken" placeholder="Zoek container of schip" autocomplete="off" [value]="query()" (input)="query.set($any($event.target).value)" /></label>
           </div>
           @if (problemsShown(); as failed) {
-            <section class="ct-alert" role="status" aria-label="Controles die niet gelukt zijn">
-              <h2><app-icon name="alert" [size]="16" />Controle niet gelukt bij {{ failed.length }} {{ failed.length === 1 ? 'container' : 'containers' }}</h2>
+            <!-- Not a live region: the page re-reads every minute and the ages change, which would read it out again. -->
+            <section class="ct-alert" aria-labelledby="ct-alert-title">
+              <h2 id="ct-alert-title"><app-icon name="alert" [size]="16" />Controle niet gelukt bij {{ failed.length }} {{ failed.length === 1 ? 'container' : 'containers' }}</h2>
               <ul>@for (item of failed; track item.row.orderId) {
                 <li><button type="button" (click)="selectProblem(item.row)"><strong>{{ item.row.containerName || item.row.orderNumber }}</strong><span>{{ item.text }}@if (item.age) { · {{ item.age }} }</span></button></li>
               }</ul>
@@ -159,10 +160,16 @@ export class ContainerTrackingPage {
     });
   }
 
-  /** A line of the summary: the container may be filtered or searched away, so show everything first. */
-  selectProblem(row: ContainerTracking): Promise<void> {
+  /**
+   * A line of the summary: the container may be filtered or searched away, so show everything first. Focus goes to
+   * its panel, also on the desk: the summary can leave with the line that was pressed (its only line is then open).
+   */
+  async selectProblem(row: ContainerTracking): Promise<void> {
     this.resetFilters();
-    return this.select(row);
+    await this.select(row);
+    if (this.desktop.active()) setTimeout(() => {
+      if (!this.destroyRef.destroyed && this.selected()?.orderId === row.orderId) this.detail()?.nativeElement.focus({ preventScroll: true });
+    });
   }
 
   pickerToggled(event: Event): void { if (!this.desktop.active()) this.pickerOpen.set((event.target as HTMLDetailsElement).open); }

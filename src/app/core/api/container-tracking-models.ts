@@ -69,6 +69,8 @@ export interface ContainerTracking {
   /** The last attempt failed: its message and when. A date that could not be applied stays dateError. */
   failure?: string | null;
   failureAt?: string | null;
+  /** The failing source's last good answer: what is kept is from then; null when it never answered. */
+  failureDataAt?: string | null;
   /** Tracking moved the expected arrival: the date that stood, when, and the signed days to the date now. */
   arrivalMovedFrom?: string | null;
   arrivalMovedAt?: string | null;
