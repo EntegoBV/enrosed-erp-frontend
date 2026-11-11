@@ -3779,11 +3779,15 @@ export class ProductEditor implements OnDestroy {
       identityFinalization = this.plannedIdentityFinalization();
     } catch (failure: unknown) {
       const message = messageOf(failure, 'Opslaan mislukt');
+      this.identityError = { message, refused: null };
       this.saveError.set(message);
       this.ui.toast(message, 'err');
       this.showIdentityField(failure);
       return;
     }
+    /* The identity passes its check, so what the banner still says about it is no longer true:
+       it goes now, before the questions, or Annuleren would leave it standing. */
+    this.forgetIdentityError(identityFinalization);
     /* A new price basis converts nothing on its own: say what stays as it is,
        and ask before anything in the draft changes, so Annuleren leaves it
        exactly as it was. The answer is awaited: a caller that saves first
@@ -3823,6 +3827,7 @@ export class ProductEditor implements OnDestroy {
     const rowsMode = this.purchaseMode();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);
+    this.identityError = null;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -3900,6 +3905,11 @@ export class ProductEditor implements OnDestroy {
         this.publishFix.set(plan);
         return;
       }
+      /* A refusal of typed identity values (it points at a field) is remembered with the command
+         it answered: it leaves the banner once other values pass the check. */
+      this.identityError = failure instanceof ProductFamilyIdentityFinalizationError && failure.field !== null
+        ? { message, refused: JSON.stringify(identityFinalization) }
+        : null;
       this.saveError.set(message);
       this.ui.toast(message, 'err');
       this.showIdentityField(failure);
@@ -3917,6 +3927,23 @@ export class ProductEditor implements OnDestroy {
     if (!(failure instanceof ProductFamilyIdentityFinalizationError) || failure.field === null) return;
     if (!this.visibleTabs().some((tab) => tab.id === 'publication')) return;
     this.focusField('publication', failure.field);
+  }
+
+  /**
+   * The identity message in the banner, and the command the server refused with it (null: a local
+   * check, nothing was sent). Only used to take that message away again.
+   */
+  private identityError: { message: string; refused: string | null } | null = null;
+
+  /**
+   * The identity check passed with `plan`. A local message is solved by that; a refusal by the
+   * server is, unless the very same command would go out again.
+   */
+  private forgetIdentityError(plan: ProductFamilyIdentityFinalization | null): void {
+    const shown = this.identityError;
+    if (shown === null || (shown.refused !== null && shown.refused === JSON.stringify(plan))) return;
+    if (this.saveError() === shown.message) this.saveError.set(null);
+    this.identityError = null;
   }
 
   /**
