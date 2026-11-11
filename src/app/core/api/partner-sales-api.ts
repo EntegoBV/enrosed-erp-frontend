@@ -180,8 +180,9 @@ export interface PartnerInvoicePreviewLine {
   saleNetEur: number;
   buybackEur: number;
   proceedsEur: number;
-  costEur: number;
-  valueEur: number;
+  /** null on a blocked group: the settlement was not computed. */
+  costEur: number | null;
+  valueEur: number | null;
 }
 
 export interface PartnerInvoicePreviewGroup {
@@ -189,10 +190,13 @@ export interface PartnerInvoicePreviewGroup {
   purchaseOrderId: number | null;
   containerName: string | null;
   lines: PartnerInvoicePreviewLine[];
-  valueEur: number;
-  advanceEur: number;
-  balanceEur: number;
+  /** Ons deel, the advance it nets and what is left to invoice; null on a blocked group (nothing was computed). */
+  valueEur: number | null;
+  advanceEur: number | null;
+  balanceEur: number | null;
   finalSettlement: boolean;
+  /** The profit share this group was computed with (a container's own, the customer's for own stock), when the server says it. */
+  profitSharePct?: number | null;
   /** Why creating this group would be refused; null when it can be made. */
   blocked: string | null;
   warnings: string[];
@@ -203,6 +207,8 @@ export interface PartnerInvoiceSkipped {
   name: string;
   source: PartnerInvoiceSource;
   purchaseOrderId: number | null;
+  /** The container's name, when the server sends it (a container without a group has none in the preview). */
+  containerName?: string | null;
   reason: string;
 }
 
@@ -211,6 +217,7 @@ export interface PartnerInvoicePreview {
   skipped: PartnerInvoiceSkipped[];
   /** The meldingen this preview covers: Facturen maken sends exactly these. */
   reportIds: number[];
+  /** The partner customer's share: what the own-stock group uses (a container uses its own). */
   profitSharePct: number;
 }
 
@@ -223,7 +230,7 @@ export interface PartnerInvoiceCreated {
 
 export interface PartnerInvoiceResult {
   invoices: PartnerInvoiceCreated[];
-  blocked: { purchaseOrderId: number | null; message: string }[];
+  blocked: { purchaseOrderId: number | null; message: string; containerName?: string | null }[];
   skipped: PartnerInvoiceSkipped[];
 }
 

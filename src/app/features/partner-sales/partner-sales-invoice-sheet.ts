@@ -4,11 +4,12 @@ import { messageOf } from '../../core/api/errors';
 import {
   PartnerInvoicePreview, PartnerInvoicePreviewGroup, PartnerInvoiceResult, PartnerSalesApi, PartnerSalesPartnerSummary, isMissingEndpoint,
 } from '../../core/api/partner-sales-api';
+import { SourcingApi } from '../../core/api/sourcing-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
-import { count, euro, minusEuro } from '../partner/partner-format';
+import { count, euro, minusEuro, percent } from '../partner/partner-format';
 
 /**
  * Factureren: everything of one partner that is not invoiced yet, as the
@@ -41,10 +42,10 @@ import { count, euro, minusEuro } from '../partner/partner-format';
             }
           </div>
           @for (block of done.blocked; track $index) {
-            <p class="vi-bad" role="alert"><b>{{ containerOf(block.purchaseOrderId) }}</b> · {{ block.message }}</p>
+            <p class="vi-bad" role="alert"><b>{{ containerOf(block.purchaseOrderId, block.containerName) }}</b> · {{ block.message }}</p>
           }
           @if (done.skipped.length) {
-            <p class="vi-wait">Wacht nog: @for (skip of done.skipped; track $index) { <span>{{ skip.name }} ({{ skip.reason }})@if (!$last) {, }</span> }</p>
+            <p class="vi-wait">Wacht nog: @for (skip of done.skipped; track $index) { <span>{{ skip.name }} · {{ skip.source === 'OWN' ? 'eigen voorraad' : containerOf(skip.purchaseOrderId, skip.containerName) }} ({{ skip.reason }})@if (!$last) {, }</span> }</p>
           }
         } @else if (error(); as message) {
           <p class="vi-bad" role="alert">{{ message }}</p>
@@ -59,9 +60,13 @@ import { count, euro, minusEuro } from '../partner/partner-format';
           @for (group of p.groups; track groupKey(group)) {
             <section class="vi-group" [class.is-blocked]="!!group.blocked">
               <header class="vi-group__head">
-                <b>{{ group.source === 'OWN' ? 'Eigen voorraad' : group.containerName || containerOf(group.purchaseOrderId) }}</b>
-                @if (group.source === 'CONTAINER') { <span class="wk-pill" [class.tone-blue]="group.finalSettlement">{{ group.finalSettlement ? 'Slotfactuur' : 'Deelfactuur' }}</span> }
-                @else { <span class="wk-pill">Factuur</span> }
+                <b>{{ group.source === 'OWN' ? 'Eigen voorraad' : containerOf(group.purchaseOrderId, group.containerName) }}</b>
+                <!-- A blocked group makes nothing: no document kind, no share; its figures were not computed. -->
+                @if (!group.blocked) {
+                  @if (group.source === 'CONTAINER') { <span class="wk-pill" [class.tone-blue]="group.finalSettlement">{{ group.finalSettlement ? 'Slotfactuur' : 'Deelfactuur' }}</span> }
+                  @else { <span class="wk-pill">Factuur</span> }
+                  @if (shareOf(group); as share) { <span class="vi-share">{{ share }} voor ons</span> }
+                }
               </header>
               <div class="vi-lines" role="table" [attr.aria-label]="'Regels ' + (group.containerName || 'eigen voorraad')">
                 <div class="vi-line vi-line--head" role="row">
@@ -74,17 +79,21 @@ import { count, euro, minusEuro } from '../partner/partner-format';
                       @if (line.buybackQuantity > 0) { <small class="vi-line__sub">{{ num(line.soldQuantity) }} verkocht − {{ num(line.buybackQuantity) }} terug</small> }</span>
                     <span role="cell">{{ num(line.quantity) }}</span>
                     <span role="cell">{{ eur(line.proceedsEur) }}</span>
-                    <span role="cell" class="vi-hide">{{ eur(line.costEur) }}</span>
-                    <span role="cell" class="vi-strong">{{ eur(line.valueEur) }}</span>
+                    <span role="cell" class="vi-hide">{{ money(line.costEur) }}</span>
+                    <span role="cell" class="vi-strong">{{ money(line.valueEur) }}</span>
                   </div>
                 }
               </div>
-              <dl class="wk-equation vi-sum">
-                <div><dt>Ons deel</dt><dd>{{ eur(group.valueEur) }}</dd></div>
-                @if (group.advanceEur > 0) { <div class="is-sub"><dt>Voorschot al betaald</dt><dd>{{ minus(group.advanceEur) }}</dd></div> }
-                <div class="is-total"><dt>Te factureren</dt><dd>{{ eur(group.balanceEur) }}</dd></div>
-              </dl>
-              @if (group.blocked) { <p class="vi-bad" role="alert">Wordt niet gemaakt: {{ group.blocked }}</p> }
+              @if (group.blocked) {
+                <p class="vi-bad" role="alert">Wordt niet gemaakt: {{ group.blocked }}</p>
+              } @else {
+                <!-- The settlement credits every issued advance invoice, paid or not (open ones stay to be paid apart). -->
+                <dl class="wk-equation vi-sum">
+                  <div><dt>Ons deel</dt><dd>{{ money(group.valueEur) }}</dd></div>
+                  @if ((group.advanceEur ?? 0) > 0) { <div class="is-sub"><dt>Voorschot verrekend</dt><dd>{{ minus(group.advanceEur!) }}</dd></div> }
+                  <div class="is-total"><dt>Te factureren</dt><dd>{{ money(group.balanceEur) }}</dd></div>
+                </dl>
+              }
               @for (warning of group.warnings; track $index) { <p class="vi-warn">{{ warning }}</p> }
             </section>
           }
@@ -92,11 +101,11 @@ import { count, euro, minusEuro } from '../partner/partner-format';
             <section class="vi-group vi-group--wait">
               <header class="vi-group__head"><b>Wacht nog</b></header>
               @for (skip of p.skipped; track $index) {
-                <p class="vi-skip"><b>{{ skip.name }}</b> · {{ skip.source === 'OWN' ? 'eigen voorraad' : containerOf(skip.purchaseOrderId) }}<br />{{ skip.reason }}</p>
+                <p class="vi-skip"><b>{{ skip.name }}</b> · {{ skip.source === 'OWN' ? 'eigen voorraad' : containerOf(skip.purchaseOrderId, skip.containerName) }}<br />{{ skip.reason }}</p>
               }
             </section>
           }
-          <p class="vi-foot">{{ p.reportIds.length === 1 ? '1 melding' : p.reportIds.length + ' meldingen' }} · winstdeel {{ num(p.profitSharePct) }} % voor ons</p>
+          <p class="vi-foot">{{ p.reportIds.length === 1 ? '1 melding' : p.reportIds.length + ' meldingen' }}</p>
         }
       </div>
       <div foot class="vi-actions">
@@ -119,6 +128,7 @@ import { count, euro, minusEuro } from '../partner/partner-format';
     .vi-group.is-blocked{border-color:#efcdc9}
     .vi-group__head{display:flex;align-items:center;gap:8px;min-width:0}
     .vi-group__head b{min-width:0;overflow:hidden;font-size:14.5px;text-overflow:ellipsis;white-space:nowrap}
+    .vi-share{flex:none;margin-left:auto;color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
     .vi-lines{display:grid}
     .vi-line{display:grid;grid-template-columns:minmax(0,1fr) 54px 88px 80px 88px;align-items:baseline;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px;font-variant-numeric:tabular-nums}
     .vi-line>span:not(.vi-line__name){text-align:right;white-space:nowrap}
@@ -148,6 +158,7 @@ import { count, euro, minusEuro } from '../partner/partner-format';
 })
 export class PartnerSalesInvoiceSheet {
   private readonly api = inject(PartnerSalesApi);
+  private readonly sourcing = inject(SourcingApi);
   readonly desk = inject(DesktopViewport);
 
   /** The partners with open meldingen (the summary's); the sheet asks which one when there are several. */
@@ -177,7 +188,28 @@ export class PartnerSalesInvoiceSheet {
     .filter((group) => group.purchaseOrderId != null)
     .map((group) => [group.purchaseOrderId!, group.containerName ?? ''])));
 
+  /**
+   * Containers read for what the preview leaves out: the name of a container that has no group (only a waiting
+   * buyback on it), and a container group's share when the server does not send it (it uses the container's own
+   * share, partnerSharePct or 50, never the customer's). Each container is read once per sheet.
+   */
+  private readonly containers = signal<ReadonlyMap<number, { name: string; sharePct: number }>>(new Map());
+  private readonly asked = new Set<number>();
+
   constructor() {
+    effect(() => {
+      const preview = this.preview();
+      const result = this.result();
+      untracked(() => {
+        const named = (id: number | null, name: string | null | undefined) => id == null || !!name?.trim() || !!this.containerNames().get(id);
+        for (const group of preview?.groups ?? []) {
+          if (group.source === 'CONTAINER' && group.purchaseOrderId != null && group.profitSharePct == null) void this.readContainer(group.purchaseOrderId);
+        }
+        for (const item of [...(preview?.skipped ?? []), ...(result?.skipped ?? []), ...(result?.blocked ?? [])]) {
+          if (!named(item.purchaseOrderId, item.containerName)) void this.readContainer(item.purchaseOrderId!);
+        }
+      });
+    });
     effect(() => {
       const choices = this.choices();
       const wanted = this.initialCustomerId();
@@ -235,12 +267,34 @@ export class PartnerSalesInvoiceSheet {
     return group.purchaseOrderId == null ? 'own' : `po-${group.purchaseOrderId}`;
   }
 
-  containerOf(purchaseOrderId: number | null): string {
+  /** The container as sales names it (alias, else number, else "Inkoop #id"), from the server's name or the read order. */
+  containerOf(purchaseOrderId: number | null, name?: string | null): string {
     if (purchaseOrderId == null) return 'Eigen voorraad';
-    return this.containerNames().get(purchaseOrderId) || `Container #${purchaseOrderId}`;
+    return name?.trim() || this.containerNames().get(purchaseOrderId) || this.containers().get(purchaseOrderId)?.name
+      || `Inkoop #${purchaseOrderId}`;
+  }
+
+  /** "50 %", "52,5 %": the share this group's Ons deel was computed with, when known. */
+  shareOf(group: PartnerInvoicePreviewGroup): string | null {
+    const pct = group.profitSharePct
+      ?? (group.source === 'OWN' ? this.preview()?.profitSharePct
+        : group.purchaseOrderId != null ? this.containers().get(group.purchaseOrderId)?.sharePct : null);
+    return pct == null ? null : percent(pct);
+  }
+
+  private async readContainer(id: number): Promise<void> {
+    if (this.asked.has(id)) return;
+    this.asked.add(id);
+    try {
+      const { order } = await this.sourcing.purchaseOrder(id);
+      const name = order.alias?.trim() || order.number?.trim() || `Inkoop #${id}`;
+      this.containers.update((map) => new Map(map).set(id, { name, sharePct: order.partnerSharePct ?? 50 }));
+    } catch { /* the name stays "Inkoop #id" and the share is left out */ }
   }
 
   eur(value: number): string { return euro(value); }
+  /** A figure of the preview; "—" where the server computed none (a blocked group). */
+  money(value: number | null | undefined): string { return value == null ? '—' : euro(value); }
   minus(value: number): string { return minusEuro(value); }
   num(value: number): string { return count(value); }
 }
