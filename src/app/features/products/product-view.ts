@@ -32,6 +32,7 @@ import { NavHistory } from '../../core/platform/nav-history-service';
 import { capsuleLabel } from '../../core/platform/return-label';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
 import { groupPublicationIssues } from './publication-groups';
+import { plainPublicationIssue } from './publication-issues';
 import { Icon } from '../../shared/icon';
 import {
   productCatalogNavigation,
@@ -1225,7 +1226,8 @@ export class ProductView {
   readonly publicationIssues = computed(() => {
     if (this.familyLoading() || this.familyLoadError()) return [];
     const family = this.family();
-    if (family) return family.publicationIssues;
+    /* In the words of the form the "Openen" link leads to (desk) and of the phone's own cells. */
+    if (family) return family.publicationIssues.map(plainPublicationIssue);
     return [];
   });
 

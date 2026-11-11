@@ -62,6 +62,7 @@ import {
   identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
   planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError, withConceptStatuses,
 } from './product-family-identity';
+import { plainPublicationRefusal } from './publication-issues';
 import {
   productCatalogNavigation,
   productVariantNavigation,
@@ -3897,7 +3898,8 @@ export class ProductEditor implements OnDestroy {
       const fallback = wasNew && this.draft().id !== null
         ? 'Product is aangemaakt, maar kon nog niet volledig worden afgewerkt'
         : 'Opslaan mislukt';
-      const message = messageOf(failure, fallback);
+      /* The server lists a missing URL as "Publieke handle ontbreekt"; the form has one name for it. */
+      const message = plainPublicationRefusal(messageOf(failure, fallback));
       /* A publication blocker is not a dead end: open the fix sheet with
          the missing pieces spelled out, fillable on the spot. */
       const plan = this.planPublishFix(message);

@@ -21,6 +21,16 @@ const PLAIN_ISSUE: Record<string, string> = {
   'Publieke handle ontbreekt': 'Permanente publieke URL ontbreekt',
 };
 
+/** One free-text issue in the words of the form; every screen that lists issues passes here. */
+export function plainPublicationIssue(issue: string): string {
+  return PLAIN_ISSUE[issue] ?? issue;
+}
+
+/** A refusal that lists issues ("kan nog niet gepubliceerd worden: a; b"), in the same words. */
+export function plainPublicationRefusal(message: string): string {
+  return Object.entries(PLAIN_ISSUE).reduce((text, [server, plain]) => text.replaceAll(server, plain), message);
+}
+
 const PER_LANGUAGE_SIZE = /\.variants\.[^.]+\.[a-z]{2}\.size$/i;
 
 /**
@@ -56,7 +66,7 @@ export function describePublicationIssues(
       add(grouped, `${FIELD_LABEL[field] ?? field}${where}`, lang);
       continue;
     }
-    plain.push(PLAIN_ISSUE[issue] ?? issue);
+    plain.push(plainPublicationIssue(issue));
   }
   const lines = [...grouped.entries()].map(([label, langs]) =>
       `${label} nog niet vertaald in ${[...langs].join(', ')}`);
