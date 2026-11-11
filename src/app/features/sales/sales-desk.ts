@@ -1223,7 +1223,7 @@ interface JourneyStep {
       @if (picking()) {
         <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
                             [families]="families()" [groupByFamily]="true" [preserveSourceOrder]="true"
-                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" mode="multi" (picked)="addLine($event)"
+                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" [incoming]="incomingItems()" mode="multi" (picked)="addLine($event)"
                             (pickedMany)="addLines($event)" (cancelled)="picking.set(false)" />
       }
 

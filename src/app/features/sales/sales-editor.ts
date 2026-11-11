@@ -10,7 +10,7 @@ import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuan
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
-import type { CreditNoteProposal, SalesSplitResult } from '../../core/api/models';
+import type { CreditNoteProposal, ExpectedStock, SalesSplitResult } from '../../core/api/models';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -1564,6 +1564,7 @@ function layoutKey(order: SalesOrder): string {
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
           [priceMarkOf]="priceMarkOf"
+          [incoming]="incomingItems()"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -4071,7 +4072,21 @@ export class SalesEditor {
     if (!this.mobileCommercialEditable() || this.isCreditNoteDoc()) return;
     /* Prices changed on the customer sheet in the meantime show too; until the answer the loaded ones stand. */
     this.loadAgreedPrices();
+    /* What is coming, fresh for this pick; the last answer stands until the new one is in. */
+    this.loadIncoming();
     this.picking.set(true);
+  }
+
+  /* ---- what is coming (purchase orders): the picker's status ---- */
+  /** Per product id, as GET expected-stock?arrived=true answers; empty until loaded and after a failed load (then nothing shows). */
+  readonly incomingItems = signal<ReadonlyMap<number, ExpectedStock>>(new Map());
+  private incomingAsk = 0;
+
+  private loadIncoming(): void {
+    const ask = ++this.incomingAsk;
+    this.sourcing.incomingStock().then((items) => {
+      if (ask === this.incomingAsk) this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
+    }, () => undefined);
   }
 
   /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */
