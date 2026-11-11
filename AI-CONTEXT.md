@@ -2842,7 +2842,12 @@ pinned price as to a typed one.
 - Product picker and sales line, what is coming (2026-11-10): the sales
   editor and desk pass `[incoming]="incomingItems()"` (the expected-stock
   answer per product id; loaded when a line is short of stock and again
-  on every picker open; a failed load shows nothing). In the picker
+  on every picker open) with `[incomingState]` / `(incomingRetry)`: with
+  no answer in hand and the newest load failed (`incomingShown` 0) the
+  picker says "Onderweg niet geladen · opnieuw" once under its search
+  field and a short line says the same in place of the pill; a refresh
+  that fails keeps the answer on screen, and an older answer still
+  applies when a newer request failed. In the picker
   (`stockAware` hosts only) a colour whose stock is empty, tight or
   unconfirmed (`stockLevel` not 'ok') gets the inline status pill in its
   stock line ("geen voorraad [+1.750] Onderweg 20/12"); the folded
@@ -2850,7 +2855,10 @@ pinned price as to a typed one.
   shows "N op voorraad [+…]" once more is asked than there is. A sales
   line that is short ("Levertermijn nodig" / a leverweek with a
   shortfall) shows the same pill under its "niet op voorraad" line, phone
-  and desk. Nothing is stored and nothing reaches the customer's
+  and desk, only on a document that still delivers (`stillDelivers`: no
+  credit note, not shipped, not `skipsShipping`, not refused or
+  cancelled; the load is skipped too). Nothing is stored and nothing
+  reaches the customer's
   document or portal. Picker search takes every typed word in any order.
 - Product picker (same evening): "Producten toevoegen" shows what a new line
   gets. `SalesEditor.pinsAgreedPrices` copies the server's
@@ -3784,10 +3792,18 @@ contract `redesign/products/design.md` + `critique.md`).
   **Onderweg** (departed: status Vertrokken, or `shippedOn` has come),
   **Binnenkort** (departed and expected within `SOON_DAYS` = 14 days of
   today, either side), **Aangekomen** (received, stock not booked;
-  detail "ontvangen dd/mm/jjjj · nog bij te boeken"). The first arrival
-  leads: `quantity` is the pieces of the orders that share its state and
-  date, `later` the rest ("+N later"), `total` everything (sorting,
-  filter, "Leeg verbergen"). A past date is never printed bare: the pill
+  detail "ontvangen dd/mm/jjjj · nog bij te boeken"; the backend lists it
+  for 30 days after the receipt). The first arrival leads, by date and
+  not by state (`arrivalOf`): what is here, then the earliest date that
+  can still hold (`due`: today or later, or a departed container at most
+  14 days overdue), then orders without such a date, departed first.
+  `quantity` is the pieces of the orders of that first arrival, `later`
+  the rest with `laterNote` behind it on the pill: the next date
+  ("+12.000 · 15/01", "vanaf 15/01" when several moments follow), else
+  the state those orders share ("+200 Onderweg"), else "meer" - never
+  "later", which would guess an order of arrival. `total` is everything
+  (the filter, "Leeg verbergen"); `compareIncoming` sorts by the same
+  arrival. A past date is never printed bare: the pill
   drops it, the detail reads "verwacht sinds dd/mm/jjjj". `incomingSum`
   merges a series' colours (an order counted once). Against a backend
   without `orders` every order reads "Onderweg" and the figure is the
@@ -3799,8 +3815,9 @@ contract `redesign/products/design.md` + `critique.md`).
   a short sales line; the product page uses the same words in its own
   KPI and one bar per order. `expectedStock()` (no parameter) stays for
   Analyses. A failed call says so with a retry on Voorraad (tile /
-  phone banner), Producten (warning line) and the product page (KPI /
-  bar); the sales screens stay quiet.
+  phone banner), Producten (warning line), the product page (KPI /
+  bar; "laden…" while the call is out, "niets besteld" only after an
+  answer) and the sales screens (see the picker bullet).
 - **`product-figures.ts`**: `productMargin` (the desk rounding),
   `stockValue` (rows without cost counted apart), `locationValues`,
   `totalsByProduct`, `locationSplit` (screens render one inline-block part
@@ -3864,8 +3881,11 @@ contract `redesign/products/design.md` + `critique.md`).
   fold chevron (or kleur · SKU), line 2 the location split and the value;
   a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
   its back falls back to "‹ Producten". The Onderweg tile is a filter
-  (`onwayOnly`, not in the URL; phone: chip "Onderweg · N" right after
-  "Alle"): only products with something coming, one list, first arrival
+  (`onwayOnly`, in the address as `?onderweg=1` so Back from a purchase
+  order returns to it; `onwayShown` = applied only while an answer is in
+  hand; phone: chip "Onderweg · N" right after "Alle", and "Alle" is lit
+  only when no chip of the row cuts the list and clears them all):
+  only products with something coming, one list, first arrival
   first; its N and M are counted from the rows the page shows. The
   status pill sits in the Onderweg column (≥1360), under Totaal (below)
   and in the phone end column; the product sheet has one tile per
