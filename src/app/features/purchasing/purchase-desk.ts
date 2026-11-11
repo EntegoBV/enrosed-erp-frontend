@@ -1,6 +1,9 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
+import { trackingMove } from './container-tracking-model';
+import { stepTrackingReference } from './tracking-reference';
+import { TrackingReferenceHint } from './tracking-reference-hint';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { LandedCostLine, Payee, Product } from '../../core/api/models';
@@ -108,7 +111,7 @@ export class PurchaseDeskStyles {}
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseTracking, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -148,9 +151,10 @@ export class PurchaseDeskStyles {}
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="pdk-step__bar" aria-hidden="true"></span>
                   @if (!editing() && data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
-                    <button class="pdk-step__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + '. Track & trace openen'" (click)="showTracking()">
+                    <button class="pdk-step__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="showTracking()">
                       <span class="pdk-step__label">{{ step.label }}</span>
                       <span class="pdk-step__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                      @if (arrivalMove(); as move) { <span class="pdk-step__moved" [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later" [title]="'was ' + (move.from | dateNl)">{{ move.text }}</span> }
                     </button>
                   } @else {
                     <span class="pdk-step__label">{{ step.label }}</span>
@@ -570,7 +574,7 @@ export class PurchaseDeskStyles {}
                         <div><dt>Ordernummer</dt><dd>{{ data.order.number }}</dd></div>
                         <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
-                        @else { <div><dt>Verwacht op</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" aria-haspopup="dialog" (click)="showTracking()">{{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : 'Datum onbekend' }} ›</button> } @else { {{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : '—' }} }</dd></div> }
+                        @else { <div><dt>Verwacht op</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" aria-haspopup="dialog" (click)="showTracking()">{{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : 'Datum onbekend' }} ›</button> } @else { {{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : '—' }} }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div> }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
                         @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
@@ -624,7 +628,8 @@ export class PurchaseDeskStyles {}
                     @if (data.order.status !== 'CONCEPT') {
                       <div class="field">
                         <label for="dk-tracking">Track &amp; trace <span class="opt"></span></label>
-                        <input class="input" id="dk-tracking" placeholder="Containernummer, B/L of link" [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
+                        <input class="input" id="dk-tracking" placeholder="Containernummer of BL: nummer" [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
+                        <app-tracking-reference-hint [value]="data.order.trackingReference" (rewrite)="patch({ trackingReference: $event })" />
                         @if (data.order.shippedOn) { <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}.</span> }
                       </div>
                     }
@@ -1083,7 +1088,8 @@ export class PurchaseDeskStyles {}
                   <input class="input" id="step-bl-file" type="file" accept=".pdf,.jpg,.jpeg,.png"
                          (change)="stepPrompt.set({ ...prompt, billFile: $any($event.target).files?.[0] ?? null })" />
                 </div>
-                <span class="hint span-2">Het document komt als "Bill of lading" bij de documenten van dit dossier, met het nummer als omschrijving. Zonder document bewaren we het nummer als track &amp; trace.</span>
+                <div class="span-2 pdk-step-ref"><app-tracking-reference-hint [value]="stepReference(prompt)" (rewrite)="stepPrompt.set({ ...prompt, tracking: $event })" /></div>
+                <span class="hint span-2">Het document komt bij de documenten van dit dossier.</span>
               </div>
             } @else {
               <p>Hiermee leg je de bestelling bij <b>{{ supplierName() }}</b> vast: de aantallen en prijzen van dit moment gelden als besteld.</p>
@@ -1362,6 +1368,10 @@ export class PurchaseDeskStyles {}
     .pdk-step__tracking{display:grid;gap:3px;padding:0;min-height:38px;align-content:start}
     .pdk-step__tracking .pdk-step__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
     .pdk-track-link:focus-visible,.pdk-step__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
+    .pdk-step__moved{color:var(--muted);font-size:11px;line-height:1.3;white-space:nowrap}
+    .pdk-step__moved.pdk-moved--later,.desk-facts dd small.pdk-moved--later{color:var(--warn)}.pdk-step__moved.pdk-moved--earlier,.desk-facts dd small.pdk-moved--earlier{color:var(--ok)}
+    .pdk-step__tracking:has(.pdk-moved--later) .pdk-step__date{color:var(--warn)}.pdk-step__tracking:has(.pdk-moved--earlier) .pdk-step__date{color:var(--ok)}
+    .pdk-step-ref{display:flex;flex-direction:column;gap:6px;min-width:0}.pdk-step-ref:not(:has(.tt-hint)){display:none}
     .doc-source{display:flex;gap:8px}.doc-source .input{flex:1;min-width:0}
 
     .desk-table-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -1573,6 +1583,8 @@ export class PurchaseDesk extends PurchaseEditor {
     const order = this.view()?.order;
     return order ? (this.editing() ? order : purchaseTrackedOrder(order, this.trackingPanel()?.row() ?? null)) : null;
   });
+  /** Tracking moved the expected arrival: the date that stood and the difference, for the step and the fact. */
+  readonly arrivalMove = computed(() => this.editing() ? null : trackingMove(this.trackingPanel()?.row() ?? null));
 
   /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
   readonly hostWidth = elementWidth(() => this.host.nativeElement);
@@ -1884,6 +1896,15 @@ export class PurchaseDesk extends PurchaseEditor {
     this.stepPrompt.set({ to: step.to as 'BESTELD' | 'ONDERWEG', tracking: data.order.trackingReference ?? '', billOfLading: '', billFile: null });
   }
 
+  /** What "Container vertrokken" saves as track & trace, from its two fields (also the line under them). */
+  stepReference(prompt: { tracking: string; billOfLading: string }): string | null {
+    const stored = this.view()?.order.trackingReference ?? '';
+    /* A ship can only be linked to the stored text. Until its row is read, take it as linked: nothing is added then. */
+    const row = this.trackingPanel()?.row();
+    const shipLinked = !!stored.trim() && prompt.tracking.trim() === stored.trim() && (!row || !!row.vesselImo);
+    return stepTrackingReference(prompt.tracking, prompt.billOfLading, shipLinked);
+  }
+
   confirmAdvance(): void {
     const prompt = this.stepPrompt();
     const data = this.view();
@@ -1891,7 +1912,8 @@ export class PurchaseDesk extends PurchaseEditor {
     if (prompt.to === 'ONDERWEG') {
       const bill = prompt.billOfLading.trim();
       const file = prompt.billFile;
-      const tracking = prompt.tracking.trim() || bill || null;
+      /* A number from the B/L field is saved as "BL: number": bare, it read as an unrecognised reference. */
+      const tracking = this.stepReference(prompt);
       this.stepPrompt.set(null);
       /* One save: the tracking with the status. The B/L goes to the dossier only once that save went through (F9). */
       this.enqueue((order) => ({ ...order, trackingReference: tracking, status: 'ONDERWEG' }), () => {

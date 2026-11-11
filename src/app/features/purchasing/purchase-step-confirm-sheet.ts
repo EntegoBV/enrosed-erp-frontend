@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, linkedSignal, output } from '@angular/core';
 import { Sheet } from '../../shared/ui';
 import type { StepConfirm } from './purchase-phone-model';
+import { TrackingReferenceHint } from './tracking-reference-hint';
 
 /**
  * The question every next step of a phone purchase order asks first
@@ -11,7 +12,7 @@ import type { StepConfirm } from './purchase-phone-model';
 @Component({
   selector: 'app-purchase-step-confirm-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Sheet],
+  imports: [Sheet, TrackingReferenceHint],
   template: `
     <app-sheet [title]="text().title" variant="ios" (closed)="cancel.emit()">
       <div body class="mpo-confirm">
@@ -20,7 +21,8 @@ import type { StepConfirm } from './purchase-phone-model';
           <div class="ios-group"><label class="ios-cell mpo-field-row mpo-field-row--stack" for="mpo-step-tracking">
             <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub">optioneel</span></span>
             <input class="mpo-input mpo-input--wide" id="mpo-step-tracking" type="text" enterkeyhint="done" autocomplete="off"
-                   placeholder="Containernummer, B/L of link" [value]="draft()" (input)="draft.set($any($event.target).value)" /></label></div>
+                   placeholder="Containernummer of BL: nummer" [value]="draft()" (input)="draft.set($any($event.target).value)" />
+            <app-tracking-reference-hint variant="ios" [value]="draft()" (rewrite)="draft.set($event)" /></label></div>
         }
         @if (text().dirtyNote) { <p class="ios-caption mpo-confirm__note">Je openstaande wijzigingen worden mee opgeslagen.</p> }
       </div>
