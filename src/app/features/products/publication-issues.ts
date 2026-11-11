@@ -13,6 +13,14 @@ const FIELD_LABEL: Record<string, string> = {
   summary: 'Korte samenvatting', format: 'Formaat', alt: 'Foto-alt-tekst',
 };
 
+/**
+ * Free-text issues the server words differently from the field a person fills in. The product
+ * page says "Publieke URL" and the form "Permanente publieke URL"; nobody on screen says handle.
+ */
+const PLAIN_ISSUE: Record<string, string> = {
+  'Publieke handle ontbreekt': 'Permanente publieke URL ontbreekt',
+};
+
 const PER_LANGUAGE_SIZE = /\.variants\.[^.]+\.[a-z]{2}\.size$/i;
 
 /**
@@ -48,7 +56,7 @@ export function describePublicationIssues(
       add(grouped, `${FIELD_LABEL[field] ?? field}${where}`, lang);
       continue;
     }
-    plain.push(issue);
+    plain.push(PLAIN_ISSUE[issue] ?? issue);
   }
   const lines = [...grouped.entries()].map(([label, langs]) =>
       `${label} nog niet vertaald in ${[...langs].join(', ')}`);
