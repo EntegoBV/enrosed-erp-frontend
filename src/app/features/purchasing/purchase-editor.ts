@@ -301,7 +301,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                         @if (data.order.shippedOn) { <span class="ios-cell__sub">Vertrokken op {{ data.order.shippedOn | dateNl }}</span> }</span>
                       <input class="mpo-input mpo-input--wide" id="mpo-tracking" type="text" autocomplete="off" placeholder="Containernummer of BL: nummer"
                              [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
-                      <app-tracking-reference-hint variant="ios" [value]="data.order.trackingReference" (rewrite)="patch({ trackingReference: $event })" />
+                      <app-tracking-reference-hint variant="ios" [value]="data.order.trackingReference" [quiet]="data.order.status === 'ONTVANGEN'" (rewrite)="patch({ trackingReference: $event })" />
                     </label>
                   }
                 </div>

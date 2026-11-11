@@ -630,7 +630,7 @@ export class PurchaseDeskStyles {}
                       <div class="field">
                         <label for="dk-tracking">Track &amp; trace <span class="opt"></span></label>
                         <input class="input" id="dk-tracking" placeholder="Containernummer of BL: nummer" [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
-                        <app-tracking-reference-hint [value]="data.order.trackingReference" (rewrite)="patch({ trackingReference: $event })" />
+                        <app-tracking-reference-hint [value]="data.order.trackingReference" [quiet]="data.order.status === 'ONTVANGEN'" (rewrite)="patch({ trackingReference: $event })" />
                         @if (data.order.shippedOn) { <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}.</span> }
                       </div>
                     }
