@@ -56,8 +56,8 @@ app-product-desk .pdk-kpi {
 }
 app-product-desk .pdk-kpi:first-child { border-left: 0; }
 app-product-desk .pdk-kpi:hover { background: var(--surface); }
-app-product-desk .pdk-kpi--static { cursor: default; }
-app-product-desk .pdk-kpi--static:hover { background: transparent; }
+app-product-desk .pdk-kpi--static, app-product-desk .pdk-kpi:disabled { cursor: default; }
+app-product-desk .pdk-kpi--static:hover, app-product-desk .pdk-kpi:disabled:hover { background: transparent; }
 app-product-desk .pdk-kpi small { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 app-product-desk .pdk-kpi strong { font-size: 21px; font-weight: 720; letter-spacing: -.02em; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 app-product-desk .pdk-kpi strong em { margin-left: 5px; color: var(--muted); font-size: 12px; font-style: normal; font-weight: 600; letter-spacing: 0; }
@@ -136,6 +136,10 @@ app-product-desk .pdk-onway {
 }
 app-product-desk .pdk-onway b { font-weight: 700; }
 app-product-desk .pdk-onway small { font-size: 12px; font-weight: 600; }
+/* One line per purchase order: amber when it arrived and waits for booking, quiet when it has not left yet. */
+app-product-desk .pdk-onway--warn { background: var(--warn-soft); color: var(--warn); }
+app-product-desk .pdk-onway--quiet { background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-2); }
+app-product-desk .pdk-onway + .pdk-onway { margin-top: 6px; }
 app-product-desk .pdk-moves { display: grid; }
 app-product-desk .pdk-move { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
 app-product-desk .pdk-move:last-child { border-bottom: 0; }

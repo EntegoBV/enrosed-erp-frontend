@@ -39,7 +39,7 @@ import { notificationTarget } from './notification-target';
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'container nadert' : 'containers naderen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> nog te factureren} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'containermelding' : 'containermeldingen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> nog te factureren} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -58,10 +58,10 @@ import { notificationTarget } from './notification-target';
             }
           }
           @if (arrivalRows().length) {
-            <h3 class="bell-sec">Containers bijna aangekomen</h3>
+            <h3 class="bell-sec">Containers</h3>
             <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
               @for (row of arrivalRows(); track $index) {
-                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: 'tone-warn', tile: 'tone-warn', aria: row.when }" />
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: row.tone, tile: row.tone, aria: row.when }" />
               }
             </ul>
           }
@@ -259,7 +259,10 @@ export class NotificationBell {
     const now = this.nowMs();
     return this.news().map((item) => ({ item, when: whenLabel(item.at, now) }));
   });
-  readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({ item, when: whenLabel(item.at, this.nowMs()) })));
+  /** Containers: a nearing arrival, or an arrival tracking moved ("Aankomst 15/11/2026 · 3 dagen later"; an earlier one reads green). */
+  readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({
+    item, when: whenLabel(item.at, this.nowMs()), tone: !item.actionNeeded && item.title.endsWith(' eerder') ? 'tone-ok' : 'tone-warn',
+  })));
   /** The partner's meldingen of the last 14 days, newest first as the feed sends them; open = not invoiced yet. */
   readonly partnerRows = computed(() => this.work.partnerSaleItems()
     .map(item => ({ item, when: whenLabel(item.at, this.nowMs()), open: item.open === true })));

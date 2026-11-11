@@ -1,3 +1,4 @@
+import { IncomingPill } from '../../shared/incoming-pill';
 import { SalesLineRestoreSheet } from './sales-line-restore-sheet';
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
@@ -26,6 +27,7 @@ import { PricedLine, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
+import { Segmented } from '../../shared/segmented';
 import { DateField } from '../../shared/date-field';
 import { WeekField } from '../../shared/week-field';
 import { Sheet, escapeHtml } from '../../shared/ui';
@@ -75,8 +77,8 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, LinePriceSource,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+            ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
@@ -490,13 +492,29 @@ interface JourneyStep {
                                 <span>{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
                                 @if (lineQuantityDetail(line); as detail) { <span class="desk-product__note">{{ detail }}</span> }
                                 @if (linePending()[line.productId]; as to) {
-                                  <span class="desk-product__note is-warn" role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>
+                                  <span class="desk-product__note is-warn"><span role="status">{{ lineStepNotice(line.productId) }}: wordt {{ to | num }} {{ lineUnit(line.productId).short }}</span>@if (canKeepPieces(line.productId)) { <button class="desk-product__link desk-keep" type="button" [attr.data-per-piece-line]="line.productId" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button> }</span>
                                 }
                                 @if (line.nextTierAtQuantity) {
                                   <span>nog {{ line.nextTierAtQuantity - line.quantity | num }} {{ lineUnit(line.productId).short }} voor {{ line.nextTierPercent | pct: 0 }}</span>
                                 }
                                 }
                               </div>
+                              <!-- Per piece: the remark on the last omdoos and the switch stand under the meta, not in it. A child
+                                   more in the meta gives the cartons a "·" and widens the narrow column at 1070 px. -->
+                              @let partCarton = lineUnavailable(line.productId) ? null : linePartCarton(line);
+                              @let perSwitch = !lineUnavailable(line.productId) && perPieceSwitch(line.productId);
+                              @if (partCarton || perSwitch) {
+                                <div class="desk-per-row">
+                                  @if (partCarton) { <span>{{ partCarton }}</span> }
+                                  @if (perSwitch) {
+                                    <span class="desk-per" [title]="perPieceTitle(line.productId)" [attr.data-per-piece-line]="line.productId">
+                                      <app-segmented label="Aantal per" [options]="perPieceOptions(line.productId)"
+                                                     [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                                     (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                                    </span>
+                                  }
+                                </div>
+                              }
                               @if (creditLineHint(line.productId, line.quantity); as hint) { <div class="desk-line-cap">{{ hint }}</div> }
                             </div>
                           </div>
@@ -611,6 +629,14 @@ interface JourneyStep {
                             @else if (line.inStock) { <b>Op voorraad</b><small>vanaf {{ line.deliveryDate | dateNl }}</small> }
                             @else if (line.deliveryWeek) { <b>{{ line.deliveryWeek | weekNl: 'short' }}</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} te leveren</small> }
                             @else { <b>Levertermijn nodig</b><small>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).short }} niet op voorraad</small> }
+                            <!-- Not covered by stock, on a document that still delivers: what is coming, and when,
+                                 answers the delivery term. A load that failed says so. -->
+                            @if (!line.inStock) {
+                              @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
+                              @else if (incomingMissing()) {
+                                <button class="coming-retry" type="button" [disabled]="incomingState() === 'loading'" (click)="retryIncoming()">{{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}</button>
+                              }
+                            }
                           </span>
                           }
                           @if (canEditTerms() && !isCreditNoteDoc()) {
@@ -1164,7 +1190,7 @@ interface JourneyStep {
           <div body>
             <app-shipping-planner [view]="data" [canEdit]="canEditShipping() && !financiallyLocked() && !reportLocked()" [carriers]="carriers()"
                                   [splitFreight]="financiallyLocked() && canEdit()" [pricing]="pricingStale()"
-                                  [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()"
+                                  [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()" [issued]="issuedBefore()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
           </div>
           <div foot style="display:contents">
@@ -1226,7 +1252,7 @@ interface JourneyStep {
       @if (picking()) {
         <app-product-picker heading="Producten toevoegen" [products]="available()" [categories]="categories()"
                             [families]="families()" [groupByFamily]="true" [preserveSourceOrder]="true"
-                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" mode="multi" (picked)="addLine($event)"
+                            [priceOf]="priceOf" [priceMarkOf]="priceMarkOf" [incoming]="incomingItems()" [incomingState]="incomingState()" (incomingRetry)="retryIncoming()" [perPieceOnLine]="perPieceOnLines()" mode="multi" (picked)="addLine($event)"
                             (pickedMany)="addLines($event)" (cancelled)="picking.set(false)" />
       }
 
@@ -1410,6 +1436,7 @@ interface JourneyStep {
     .desk-total{display:inline-grid;justify-items:end;gap:1px;margin:-4px 0;padding:4px 0 4px 6px;border:0;border-radius:8px;background:transparent;color:var(--ok);font:inherit;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.2;cursor:pointer}
     .desk-total.is-bad{color:var(--danger)}.desk-total small{display:inline-flex;align-items:center;gap:2px;color:var(--muted);font-size:9.5px;font-weight:600;white-space:nowrap}.desk-total i{font-style:normal;font-size:12px;font-weight:700}.desk-total:hover{background:var(--rose-soft)}
     .desk-delivery{display:grid;gap:1px;font-size:11.5px}.desk-delivery b{color:var(--warn);font-weight:650}.desk-delivery--ok b{color:var(--ok)}.desk-delivery--bad b{color:var(--danger)}.desk-delivery small{color:var(--muted);font-size:10.5px}
+    .desk-delivery .coming-retry{justify-self:start;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:650;text-align:left;cursor:pointer}.desk-delivery .coming-retry:disabled{color:var(--muted);cursor:default}
     .desk-week{margin-top:6px}
     .desk-table tfoot th{padding:11px 10px;border-top:2px solid var(--line-strong);background:var(--surface-2);font-size:13px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
     /* The figures of a quantity still being typed: only the text fades, a faded cell would show as a lighter patch on the row. */

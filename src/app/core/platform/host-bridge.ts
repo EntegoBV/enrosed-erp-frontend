@@ -120,6 +120,31 @@ export class HostBridge {
   readonly overlays = signal(0);
   readonly contributions = signal<ReadonlyMap<string, HostContribution>>(new Map());
 
+  /* What the reload for a newer build reads (fresh-build-service.ts); plain fields, nothing renders from them. */
+  /** The app's state as the host last said it (`lifecycle`); null until it says so. */
+  lifecycle: 'active' | 'background' | null = null;
+  /** When the person last used the native chrome (a bar button, back, a tab, a link): the page sees no pointer for those. */
+  touchedAt = 0;
+  private asks = 0;
+  private readonly lifecycleListeners = new Set<(state: 'active' | 'background') => void>();
+
+  /** A native confirm or prompt is open. */
+  get asking(): boolean {
+    return this.asks > 0;
+  }
+
+  /** Called on every `lifecycle` of the host; returns the unsubscribe. */
+  onLifecycle(listener: (state: 'active' | 'background') => void): () => void {
+    this.lifecycleListeners.add(listener);
+    return () => { this.lifecycleListeners.delete(listener); };
+  }
+
+  /** The implementation reports the host's `lifecycle`. */
+  noteLifecycle(state: 'active' | 'background'): void {
+    this.lifecycle = state;
+    for (const listener of this.lifecycleListeners) listener(state);
+  }
+
   private implementation: Promise<HostBridgeImplementation> | null = null;
   private started = false;
 
@@ -137,7 +162,8 @@ export class HostBridge {
   /** Asks the host; rejects without a host or an ask handler. */
   ask(question: HostAsk): Promise<unknown> {
     if (!this.present) return Promise.reject(new Error('no host'));
-    return askHost(this.win, question);
+    this.asks++;
+    return askHost(this.win, question).finally(() => { this.asks = Math.max(0, this.asks - 1); });
   }
 
   /** A native confirm; resolves like the web sheet would (ok, or the secondary choice). */

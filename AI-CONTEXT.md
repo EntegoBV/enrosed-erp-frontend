@@ -377,7 +377,12 @@ never shows the form again.
   (history back when the parent is below, else its last URL), `back(fallback)`.
   On a pop the restored entry takes the pop's id (Angular rewrites the
   browser entry's navigationId) and must show the same path (after a
-  reload ids restart at 1). "Below" is the first entry that shows another
+  reload ids restart at 1). Every entry also carries `page`, the router's
+  `ɵrouterPageId` (its place in the browser's history): a pop finds its
+  entry by that first (`restoredEntry`), by the restored id only where no
+  page is known. `keepForReload()` / `dropKept()` / `kept`: the stack
+  survives a reload the app starts itself (see "A newer build in an open
+  app"). "Below" is the first entry that shows another
   screen: the sections of `/analyses/:section` count as one
   (`navScreen`, `screenBelow`; back goes there with `historyGo(-n)`);
   `/settings?sectie=…` and other query views stay entries of their own.
@@ -411,6 +416,103 @@ render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
 (check the first Vercel deployment of that change once: if it fails on
 vercel.json, drop only the headers block).
+
+## A newer build in an open app (2026-11-10)
+
+Nothing used to make an open session load a new build: the web app only
+reloaded when a lazy chunk was gone, the native shell loads its pages once
+and iOS keeps an app for days. A fix that was live was not on the phone that
+reported the bug. Now the app notices a newer build and reloads itself for
+it, silently, at a moment when nothing can be lost.
+
+- **Files**: `core/platform/fresh-build.ts` (pure: the constants, the build
+  id, `decideBuildReload(situation)`, the rules in its head comment),
+  `fresh-build-service.ts` (lazy chunk: reads the page, asks, reloads),
+  `reload-guard.ts` (main bundle: the per-tab record and the questions both
+  reloads share), `core/api/in-flight.ts` (requests that have not answered),
+  the effect `freshBuild` in `app.ts` (signed in and not `bare()` only).
+- **Build id**: the sorted hashed entry files,
+  `main-D5NXTMQC.js|styles-SZC5YEUP.css`. Not the main script alone: a
+  release that only changes `styles.scss` renames only the stylesheet. A
+  development build (unhashed) has no id and nothing is installed.
+  `buildCode(id)` is the short form on Meer's foot ("Aangemeld als emre ·
+  D5NX-SZC5"): the build of that document. In the native shell every tab is
+  its own web view and loads on its own, so it is the Meer tab's build only;
+  the device log's `build … -> …: reload (…)` names each web view's reload.
+- **Asking**: `fetch('/index.html', {cache: 'no-store'})`, parsed for the
+  entry files. When the page comes back in view (`visibilitychange`,
+  `pageshow`, the host's `lifecycle active`), every 5 minutes in view, on
+  arrival at another screen; never more often than every 3 minutes. A failed
+  check is silent and may be repeated after 20 s. A newer build's files
+  (entry files and modulepreload chunks) are fetched into the HTTP cache
+  first; only then is it "ready", so the reload itself needs one small file.
+- **Young build**: taken only once it has been live 10 minutes (the backend
+  of a release goes live minutes after its frontend). Its age is the longer
+  of two lower bounds: since this device first saw it (`localStorage
+  enrosed.build.seen`, shared by the tabs) and the host's `Age` header on
+  index.html (Vercel's edge sends it). A roll-back to a build seen before is
+  not young.
+- **The API answers** (public `GET /api/auth/ping` within 1.5 s, any status
+  below 500) right before every reload, else "server": a page given up while
+  the backend is down comes back empty, with blank counts.
+- **The two moments**. Arrival: a navigation ended on another path, the
+  screen came to rest (no HttpClient request for 300 ms) within 2.5 s, and
+  nobody touched it since it appeared. Quiet: away (hidden, the app in the
+  background) and untouched for 5 minutes, and within 5 s of coming back,
+  before anyone reads; after those seconds the time away no longer counts.
+  In view: untouched for 30 minutes (someone may read without a touch; the
+  pointer on an embedded frame such as a PDF preview, or the focus in one,
+  counts as a touch). In the native shell also a tab that is not on screen,
+  untouched for 5 minutes, while the app is in front. A search, filter,
+  tick or sort set on this screen makes every quiet time 30 minutes. The
+  shell's `refresh` is not a touch (it also sends one by itself for a stale
+  Home); a pull to refresh is seen through its touches.
+- **Never** over a sheet, popup, menu or toast (`OPEN_SURFACE`), a focused
+  text field (a search field or select does not count), text typed into a
+  field that is still on screen, an open file picker, a save or upload, a
+  native question, unsaved work; never hidden in a browser, never with the
+  native app in the background, never on `/login`, `/offerte`,
+  `/voorwaarden`.
+- **Once per build** per tab (`sessionStorage enrosed.build.reloaded`, shared
+  with the missing-chunk reload); twice when the load never got through. A
+  page that still runs another build after it stays as it is until a
+  different build appears.
+- **Same screen after it**: the address, the browser's history, NavHistory's
+  stack (`enrosed.nav.kept`: the native shell gets the same depth and
+  replaces in place), the window's scroll position and the workspace panes'
+  (`enrosed.build.scroll`). Not kept: a search older than 30 minutes,
+  unfolded groups, selections made by clicks.
+- **Two rules for new screens**: (1) an editor with unsaved state listens to
+  `window:beforeunload` and only calls `preventDefault()` while dirty or
+  busy; that is also the reload's question (`unsavedWork` dispatches a
+  synthetic event, no browser prompt). Work made by clicks without such an
+  editor marks an element with `data-unsaved` while it exists; also work
+  kept only in memory after its field or sheet is gone (Jaarinventaris
+  telling: a typed count a chip or the search hides; Kosten & bank: a
+  bank-cost registration or bank link waiting for its retry; the Documenten
+  tray). A typed field that left the page counts as closed. (2) A popup
+  that is not an `app-sheet`, `.cm`, `.wk-popover` or `[role="dialog"]` gets
+  `data-kit-overlay`.
+- **Try it locally** (development build only; a production build never reads
+  the hook): in the console
+  `sessionStorage.setItem('enrosed.build.debug', JSON.stringify({running:
+  'main-AAAAAAAA.js|styles-AAAAAAAA.css', latest:
+  'main-AAAAAAAA.js|styles-BBBBBBBB.css', checkMs: 2000, quietMs: 15000,
+  viewMs: 30000, watchMs: 2000})); location.reload()`. Every decision is
+  printed as `[build] arrival|quiet reload|none <why>`. Change `latest` to
+  see the next build; remove the key to end. `ageMs` (default 0 with the
+  hook) shows the young hold.
+- Every release reaches open sessions within minutes, 10 minutes after it
+  went live at the earliest: by then its backend is live too. "The new
+  frontend works against the old backend" still holds for the minutes in
+  between (cold starts, a missing-chunk reload).
+- `push-sw.js` takes over at once (`skipWaiting`, `clients.claim`): it keeps
+  no caches and handles no fetch, and windows that reload themselves would
+  otherwise keep an old worker for good. When a sale's sound is refused in
+  a visible window, the page shows the system banner itself. The toast
+  comes every time anyway: a created banner can still stay out of sight
+  (Focus or Do Not Disturb, an app in front on iOS), and a missed sale
+  costs more than a banner plus a silent toast now and then.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
@@ -1651,7 +1753,10 @@ the rows behind it; **the rows add up to the clicked figure** (A.4).
   two-step share; "Toon in map" opens the folder list, not the file.
 - Uploads: a finished tray with failures, failed links or files the
   library already had never closes by itself; a toast, the phone's pill
-  and the desk status bar lead back to it.
+  and the desk status bar lead back to it. While the tray holds files only
+  in memory (picked and not sent, on their way, failed or not linked) the
+  page carries `data-unsaved` (`trayHoldsWork`), so the reload for a newer
+  build waits.
 - Records link back with "In Documenten & media ›" (product card here;
   cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 
@@ -2839,6 +2944,27 @@ pinned price as to a typed one.
   The phone editor tints the price field of a CUSTOMER line
   (`.input-affix--agreed`, global) and its K is 18 px; the picker shows an
   agreed price as a pill (`picker-price--agreed`). The desk is unchanged.
+- Product picker and sales line, what is coming (2026-11-10): the sales
+  editor and desk pass `[incoming]="incomingItems()"` (the expected-stock
+  answer per product id; loaded when a line is short of stock and again
+  on every picker open) with `[incomingState]` / `(incomingRetry)`: with
+  no answer in hand and the newest load failed (`incomingShown` 0) the
+  picker says "Onderweg niet geladen · opnieuw" once under its search
+  field and a short line says the same in place of the pill; a refresh
+  that fails keeps the answer on screen, and an older answer still
+  applies when a newer request failed. In the picker
+  (`stockAware` hosts only) a colour whose stock is empty, tight or
+  unconfirmed (`stockLevel` not 'ok') gets the inline status pill in its
+  stock line ("geen voorraad [+1.750] Onderweg 20/12"); the folded
+  series head sums those colours on a line of its own; the quantity step
+  shows "N op voorraad [+…]" once more is asked than there is. A sales
+  line that is short ("Levertermijn nodig" / a leverweek with a
+  shortfall) shows the same pill under its "niet op voorraad" line, phone
+  and desk, only on a document that still delivers (`stillDelivers`: no
+  credit note, not shipped, not `skipsShipping`, not refused or
+  cancelled; the load is skipped too). Nothing is stored and nothing
+  reaches the customer's
+  document or portal. Picker search takes every typed word in any order.
 - Product picker (same evening): "Producten toevoegen" shows what a new line
   gets. `SalesEditor.pinsAgreedPrices` copies the server's
   `pinsCustomerPrices` (also no advance invoice, no split part); there
@@ -2883,7 +3009,15 @@ and on copies. Without the blocks (older backend) every screen is as before.
   versie". The list reloads its rows. Every failure handler gets the id of
   the order the action ran on (`actionFailed(failure, fallback, orderId)`):
   the screens are reused across ids, and a late answer must not touch the
-  order now on screen. `persistOrder` and `saveDeliveryWeek` refuse to write
+  order now on screen. `persistOrder` sends `maxPalletHeightCm` only when it
+  differs from the last saved document (else null: the server keeps the stored
+  height), so a screen opened before the server's one-time 220 to 260 move
+  (2026-11-10) adopts 260 with its next save instead of writing 220 back. A
+  height it does send goes with `?heightPicked=true` (`SalesApi.updateOrder` /
+  `updateShipping`, `saveQuery`): the server takes an unmarked 220 on a document
+  that stores another height for the echo of a bundle from before 2026-11-10
+  and keeps the stored one; a server from before that day ignores the mark.
+  `persistOrder` and `saveDeliveryWeek` refuse to write
   while `customerEditable`: no save or autosave takes an order by itself.
 - **Wording.** A web order never shows request wording: `Websitebestelling`,
   `Bestelling annuleren`, and so on in every state. `webOrderNotice` in
@@ -3671,10 +3805,69 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and
     split sheet/state (`salesSplitStep`: `unitsPerOrderStep ??
     piecesPerCarton`; "in displays van 8 stuks") use the same step.
+  - Per piece on one sales line (2026-11-10, Emre: "aantallen per stuk in te
+    geven, in plaats van uitsluitend per omdoos"): `SalesOrderLine.perPiece`
+    (true, or absent; in a write absent or null keeps the stored choice,
+    true or false sets it - `orderWriteBody` lets it travel) and on the
+    priced line `perPiece` plus `perPieceChoice` (the server says where the
+    choice exists: the document rounds and the product's step is above 1;
+    an older server sends neither, so nothing is offered). Logic in
+    `sales-editor.ts`, shared with the desk; words and draft helper in
+    `sales-per-piece.ts`; styles in the global `styles/sales-per-piece.scss`
+    (both components sit at their style budget). The way in is the rounding
+    notice: under "Volle doos: wordt 24 st." the button "13 houden"
+    (`canKeepPieces`, `setLinePerPiece(id, true)`) keeps the typed number.
+    A line that counts per piece shows its switch "Stolp | Omdoos"
+    (`perPieceSwitch`, `app-segmented`, unit first like the product editor;
+    also on a saved choice just switched back, until it is saved - there
+    the switch is the way back and "houden" is not drawn beside it), the
+    phone tints the quantity field (`input--per-piece`, state on the
+    figure), the meta says "11 dozen, laatste niet vol" (`partCartonNote`; a
+    part omdoos still counts as a full one). The switch is deliberately NOT
+    on every line (all products are per omdoos: it would sit on every line
+    for a rare choice); a number off the step always brings the notice and
+    its "houden". Per piece does matter on a line at whole cartons too (the
+    customer's quote link then takes any number for it, his documents count
+    it in pieces), and there the way in is a detour: a number off the step,
+    "houden", then the number wanted. To put the switch on every line that
+    can switch: `perPieceSwitch` returns `mobileCommercialEditable() &&
+    perPieceChoice(id)`; `canKeepPieces` then never draws "houden" (the
+    switch is the way out). "houden" also waits while its own line's number
+    is typed (`typedLine` + `figuresWaiting`, cleared where the figures
+    come back), so the 44 px button does not come and go per digit; the
+    notice still shows at once. A press that removes the pressed control
+    moves focus to what took its place (`keepPerPieceFocus`: the switch's
+    chosen side, else "houden", else the quantity field when focus sat on
+    the control; both controls carry `data-per-piece-line`). Desk: the
+    remark and the switch stand in `.desk-per-row` UNDER
+    `.desk-product__meta`, not in it - at 1070 px the product copy is only as wide as its widest unbroken meta (about 100 px;
+    the table is 800 px in a 792 px wrap) and one more meta child gives the
+    cartons a "·" that widens the column and pushes the name under the
+    quantity field; `.desk-per` has inline-size containment and asks for
+    96 px, so it never widens the column (looked at in a headless browser at
+    1070 px, and the phone at 382, 669 and 867 px with hover none).
+    `unitsPerStep` returns 1 for a per-piece draft line at once (the
+    answer lags a press by 250 ms); `stepWhenRounded` is the step without
+    the choice. `announceRounding` runs after every preview answer and in
+    `adopt` (which now also clears `linePending`): a quantity the server
+    rounds up that nothing announced (a picker line, a container's exact
+    pieces on a quote made from a purchase order) gets the same notice;
+    only on `perPieceChoice` lines and only while `mobileCommercialEditable`
+    - a fixed version previews with today's step and is never rounded.
+    `salesLineWithPerPiece` drops the key when a never-saved choice is taken
+    back, so the draft is not dirty. `layoutKey` includes the choice. The
+    typing pause, blur and Enter are untouched. Nothing here for the quote
+    link: the server presents such a line as UNIT / step 1 there.
   - Product picker, selling (`enforceCartons()` true): a pick starts on one
     order step (`defaultQuantity`, also for a whole family), single mode
-    snaps to it, and the carton notices and "Een halve doos mag bij inkoop"
-    show only for CARTON products. Purchasing is unchanged.
+    snaps to it, and the carton notices show only for CARTON products. The
+    sales screens use multi mode, which never rounds: its hint ends "Per
+    stuk kies je daarna op de regel." only where the line offers it - the
+    editor's `perPieceOnLines` (a priced line carries `perPieceChoice`, not
+    a partner deal or container-cost draft) bound to `[perPieceOnLine]`,
+    and a picked product that rounds; else "Aantal stuks per product; start
+    op één doos." (an exempt document, an empty one, an older server).
+    Buying keeps "Een halve doos mag bij inkoop.". Purchasing is unchanged.
   - Analyses "Minder dan één outer carton" lists CARTON products only.
   - Rollout: no production product leaves CARTON before the website build
     that sends `quantity` items is live - the older site drops or inflates
@@ -3760,10 +3953,46 @@ contract `redesign/products/design.md` + `critique.md`).
   takes Tab once the focused one is deleted, folded or filtered away), ↑ ↓,
   → ←, Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
   filter sheet (Publicatie, Volgorde), category chips + Aandacht, the swipe
-  rows laid out as `plp-row` (names never clamped; "+n" with its date).
+  rows laid out as `plp-row` (names never clamped; what is coming is the
+  status pill). Search takes every typed word in any order
+  (`shared/search-words.ts`), as Voorraad and the product picker do.
   Default order label: "Standaardvolgorde (voorraad eerst)".
-- **`product-figures.ts`** (node-tested): `productMargin` (the desk
-  rounding), `onderwegSummary` (series sum, earliest date, each order once),
+- **What is coming: one status** (2026-11-10). `shared/product-incoming.ts`
+  (pure) turns `SourcingApi.incomingStock()` (`GET /purchase-orders/
+  expected-stock?arrived=true`) into `Incoming`: state, word, figure,
+  date, every order behind it. Fixed words: **Besteld** (not departed),
+  **Onderweg** (departed: status Vertrokken, or `shippedOn` has come),
+  **Binnenkort** (departed and expected within `SOON_DAYS` = 14 days of
+  today, either side), **Aangekomen** (received, stock not booked;
+  detail "ontvangen dd/mm/jjjj · nog bij te boeken"; the backend lists it
+  for 30 days after the receipt). The first arrival leads, by date and
+  not by state (`arrivalOf`): what is here, then the earliest date that
+  can still hold (`due`: today or later, or a departed container at most
+  14 days overdue), then orders without such a date, departed first.
+  `quantity` is the pieces of the orders of that first arrival, `later`
+  the rest with `laterNote` behind it on the pill: the next date
+  ("+12.000 · 15/01", "vanaf 15/01" when several moments follow), else
+  the state those orders share ("+200 Onderweg"), else "meer" - never
+  "later", which would guess an order of arrival. `total` is everything
+  (the filter, "Leeg verbergen"); `compareIncoming` sorts by the same
+  arrival. A past date is never printed bare: the pill
+  drops it, the detail reads "verwacht sinds dd/mm/jjjj". `incomingSum`
+  merges a series' colours (an order counted once). Against a backend
+  without `orders` every order reads "Onderweg" and the figure is the
+  total. `shared/incoming-pill.ts` (`app-incoming-pill`, variants
+  `stack` desk tables, `phone` tinted pill with figure and date - from
+  five digits the date moves to the word line, `inline`; `strong` =
+  the row has no stock: filled and ringed; `link` = desk tables open
+  the first order) draws it on Voorraad, Producten, the sales picker and
+  a short sales line; the product page uses the same words in its own
+  KPI and one bar per order. `expectedStock()` (no parameter) stays for
+  Analyses. A failed call says so with a retry on Voorraad (tile /
+  phone banner), Producten (warning line), the product page (KPI /
+  bar; "laden…" while the call is out, "niets besteld" only after an
+  answer) and the sales screens (see the picker bullet). Every notice
+  stays, disabled, while its retry runs, and its phone retry is a 44 px
+  target.
+- **`product-figures.ts`**: `productMargin` (the desk rounding),
   `stockValue` (rows without cost counted apart), `locationValues`,
   `totalsByProduct`, `locationSplit` (screens render one inline-block part
   per location, so a name never parts from its figure), `knownValueSum`
@@ -3825,7 +4054,18 @@ contract `redesign/products/design.md` + `critique.md`).
   roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
   fold chevron (or kleur · SKU), line 2 the location split and the value;
   a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
-  its back falls back to "‹ Producten".
+  its back falls back to "‹ Producten". The Onderweg tile is a filter
+  (`onwayOnly`, in the address as `?onderweg=1` so Back from a purchase
+  order returns to it; `onwayShown` = applied only while an answer is in
+  hand; phone: chip "Onderweg · N" right after "Alle", and "Alle" is lit
+  only when no chip of the row cuts the list and clears them all):
+  only products with something coming, one list, first arrival
+  first; its N and M are counted from the rows the page shows. The
+  status pill sits in the Onderweg column (≥1360), under Totaal (below)
+  and in the phone end column; the product sheet has one tile per
+  purchase order. Search knows the series name. Inactive products stay
+  off this page, also when something is coming for them (Producten
+  shows them).
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from
   `catalog.products()`).
@@ -3883,6 +4123,29 @@ contract `redesign/products/design.md` + `critique.md`).
 - `Location.replaceState(path, query)` without a third argument wipes the entry's
   router state: pass `this.location.getState()` (see "A refused back"), and never write
   another path than the router's into the address bar.
+- A field's editability or visibility never follows the draft value that same field edits.
+  The series identity in `product-publication-editor.ts` (Vaste koppeling & URL) closed itself
+  on the first typed character of the URL (2026-11-10): `canEditProductFamilyIdentity(draft,
+  saved)` reads the SAVED series (the `savedFamily` input), so key, URL and variant codes stay
+  open in any order until the finalising save succeeds. Around it in `product-editor.ts`:
+  `save()` plans the identity first (a refusal carries `field`, `showIdentityField` jumps to it,
+  server refusals are put in the form's labels by `identityRefusedByServer`), asks "URL
+  vastleggen?" once, and `persistFamilyDraft` takes a finalised identity into draft, baseline,
+  the `families` list and the product's own key and code at once (`adoptFinalizedIdentity`);
+  when the rest of that save is refused the message reads "Vaste koppeling & URL opgeslagen ·
+  <reden>". A photo save, a linked or unlinked colour and a copy keep the identity that is
+  being typed (`keepTypedVariantKeys`, `keepTypedIdentity`). A series made by linking colours
+  is in the same no-URL state as an imported one (`model-<id>-<id>`). Same rule for the
+  colour's name field (`setProductColour` keeps `customColour`, reset per product).
+  A refused finalisation, or a 422 on the ordinary series PUT, fetches the series once
+  (`seriesChangedElsewhere`): when its identity differs from the copy the request was built
+  from (finalised in another tab, a lost answer, a colour copied in), `mergeFamilyPhotoState`
+  takes it over and the message points at no field; "is gewijzigd; verwacht" is never a key-field
+  error. The server finalises only a series stored as concept on every channel: a channel the
+  form puts on Concept (or a stored READY, shown as Concept) is saved first
+  (`conceptBeforeIdentity`); one still on live is a local message at its select. A wiped URL or
+  code of a saved series is null, like the saved value; the tags field keeps its typed text
+  while it means the draft's tags.
 
 ## Jaarinventaris (2026-10-09)
 
@@ -4673,10 +4936,18 @@ Frontend only: it reads `GET /api/products` (active, not demo), the categories, 
 product families (CatalogApi's 20 s cache) and the unit names in parallel; failing
 categories or families fall back quietly (the picker's fallback names, only the
 Recent and Alle chips). The picks, pallet type, height and the recent products stay
-in localStorage (`enrosed.palletCalculator`: `profile`, `heightCm`, `rows`,
-`recent`; the height was `maxHeightCm` until the standard went from 260 to 220 cm on
-2026-11-07, and that old field is not read, so every device started once at 220);
-nothing goes to the server. Built for the fair: photo first, one tap
+in localStorage (`enrosed.palletCalculator`: `profile`, `heightCm`, `standardCm`,
+`rows`, `recent`; `standardCm` is the standard the height was saved under: a height
+equal to it was never picked and follows today's standard on the next visit, any
+other height was picked and stays, and a state without `standardCm` dates from 7-10
+November 2026 when the standard was 220, so a device still on 220 shows 260 once and
+a 240 someone chose stays; the pre-2026-11-07 field `maxHeightCm` is not read);
+nothing goes to the server. A europallet stops at 260 cm (`palletHeightLimit`: the
+"+" dims, a typed or stored higher number shows 260), blok and half go to 300; the
+page holds the pick (`pickedHeight`) and shows `min(pick, limit)`, so Blok 280, Euro,
+Blok shows 280 again while the page stays open. The settings hint keeps "max 700 kg
+per pallet" (no wording beyond the number changes; the caption and the catalogue say
+the height includes the pallet). Built for the fair: photo first, one tap
 adds, the answer stays in sight.
 
 - **Choosing by photo** (`pallet-browser.ts`, `app-pallet-browser`; pure
@@ -4717,9 +4988,13 @@ adds, the answer stays in sight.
   the backend's `PalletCalculator.fit` exactly (guillotine rows in both pallet
   directions, layers under the total height with the 14.4 cm wood, then 700 kg) on
   the `PalletProfile` footprints and the `SalesSettings` defaults, which production
-  does not override (`PALLET_MAX_HEIGHT_CM` 220 cm since 2026-11-07, the standard a
-  new sales document stores; `PALLET_LEGACY_MAX_HEIGHT_CM` 260 is what a document
-  from before keeps); keep the two in step when the backend changes.
+  does not override (`PALLET_MAX_HEIGHT_CM` 260 cm since 2026-11-10, Emre's "260 cm
+  standaard", the standard a new sales document stores; it was 220 from 2026-11-07 to
+  2026-11-10, `PALLET_FORMER_STANDARD_CM`, which documents and devices of those days
+  may still carry; `PALLET_LEGACY_MAX_HEIGHT_CM` 260 is what a document from before
+  2026-11-07 keeps; `EURO_PALLET_HEIGHT_LIMIT_CM` 260 and `palletHeightLimit(profile)`
+  are the highest pick, `clampPalletHeight(value, profile)` applies it); keep the two
+  in step when the backend changes.
   `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
 - **A mix** stacks every product in layers of its own, a started layer as high as a
   full one (the pallet planner's `estimatePalletHeightCm` model). `planPallets` is
@@ -4733,7 +5008,7 @@ adds, the answer stays in sight.
   omdozen a weight split leaves behind join the product's next layer instead of
   starting a short one of their own, so one product alone gets exactly its
   `cartonsPerPallet` per pallet: 238 omdozen of 40×40×50 cm at 30.7 kg on a
-  Europallet at 220 cm (or 260) make 11 pallets, the strict count (the first version made
+  Europallet at 260 cm (or 220) make 11 pallets, the strict count (the first version made
   12, 22/20/22/20…; money review 2026-11-04). A plan that still needs more pallets
   than every product on pallets of its own (`separatePallets`) becomes that layout
   (`separateLayout`: per line its full pallets, then its rest; a pallet's layers
@@ -4783,7 +5058,7 @@ adds, the answer stays in sight.
   side (desk pallet panel + result) sticky right. Phone header: the pallet
   button "Pallet instellen" (one shared settings template, here in an iOS sheet
   with Klaar; changes apply live) and the trash; the caption is the pallet
-  ("Europallet 120 × 80 · max 220 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
+  ("Europallet 120 × 80 · max 260 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
   the search, Wissen; the settings are a panel.
 - **The capsule** (phone): while there is a plan and the result is out of view
   (IntersectionObserver, 96 px off the bottom for the tab bar) the kit's glass
@@ -4802,8 +5077,9 @@ adds, the answer stays in sight.
 Verkoop › order › Transport & levering (`app-shipping-planner`), the same
 component in the phone editor's sheet (sales-editor.ts) and the desk's
 (sales-desk.ts), both `<app-sheet [wide]="true" variant="ios">`. The answer
-comes first: a hero with the pallet ("Europallet 120 × 80 · max 220 cm", the
-document's own height: 260 on one from before 2026-11-07, on the
+comes first: a hero with the pallet ("Europallet 120 × 80 · max 260 cm", the
+document's own height: 260 on one from before 2026-11-07, 220 on one made, sent
+or invoiced from 7 to 10 November, on the
 phone a button to the Lading sheet), "4 pallets" with fill words and one state
 pill, "102 omdozen · m³ · kg" and the freight (phone: a button to Vracht); then
 the Automatisch | Zelf indelen switch with its "i" caption, Nakijken (products
@@ -4820,7 +5096,7 @@ are tiles, hand pallets are cards edited in place.
 | `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
 | `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
 | `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
-| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm; "Standaard" only while a height other than 220 was picked by hand, and it and then an emptied field send 220, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard, and an emptied field shows its height again, so nothing sent, accepted or invoiced on 260 moves to 220 by one tap), "incl. pallet 14,4 cm" | 1.0 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, not `issued`: an invoice whose history holds UITGEREIKT or is not loaded yet, `SalesEditor.issuedBefore`; no source quote, no web order, invoice, advance or split) so nothing sent, issued or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; a height above the type's limit (an old europallet at 280) comes down only after "Max. hoogte naar 260 cm?" with Verlagen, for "−", typing, Standaard and the switch to Euro alike, since it cannot go back up; Annuleren keeps everything and `fieldKey` renews the field), "incl. pallet 14,4 cm" | 1.0 kB |
 | `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
 | `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
 
@@ -5161,3 +5437,53 @@ CRM status and contact moments" and "Klanten: the prices charged per product").
   "standaard".
 - Checked live against a dev jar with the Nov-6 H2 dataset (desk at 800 px,
   phone at 375 px): list, filter, sort, sheet, picker, popup, K marker.
+
+## Track & trace: what the field reads, one status, moved arrivals (2026-11-10)
+
+Emre: "Bekijk ook of de track trace beter kan." No paid provider: everything works with the Evergreen
+date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
+`docs/integrations/container-tracking.md` (section 2026-11-10).
+
+- **`features/purchasing/tracking-reference.ts`** (pure, erasable TypeScript so Node can load it) is
+  the rule the backend also runs (`ContainerTracking.recognise`): change both or neither.
+  `recogniseTrackingReference`, `trackingReferenceHint` (the line under the field),
+  `trackingReferenceAsBill` ("Dit is een B/L"), `stepTrackingReference` (what "Container vertrokken"
+  saves: one number from the B/L field, also typed in groups, as `BL: number`; other text is never
+  glued into one number; behind a filled Track & trace text an Evergreen bill as it is, another B/L
+  as ` BL: number`, in front of a text that is not recognised; never behind a link, or when the row
+  read for the saved text has a ship). `recogniseTrackingReference` first asks a copy of the
+  backend's parser of 2026-10-26 (`strictReading`), as the tracker does, so the line names what is
+  followed.
+- **`tracking-reference-hint.ts`** (`app-tracking-reference-hint`) stands under the four inputs: desk
+  form, desk "Container vertrokken" prompt (one line after both fields), phone editor, phone step
+  sheet. What was read shows at once; a warning only 900 ms after the last keystroke. The phone
+  tints the field from the line's state (`.mpo-input:has(+ app-tracking-reference-hint
+  .tt-hint--warn)` in `styles/purchase-phone.scss`), no glyph. `quiet` (received orders): no warning
+  and no button. `offerBill` false in the step prompt while its B/L field holds text (the button
+  rewrites the Track & trace field).
+- **`container-tracking-model.ts`** holds the shared answers: `trackingStatus` (one status for the
+  overview list and the panel), `trackingArrival`, `trackingFailure`, `trackingMove` (`news` = two
+  days or more and moved under 14 days ago: only news is tinted), `trackingAge`, `trackingListLine`,
+  `trackingProblems`, `trackingRefreshNotice` (reads the server's `refreshOutcome`).
+  `trackingStale` reads the last attempt; an error is its own notice.
+- **Overview** (`container-tracking.ts`): rows of three lines (name + expected arrival, status,
+  reference + age of the last check; "12 → 15 nov" and "+3 d" while a move is news), one summary
+  "Controle niet gelukt bij N containers" (a labelled section, not a live region: its ages change
+  every minute; pressing a line focuses the panel), no header "Vernieuwen" (it only re-read stored rows).
+- **Panel** (`container-tracking-panel.ts`): "was … · 3 dagen later" under the expected arrival, the
+  age under "Gecontroleerd", the check button until the container is finished (disabled with a
+  title when there is nothing to check), the refresh message from the outcome. That message goes
+  when the row shows a newer check or its time passed (`trackingRefreshNoticeUntil`: "Opnieuw kan
+  vanaf 14:32" at 14:32). No failure notice for an arrived container (as the list). "Gegevens
+  bewaard van" reads `failureDataAt` (the failing source's own last success).
+- **Order pages**: `purchase-tracking.ts` reads `?orderId=` every minute, also with the sheet closed,
+  because `PurchaseDesk` keeps its order equal to dates tracking wrote (`PurchaseTrackingBaseline`);
+  without that read the next save would put the old date back. `arrivalMove` on `PurchaseDesk`
+  (Ontvangen step + "Verwacht op" fact) and `PurchaseView` (step date tint + the Track & trace row).
+- **Bell**: container section is "Containers"; a moved arrival is a `CONTAINER_AANKOMST` row
+  ("Aankomst 15/11/2026 · 3 dagen later", detail "was 12/11/2026"; the tone reads the title's end).
+- **Older backend**: every new row field is optional. Without them: status and hint are computed
+  here, failure is the error of a linked source, no move is shown, the refresh message is the old
+  one, and `?orderId=` is ignored (the whole feed comes back and the row is found in it).
+- **Native app**: untouched. It reads the feed itself with its own port of the rules; host
+  messages, the today snapshot and `tools/host-contract.json` did not change.

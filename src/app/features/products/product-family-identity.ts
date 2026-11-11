@@ -5,27 +5,79 @@ import type {
 } from '../../core/api/models';
 
 const TECHNICAL_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Codes of the old webshop; the server takes no new one (ProductValidator.validateCanonicalVariantKey). */
+const RETIRED_VARIANT_KEY_PREFIX = 'shopify-';
+
+/** The heading of the section "Vaste koppeling & URL": where a refusal without a field of its own lands. */
+export const IDENTITY_SECTION_ID = 'publication-identity-title';
+export const IDENTITY_KEY_FIELD_ID = 'publication-family-key';
+export const IDENTITY_URL_FIELD_ID = 'publication-public-handle';
+
+/** The id of the code input of one variant in the list "Interne variantcodes". */
+export function identityVariantFieldId(productId: number): string {
+  return `publication-variant-key-${productId}`;
+}
+
+/** The status selects of the three channels of a series ("Op de website", Orderapp, Catalogus). */
+export const CHANNEL_FIELD_IDS = {
+  websiteStatus: 'publication-website-status',
+  orderAppStatus: 'publication-orderapp-status',
+  catalogueStatus: 'publication-catalogue-status',
+} as const;
+
+/**
+ * The three channels of a series, and what to do in its select when a channel that is live keeps
+ * the identity from being finalised (in the words of the select's own options).
+ */
+const IDENTITY_CHANNELS = [
+  { key: 'websiteStatus', first: 'Zet de website eerst op Nog niet zichtbaar.' },
+  { key: 'orderAppStatus', first: 'Zet de orderapp eerst op Concept.' },
+  { key: 'catalogueStatus', first: 'Zet de catalogus eerst op Concept.' },
+] as const;
+
+const SERIES_CHANGED = 'De productreeks is intussen gewijzigd.';
 
 /** A local validation error that can be shown before an unsafe identity request is sent. */
 export class ProductFamilyIdentityFinalizationError extends Error {
   readonly error: { message: string };
+  /**
+   * The element the editor jumps to: the input a person can act on, or the section heading. Null
+   * when there is nothing to do in this form (stale data that needs a reload, or a save that
+   * already made the identity final).
+   */
+  readonly field: string | null;
 
-  constructor(message: string) {
+  constructor(message: string, field: string | null = null) {
     super(message);
     this.name = 'ProductFamilyIdentityFinalizationError';
     /* Keep local validation compatible with the shared HTTP-error presenter. */
     this.error = { message };
+    this.field = field;
   }
 }
 
-/** Persisted imports without a handle are the only existing families editable here. */
-export function hasFinalizableDraftIdentity(family: ProductFamily | null): boolean {
-  return family !== null && family.id !== null && !clean(family.publicHandle);
+/**
+ * A saved series without a public URL can still choose its identity, once. That is an imported
+ * concept series and also every series made by linking colours (the server creates those as
+ * model-<id>-<id> without a URL). Pass the SAVED series, what the server has: with the draft,
+ * the first typed character of the URL closed every field (2026-11-10).
+ */
+export function hasFinalizableDraftIdentity(saved: ProductFamily | null): boolean {
+  return saved !== null && saved.id !== null && !clean(saved.publicHandle);
 }
 
-/** New families choose their identity; existing ones get one guarded completion opportunity. */
-export function canEditProductFamilyIdentity(family: ProductFamily | null): boolean {
-  return family !== null && (family.id === null || hasFinalizableDraftIdentity(family));
+/**
+ * Whether the identity fields take input. A new series (no id yet) chooses freely; a saved one
+ * only while the server has no public URL for it. `draft` is what the form shows, `saved` what
+ * the server has, so the answer changes on a save, never while someone types.
+ */
+export function canEditProductFamilyIdentity(
+  draft: ProductFamily | null,
+  saved: ProductFamily | null,
+): boolean {
+  if (draft === null) return false;
+  if (draft.id === null) return true;
+  return saved !== null && saved.id === draft.id && hasFinalizableDraftIdentity(saved);
 }
 
 /**
@@ -38,9 +90,7 @@ export function planProductFamilyIdentityFinalization(
 ): ProductFamilyIdentityFinalization | null {
   if (!previous || !hasFinalizableDraftIdentity(previous)) return null;
   if (desired.id !== previous.id) {
-    throw new ProductFamilyIdentityFinalizationError(
-      'De productreeks is intussen gewijzigd. Herlaad de laatste gegevens en probeer opnieuw.',
-    );
+    throw identityChangedElsewhere(false);
   }
   if (!identityWasEdited(previous, desired)) return null;
 
@@ -48,8 +98,16 @@ export function planProductFamilyIdentityFinalization(
     previous.familyKey,
     'De bestaande vaste productreeks-sleutel',
   );
-  const familyKey = requiredTechnicalKey(desired.familyKey, 'De vaste productreeks-sleutel');
-  const publicHandle = requiredTechnicalKey(desired.publicHandle, 'De permanente publieke URL');
+  const familyKey = requiredTechnicalKey(
+    desired.familyKey,
+    'De vaste productreeks-sleutel',
+    IDENTITY_KEY_FIELD_ID,
+  );
+  const publicHandle = requiredTechnicalKey(
+    desired.publicHandle,
+    'De permanente publieke URL',
+    IDENTITY_URL_FIELD_ID,
+  );
 
   if (!previous.members.length) {
     throw new ProductFamilyIdentityFinalizationError(
@@ -84,13 +142,23 @@ export function planProductFamilyIdentityFinalization(
       member.canonicalVariantKey,
       `De bestaande interne variantcode van SKU ${sku}`,
     );
+    const field = identityVariantFieldId(member.productId);
     const canonicalVariantKey = requiredTechnicalKey(
       wanted.canonicalVariantKey,
       `De interne variantcode van SKU ${sku}`,
+      field,
     );
+    /* The server refuses these with "herlaad het product", which helps nobody in this form. */
+    if (canonicalVariantKey.startsWith(RETIRED_VARIANT_KEY_PREFIX)) {
+      throw new ProductFamilyIdentityFinalizationError(
+        `De interne variantcode van SKU ${sku} mag niet met ${RETIRED_VARIANT_KEY_PREFIX} beginnen.`,
+        field,
+      );
+    }
     if (seenTargetKeys.has(canonicalVariantKey)) {
       throw new ProductFamilyIdentityFinalizationError(
         `De interne variantcode ${canonicalVariantKey} is meer dan één keer ingevuld.`,
+        field,
       );
     }
     seenTargetKeys.add(canonicalVariantKey);
@@ -103,7 +171,164 @@ export function planProductFamilyIdentityFinalization(
     );
   }
 
+  /* The server finalises only a series it has as concept on every channel. A channel saved as
+     live goes to concept first, in this same save (conceptBeforeIdentity), but only when the form
+     says so: taking a series off a channel is never done behind someone's back. */
+  for (const channel of IDENTITY_CHANNELS) {
+    if (previous[channel.key] === 'PUBLISHED' && desired[channel.key] === 'PUBLISHED') {
+      throw new ProductFamilyIdentityFinalizationError(channel.first, CHANNEL_FIELD_IDS[channel.key]);
+    }
+  }
+
   return { expectedFamilyKey, familyKey, publicHandle, variants };
+}
+
+/**
+ * The update that has to go before the one-time identity command: the saved series with every
+ * channel on concept, nothing else changed. Null when the server already has it so. The form
+ * shows a stored "klaar" (READY) as concept, so that goes to concept too.
+ */
+export function conceptBeforeIdentity(saved: ProductFamily): ProductFamily | null {
+  if (IDENTITY_CHANNELS.every((channel) => saved[channel.key] === 'DRAFT')) return null;
+  return { ...saved, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT', catalogueStatus: 'DRAFT' };
+}
+
+/**
+ * `family` after that update was saved as `updated`. The baseline (`keepLive` false) takes the
+ * server's statuses; the draft keeps a channel the form wants live, which is still to be saved
+ * after the identity.
+ */
+export function withConceptStatuses(
+  family: ProductFamily,
+  updated: ProductFamily,
+  keepLive: boolean,
+): ProductFamily {
+  const next = { ...family, publicationIssues: [...updated.publicationIssues] };
+  for (const channel of IDENTITY_CHANNELS) {
+    next[channel.key] = keepLive && family[channel.key] === 'PUBLISHED'
+      ? 'PUBLISHED'
+      : updated[channel.key];
+  }
+  return next;
+}
+
+/**
+ * This editor's copy of the series is not the server's any more (finalised in another tab or by
+ * another hand, a save whose answer got lost, a colour linked meanwhile). Nothing typed can help,
+ * so it points at no field. `loaded`: the form has taken the server's copy over.
+ */
+export function identityChangedElsewhere(loaded: boolean): ProductFamilyIdentityFinalizationError {
+  return new ProductFamilyIdentityFinalizationError(loaded
+    ? `${SERIES_CHANGED} De laatste gegevens zijn geladen.`
+    : `${SERIES_CHANGED} Herlaad de laatste gegevens en probeer opnieuw.`);
+}
+
+/**
+ * Whether the server's copy differs from `saved` in what the one-time command is built from: the
+ * key, the URL, the list of SKUs and their codes.
+ */
+export function identityDiffersOnServer(saved: ProductFamily, fresh: ProductFamily): boolean {
+  if (clean(saved.familyKey) !== clean(fresh.familyKey)) return true;
+  if (clean(saved.publicHandle) !== clean(fresh.publicHandle)) return true;
+  if (saved.members.length !== fresh.members.length) return true;
+  const freshById = new Map(fresh.members.map((member) => [member.productId, member] as const));
+  return saved.members.some((member) => {
+    const other = freshById.get(member.productId);
+    return !other
+      || clean(other.sku) !== clean(member.sku)
+      || optional(other.canonicalVariantKey) !== optional(member.canonicalVariantKey);
+  });
+}
+
+/**
+ * Refusals that say the series was changed since this editor loaded it ("Familiecode is gewijzigd;
+ * verwacht x maar vond y", the same for a variant code and for the list of SKUs, and a URL that
+ * is already final). They are not about a typed value.
+ */
+const STALE_REFUSAL = /is gewijzigd; verwacht|heeft al een andere vaste publieke handle/;
+
+/** The server's words for the three identity values, and the form's label and input for each. */
+const SERVER_SUBJECTS: readonly (readonly [RegExp, string, string])[] = [
+  [/^Publieke handle\b/, 'De permanente publieke URL', IDENTITY_URL_FIELD_ID],
+  [/^(?:Nieuwe familiecode|Familiecode)\b/, 'De vaste productreeks-sleutel', IDENTITY_KEY_FIELD_ID],
+  [/^Canonieke variantcode\b/, 'De interne variantcode', IDENTITY_SECTION_ID],
+];
+
+/**
+ * The server refused the one-time identity (nothing was changed). It names the values
+ * "Publieke handle", "Familiecode" and "Canonieke variantcode"; the refusal is put in the
+ * labels of the form and points at that field, so it reads like the local checks above. A
+ * refusal about a series that was changed meanwhile points at no field. Any other refusal keeps
+ * its text and points at the section.
+ */
+export function identityRefusedByServer(
+  reason: string,
+  desired: ProductFamily,
+): ProductFamilyIdentityFinalizationError {
+  if (STALE_REFUSAL.test(reason)) return identityChangedElsewhere(false);
+  for (const [subject, label, field] of SERVER_SUBJECTS) {
+    if (!subject.test(reason)) continue;
+    const rest = reason.replace(subject, '');
+    /* "Canonieke variantcode <code> bestaat al": the row that holds that code. */
+    const code = field === IDENTITY_SECTION_ID ? /^ (\S+) /.exec(rest)?.[1] : undefined;
+    const member = code
+      ? desired.members.find((item) => clean(item.canonicalVariantKey) === code)
+      : undefined;
+    return new ProductFamilyIdentityFinalizationError(
+      `${label}${rest}${/[.!?]$/.test(rest) ? '' : '.'}`,
+      member ? identityVariantFieldId(member.productId) : field,
+    );
+  }
+  return new ProductFamilyIdentityFinalizationError(reason, IDENTITY_SECTION_ID);
+}
+
+/** The identity became final on the server but the rest of the save was refused: both are said. */
+export function identitySavedRestRefused(reason: string): ProductFamilyIdentityFinalizationError {
+  return new ProductFamilyIdentityFinalizationError(`Vaste koppeling & URL opgeslagen · ${reason}`);
+}
+
+/**
+ * The server's members with the variant codes that are still being typed laid back over them.
+ * `draft` and `saved` are the members before the refresh; a code counts as typed where they differ.
+ */
+export function keepTypedVariantKeys(
+  fresh: ProductFamilyMember[],
+  draft: ProductFamilyMember[],
+  saved: ProductFamilyMember[],
+): ProductFamilyMember[] {
+  const savedKeys = new Map(
+    saved.map((member) => [member.productId, optional(member.canonicalVariantKey)] as const),
+  );
+  const typed = new Map<number, string | null>();
+  for (const member of draft) {
+    if (optional(member.canonicalVariantKey) !== (savedKeys.get(member.productId) ?? null)) {
+      typed.set(member.productId, member.canonicalVariantKey);
+    }
+  }
+  return fresh.map((member) => typed.has(member.productId)
+    ? { ...member, canonicalVariantKey: typed.get(member.productId) ?? null }
+    : { ...member });
+}
+
+/**
+ * A fresh server copy of the same series, with the identity that is being typed laid back over
+ * it: key and URL where they differ from the last saved ones, and the typed variant codes. For a
+ * server action that reloads the series while its identity is still open (a colour linked or
+ * taken out half way the code list).
+ */
+export function keepTypedIdentity(
+  fresh: ProductFamily,
+  draft: ProductFamily,
+  saved: ProductFamily,
+): ProductFamily {
+  return {
+    ...fresh,
+    familyKey: clean(draft.familyKey) !== clean(saved.familyKey) ? draft.familyKey : fresh.familyKey,
+    publicHandle: clean(draft.publicHandle) !== clean(saved.publicHandle)
+      ? draft.publicHandle
+      : fresh.publicHandle,
+    members: keepTypedVariantKeys(fresh.members, draft.members, saved.members),
+  };
 }
 
 function identityWasEdited(previous: ProductFamily, desired: ProductFamily): boolean {
@@ -134,12 +359,17 @@ function uniqueMembersByProductId(
   return byId;
 }
 
-function requiredTechnicalKey(value: string | null | undefined, label: string): string {
+function requiredTechnicalKey(
+  value: string | null | undefined,
+  label: string,
+  field: string | null = null,
+): string {
   const key = clean(value);
-  if (!key) throw new ProductFamilyIdentityFinalizationError(`${label} ontbreekt.`);
+  if (!key) throw new ProductFamilyIdentityFinalizationError(`${label} ontbreekt.`, field);
   if (!TECHNICAL_KEY.test(key)) {
     throw new ProductFamilyIdentityFinalizationError(
       `${label} mag alleen kleine letters, cijfers en koppeltekens bevatten.`,
+      field,
     );
   }
   return key;

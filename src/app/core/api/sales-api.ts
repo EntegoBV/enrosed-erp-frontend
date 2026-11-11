@@ -29,9 +29,21 @@ function revisionQuery(webOrderRevision: number | null | undefined): string {
 }
 
 /**
+ * The query of a save. heightPicked says the pallet height in the body was changed on this screen:
+ * the server takes a 220 cm without that mark for the echo of a screen from before 2026-11-10 (it sent
+ * the height it held with every save, and its "Standaard" meant 220) and keeps the stored height. A
+ * server from before that day ignores the mark.
+ */
+function saveQuery(webOrderRevision: number | null | undefined, heightPicked: boolean): string {
+  const revision = revisionQuery(webOrderRevision);
+  return heightPicked ? `${revision}${revision ? '&' : '?'}heightPicked=true` : revision;
+}
+
+/**
  * A line's applied order step (unitsPerOrderStep) is stamped by the server
  * when it rounds, its stock cost (stockCostEur) at shipment; neither travels
- * back, so a client cannot choose them.
+ * back, so a client cannot choose them. The per-piece choice (perPiece) is
+ * the client's to send and travels as it is.
  */
 function orderWriteBody(order: SalesOrder): SalesOrder {
   if (!order.lines?.some((line) => 'unitsPerOrderStep' in line || 'stockCostEur' in line)) return order;
@@ -274,9 +286,9 @@ export class SalesApi {
     return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/preview`), orderWriteBody(order)));
   }
 
-  updateOrder(id: number, order: SalesOrder, webOrderRevision?: number | null): Promise<SalesOrderView> {
+  updateOrder(id: number, order: SalesOrder, webOrderRevision?: number | null, heightPicked = false): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}${revisionQuery(webOrderRevision)}`), orderWriteBody(order)));
+      api(`/api/sales-orders/${id}${saveQuery(webOrderRevision, heightPicked)}`), orderWriteBody(order)));
   }
 
   /** Changes only delivery promises; safe after the commercial quote is locked. */
@@ -300,9 +312,9 @@ export class SalesApi {
       }));
   }
 
-  updateShipping(id: number, shipping: ShippingUpdate, webOrderRevision?: number | null): Promise<SalesOrderView> {
+  updateShipping(id: number, shipping: ShippingUpdate, webOrderRevision?: number | null, heightPicked = false): Promise<SalesOrderView> {
     return firstValueFrom(this.http.put<SalesOrderView>(
-      api(`/api/sales-orders/${id}/shipping${revisionQuery(webOrderRevision)}`), shipping));
+      api(`/api/sales-orders/${id}/shipping${saveQuery(webOrderRevision, heightPicked)}`), shipping));
   }
 
   duplicateOrder(id: number): Promise<SalesOrderView> {

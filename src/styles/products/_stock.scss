@@ -29,6 +29,8 @@ app-stock-page .sk-sum > .sk-sum__pick { padding: 0; }
 app-stock-page .sk-sum__pick > button { display: grid; align-content: start; gap: 1px; width: 100%; height: 100%; padding: 12px 18px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 app-stock-page .sk-sum__pick > button:hover { background: color-mix(in srgb, var(--ink, #1f1f1f) 4%, transparent); }
 app-stock-page .sk-sum__pick > button[aria-pressed="true"] { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+app-stock-page .sk-sum__pick--onway > button[aria-pressed="true"] { background: color-mix(in srgb, var(--rose) 9%, transparent); }
+app-stock-page .sk-sum__pick > button:disabled { cursor: default; }
 app-stock-page .sk-sum__pick > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 @media (max-width: 1199.98px) {
   app-stock-page .sk-sum { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -41,6 +43,8 @@ app-stock-page .sk-batches { margin-bottom: 14px; }
 app-stock-page .sk-batches .wk-link { flex: none; white-space: nowrap; }
 app-stock-page .sk-batches-link { white-space: nowrap; }
 app-stock-page .skp-batches .ios-capsule { flex: none; }
+/* The Onderweg retry is drawn as the small 36 px capsule; the finger gets 44 px inside the banner's padding. */
+app-stock-page .skp-onway-failed .ios-capsule::after { content: ''; position: absolute; inset: -4px 0; }
 app-stock-page .skp-batches-link { margin: 4px var(--ios-inset, 16px) 18px; text-align: center; }
 app-stock-page .skp-batches-link .linklike { font-size: 13px; }
 
@@ -77,9 +81,8 @@ app-stock-page .sk-loc { font-weight: 600; font-variant-numeric: tabular-nums; }
 app-stock-page .sk-loc.zero { color: var(--muted-2); font-weight: 500; }
 app-stock-page .sk-total { font-size: 14px; font-weight: 720; font-variant-numeric: tabular-nums; }
 app-stock-page .sk-unit { color: var(--muted); font-size: 11px; font-weight: 550; line-height: 1.3; }
-app-stock-page .sk-exp { color: var(--rose-dark); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
-app-stock-page .sk-under { display: grid; justify-items: end; font-size: 11.5px; line-height: 1.3; }
-app-stock-page .sk-under > span:last-child:not(.sk-exp) { color: var(--muted); }
+/* What is coming under Totaal below 1360: the shared status pill (shared/incoming-pill). */
+app-stock-page .sk-under { display: block; margin-top: 3px; }
 app-stock-page .sk-value { color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 app-stock-page .sk-value.none { color: var(--muted-2); font-weight: 500; }
 app-stock-page .sk-act { gap: 2px; }
@@ -108,11 +111,14 @@ app-stock-page .history-levels__tile { display: grid; gap: 2px; flex: 1 1 96px; 
 app-stock-page .history-levels__tile--button { color: inherit; font: inherit; text-align: left; cursor: pointer; }
 app-stock-page .history-levels__tile--button:hover { border-color: var(--rose-line); background: var(--rose-soft); }
 app-stock-page .history-levels__qty { display: block; padding: 2px 0; font-size: 16px; font-weight: 700; }
-app-stock-page .history-levels__link { display: grid; flex: 1 1 120px; padding: 8px 12px; border: 1px solid #eddcb9; border-radius: 10px; background: var(--surface-2); color: inherit; text-decoration: none; }
-app-stock-page .history-levels__link em { color: var(--warn); font-size: 11px; font-style: normal; font-weight: 650; }
+/* One tile per purchase order that brings pieces, in the tone of its state (the pill's three tones). */
+app-stock-page .history-levels__link { --tone: var(--rose-dark); display: grid; flex: 1 1 120px; min-height: 44px; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--tone) 26%, var(--line)); border-radius: 10px; background: var(--surface-2); color: inherit; text-decoration: none; }
+app-stock-page .history-levels__link--besteld { --tone: var(--ink-2); }
+app-stock-page .history-levels__link--aangekomen { --tone: var(--warn); }
+app-stock-page .history-levels__link em { color: var(--tone); font-size: 11px; font-style: normal; font-weight: 650; }
 app-stock-page .history-levels small { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 app-stock-page .history-levels b { font-size: 16px; }
-app-stock-page .history-levels .expected { color: var(--warn); }
+app-stock-page .history-levels .expected { color: var(--tone, var(--rose-dark)); }
 app-stock-page .book-actions { display: grid; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; gap: 8px; margin: 10px 0 14px; }
 app-stock-page .book-action {
   display: grid; justify-items: center; gap: 4px; padding: 10px 6px 8px; border: 1px solid var(--line); border-radius: 13px;
@@ -175,7 +181,6 @@ app-stock-page .skp-end { display: grid; flex: none; justify-items: end; min-wid
 app-stock-page .skp-end strong { font-size: 17px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
 app-stock-page .skp-end strong.zero { color: var(--muted-2); font-weight: 550; }
 app-stock-page .skp-end small { color: var(--muted); font-size: 11.5px; }
-app-stock-page .skp-end .exp { margin-top: 2px; color: var(--rose-dark); font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
 app-stock-page .skp-qty {
   width: 84px; height: 34px; padding: 0 10px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: inherit; font: inherit; font-size: 16px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums;

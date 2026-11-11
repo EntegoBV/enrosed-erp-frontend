@@ -1,5 +1,7 @@
 import { euroText, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
+import { partCartonNote, perPieceOptions, salesLineWithPerPiece } from './sales-per-piece';
+import { Segmented } from '../../shared/segmented';
 import { canReopenSalesDocument } from './sales-reopen';
 import { QUANTITY_FIELD_SELECTOR, showServerQuantities } from './sales-quantity-fields';
 import { canCreateCreditNote, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, euro, isCreditNote, isDeadCreditNote } from './sales-credit-note';
@@ -10,7 +12,9 @@ import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuan
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
-import type { CreditNoteProposal, SalesSplitResult } from '../../core/api/models';
+import type { CreditNoteProposal, ExpectedStock, SalesSplitResult } from '../../core/api/models';
+import { IncomingPill } from '../../shared/incoming-pill';
+import { brusselsToday, incomingMap, type Incoming } from '../../shared/product-incoming';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -87,7 +91,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
 /** What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. */
 function layoutKey(order: SalesOrder): string {
   return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
-    order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line)])]);
+    order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line), line.perPiece === true])]);
 }
 
 /**
@@ -100,9 +104,9 @@ function layoutKey(order: SalesOrder): string {
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
@@ -736,7 +740,7 @@ function layoutKey(order: SalesOrder): string {
                     <span class="order-line__index">Regel {{ salesLineNumber(line.productId) }} · {{ line.sku }}</span>
                     <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
                     @if (!lineUnavailable(line.productId)) { <span>
-                      {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
+                      {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}@if (linePartCarton(line); as part) {, {{ part }}} ·
                       @if (!isLooseCartons(data) && !data.order.pallets.length) {
                         {{ linePallets(data, line) }} {{ linePallets(data, line) === 1 ? 'pallet' : 'pallets' }} ·
                       }
@@ -766,13 +770,23 @@ function layoutKey(order: SalesOrder): string {
                 <div class="line-fields">
                   <div class="field">
                     <label [attr.for]="'q-' + line.productId">Aantal {{ lineUnit(line.productId).plural }}</label>
-                    <input class="input num" [id]="'q-' + line.productId" type="number"
+                    <!-- A line that counts per piece tints its number (a state on the figure, not a glyph) and shows its switch. -->
+                    <input class="input num" [class.input--per-piece]="perPieceOn(line.productId)" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [attr.data-quantity-line]="line.productId" [ngModel]="line.quantity"
                            (ngModelChange)="setLineQuantity(line.productId, $event)"
                            (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
+                    @if (perPieceSwitch(line.productId)) {
+                      <app-segmented class="line-per" label="Aantal per" variant="ios" [options]="perPieceOptions(line.productId)"
+                                     [attr.data-per-piece-line]="line.productId"
+                                     [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                     (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                    }
                     @if (linePending()[line.productId]; as to) {
                       <span class="hint warn-text" role="status">{{ lineStepNotice(line.productId) }}: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
+                      @if (canKeepPieces(line.productId)) {
+                        <button class="line-keep" type="button" [attr.data-per-piece-line]="line.productId" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button>
+                      }
                     }
                     @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
@@ -864,6 +878,14 @@ function layoutKey(order: SalesOrder): string {
                       } @else {
                         <b class="danger-text">Levertermijn nodig</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
+                      }
+                      <!-- Not covered by stock, on a document that still delivers: what is coming, and when, answers
+                           the delivery term. A load that failed says so instead of reading as "nothing is coming". -->
+                      @if (!line.inventoryKnown || !line.inStock) {
+                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
+                        @else if (incomingMissing()) {
+                          <button class="coming-retry" type="button" [disabled]="incomingState() === 'loading'" (click)="retryIncoming()">{{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}</button>
+                        }
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
@@ -1530,6 +1552,7 @@ function layoutKey(order: SalesOrder): string {
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
+                [issued]="issuedBefore()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -1572,6 +1595,10 @@ function layoutKey(order: SalesOrder): string {
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
           [priceMarkOf]="priceMarkOf"
+          [incoming]="incomingItems()"
+          [incomingState]="incomingState()"
+          (incomingRetry)="retryIncoming()"
+          [perPieceOnLine]="perPieceOnLines()"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -1867,6 +1894,8 @@ function layoutKey(order: SalesOrder): string {
     .delivery-row__copy { min-width:0;flex:1;display:flex;flex-direction:column;font-size:11.5px }
     .delivery-row__copy b { font-size:12px }
     .delivery-row__copy span { overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap }
+    .coming-retry { align-self:flex-start;min-height:44px;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-align:left;cursor:pointer }
+    .coming-retry:disabled { color:var(--muted);cursor:default }
     .delivery-edit,.remove-line,.delete-draft { min-height:44px;padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--rose-dark);font-size:11.5px;font-weight:680;cursor:pointer }
     .delivery-week { margin-top:10px;padding-top:10px;border-top:1px solid var(--line) }
     .delivery-week .field { margin:0 }
@@ -3164,6 +3193,18 @@ export class SalesEditor {
     return this.customers().find((c) => c.id === id)?.language ?? 'NL';
   });
   readonly history = signal<QuoteEvent[]>([]);
+  /** The document the history on screen was read for; null while none could be read. */
+  private readonly historyOf = signal<number | null>(null);
+  /**
+   * An invoice that was issued before. "Uitgeven zonder e-mail" leaves no sent date, and putting the
+   * invoice back on concept leaves only the step in its history; while that history is not in, the
+   * invoice counts as issued. The planner's one-tap return of a 220 cm height asks this.
+   */
+  readonly issuedBefore = computed(() => {
+    const order = this.view()?.order;
+    if (!order || order.docType !== 'FACTUUR') return false;
+    return this.historyOf() !== order.id || this.history().some((step) => step.type === 'UITGEREIKT');
+  });
 
   /** The pick-lists and the catalogue, loaded once; an order waits for them before it shows. */
   private referenceLoad: Promise<void> = Promise.resolve();
@@ -3623,6 +3664,10 @@ export class SalesEditor {
     this.saveError.set(null);
     this.previewError.set(null);
     this.figuresWaiting.set(false);
+    this.typedLine.set(null);
+    /* The server's view replaces the draft: nothing typed is waiting any more. What it still rounds is said again. */
+    this.linePending.set({});
+    this.announceRounding(view.priced.lines, view.order);
     this.loadCreditContext(view);
   }
 
@@ -3697,10 +3742,13 @@ export class SalesEditor {
       this.pricedFor.set(layoutKey(data.order));
       this.previewError.set(null);
       this.figuresWaiting.set(false);
+      this.typedLine.set(null);
+      this.announceRounding(fresh.priced.lines, current.order);
       this.syncQuantityFields();
     } catch (failure: unknown) {
       if (version !== this.previewVersion) return;
       this.figuresWaiting.set(false);
+      this.typedLine.set(null);
       this.previewError.set(messageOf(
         failure,
         'Controleer de verbinding voordat je de offerte opslaat of verstuurt.',
@@ -3771,10 +3819,18 @@ export class SalesEditor {
     this.saving.set(true);
     this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
+    /* The pallet height goes along only when it was changed here, and then with the mark that says so:
+       without a height the server keeps the document's own. A screen opened before the server put a
+       concept quote back on the standard (2026-11-10, 220 to 260 cm) would otherwise write its old 220
+       back with any other save; the answer brings the server's height onto the screen
+       (mergeOrderAfterSave compares with data.order). */
+    const sent: SalesOrder = (data.order.maxPalletHeightCm ?? null) === (this.savedDocument()?.maxPalletHeightCm ?? null)
+      ? { ...data.order, maxPalletHeightCm: null } : data.order;
+    const heightPicked = sent.maxPalletHeightCm != null;
     try {
       const saved = fullDraft
-        ? await this.sales.updateOrder(data.order.id, data.order, webOrderRevision(current))
-        : await this.sales.updateShipping(data.order.id, shippingSnapshot(data.order), webOrderRevision(current));
+        ? await this.sales.updateOrder(data.order.id, sent, webOrderRevision(current), heightPicked)
+        : await this.sales.updateShipping(data.order.id, shippingSnapshot(sent), webOrderRevision(current), heightPicked);
       const latest = this.view();
       if (!latest || latest.order.id !== data.order.id) return true;
       const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);
@@ -3904,6 +3960,8 @@ export class SalesEditor {
 
   /** Announced order-step correction per line: the server rounds on save. */
   readonly linePending = signal<Record<number, number>>({});
+  /** The line whose number is being typed, until the figures of the draft come back (figuresWaiting goes off). */
+  private readonly typedLine = signal<number | null>(null);
 
   /**
    * The quantity lands in the draft at once. A figure off the order step is
@@ -3934,6 +3992,7 @@ export class SalesEditor {
       else delete next[productId];
       return next;
     });
+    this.typedLine.set(productId);
     this.setLine(productId, { quantity: wanted }, true);
   }
 
@@ -3956,10 +4015,152 @@ export class SalesEditor {
    * step; an older server sends none and rounds to full cartons.
    */
   private unitsPerStep(productId: number): number {
-    const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
+    const line = this.view()?.priced.lines.find((candidate) => candidate.productId === productId);
+    /* Where the line can be switched the draft decides at once: for a moment after a press the answer on screen still
+       says the other side. */
+    if (line?.perPieceChoice === true) return this.linePerPiece(productId) ? 1 : this.stepWhenRounded(productId);
+    const priced = line?.unitsPerOrderStep;
     const product = this.products().find((candidate) => candidate.id === productId);
     const server = priced != null && Number.isSafeInteger(priced) && priced >= 1 ? priced : null;
     return server !== null && (server === 1 || !product) ? server : unitsPerOrderStep(product);
+  }
+
+  /** The step a line rounds to when it does not count per piece: the product's of today, else the priced line's own. */
+  private stepWhenRounded(productId: number): number {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    if (product) return unitsPerOrderStep(product);
+    const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
+    return priced != null && Number.isSafeInteger(priced) && priced > 1 ? priced : 1;
+  }
+
+  /* ---- per piece on one line (2026-11-10) --------------------------- */
+
+  /** The server offers the choice on this line: the document rounds and the product's order step is above 1. */
+  perPieceChoice(productId: number): boolean {
+    return this.view()?.priced.lines.find((line) => line.productId === productId)?.perPieceChoice === true;
+  }
+
+  /** The draft's choice: what the screen shows at once, before the answer. */
+  linePerPiece(productId: number): boolean {
+    return this.view()?.order.lines.find((line) => line.productId === productId)?.perPiece === true;
+  }
+
+  /** The quantity field wears the state: a line that can be switched and counts per piece. */
+  perPieceOn(productId: number): boolean {
+    return this.perPieceChoice(productId) && this.linePerPiece(productId);
+  }
+
+  /**
+   * The switch is drawn on a line that counts per piece, and on one just switched back until it is saved. Every
+   * other line stays as it was (all products are per omdoos: it would sit on every line, for a rare choice). The
+   * way in is the notice with its "houden", which a number off the step always brings. A line at whole cartons
+   * has no direct way in, though per piece still changes something there (the customer's quote link takes any
+   * number, his documents count the line in pieces): type a number off the step, "houden", then the number wanted.
+   */
+  perPieceSwitch(productId: number): boolean {
+    if (!this.mobileCommercialEditable() || !this.perPieceChoice(productId)) return false;
+    return this.view()?.order.lines.find((line) => line.productId === productId)?.perPiece != null;
+  }
+
+  /**
+   * The way out under a rounding notice: keep the typed number, per piece. Not beside the switch (a saved choice
+   * just switched back): there the switch is the way back, one control at a time. Not while its own number is
+   * still being typed either: the notice may come and go per digit, a 44 px button with it would move the card.
+   */
+  canKeepPieces(productId: number): boolean {
+    return this.mobileCommercialEditable() && this.perPieceChoice(productId) && !this.linePerPiece(productId)
+      && !this.perPieceSwitch(productId) && !(this.figuresWaiting() && this.typedLine() === productId);
+  }
+
+  /** "Stolp | Omdoos": the unit, then the product's order step, in the words of the notice beside it. */
+  perPieceOptions(productId: number) {
+    return perPieceOptions(this.lineOrderStep(productId), this.lineUnit(productId).singular);
+  }
+
+  /** The desk's hover text on the switch, which has no caption of its own: "Aantal per stolp of per omdoos". */
+  perPieceTitle(productId: number): string {
+    return `Aantal per ${this.lineUnit(productId).singular} of per ${this.lineOrderStep(productId) === 'PACKAGE' ? 'display' : 'omdoos'}`;
+  }
+
+  /** The cartons of a per-piece line whose last one is not full: "niet vol" / "laatste niet vol". */
+  linePartCarton(line: PricedLine): string | null {
+    return partCartonNote(line.perPiece === true, line.quantity, line.cartons,
+      this.products().find((product) => product.id === line.productId)?.carton?.piecesPerCarton);
+  }
+
+  /** Per piece keeps the number as typed; back to the step announces what the server makes of it, as a typed number does. */
+  setLinePerPiece(productId: number, on: boolean): void {
+    if (!this.mobileCommercialEditable() || !this.perPieceChoice(productId) || this.lineUnavailable(productId)) return;
+    if (this.linePerPiece(productId) === on) return;
+    const stored = this.savedDocument()?.lines.some((line) => line.productId === productId && line.perPiece === true) ?? false;
+    this.enqueue((order) => ({ ...order,
+      lines: order.lines.map((line) => line.productId === productId ? salesLineWithPerPiece(line, on, stored) : line) }));
+    if (this.linePerPiece(productId) !== on) return;
+    const quantity = this.currentQuantity(productId);
+    const snapped = on ? quantity : roundToOrderStep(quantity, this.stepWhenRounded(productId));
+    this.linePending.update((map) => {
+      const next = { ...map };
+      if (snapped !== quantity && quantity > 0) next[productId] = snapped;
+      else delete next[productId];
+      return next;
+    });
+    this.keepPerPieceFocus(productId);
+  }
+
+  /**
+   * The pressed control can go with the change: "houden" once the line counts per piece, the switch of a choice
+   * taken back before it was saved. Focus then lands on the control that took its place (the switch's chosen side,
+   * or "houden" again), so a keyboard or VoiceOver user goes on from this line and hears its state. The quantity
+   * field is the last resort, and only for focus that sat on the control: a tap on the phone leaves none there,
+   * and a field focused by script would raise the keyboard.
+   */
+  private keepPerPieceFocus(productId: number): void {
+    const doc = this.host.nativeElement.ownerDocument;
+    const scope = `[data-per-piece-line="${productId}"]`;
+    const held = doc.activeElement instanceof Element && doc.activeElement.closest(scope) !== null;
+    afterNextRender(() => {
+      const active = doc.activeElement;
+      if (active && active !== doc.body && active.isConnected) return;
+      const host = this.host.nativeElement;
+      const place = host.querySelector<HTMLElement>(`${scope} [aria-checked="true"]`)
+        ?? host.querySelector<HTMLElement>(`button${scope}`)
+        ?? (held ? host.querySelector<HTMLElement>(`[data-quantity-line="${productId}"]`) : null);
+      place?.focus({ preventScroll: true });
+    }, { injector: this.injector });
+  }
+
+  /**
+   * The picker may end its hint with "Per stuk kies je daarna op de regel": the server offers that choice on this
+   * document (a line carries perPieceChoice, so it rounds and the server knows the choice) and the draft did not
+   * just turn to exact pieces. An empty document, an exempt one or an older server: the hint does not promise it.
+   */
+  readonly perPieceOnLines = computed(() => {
+    const data = this.view();
+    return !!data && !isPartnerDocument(data.order) && data.order.markupMode !== 'CONTAINER_COST'
+      && data.priced.lines.some((line) => line.perPieceChoice === true);
+  });
+
+  /**
+   * After an answer: a quantity the server rounds up that nothing announced yet (a line added through the picker,
+   * a container's exact pieces) gets the notice a typed one gets, and a line it does not round loses it. Only on
+   * lines the server offers the choice on (an older server: none, so nothing changes) and only while the lines
+   * can be edited: a fixed version is never rounded, whatever a preview of today's step says.
+   */
+  private announceRounding(priced: readonly PricedLine[], order: SalesOrder): void {
+    if (!this.mobileCommercialEditable()) return;
+    const pending = this.linePending();
+    let next: Record<number, number> | null = null;
+    for (const line of order.lines) {
+      const answer = priced.find((candidate) => candidate.productId === line.productId);
+      if (answer?.perPieceChoice !== true) continue;
+      const to = !salesLineUnavailable(line) && line.perPiece !== true && line.quantity > 0 && answer.quantity > line.quantity
+        ? answer.quantity : undefined;
+      if (pending[line.productId] === to) continue;
+      next ??= { ...pending };
+      if (to === undefined) delete next[line.productId];
+      else next[line.productId] = to;
+    }
+    if (next) this.linePending.set(next);
   }
 
   /** The product's "Verkocht per", for wording: the priced line's, else the catalogue's. */
@@ -4091,7 +4292,65 @@ export class SalesEditor {
     if (!this.mobileCommercialEditable() || this.isCreditNoteDoc()) return;
     /* Prices changed on the customer sheet in the meantime show too; until the answer the loaded ones stand. */
     this.loadAgreedPrices();
+    /* What is coming, fresh for this pick; the last answer stands until the new one is in. */
+    this.loadIncoming();
     this.picking.set(true);
+  }
+
+  /* ---- what is coming (purchase orders): the picker's status and a short line's ---- */
+  /** Per product id, as GET expected-stock?arrived=true answers; empty until the first answer is in. */
+  readonly incomingItems = signal<ReadonlyMap<number, ExpectedStock>>(new Map());
+  /**
+   * 'failed': no answer is in hand and the last load failed, so the picker and a short line say so with a retry
+   * instead of reading as "nothing is coming". 'loading': that retry runs. A refresh that fails while an answer
+   * is on screen keeps that answer and stays 'ready'.
+   */
+  readonly incomingState = signal<'ready' | 'loading' | 'failed'>('ready');
+  private readonly incomingToday = brusselsToday();
+  private readonly incomingByProduct = computed(() => incomingMap([...this.incomingItems().values()], this.incomingToday));
+  private incomingAsk = 0;
+  /** The request whose answer is on screen; 0 while there is none. */
+  private incomingShown = 0;
+  /**
+   * This document still has goods to deliver: not a credit note, not shipped, not a voorschot without a delivery,
+   * not refused or cancelled. Only then a short line has a delivery term for what is coming to answer.
+   */
+  private readonly stillDelivers = computed(() => {
+    const data = this.view();
+    return !!data && !this.isCreditNoteDoc() && !data.order.goodsShippedAt && !skipsShipping(data)
+      && data.order.status !== 'AFGEWEZEN' && data.order.status !== 'GEANNULEERD';
+  });
+  /** A line that is not covered by stock: its status needs the answer before the picker was ever opened. */
+  private readonly incomingWanted = computed(() => this.stillDelivers() && !!this.view()?.priced.lines.some((line) => !line.inStock));
+  private readonly incomingLoader = effect(() => {
+    if (this.incomingWanted()) untracked(() => this.loadIncoming());
+  });
+  /** A short line cannot say what is coming because the load failed (or its retry runs). */
+  readonly incomingMissing = computed(() => this.stillDelivers() && this.incomingState() !== 'ready');
+
+  private loadIncoming(): void {
+    const ask = ++this.incomingAsk;
+    this.sourcing.incomingStock().then((items) => {
+      /* An older answer never replaces a newer one; a newer load that fails leaves the last answer standing. */
+      if (ask < this.incomingShown) return;
+      this.incomingShown = ask;
+      this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
+      this.incomingState.set('ready');
+    }, () => {
+      /* Said only with no answer in hand, and only by the newest request: an older one may still answer. */
+      if (this.incomingShown === 0 && ask === this.incomingAsk) this.incomingState.set('failed');
+    });
+  }
+
+  retryIncoming(): void {
+    if (this.incomingState() !== 'failed') return;
+    this.incomingState.set('loading');
+    this.loadIncoming();
+  }
+
+  /** What is coming for the product of a line that stock does not cover (short, or not confirmed); null when nothing is, and on a document that delivers nothing any more. */
+  lineComing(productId: number | null): Incoming | null {
+    return productId === null || !this.stillDelivers() ? null : this.incomingByProduct().get(productId) ?? null;
   }
 
   /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */
@@ -4314,8 +4573,10 @@ export class SalesEditor {
   protected async loadHistory(orderId: number): Promise<void> {
     try {
       this.history.set(await this.sales.history(orderId));
+      this.historyOf.set(orderId);
     } catch {
       this.history.set([]);
+      this.historyOf.set(null);
     }
   }
 
