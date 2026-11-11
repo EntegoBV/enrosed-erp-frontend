@@ -377,7 +377,12 @@ never shows the form again.
   (history back when the parent is below, else its last URL), `back(fallback)`.
   On a pop the restored entry takes the pop's id (Angular rewrites the
   browser entry's navigationId) and must show the same path (after a
-  reload ids restart at 1). "Below" is the first entry that shows another
+  reload ids restart at 1). Every entry also carries `page`, the router's
+  `ɵrouterPageId` (its place in the browser's history): a pop finds its
+  entry by that first (`restoredEntry`), by the restored id only where no
+  page is known. `keepForReload()` / `dropKept()` / `kept`: the stack
+  survives a reload the app starts itself (see "A newer build in an open
+  app"). "Below" is the first entry that shows another
   screen: the sections of `/analyses/:section` count as one
   (`navScreen`, `screenBelow`; back goes there with `historyGo(-n)`);
   `/settings?sectie=…` and other query views stay entries of their own.
@@ -411,6 +416,73 @@ render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
 (check the first Vercel deployment of that change once: if it fails on
 vercel.json, drop only the headers block).
+
+## A newer build in an open app (2026-11-10)
+
+Nothing used to make an open session load a new build: the web app only
+reloaded when a lazy chunk was gone, the native shell loads its pages once
+and iOS keeps an app for days. A fix that was live was not on the phone that
+reported the bug. Now the app notices a newer build and reloads itself for
+it, silently, at a moment when nothing can be lost.
+
+- **Files**: `core/platform/fresh-build.ts` (pure: the constants, the build
+  id, `decideBuildReload(situation)`, the rules in its head comment),
+  `fresh-build-service.ts` (lazy chunk: reads the page, asks, reloads),
+  `reload-guard.ts` (main bundle: the per-tab record and the questions both
+  reloads share), `core/api/in-flight.ts` (requests that have not answered),
+  the effect `freshBuild` in `app.ts` (signed in and not `bare()` only).
+- **Build id**: the sorted hashed entry files,
+  `main-D5NXTMQC.js|styles-SZC5YEUP.css`. Not the main script alone: a
+  release that only changes `styles.scss` renames only the stylesheet. A
+  development build (unhashed) has no id and nothing is installed.
+  `buildCode(id)` is the short form on Meer's foot ("Aangemeld als emre ·
+  D5NX-SZC5"): the way to see on a phone which build runs.
+- **Asking**: `fetch('/index.html', {cache: 'no-store'})`, parsed for the
+  entry files. When the page comes back in view (`visibilitychange`,
+  `pageshow`, the host's `lifecycle active`), every 5 minutes in view, on
+  arrival at another screen; never more often than every 3 minutes. A failed
+  check is silent and may be repeated after 20 s. A newer build's files
+  (entry files and modulepreload chunks) are fetched into the HTTP cache
+  first; only then is it "ready", so the reload itself needs one small file.
+- **The two moments**. Arrival: a navigation ended on another path, the
+  screen came to rest (no HttpClient request for 300 ms) within 2.5 s, and
+  nobody touched it since it appeared. Quiet: nobody touched the page for 5
+  minutes (30 when a search, filter, tick or sort was set on this screen):
+  the app picked up after a while, a desk window nobody uses; in the native
+  shell also a tab that is not on screen while the app is in front.
+- **Never** over a sheet, popup, menu or toast (`OPEN_SURFACE`), a focused
+  text field (a search field or select does not count), text typed into a
+  field that is still on screen, an open file picker, a save or upload, a
+  native question, unsaved work; never hidden in a browser, never with the
+  native app in the background, never on `/login`, `/offerte`,
+  `/voorwaarden`.
+- **Once per build** per tab (`sessionStorage enrosed.build.reloaded`, shared
+  with the missing-chunk reload); twice when the load never got through. A
+  page that still runs another build after it stays as it is until a
+  different build appears.
+- **Same screen after it**: the address, the browser's history, NavHistory's
+  stack (`enrosed.nav.kept`: the native shell gets the same depth and
+  replaces in place), the window's scroll position and the workspace panes'
+  (`enrosed.build.scroll`). Not kept: a search older than 30 minutes,
+  unfolded groups, selections made by clicks.
+- **Two rules for new screens**: (1) an editor with unsaved state listens to
+  `window:beforeunload` and only calls `preventDefault()` while dirty or
+  busy; that is also the reload's question (`unsavedWork` dispatches a
+  synthetic event, no browser prompt). Work made by clicks without such an
+  editor marks an element with `data-unsaved` while it exists. (2) A popup
+  that is not an `app-sheet`, `.cm`, `.wk-popover` or `[role="dialog"]` gets
+  `data-kit-overlay`.
+- **Try it locally** (development build only; a production build never reads
+  the hook): in the console
+  `sessionStorage.setItem('enrosed.build.debug', JSON.stringify({running:
+  'main-AAAAAAAA.js|styles-AAAAAAAA.css', latest:
+  'main-AAAAAAAA.js|styles-BBBBBBBB.css', checkMs: 2000, quietMs: 15000,
+  viewMs: 30000, watchMs: 2000})); location.reload()`. Every decision is
+  printed as `[build] arrival|quiet reload|none <why>`. Change `latest` to
+  see the next build; remove the key to end.
+- Every release now reaches open sessions within minutes, before the backend
+  that follows it: "the new frontend works against the old backend" is
+  exercised on every release.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
