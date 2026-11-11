@@ -9,6 +9,7 @@ const SETTLE_MS = 900;
  * The line under a "Track & trace" field: what was read (container number, B/L, booking) at once, a warning
  * only once the typing rests. One unrecognised number can be confirmed as a B/L with one press.
  * The phone tints the field from this line's own state (styles/purchase-phone.scss, .mpo-input:has).
+ * quiet (a received order, never followed again): what was read still shows, a warning and the button do not.
  */
 @Component({
   selector: 'app-tracking-reference-hint',
@@ -16,7 +17,7 @@ const SETTLE_MS = 900;
   template: `
     @if (shown(); as line) {
       <span class="tt-hint" [class.tt-hint--warn]="line.warn" [class.tt-hint--ios]="variant() === 'ios'" role="status">{{ line.text }}</span>
-      @if (line.warn && asBill(); as fixed) {
+      @if (line.warn && offerBill() && asBill(); as fixed) {
         <button class="tt-fix" [class.tt-fix--ios]="variant() === 'ios'" type="button" (click)="rewrite.emit(fixed)">Dit is een B/L</button>
       }
     }
@@ -36,6 +37,10 @@ export class TrackingReferenceHint {
   /** The server's reading, when the text is a stored one; else the same rule runs here. */
   readonly recognised = input<TrackingRecognised | null>(null);
   readonly variant = input<'desk' | 'ios'>('desk');
+  /** No warning: the order is received and its reference is not followed again. */
+  readonly quiet = input(false);
+  /** "Dit is een B/L" rewrites the field this line belongs to; off where the line also reads another field. */
+  readonly offerBill = input(true);
   /** The text with "BL: " in front, after "Dit is een B/L". */
   readonly rewrite = output<string>();
 
@@ -44,7 +49,7 @@ export class TrackingReferenceHint {
   private readonly settled = signal<string | null | undefined>(undefined);
   readonly shown = computed(() => {
     const line = this.hint();
-    return line && (!line.warn || this.settled() === (this.value() ?? '')) ? line : null;
+    return line && (!line.warn || (!this.quiet() && this.settled() === (this.value() ?? ''))) ? line : null;
   });
   readonly asBill = computed(() => trackingReferenceAsBill(this.value()));
 

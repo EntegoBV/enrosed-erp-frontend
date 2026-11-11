@@ -3,6 +3,7 @@ import { PurchaseTracking } from './purchase-tracking';
 import { purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
 import { trackingMove } from './container-tracking-model';
 import { stepTrackingReference } from './tracking-reference';
+import type { ContainerTracking } from '../../core/api/container-tracking-models';
 import { TrackingReferenceHint } from './tracking-reference-hint';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
@@ -1073,7 +1074,7 @@ export class PurchaseDeskStyles {}
                 verwacht {{ data.order.expectedArrival ? (data.order.expectedArrival | dateNl) : 'op een nog onbekende datum' }}.</p>
               <div class="field mt-12">
                 <label for="step-tracking">Track &amp; trace <span class="opt"></span></label>
-                <input class="input" id="step-tracking" placeholder="Containernummer of link van de rederij"
+                <input class="input" id="step-tracking" placeholder="Containernummer of BL: nummer"
                        [ngModel]="prompt.tracking" (ngModelChange)="stepPrompt.set({ ...prompt, tracking: $event })" />
                 <span class="hint">De vertrekdatum wordt vandaag; volgens het betaalplan valt nu de volgende termijn.</span>
               </div>
@@ -1088,7 +1089,7 @@ export class PurchaseDeskStyles {}
                   <input class="input" id="step-bl-file" type="file" accept=".pdf,.jpg,.jpeg,.png"
                          (change)="stepPrompt.set({ ...prompt, billFile: $any($event.target).files?.[0] ?? null })" />
                 </div>
-                <div class="span-2 pdk-step-ref"><app-tracking-reference-hint [value]="stepReference(prompt)" (rewrite)="stepPrompt.set({ ...prompt, tracking: $event })" /></div>
+                <div class="span-2 pdk-step-ref"><app-tracking-reference-hint [value]="stepReference(prompt)" [offerBill]="!prompt.billOfLading.trim()" (rewrite)="stepPrompt.set({ ...prompt, tracking: $event })" /></div>
                 <span class="hint span-2">Het document komt bij de documenten van dit dossier.</span>
               </div>
             } @else {
@@ -1585,6 +1586,8 @@ export class PurchaseDesk extends PurchaseEditor {
   });
   /** Tracking moved the expected arrival: the date that stood and the difference, for the step and the fact. */
   readonly arrivalMove = computed(() => this.editing() ? null : trackingMove(this.trackingPanel()?.row() ?? null));
+  /** The tracking row read last, kept while the desk edits: the panel that reads it is not there then. */
+  private readonly lastTrackingRow = signal<ContainerTracking | null>(null);
 
   /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
   readonly hostWidth = elementWidth(() => this.host.nativeElement);
@@ -1611,6 +1614,7 @@ export class PurchaseDesk extends PurchaseEditor {
     effect(() => {
       const row = this.trackingPanel()?.row() ?? null;
       untracked(() => {
+        if (row) this.lastTrackingRow.set(row);
         const data = this.view();
         if (!data) return;
         const order = trackingBaseline.accept(data.order, row, this.editing() || this.dirty() || this.saving());
@@ -1898,10 +1902,16 @@ export class PurchaseDesk extends PurchaseEditor {
 
   /** What "Container vertrokken" saves as track & trace, from its two fields (also the line under them). */
   stepReference(prompt: { tracking: string; billOfLading: string }): string | null {
-    const stored = this.view()?.order.trackingReference ?? '';
-    /* A ship can only be linked to the stored text. Until its row is read, take it as linked: nothing is added then. */
-    const row = this.trackingPanel()?.row();
-    const shipLinked = !!stored.trim() && prompt.tracking.trim() === stored.trim() && (!row || !!row.vesselImo);
+    const order = this.view()?.order;
+    /* A ship is linked to the saved text, which its row carries; the row read last also counts while the desk edits.
+       Only while that row is being read is a ship taken as linked (nothing is added then): a row that cannot be
+       read, or an order without one, has no ship. An older server would unlink the ship of a rewritten text. */
+    const panel = this.trackingPanel();
+    const read = panel?.row() ?? this.lastTrackingRow();
+    const row = read && read.orderId === order?.id ? read : null;
+    const stored = order?.trackingReference ?? '';
+    const shipLinked = row ? !!row.vesselImo && prompt.tracking.trim() === row.trackingReference.trim()
+      : !!panel?.loading() && !!stored.trim() && prompt.tracking.trim() === stored.trim();
     return stepTrackingReference(prompt.tracking, prompt.billOfLading, shipLinked);
   }
 
