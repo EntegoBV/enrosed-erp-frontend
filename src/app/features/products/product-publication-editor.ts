@@ -250,7 +250,7 @@ interface FamilyFeaturedOption {
             <div class="stable-identity-note" role="note">
               <span aria-hidden="true">🔗</span>
               @if (identityFinalizationPending()) {
-                <p><b>Deze geïmporteerde conceptreeks mist nog haar vaste identiteit.</b> Vul de reeks-sleutel, URL en alle variantcodes één keer in. Opslaan finaliseert ze samen; de reeks en alle SKU's moeten daarvoor op elk kanaal Concept staan.</p>
+                <p><b>Deze conceptreeks mist nog haar vaste identiteit.</b> Vul de reeks-sleutel, URL en alle variantcodes één keer in. Opslaan finaliseert ze samen; de reeks en alle SKU's moeten daarvoor op elk kanaal Concept staan.</p>
               } @else {
                 <p><b>De klanttitel mag later veranderen.</b> De vaste reeks-sleutel en URL worden één keer bij het aanmaken gekozen. Een latere URL-migratie hoort buiten dit formulier en vereist een gecontroleerde redirect.</p>
               }
@@ -268,7 +268,7 @@ interface FamilyFeaturedOption {
                   placeholder="bijv. rose-in-dome-xl"
                 />
                 <small class="field__hint">{{ identityFinalizationPending()
-                  ? 'Nog één keer te kiezen omdat deze geïmporteerde conceptreeks geen publieke URL heeft.'
+                  ? 'Nog één keer te kiezen omdat deze conceptreeks geen publieke URL heeft.'
                   : 'Permanente technische koppeling tussen varianten; alleen te kiezen wanneer een nieuwe reeks wordt aangemaakt.' }}</small>
               </label>
               <label class="field">
