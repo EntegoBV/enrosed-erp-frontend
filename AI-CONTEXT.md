@@ -509,7 +509,10 @@ it, silently, at a moment when nothing can be lost.
 - `push-sw.js` takes over at once (`skipWaiting`, `clients.claim`): it keeps
   no caches and handles no fetch, and windows that reload themselves would
   otherwise keep an old worker for good. When a sale's sound is refused in
-  a visible window, the page shows the system banner itself and no toast.
+  a visible window, the page shows the system banner itself. The toast
+  comes every time anyway: a created banner can still stay out of sight
+  (Focus or Do Not Disturb, an app in front on iOS), and a missed sale
+  costs more than a banner plus a silent toast now and then.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
