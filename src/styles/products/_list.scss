@@ -75,6 +75,9 @@ app-product-list .plp-demo__chev--open { transform: rotate(180deg); }
     margin: 0 var(--ios-inset) 14px; padding: 10px 12px; border-radius: 14px;
     background: var(--warn-soft); color: var(--ink-2); font-size: 13px;
   }
+  /* Its retry is drawn as the small 26 px button; the finger gets 44 px (both warning lines). */
+  app-product-list .plp-warning .wk-btn { position: relative; }
+  app-product-list .plp-warning .wk-btn::after { content: ''; position: absolute; inset: -10px -6px; }
   app-product-list .plp-chips-line { display: flex; flex-wrap: wrap; gap: 4px; margin: 1px 0; }
 }
 
