@@ -2149,6 +2149,9 @@ export class ProductEditor implements OnDestroy {
   }
 
   setProductColour(colour: string): void {
+    /* Typed in the name field: it stays open, also when the text is empty for a moment or
+       passes a list colour ("Rood" on the way to "Roodbruin"). */
+    this.customColour.set(true);
     const changed = this.normalizeColour(colour) !== this.normalizeColour(this.draft().colour);
     /* A standard colour brings its own swatch; a hand-picked sample on the
        same colour stays, a colour change starts from the default again. */
@@ -2822,6 +2825,8 @@ export class ProductEditor implements OnDestroy {
       this.savedSupplierId.set(null);
       this.translationDirty.set(false);
       this.translationSaving.set(false);
+      /* The next product starts from its own colour, not from the previous one's name field. */
+      this.customColour.set(false);
       this.draft.set(blankProduct(null, 'USD'));
       this.markClean();
     }
