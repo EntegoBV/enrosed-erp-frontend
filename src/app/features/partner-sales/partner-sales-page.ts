@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
@@ -66,7 +66,7 @@ const PHONE_STATUS: Record<PartnerReportStatus, string> = {
 
     <div class="content vv" [class.vv--phone]="!desk.active()">
       @if (desk.active()) {
-        <div class="wk-subbar vv-subbar">
+        <div #subbar class="wk-subbar vv-subbar">
           <div class="wk-chips" role="group" aria-label="Filter op status">
             @for (option of filters; track option.id) {
               <button class="wk-chip" type="button" [attr.aria-pressed]="filter() === option.id" (click)="setFilter(option.id)">{{ option.label }}
@@ -252,7 +252,11 @@ const PHONE_STATUS: Record<PartnerReportStatus, string> = {
     .vv-select__label{min-width:0;overflow:hidden;text-overflow:ellipsis}
     .vv-select__native{position:absolute;inset:0;width:100%;height:100%;opacity:0;font:inherit;cursor:pointer}
     .vv-select:has(>.vv-select__native:focus-visible){outline:2px solid var(--rose);outline-offset:2px}
-    .vv-card{container:vv/inline-size;overflow:hidden}
+    /* No overflow on the card: a clipping card would be the head's sticky box, and the head (top = the app bar + this
+       subbar) would sit that far down inside the rows. The head rounds its own top corners instead. */
+    .vv-subbar~*{--wk-sticky-top:calc(var(--appbar-h,0px) + var(--vv-subbar-h,var(--wk-subbar-h,48px)))}
+    .vv-card{container:vv/inline-size}
+    .vv-card .wk-thead{border-radius:15px 15px 0 0}
     .vv-table{--wk-cols:minmax(120px,150px) minmax(0,1fr) 64px 100px 156px 20px}
     .vv-mid,.vv-wide{display:none!important}
     @container vv (min-width:900px){
@@ -347,6 +351,8 @@ export class PartnerSalesPage {
   readonly voidBusy = signal(false);
   readonly voidError = signal<string | null>(null);
 
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly subbar = viewChild<ElementRef<HTMLElement>>('subbar');
   private run = 0;
   /** The melding a ?melding= link asked for, until it is shown. */
   private wanted: number | null = null;
@@ -406,6 +412,15 @@ export class PartnerSalesPage {
       });
     });
     void this.work.refresh();
+    /* The table head sticks under the subbar's measured height when the subbar wraps (TICA's --tl-subbar-h). */
+    effect((onCleanup) => {
+      const bar = this.subbar()?.nativeElement;
+      if (!bar || typeof ResizeObserver !== 'function') return;
+      const host = this.host.nativeElement;
+      const observer = new ResizeObserver(() => host.style.setProperty('--vv-subbar-h', `${bar.offsetHeight}px`));
+      observer.observe(bar);
+      onCleanup(() => { observer.disconnect(); host.style.removeProperty('--vv-subbar-h'); });
+    });
     inject(DestroyRef).onDestroy(() => { this.run++; if (this.flashTimer) clearTimeout(this.flashTimer); });
   }
 
