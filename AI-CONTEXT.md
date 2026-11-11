@@ -3897,6 +3897,15 @@ contract `redesign/products/design.md` + `critique.md`).
   being typed (`keepTypedVariantKeys`, `keepTypedIdentity`). A series made by linking colours
   is in the same no-URL state as an imported one (`model-<id>-<id>`). Same rule for the
   colour's name field (`setProductColour` keeps `customColour`, reset per product).
+  A refused finalisation, or a 422 on the ordinary series PUT, fetches the series once
+  (`seriesChangedElsewhere`): when its identity differs from the copy the request was built
+  from (finalised in another tab, a lost answer, a colour copied in), `mergeFamilyPhotoState`
+  takes it over and the message points at no field; "is gewijzigd; verwacht" is never a key-field
+  error. The server finalises only a series stored as concept on every channel: a channel the
+  form puts on Concept (or a stored READY, shown as Concept) is saved first
+  (`conceptBeforeIdentity`); one still on live is a local message at its select. A wiped URL or
+  code of a saved series is null, like the saved value; the tags field keeps its typed text
+  while it means the draft's tags.
 
 ## Jaarinventaris (2026-10-09)
 
