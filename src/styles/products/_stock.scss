@@ -43,6 +43,8 @@ app-stock-page .sk-batches { margin-bottom: 14px; }
 app-stock-page .sk-batches .wk-link { flex: none; white-space: nowrap; }
 app-stock-page .sk-batches-link { white-space: nowrap; }
 app-stock-page .skp-batches .ios-capsule { flex: none; }
+/* The Onderweg retry is drawn as the small 36 px capsule; the finger gets 44 px inside the banner's padding. */
+app-stock-page .skp-onway-failed .ios-capsule::after { content: ''; position: absolute; inset: -4px 0; }
 app-stock-page .skp-batches-link { margin: 4px var(--ios-inset, 16px) 18px; text-align: center; }
 app-stock-page .skp-batches-link .linklike { font-size: 13px; }
 

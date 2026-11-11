@@ -250,9 +250,11 @@ function mediaSignal(query: string) {
           <div class="ios-banner skp-batches" [class.ios-banner--info]="!banner.warn" role="status"><span>{{ banner.text }}</span>
             <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="batchSheet.set(banner.mode)">{{ banner.link }}</button></div>
         }
-        @if (incomingState() === 'failed' && !loading() && !loadError()) {
-          <div class="ios-banner ios-banner--info skp-batches" role="status"><span>Onderweg niet geladen.</span>
-            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" (click)="retryIncoming()">Opnieuw</button></div>
+        <!-- Stays while its retry runs ('loading' is only ever set by the retry), so a press is answered and the banner does not come and go. -->
+        @if (incomingState() !== 'ready' && !loading() && !loadError()) {
+          <div class="ios-banner ios-banner--info skp-batches skp-onway-failed" role="status"><span>Onderweg niet geladen.</span>
+            <button class="ios-capsule ios-capsule--sm ios-capsule--tinted" type="button" [disabled]="incomingState() === 'loading'"
+                    (click)="retryIncoming()">{{ incomingState() === 'loading' ? 'laden…' : 'Opnieuw' }}</button></div>
         }
         @if (activeLocations().length > 1 && activeLocations().length <= 3) {
           <div class="skp-seg"><app-segmented variant="ios" label="Locatie" [options]="phoneLocationOptions()" [value]="view() === null ? 'all' : '' + view()" (changed)="setView($event)" /></div>
