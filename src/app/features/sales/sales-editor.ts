@@ -3751,10 +3751,16 @@ export class SalesEditor {
     this.saving.set(true);
     this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
+    /* The pallet height goes along only when it was changed here: without one the server keeps the
+       document's own. A screen opened before the server put a concept quote back on the standard
+       (2026-11-10, 220 to 260 cm) would otherwise write its old 220 back with any other save; the
+       answer brings the server's height onto the screen (mergeOrderAfterSave compares with data.order). */
+    const sent: SalesOrder = (data.order.maxPalletHeightCm ?? null) === (this.savedDocument()?.maxPalletHeightCm ?? null)
+      ? { ...data.order, maxPalletHeightCm: null } : data.order;
     try {
       const saved = fullDraft
-        ? await this.sales.updateOrder(data.order.id, data.order, webOrderRevision(current))
-        : await this.sales.updateShipping(data.order.id, shippingSnapshot(data.order), webOrderRevision(current));
+        ? await this.sales.updateOrder(data.order.id, sent, webOrderRevision(current))
+        : await this.sales.updateShipping(data.order.id, shippingSnapshot(sent), webOrderRevision(current));
       const latest = this.view();
       if (!latest || latest.order.id !== data.order.id) return true;
       const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);

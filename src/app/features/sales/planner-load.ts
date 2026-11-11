@@ -29,7 +29,7 @@ const PROFILES_SHORT: SegmentOption[] = PALLET_CHOICES.map((choice) =>
         <app-segmented label="Pallettype" [variant]="desk() ? 'desk' : 'ios'" [options]="profiles()" [value]="profile()" (changed)="profileChange.emit($any($event))" />
         <div class="ld-row">
           <span class="ld-label" id="ld-height">Max. hoogte</span>
-          <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="16" [max]="300" [allowEmpty]="overridden()"
+          <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="16" [max]="maxCm()" [allowEmpty]="overridden()"
                               [disabled]="!canEdit()" label="Max. hoogte in cm" lessLabel="10 cm lager" moreLabel="10 cm hoger"
                               (changed)="heightChange.emit($event)" />
           <span class="ld-unit">cm</span>
@@ -63,6 +63,8 @@ export class PlannerLoad {
   readonly mode = input.required<LoadMode>();
   readonly profile = input.required<PalletProfile>();
   readonly heightCm = input.required<number>();
+  /** The highest height the stepper offers: 260 for a europallet, else 300. A higher stored one shows as it is. */
+  readonly maxCm = input(300);
   readonly overridden = input(false);
   readonly baseCm = input(14.4);
   readonly canEdit = input(true);
