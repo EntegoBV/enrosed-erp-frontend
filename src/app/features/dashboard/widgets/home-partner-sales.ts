@@ -19,10 +19,14 @@ import { HomeWidget, amount, count, counted } from './home-w';
   template: `
     @if (summary(); as s) {
       <app-home-w [variant]="variant()" kind="partner-sales" title="Veilingverkopen" icon="arrow-in" tone="green" link="/veilingverkopen"
-                  [wide]="true" [sub]="s.openReports ? 'nog te factureren' : 'alles gefactureerd'">
-        @if (s.openReports) {
+                  [wide]="true" [sub]="!s.openReports ? 'alles gefactureerd' : invoiceable() ? 'nog te factureren' : 'niets te factureren'">
+        @if (s.openReports && invoiceable()) {
           <span class="home-w__value">{{ whole(s.openNetEur) }}</span>
           <span class="home-w__line">netto · {{ counted(s.openReports, 'melding', 'meldingen') }} · {{ counted(s.openSaleQuantity, 'stuk', 'stuks') }}</span>
+        } @else if (s.openReports) {
+          <!-- Only a buyback is open: it waits for the next sale of that product (Factureren nets it then). -->
+          <span class="home-w__value">{{ count(s.openReports) }}</span>
+          <span class="home-w__line">{{ s.openReports === 1 ? 'terugkoop wacht' : 'terugkopen wachten' }} op een volgende verkoop</span>
         } @else {
           <span class="home-w__value">{{ count(s.recentReports14d) }}</span>
           <span class="home-w__line">{{ s.recentReports14d === 1 ? 'melding' : 'meldingen' }} in 14 dagen, alles gefactureerd</span>
@@ -48,6 +52,7 @@ export class HomePartnerSales {
     const s = this.data.work.partnerSales();
     return s && (s.openReports > 0 || s.recentReports14d > 0) ? s : null;
   });
+  readonly invoiceable = this.data.work.partnerSalesInvoiceable;
   readonly openPartners = computed(() => (this.summary()?.partners ?? []).filter((partner) => partner.openReports > 0).length);
 
   /** "vandaag 14:05", "gisteren", "8/11": the home's minute clock moves it. */

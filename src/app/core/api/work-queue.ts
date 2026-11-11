@@ -43,8 +43,13 @@ export class WorkQueue {
    * on a backend without the portal. The nav count, the home card and the Te doen task all read this one signal.
    */
   readonly partnerSales = signal<PartnerSalesSummary | null>(null);
-  /** Open meldingen: the count on Veilingverkopen in the nav (a NavCountKey). */
-  readonly partnerSalesOpen = computed(() => this.partnerSales()?.openReports ?? 0);
+  /**
+   * Something of the open meldingen can be invoiced: a sale is open. A buyback alone (its sale invoiced before) is
+   * open too, but Factureren can only net it against the next sale of that product, so it asks nobody to act.
+   */
+  readonly partnerSalesInvoiceable = computed(() => (this.partnerSales()?.openSaleQuantity ?? 0) > 0);
+  /** Open meldingen while something can be invoiced: the count on Veilingverkopen in the nav (a NavCountKey). */
+  readonly partnerSalesOpen = computed(() => (this.partnerSalesInvoiceable() ? this.partnerSales()!.openReports : 0));
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;

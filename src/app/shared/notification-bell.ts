@@ -263,7 +263,12 @@ export class NotificationBell {
   /** The partner's meldingen of the last 14 days, newest first as the feed sends them; open = not invoiced yet. */
   readonly partnerRows = computed(() => this.work.partnerSaleItems()
     .map(item => ({ item, when: whenLabel(item.at, this.nowMs()), open: item.open === true })));
-  readonly partnerOpen = computed(() => this.work.partnerSaleItems().filter((item) => item.open === true).length);
+  readonly partnerOpen = computed(() => {
+    /* Nothing to invoice (only a buyback waits for the next sale): the badge does not ask. Unknown summary: the items count. */
+    const summary = this.work.partnerSales();
+    if (summary && !this.work.partnerSalesInvoiceable()) return 0;
+    return this.work.partnerSaleItems().filter((item) => item.open === true).length;
+  });
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
   /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */

@@ -538,8 +538,9 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
       context: 'Partnercontainers ontvangen; het veilingoverzicht wacht', chip: { label: 'ontvangen', tone: 'grey' }, count: n,
       verb: 'Afrekenen', target: { kind: 'route', path: ['/analyses/purchasing'], query: { deel: 'partners' } }, detail: String(n) });
   }
-  /* The partner's meldingen wait for an invoice; staff make it whenever they like (owner), so Ook nog, like the settlement. */
-  if (input.partnerSales && input.partnerSales.count > 0) {
+  /* The partner's meldingen wait for an invoice; staff make it whenever they like (owner), so Ook nog, like the settlement.
+     Only with a sale open: a buyback alone waits for the next sale of that product, Factureren cannot take it. */
+  if (input.partnerSales && input.partnerSales.count > 0 && input.partnerSales.pieces > 0) {
     const open = input.partnerSales;
     out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: 'Veilingverkopen factureren',
       context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht`,

@@ -82,11 +82,11 @@ const PHONE_STATUS: Record<PartnerReportStatus, string> = {
               </select>
             </label>
           }
-          <span class="wk-subbar__end">@if (totals(); as t) {@if (t.openReports > 0) {<b>{{ eur(t.openNetEur) }}</b> nog te factureren · {{ plural(t.openReports, 'melding', 'meldingen') }} · {{ num(t.openSaleQuantity) }} st} @else {Alles gefactureerd}}</span>
+          <span class="wk-subbar__end">@if (totals(); as t) {@if (t.openReports > 0 && t.openSaleQuantity > 0) {<b>{{ eur(t.openNetEur) }}</b> nog te factureren · {{ plural(t.openReports, 'melding', 'meldingen') }} · {{ num(t.openSaleQuantity) }} st} @else if (t.openReports > 0) {Niets te factureren · {{ plural(t.openReports, 'terugkoop wacht', 'terugkopen wachten') }} op een volgende verkoop} @else {Alles gefactureerd}}</span>
         </div>
       } @else {
         @if (totals(); as t) {
-          @if (t.openReports > 0) {
+          @if (t.openReports > 0 && t.openSaleQuantity > 0) {
             <div class="ios-card vv-sum">
               <span class="vv-sum__label">Nog te factureren</span>
               <b class="vv-sum__value">{{ eur(t.openNetEur) }}</b>
@@ -373,7 +373,11 @@ export class PartnerSalesPage {
     id: option.id, label: option.label, count: option.id === 'OPEN' ? this.totals()?.openReports ?? null : null,
   })));
 
-  readonly canInvoice = computed(() => !this.missing() && (this.totals()?.openReports ?? this.work.partnerSales()?.openReports ?? 0) > 0);
+  /** Factureren once a sale is open (a buyback alone waits for the next sale of that product; the subbar says so). */
+  readonly canInvoice = computed(() => {
+    const open = this.totals() ?? this.work.partnerSales();
+    return !this.missing() && (open?.openReports ?? 0) > 0 && (open?.openSaleQuantity ?? 0) > 0;
+  });
 
   /** Who Factureren offers: the partners with open meldingen (the summary), else those seen on this page. */
   readonly invoicePartners = computed<PartnerSalesPartnerSummary[]>(() => {
