@@ -18,6 +18,7 @@ import {
 } from '../../shared/product-featured-eligibility';
 import {
   canEditProductFamilyIdentity,
+  CHANNEL_FIELD_IDS,
   IDENTITY_KEY_FIELD_ID,
   IDENTITY_URL_FIELD_ID,
   identityVariantFieldId,
@@ -145,6 +146,7 @@ interface FamilyFeaturedOption {
                 <p>Geldt voor alle kleuren en maten van deze reeks.</p>
               </div>
               <select class="select select--status"
+                      [id]="channelFieldIds.websiteStatus"
                       [class.select--status-off]="visiblePublicationStatus(family.websiteStatus) !== 'PUBLISHED'"
                       [ngModel]="visiblePublicationStatus(family.websiteStatus)"
                       (ngModelChange)="patch({ websiteStatus: $event })"
@@ -196,6 +198,7 @@ interface FamilyFeaturedOption {
                 <label class="channel-card">
                   <span><b>Orderapp</b><small>Bestelbaar voor klanten (later)</small></span>
                   <select class="select select--sm"
+                          [id]="channelFieldIds.orderAppStatus"
                           [ngModel]="visiblePublicationStatus(family.orderAppStatus)"
                           (ngModelChange)="patch({ orderAppStatus: $event })">
                     <option value="DRAFT">Concept</option>
@@ -205,6 +208,7 @@ interface FamilyFeaturedOption {
                 <label class="channel-card">
                   <span><b>Catalogus</b><small>Catalogussync (later)</small></span>
                   <select class="select select--sm"
+                          [id]="channelFieldIds.catalogueStatus"
                           [ngModel]="visiblePublicationStatus(family.catalogueStatus)"
                           (ngModelChange)="patch({ catalogueStatus: $event })">
                     <option value="DRAFT">Concept</option>
@@ -792,6 +796,7 @@ export class ProductPublicationEditor {
   readonly keyFieldId = IDENTITY_KEY_FIELD_ID;
   readonly urlFieldId = IDENTITY_URL_FIELD_ID;
   readonly variantFieldId = identityVariantFieldId;
+  readonly channelFieldIds = CHANNEL_FIELD_IDS;
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
     const family = this.family();

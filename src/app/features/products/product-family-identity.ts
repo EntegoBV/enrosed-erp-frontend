@@ -18,6 +18,23 @@ export function identityVariantFieldId(productId: number): string {
   return `publication-variant-key-${productId}`;
 }
 
+/** The status selects of the three channels of a series ("Op de website", Orderapp, Catalogus). */
+export const CHANNEL_FIELD_IDS = {
+  websiteStatus: 'publication-website-status',
+  orderAppStatus: 'publication-orderapp-status',
+  catalogueStatus: 'publication-catalogue-status',
+} as const;
+
+/**
+ * The three channels of a series, and what to do in its select when a channel that is live keeps
+ * the identity from being finalised (in the words of the select's own options).
+ */
+const IDENTITY_CHANNELS = [
+  { key: 'websiteStatus', first: 'Zet de website eerst op Nog niet zichtbaar.' },
+  { key: 'orderAppStatus', first: 'Zet de orderapp eerst op Concept.' },
+  { key: 'catalogueStatus', first: 'Zet de catalogus eerst op Concept.' },
+] as const;
+
 const SERIES_CHANGED = 'De productreeks is intussen gewijzigd.';
 
 /** A local validation error that can be shown before an unsafe identity request is sent. */
@@ -154,7 +171,45 @@ export function planProductFamilyIdentityFinalization(
     );
   }
 
+  /* The server finalises only a series it has as concept on every channel. A channel saved as
+     live goes to concept first, in this same save (conceptBeforeIdentity), but only when the form
+     says so: taking a series off a channel is never done behind someone's back. */
+  for (const channel of IDENTITY_CHANNELS) {
+    if (previous[channel.key] === 'PUBLISHED' && desired[channel.key] === 'PUBLISHED') {
+      throw new ProductFamilyIdentityFinalizationError(channel.first, CHANNEL_FIELD_IDS[channel.key]);
+    }
+  }
+
   return { expectedFamilyKey, familyKey, publicHandle, variants };
+}
+
+/**
+ * The update that has to go before the one-time identity command: the saved series with every
+ * channel on concept, nothing else changed. Null when the server already has it so. The form
+ * shows a stored "klaar" (READY) as concept, so that goes to concept too.
+ */
+export function conceptBeforeIdentity(saved: ProductFamily): ProductFamily | null {
+  if (IDENTITY_CHANNELS.every((channel) => saved[channel.key] === 'DRAFT')) return null;
+  return { ...saved, websiteStatus: 'DRAFT', orderAppStatus: 'DRAFT', catalogueStatus: 'DRAFT' };
+}
+
+/**
+ * `family` after that update was saved as `updated`. The baseline (`keepLive` false) takes the
+ * server's statuses; the draft keeps a channel the form wants live, which is still to be saved
+ * after the identity.
+ */
+export function withConceptStatuses(
+  family: ProductFamily,
+  updated: ProductFamily,
+  keepLive: boolean,
+): ProductFamily {
+  const next = { ...family, publicationIssues: [...updated.publicationIssues] };
+  for (const channel of IDENTITY_CHANNELS) {
+    next[channel.key] = keepLive && family[channel.key] === 'PUBLISHED'
+      ? 'PUBLISHED'
+      : updated[channel.key];
+  }
+  return next;
 }
 
 /**

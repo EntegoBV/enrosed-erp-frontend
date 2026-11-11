@@ -58,9 +58,9 @@ import {
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
 import {
-  hasFinalizableDraftIdentity, identityChangedElsewhere, identityDiffersOnServer,
+  conceptBeforeIdentity, hasFinalizableDraftIdentity, identityChangedElsewhere, identityDiffersOnServer,
   identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
-  planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError,
+  planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError, withConceptStatuses,
 } from './product-family-identity';
 import {
   productCatalogNavigation,
@@ -3968,6 +3968,16 @@ export class ProductEditor implements OnDestroy {
       const familyId = desired.id;
       const finalization = planProductFamilyIdentityFinalization(previous, desired);
       if (finalization) {
+        /* The server finalises only a series it has as concept on every channel, and reads that
+           from what is stored: a channel the form just put on concept is saved first. */
+        const concept = previous ? conceptBeforeIdentity(previous) : null;
+        if (concept) {
+          try {
+            this.adoptConceptStatuses(await this.catalog.updateProductFamily(familyId, concept));
+          } catch (failure: unknown) {
+            throw await this.seriesUpdateFailure(failure, familyId, previous);
+          }
+        }
         let finalized: ProductFamily;
         try {
           finalized = await this.catalog.finalizeDraftProductFamilyIdentity(familyId, finalization);
@@ -4055,6 +4065,22 @@ export class ProductEditor implements OnDestroy {
   ): Promise<unknown> {
     if ((failure as { status?: number } | null)?.status !== 422) return failure;
     return await this.seriesChangedElsewhere(familyId, built) ?? failure;
+  }
+
+  /**
+   * The update that goes before the one-time identity is on the server as `updated`: every
+   * channel is concept there. The baseline takes that; the draft too, except a channel the form
+   * wants live, which is saved after the identity.
+   */
+  private adoptConceptStatuses(updated: ProductFamily): void {
+    this.family.update((family) => family && family.id === updated.id
+      ? withConceptStatuses(family, updated, true)
+      : family);
+    this.savedFamily.update((family) => family && family.id === updated.id
+      ? withConceptStatuses(family, updated, false)
+      : family);
+    this.families.update((families) =>
+      families.map((item) => item.id === updated.id ? structuredClone(updated) : item));
   }
 
   /**
