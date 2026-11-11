@@ -849,19 +849,23 @@ function layoutKey(order: SalesOrder): string {
                       @if (!line.inventoryKnown) {
                         <b>Voorraad nog niet bevestigd</b>
                         <span>Vul de leverweek in zodra de beschikbaarheid is bevestigd.</span>
-                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                       } @else if (line.inStock) {
                         <b>Op voorraad</b>
                         <span>Leverbaar vanaf {{ line.deliveryDate | dateNl }}@if (line.deliveryWeek) { · {{ line.deliveryWeek | weekNl: 'short' }} }</span>
                       } @else if (line.deliveryWeek) {
                         <b>Levering {{ line.deliveryWeek | weekNl }}</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
-                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
                       } @else {
                         <b class="danger-text">Levertermijn nodig</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
-                        <!-- Short of stock: what is coming, and when, answers the delivery term. -->
+                      }
+                      <!-- Not covered by stock, on a document that still delivers: what is coming, and when, answers
+                           the delivery term. A load that failed says so instead of reading as "nothing is coming". -->
+                      @if (!line.inventoryKnown || !line.inStock) {
                         @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
+                        @else if (incomingMissing()) {
+                          <button class="coming-retry" type="button" [disabled]="incomingState() === 'loading'" (click)="retryIncoming()">{{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}</button>
+                        }
                       }
                     </span>
                     <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
@@ -1571,6 +1575,8 @@ function layoutKey(order: SalesOrder): string {
           [priceOf]="priceOf"
           [priceMarkOf]="priceMarkOf"
           [incoming]="incomingItems()"
+          [incomingState]="incomingState()"
+          (incomingRetry)="retryIncoming()"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -1866,6 +1872,8 @@ function layoutKey(order: SalesOrder): string {
     .delivery-row__copy { min-width:0;flex:1;display:flex;flex-direction:column;font-size:11.5px }
     .delivery-row__copy b { font-size:12px }
     .delivery-row__copy span { overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap }
+    .coming-retry { align-self:flex-start;min-height:44px;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-align:left;cursor:pointer }
+    .coming-retry:disabled { color:var(--muted);cursor:default }
     .delivery-edit,.remove-line,.delete-draft { min-height:44px;padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--rose-dark);font-size:11.5px;font-weight:680;cursor:pointer }
     .delivery-week { margin-top:10px;padding-top:10px;border-top:1px solid var(--line) }
     .delivery-week .field { margin:0 }
@@ -4084,30 +4092,59 @@ export class SalesEditor {
   }
 
   /* ---- what is coming (purchase orders): the picker's status and a short line's ---- */
-  /** Per product id, as GET expected-stock?arrived=true answers; empty until loaded and after a failed load (then nothing shows). */
+  /** Per product id, as GET expected-stock?arrived=true answers; empty until the first answer is in. */
   readonly incomingItems = signal<ReadonlyMap<number, ExpectedStock>>(new Map());
+  /**
+   * 'failed': no answer is in hand and the last load failed, so the picker and a short line say so with a retry
+   * instead of reading as "nothing is coming". 'loading': that retry runs. A refresh that fails while an answer
+   * is on screen keeps that answer and stays 'ready'.
+   */
+  readonly incomingState = signal<'ready' | 'loading' | 'failed'>('ready');
   private readonly incomingToday = brusselsToday();
   private readonly incomingByProduct = computed(() => incomingMap([...this.incomingItems().values()], this.incomingToday));
   private incomingAsk = 0;
-  /** A line that is not covered by stock: its status needs the answer before the picker was ever opened. */
-  private readonly incomingWanted = computed(() => {
+  /** The request whose answer is on screen; 0 while there is none. */
+  private incomingShown = 0;
+  /**
+   * This document still has goods to deliver: not a credit note, not shipped, not a voorschot without a delivery,
+   * not refused or cancelled. Only then a short line has a delivery term for what is coming to answer.
+   */
+  private readonly stillDelivers = computed(() => {
     const data = this.view();
-    return !!data && !this.isCreditNoteDoc() && data.priced.lines.some((line) => !line.inStock);
+    return !!data && !this.isCreditNoteDoc() && !data.order.goodsShippedAt && !skipsShipping(data)
+      && data.order.status !== 'AFGEWEZEN' && data.order.status !== 'GEANNULEERD';
   });
+  /** A line that is not covered by stock: its status needs the answer before the picker was ever opened. */
+  private readonly incomingWanted = computed(() => this.stillDelivers() && !!this.view()?.priced.lines.some((line) => !line.inStock));
   private readonly incomingLoader = effect(() => {
     if (this.incomingWanted()) untracked(() => this.loadIncoming());
   });
+  /** A short line cannot say what is coming because the load failed (or its retry runs). */
+  readonly incomingMissing = computed(() => this.stillDelivers() && this.incomingState() !== 'ready');
 
   private loadIncoming(): void {
     const ask = ++this.incomingAsk;
     this.sourcing.incomingStock().then((items) => {
-      if (ask === this.incomingAsk) this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
-    }, () => undefined);
+      /* An older answer never replaces a newer one; a newer load that fails leaves the last answer standing. */
+      if (ask < this.incomingShown) return;
+      this.incomingShown = ask;
+      this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
+      this.incomingState.set('ready');
+    }, () => {
+      /* Said only with no answer in hand, and only by the newest request: an older one may still answer. */
+      if (this.incomingShown === 0 && ask === this.incomingAsk) this.incomingState.set('failed');
+    });
   }
 
-  /** What is coming for the product of a line that stock does not cover (short, or not confirmed); null when nothing is. */
+  retryIncoming(): void {
+    if (this.incomingState() !== 'failed') return;
+    this.incomingState.set('loading');
+    this.loadIncoming();
+  }
+
+  /** What is coming for the product of a line that stock does not cover (short, or not confirmed); null when nothing is, and on a document that delivers nothing any more. */
   lineComing(productId: number | null): Incoming | null {
-    return productId === null ? null : this.incomingByProduct().get(productId) ?? null;
+    return productId === null || !this.stillDelivers() ? null : this.incomingByProduct().get(productId) ?? null;
   }
 
   /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */

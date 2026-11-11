@@ -83,6 +83,12 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
             (ngModelChange)="searchAgain($event)"
           />
         </div>
+        <!-- What is coming could not be read: said once, here, so an empty colour is not taken for "nothing is coming". -->
+        @if (stockAware() && incomingState() !== 'ready') {
+          <button class="picker-coming-failed" type="button" [disabled]="incomingState() === 'loading'" (click)="incomingRetry.emit()">
+            {{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}
+          </button>
+        }
         @if (!chosen() && !quantityStep() && !groupByFamily()) {
           <div class="picker-filters" aria-label="Producten filteren">
             <div class="picker-filter">
@@ -672,6 +678,9 @@ function productPickerFamilyLanes(groups: readonly ProductPickerFamilyGroup[]): 
     .picker-family__dots i { width: 9px; height: 9px; flex: none; border: 1px solid rgb(0 0 0 / 14%); border-radius: 50%; }
     .picker-family__dots small { font-size: 9px; }
     .picker-coming { display: block; min-width: 0; font-size: 11px; line-height: 1.35; }
+    .picker-coming-failed { display: block; width: 100%; min-height: 44px; margin: -8px 0 4px; padding: 0 2px; border: 0; background: none;
+      color: var(--rose-dark); font: inherit; font-size: 12px; font-weight: 650; text-align: left; cursor: pointer; }
+    .picker-coming-failed:disabled { color: var(--muted); cursor: default; }
     .picker-family__chevron { color: var(--muted); transition: transform .16s ease; }
     .picker-family--open .picker-family__chevron { transform: rotate(180deg); }
     .picker-family__select { width: 44px; min-height: 44px; display: grid; place-items: center; border: 0;
@@ -868,6 +877,10 @@ export class ProductPicker implements OnDestroy {
    * that is empty or tight then says so in its stock line, summed on its folded series; empty for every other host.
    */
   readonly incoming = input<ReadonlyMap<number, ExpectedStock>>(new Map());
+  /** 'failed': the host has no answer to pass in `incoming`; one line under the search says so. 'loading': its retry runs. */
+  readonly incomingState = input<'ready' | 'loading' | 'failed'>('ready');
+  /** The line under the search was pressed: the host loads what is coming again. */
+  readonly incomingRetry = output<void>();
   /** Purchasing opts in because its source is already in canonical catalogue order. */
   readonly preserveSourceOrder = input(false);
 
@@ -1164,9 +1177,9 @@ export class ProductPicker implements OnDestroy {
     return this.comingByProduct().get(product.id) ?? null;
   }
 
-  /** "40 op voorraad" beside what is coming. */
+  /** "40 op voorraad" beside what is coming: stockLabel's words, without the unit (the quantity field beside it shows none either). */
   stockShort(product: Product): string {
-    if (!product.inventoryKnown) return 'voorraad niet bevestigd';
+    if (!product.inventoryKnown) return 'voorraad nog niet bevestigd';
     return product.stockQuantity > 0 ? `${product.stockQuantity.toLocaleString('nl-BE')} op voorraad` : 'geen voorraad';
   }
 
