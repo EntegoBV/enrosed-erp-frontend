@@ -3671,10 +3671,43 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and
     split sheet/state (`salesSplitStep`: `unitsPerOrderStep ??
     piecesPerCarton`; "in displays van 8 stuks") use the same step.
+  - Per piece on one sales line (2026-11-10, Emre: "aantallen per stuk in te
+    geven, in plaats van uitsluitend per omdoos"): `SalesOrderLine.perPiece`
+    (true, or absent; in a write absent or null keeps the stored choice,
+    true or false sets it - `orderWriteBody` lets it travel) and on the
+    priced line `perPiece` plus `perPieceChoice` (the server says where the
+    choice exists: the document rounds and the product's step is above 1;
+    an older server sends neither, so nothing is offered). Logic in
+    `sales-editor.ts`, shared with the desk; words and draft helper in
+    `sales-per-piece.ts`; styles in the global `styles/sales-per-piece.scss`
+    (both components sit at their style budget). The way in is the rounding
+    notice: under "Volle doos: wordt 24 st." the button "13 houden"
+    (`canKeepPieces`, `setLinePerPiece(id, true)`) keeps the typed number.
+    A line that counts per piece shows its switch "Stolp | Omdoos"
+    (`perPieceSwitch`, `app-segmented`, unit first like the product editor;
+    also on a line just switched back, until it is saved), the phone tints
+    the quantity field (`input--per-piece`, state on the figure), the meta
+    says "11 dozen, laatste niet vol" (`partCartonNote`; a part omdoos still
+    counts as a full one). The switch is deliberately NOT on every line: per
+    piece only matters for a number off the step, and that number brings the
+    notice. `unitsPerStep` returns 1 for a per-piece draft line at once (the
+    answer lags a press by 250 ms); `stepWhenRounded` is the step without
+    the choice. `announceRounding` runs after every preview answer and in
+    `adopt` (which now also clears `linePending`): a quantity the server
+    rounds up that nothing announced (a picker line, a container's exact
+    pieces on a quote made from a purchase order) gets the same notice;
+    only on `perPieceChoice` lines and only while `mobileCommercialEditable`
+    - a fixed version previews with today's step and is never rounded.
+    `salesLineWithPerPiece` drops the key when a never-saved choice is taken
+    back, so the draft is not dirty. `layoutKey` includes the choice. The
+    typing pause, blur and Enter are untouched. Nothing here for the quote
+    link: the server presents such a line as UNIT / step 1 there.
   - Product picker, selling (`enforceCartons()` true): a pick starts on one
     order step (`defaultQuantity`, also for a whole family), single mode
-    snaps to it, and the carton notices and "Een halve doos mag bij inkoop"
-    show only for CARTON products. Purchasing is unchanged.
+    snaps to it, and the carton notices show only for CARTON products. The
+    sales screens use multi mode, which never rounds: its hint ends "Per
+    stuk kies je daarna op de regel." (buying keeps "Een halve doos mag bij
+    inkoop."). Purchasing is unchanged.
   - Analyses "Minder dan één outer carton" lists CARTON products only.
   - Rollout: no production product leaves CARTON before the website build
     that sends `quantity` items is live - the older site drops or inflates
