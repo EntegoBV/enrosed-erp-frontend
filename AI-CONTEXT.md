@@ -436,7 +436,9 @@ it, silently, at a moment when nothing can be lost.
   release that only changes `styles.scss` renames only the stylesheet. A
   development build (unhashed) has no id and nothing is installed.
   `buildCode(id)` is the short form on Meer's foot ("Aangemeld als emre ·
-  D5NX-SZC5"): the way to see on a phone which build runs.
+  D5NX-SZC5"): the build of that document. In the native shell every tab is
+  its own web view and loads on its own, so it is the Meer tab's build only;
+  the device log's `build … -> …: reload (…)` names each web view's reload.
 - **Asking**: `fetch('/index.html', {cache: 'no-store'})`, parsed for the
   entry files. When the page comes back in view (`visibilitychange`,
   `pageshow`, the host's `lifecycle active`), every 5 minutes in view, on
@@ -444,12 +446,27 @@ it, silently, at a moment when nothing can be lost.
   check is silent and may be repeated after 20 s. A newer build's files
   (entry files and modulepreload chunks) are fetched into the HTTP cache
   first; only then is it "ready", so the reload itself needs one small file.
+- **Young build**: taken only once it has been live 10 minutes (the backend
+  of a release goes live minutes after its frontend). Its age is the longer
+  of two lower bounds: since this device first saw it (`localStorage
+  enrosed.build.seen`, shared by the tabs) and the host's `Age` header on
+  index.html (Vercel's edge sends it). A roll-back to a build seen before is
+  not young.
+- **The API answers** (public `GET /api/auth/ping` within 1.5 s, any status
+  below 500) right before every reload, else "server": a page given up while
+  the backend is down comes back empty, with blank counts.
 - **The two moments**. Arrival: a navigation ended on another path, the
   screen came to rest (no HttpClient request for 300 ms) within 2.5 s, and
-  nobody touched it since it appeared. Quiet: nobody touched the page for 5
-  minutes (30 when a search, filter, tick or sort was set on this screen):
-  the app picked up after a while, a desk window nobody uses; in the native
-  shell also a tab that is not on screen while the app is in front.
+  nobody touched it since it appeared. Quiet: away (hidden, the app in the
+  background) and untouched for 5 minutes, and within 5 s of coming back,
+  before anyone reads; after those seconds the time away no longer counts.
+  In view: untouched for 30 minutes (someone may read without a touch; the
+  pointer on an embedded frame such as a PDF preview, or the focus in one,
+  counts as a touch). In the native shell also a tab that is not on screen,
+  untouched for 5 minutes, while the app is in front. A search, filter,
+  tick or sort set on this screen makes every quiet time 30 minutes. The
+  shell's `refresh` is not a touch (it also sends one by itself for a stale
+  Home); a pull to refresh is seen through its touches.
 - **Never** over a sheet, popup, menu or toast (`OPEN_SURFACE`), a focused
   text field (a search field or select does not count), text typed into a
   field that is still on screen, an open file picker, a save or upload, a
@@ -469,7 +486,11 @@ it, silently, at a moment when nothing can be lost.
   `window:beforeunload` and only calls `preventDefault()` while dirty or
   busy; that is also the reload's question (`unsavedWork` dispatches a
   synthetic event, no browser prompt). Work made by clicks without such an
-  editor marks an element with `data-unsaved` while it exists. (2) A popup
+  editor marks an element with `data-unsaved` while it exists; also work
+  kept only in memory after its field or sheet is gone (Jaarinventaris
+  telling: a typed count a chip or the search hides; Kosten & bank: a
+  bank-cost registration or bank link waiting for its retry; the Documenten
+  tray). A typed field that left the page counts as closed. (2) A popup
   that is not an `app-sheet`, `.cm`, `.wk-popover` or `[role="dialog"]` gets
   `data-kit-overlay`.
 - **Try it locally** (development build only; a production build never reads
@@ -479,10 +500,16 @@ it, silently, at a moment when nothing can be lost.
   'main-AAAAAAAA.js|styles-BBBBBBBB.css', checkMs: 2000, quietMs: 15000,
   viewMs: 30000, watchMs: 2000})); location.reload()`. Every decision is
   printed as `[build] arrival|quiet reload|none <why>`. Change `latest` to
-  see the next build; remove the key to end.
-- Every release now reaches open sessions within minutes, before the backend
-  that follows it: "the new frontend works against the old backend" is
-  exercised on every release.
+  see the next build; remove the key to end. `ageMs` (default 0 with the
+  hook) shows the young hold.
+- Every release reaches open sessions within minutes, 10 minutes after it
+  went live at the earliest: by then its backend is live too. "The new
+  frontend works against the old backend" still holds for the minutes in
+  between (cold starts, a missing-chunk reload).
+- `push-sw.js` takes over at once (`skipWaiting`, `clients.claim`): it keeps
+  no caches and handles no fetch, and windows that reload themselves would
+  otherwise keep an old worker for good. When a sale's sound is refused in
+  a visible window, the page shows the system banner itself and no toast.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
