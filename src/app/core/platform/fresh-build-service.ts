@@ -108,6 +108,8 @@ export class FreshBuild {
   private arrivedUrl = '';
   private arrival = 0;
 
+  /** Until when a page that just came back in view is left to settle. */
+  private settleUntil = 0;
   private attempting = false;
   private reloading = false;
   private watch: ReturnType<typeof setInterval> | null = null;
@@ -346,6 +348,7 @@ export class FreshBuild {
   private async wake(): Promise<void> {
     if (!this.eligible()) return;
     const at = Date.now();
+    this.settleUntil = at + BUILD_WAKE_SETTLE_MS;
     /* The tabs that are not on screen follow the one in view, spread out. */
     if (!this.visible()) await wait(BUILD_BACKSTAGE_DELAY_MS + Math.random() * BUILD_BACKSTAGE_SPREAD_MS);
     if (await this.ask(this.gapMs) === 'failed') {
@@ -353,7 +356,6 @@ export class FreshBuild {
       await wait(BUILD_WAKE_RETRY_MS);
       await this.ask(0);
     }
-    await wait(Math.max(0, at + BUILD_WAKE_SETTLE_MS - Date.now()));
     await this.attempt('quiet');
   }
 
@@ -405,6 +407,8 @@ export class FreshBuild {
     if (this.attempting || this.reloading || !this.running) return;
     this.attempting = true;
     try {
+      /* Just back in view: whatever came with the return (a link the native shell opens, the first tap) goes first. */
+      if (moment === 'quiet' && Date.now() < this.settleUntil) await wait(this.settleUntil - Date.now());
       let verdict = decideBuildReload(this.situation(moment));
       if (verdict.act === 'confirm') {
         /* The page is only given up seconds after the server answered, and answered fast. */
@@ -428,7 +432,7 @@ export class FreshBuild {
     const reloadedFor = readReloadRecord(store).build;
     const pending = pendingBuild(this.running, this.latest, reloadedFor);
     const touchedAt = this.host.touchedAt;
-    return {
+    const situation: BuildSituation = {
       moment, running: this.running, latest: this.latest, reloadedFor, ready: this.readyFor === this.latest,
       canRemember: store !== null,
       staff: this.auth.isLoggedIn() && isStaffUrl(this.router.url),
@@ -440,8 +444,7 @@ export class FreshBuild {
       writing: this.inFlight.writes > 0,
       asking: this.host.asking,
       picking: this.pickingAt > 0 && now - this.pickingAt < BUILD_PICK_MS,
-      /* The editors are only asked while a build waits: their answer costs a little each. */
-      unsaved: pending && (workInHand(doc) || unsavedWork(this.win)),
+      unsaved: false,
       typed: this.typedText(),
       handed: this.router.url !== this.arrivedUrl,
       acted: Math.max(this.actedAt, touchedAt) > this.arrivedAt || (this.downAt > this.upAt && now - this.downAt < BUILD_HELD_MS),
@@ -450,6 +453,9 @@ export class FreshBuild {
       viewTouched: this.viewTouched, viewQuietMs: this.viewMs,
       confirmedAgoMs: now - this.answeredAt,
     };
+    /* The editors are only asked when the decision gets that far (nothing open, nobody typing), and only while a build waits. */
+    Object.defineProperty(situation, 'unsaved', { enumerable: true, get: () => pending && (workInHand(doc) || unsavedWork(this.win)) });
+    return situation;
   }
 
   /* -------------------------------------------------------------- the reload */
