@@ -3667,6 +3667,10 @@ export class ProductEditor implements OnDestroy {
         variantSize: this.copySize().trim(),
       });
       this.copying.set(false);
+      /* The copy is a new member of the series, and the list this editor keeps is from before it:
+         the copy's editor (this same component) would show the code list without the new colour,
+         and saving the identity there is refused with "SKU-lidmaatschap is gewijzigd". */
+      if (copy.familyId != null) await this.refreshCachedFamily(copy.familyId);
       this.ui.toast(`${copy.sku} aangemaakt en gekoppeld — vul de barcodes en foto's nog aan`);
       // The write has completed; the leave guard can now review any source edits.
       this.saving.set(false);
@@ -3676,6 +3680,21 @@ export class ProductEditor implements OnDestroy {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /**
+   * Fetches one series again into the list loadFamilyForProduct reads; without an answer the entry
+   * goes, so the next open fetches it. When it is the series on screen (the leave question kept us
+   * on the source product), that one takes the new member too, pending edits kept.
+   */
+  private async refreshCachedFamily(familyId: number): Promise<void> {
+    const fresh = await this.catalog.productFamily(familyId).catch(() => null);
+    this.families.update((families) => fresh === null
+      ? families.filter((item) => item.id !== familyId)
+      : families.some((item) => item.id === familyId)
+        ? families.map((item) => item.id === familyId ? fresh : item)
+        : [...families, fresh]);
+    if (fresh) this.mergeFamilyPhotoState(fresh);
   }
 
   private normalizeColour(value: string | null | undefined): string {
