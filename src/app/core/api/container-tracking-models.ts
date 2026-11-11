@@ -16,6 +16,19 @@ export interface TrackingEvent {
   sourceUrl?: string | null;
 }
 
+/**
+ * What the Track & trace text was read as. number is what the tracker follows; container is the container
+ * number behind a B/L or booking; checkDigitOk is the ISO 6346 check of the container in this result (null
+ * without one); evergreenBl is the Evergreen bill the date lookup uses.
+ */
+export interface TrackingRecognised {
+  kind: 'EMPTY' | 'CONTAINER' | 'BL' | 'BOOKING' | 'MULTIPLE' | 'LINK' | 'UNKNOWN';
+  number: string | null;
+  checkDigitOk: boolean | null;
+  container: string | null;
+  evergreenBl: string | null;
+}
+
 export interface ContainerTracking {
   orderId: number;
   orderNumber: string;
@@ -50,6 +63,20 @@ export interface ContainerTracking {
   source: 'VOYDAR' | 'SHIPSGO' | null;
   vesselImo: string | null;
   automatic: boolean;
+  /* Since 2026-11-10; absent on older servers, where the screens fall back to what they did before. */
+  /** The server's reading of the reference (the same rule as features/purchasing/tracking-reference.ts). */
+  recognised?: TrackingRecognised | null;
+  /** The last attempt failed: its message and when. A date that could not be applied stays dateError. */
+  failure?: string | null;
+  failureAt?: string | null;
+  /** Tracking moved the expected arrival: the date that stood, when, and the signed days to the date now. */
+  arrivalMovedFrom?: string | null;
+  arrivalMovedAt?: string | null;
+  arrivalMovedDays?: number | null;
+  /** From when a manual check does something again; null = now, or nothing to check. */
+  manualCheckAt?: string | null;
+  /** Only on the answer of a manual check. */
+  refreshOutcome?: 'CHECKED' | 'COOLDOWN' | 'BUSY' | 'OFF' | 'NO_SOURCE' | null;
 }
 
 export interface ContainerTrackingFeed {
