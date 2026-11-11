@@ -38,9 +38,9 @@ const PRODUCTS_SHOWN = 6;
           <button class="vva__fig" type="button" aria-haspopup="dialog" [disabled]="!f.all.reports" (click)="open('net', f.all.netEur)">
             <span class="vva__label">Netto</span><b class="vva__value" [class.is-neg]="f.all.netEur < 0">{{ f.all.netEur | eur: 0 }}</b>
             <span class="vva__sub">na kosten en terugkoop</span></button>
-          <button class="vva__fig" type="button" aria-haspopup="dialog" [class.is-warn]="f.open.reports > 0" [disabled]="!f.open.reports" (click)="open('open', f.open.netEur)">
-            <span class="vva__label">Nog te factureren</span><b class="vva__value">{{ f.open.netEur | eur: 0 }}</b>
-            <span class="vva__sub">{{ f.open.reports ? plural(f.open.reports, 'melding', 'meldingen') : 'alles gefactureerd' }}</span></button>
+          <button class="vva__fig" type="button" aria-haspopup="dialog" [class.is-warn]="f.open.pieces > 0" [disabled]="!f.open.reports" (click)="open('open', f.open.netEur)">
+            <span class="vva__label">Nog te factureren</span><b class="vva__value">{{ f.open.pieces > 0 ? (f.open.netEur | eur: 0) : '—' }}</b>
+            <span class="vva__sub">{{ f.open.pieces > 0 ? plural(f.open.reports, 'melding', 'meldingen') : f.open.reports ? 'terugkoop wacht' : 'alles gefactureerd' }}</span></button>
         </div>
         <div class="an-tica__lists an-tica__lists--two">
           <div>

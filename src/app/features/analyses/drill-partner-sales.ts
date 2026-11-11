@@ -1,5 +1,5 @@
 import type { DrillColumn, DrillLink, DrillRow, DrillView } from './drill-model';
-import { partnerSaleKind, type PartnerSalesFigures } from './partner-sales-analysis';
+import { openPartOf, partnerSaleKind, type PartnerSalesFigures } from './partner-sales-analysis';
 
 /*
  * The drills of Verkoop › Veilingverkopen: one row per melding (VV-12) of the
@@ -37,9 +37,9 @@ function columnsFor(value: 'pieces' | 'gross' | 'net'): DrillColumn[] {
 
 /** One figure of the card: its meldingen, summing to `figure` (the card's own number from the same rows). */
 export function partnerSalesView(key: PartnerSalesFigureKey, figures: PartnerSalesFigures, figure: number, scope: string): DrillView {
+  if (key === 'open') return openView(figures, figure, scope);
   const value = key === 'pieces' ? 'pieces' : key === 'gross' ? 'gross' : 'net';
-  const reports = figures.reports.filter((row) => (key === 'open' ? row.open : true)
-    && (key === 'pieces' ? row.saleQuantity !== 0 : key === 'gross' ? row.grossEur !== 0 : true));
+  const reports = figures.reports.filter((row) => key === 'pieces' ? row.saleQuantity !== 0 : key === 'gross' ? row.grossEur !== 0 : true);
   /* "Open" only tells something beside invoiced rows; when every row is open it is noise. */
   const mixed = reports.some((row) => row.open) && reports.some((row) => !row.open);
   const rows: DrillRow[] = reports.map((row) => ({
@@ -56,7 +56,29 @@ export function partnerSalesView(key: PartnerSalesFigureKey, figures: PartnerSal
       : key === 'gross' ? null : 'Netto = bruto − veilingcommissie, transport en extra kost − terugkoop.',
     columns: columnsFor(value), rows, valueKey: value,
     total: { value: figure, format: value === 'pieces' ? 'int' : 'eur2', of: 'sum' },
-    sort: { key: 'date', dir: 'desc' }, empty: key === 'open' ? 'Alles is gefactureerd.' : 'Geen meldingen in deze periode.',
+    sort: { key: 'date', dir: 'desc' }, empty: 'Geen meldingen in deze periode.',
+    foot: { label: 'Veilingverkopen ›', link: LIST },
+  };
+}
+
+/** Nog te factureren: only the open part of each melding, so the rows add up to the card (same figures as Veilingverkopen). */
+function openView(figures: PartnerSalesFigures, figure: number, scope: string): DrillView {
+  const rows: DrillRow[] = figures.reports
+    .map((row) => ({ row, part: openPartOf(row) }))
+    .filter(({ part }) => part.pieces !== 0 || part.netEur !== 0)
+    .map(({ row, part }) => ({
+      key: `vv${row.id}`,
+      cells: { doc: `${row.number} · ${partnerSaleKind(row)}`, date: row.soldOn, pieces: part.pieces, net: part.netEur },
+      pill: part.netEur !== row.netEur || part.pieces !== row.saleQuantity ? 'Deels' : null,
+      tone: part.netEur < 0 ? 'danger' : null,
+      link: melding(row.id),
+    }));
+  return {
+    id: 'sales.partnerSales.open', title: TITLES.open, scope: `${scope} · op verkoopdatum`,
+    note: 'Alleen wat nog niet gefactureerd is; bij een deels gefactureerde melding het open deel.',
+    columns: [COLUMNS.doc, COLUMNS.date, COLUMNS.pieces, { ...COLUMNS.net, phone: 'value' }], rows, valueKey: 'net',
+    total: { value: figure, format: 'eur2', of: 'sum' },
+    sort: { key: 'date', dir: 'desc' }, empty: 'Alles is gefactureerd.',
     foot: { label: 'Veilingverkopen ›', link: LIST },
   };
 }

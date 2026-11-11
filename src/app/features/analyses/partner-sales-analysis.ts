@@ -43,7 +43,10 @@ export interface PartnerSalesFigures {
   all: PartnerSalesTotals;
   auction: PartnerSalesTotals;
   direct: PartnerSalesTotals;
-  /** Not (fully) invoiced yet: the server's open flag (OPEN and PARTLY_INVOICED). */
+  /**
+   * Not invoiced yet: only the open parts of each melding (the server's openSaleQuantity / openNetEur), the
+   * same figures as Veilingverkopen and the home card. Only reports, pieces and netEur are filled here.
+   */
   open: PartnerSalesTotals;
   /** The period's meldingen, newest first. */
   reports: readonly PartnerSalesAnalyticsReport[];
@@ -71,6 +74,27 @@ function totals(rows: readonly PartnerSalesAnalyticsReport[]): PartnerSalesTotal
   return { reports: rows.length, pieces, buybackPieces, grossEur: gross / 100, costsEur: costs / 100, buybackEur: buyback / 100, netEur: net / 100 };
 }
 
+/** The open (not yet invoiced) part of a melding row; an older backend only sends the open flag. */
+export function openPartOf(row: Pick<PartnerSalesAnalyticsReport, 'open' | 'saleQuantity' | 'netEur' | 'openSaleQuantity' | 'openNetEur'>):
+  { pieces: number; netEur: number } {
+  const known = Number.isFinite(row.openNetEur as number) || Number.isFinite(row.openSaleQuantity as number);
+  if (!known) return row.open ? { pieces: whole(row.saleQuantity), netEur: cents(row.netEur) / 100 } : { pieces: 0, netEur: 0 };
+  return { pieces: whole(row.openSaleQuantity), netEur: cents(row.openNetEur) / 100 };
+}
+
+/** Rows with an open part (a waiting buyback included), and their open totals. */
+function openTotals(rows: readonly PartnerSalesAnalyticsReport[]): PartnerSalesTotals {
+  let reports = 0, pieces = 0, net = 0;
+  for (const row of rows) {
+    const part = openPartOf(row);
+    if (!part.pieces && !part.netEur) continue;
+    reports++;
+    pieces += part.pieces;
+    net += cents(part.netEur);
+  }
+  return { reports, pieces, buybackPieces: 0, grossEur: 0, costsEur: 0, buybackEur: 0, netEur: net / 100 };
+}
+
 /** The meldingen sold in [from, to] (either may be null: open-ended), by sold_on. */
 export function partnerSalesInPeriod(data: PartnerSalesAnalytics, from: string | null, to: string | null): PartnerSalesFigures {
   const reports = (data.reports ?? []).filter((row) => inRange(row.soldOn, from, to))
@@ -95,7 +119,7 @@ export function partnerSalesInPeriod(data: PartnerSalesAnalytics, from: string |
     all: totals(reports),
     auction: totals(reports.filter((row) => row.channel === 'AUCTION')),
     direct: totals(reports.filter((row) => row.channel === 'DIRECT')),
-    open: totals(reports.filter((row) => row.open)),
+    open: openTotals(reports),
     reports, productRows, products,
   };
 }

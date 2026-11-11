@@ -142,6 +142,9 @@ export interface PartnerSalesAnalyticsReport {
   costsEur: number;
   buybackEur: number;
   netEur: number;
+  /** The part not invoiced yet (open parts only); absent from an older backend. */
+  openSaleQuantity?: number | null;
+  openNetEur?: number | null;
 }
 
 /** One row per melding x product: per-product averages are derived, never summed across products. */
@@ -158,6 +161,9 @@ export interface PartnerSalesAnalyticsProduct {
   buybackQuantity: number;
   grossEur: number;
   netEur: number;
+  /** The part not invoiced yet (open parts only); absent from an older backend. */
+  openSaleQuantity?: number | null;
+  openNetEur?: number | null;
 }
 
 export interface PartnerSalesAnalytics {
