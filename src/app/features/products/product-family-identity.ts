@@ -6,15 +6,32 @@ import type {
 
 const TECHNICAL_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/** The heading of the section "Vaste koppeling & URL": where a refusal without a field of its own lands. */
+export const IDENTITY_SECTION_ID = 'publication-identity-title';
+export const IDENTITY_KEY_FIELD_ID = 'publication-family-key';
+export const IDENTITY_URL_FIELD_ID = 'publication-public-handle';
+
+/** The id of the code input of one variant in the list "Interne variantcodes". */
+export function identityVariantFieldId(productId: number): string {
+  return `publication-variant-key-${productId}`;
+}
+
 /** A local validation error that can be shown before an unsafe identity request is sent. */
 export class ProductFamilyIdentityFinalizationError extends Error {
   readonly error: { message: string };
+  /**
+   * The element the editor jumps to: the input a person can act on, or the section heading. Null
+   * when there is nothing to do in this form (stale data that needs a reload, or a save that
+   * already made the identity final).
+   */
+  readonly field: string | null;
 
-  constructor(message: string) {
+  constructor(message: string, field: string | null = null) {
     super(message);
     this.name = 'ProductFamilyIdentityFinalizationError';
     /* Keep local validation compatible with the shared HTTP-error presenter. */
     this.error = { message };
+    this.field = field;
   }
 }
 
@@ -62,8 +79,16 @@ export function planProductFamilyIdentityFinalization(
     previous.familyKey,
     'De bestaande vaste productreeks-sleutel',
   );
-  const familyKey = requiredTechnicalKey(desired.familyKey, 'De vaste productreeks-sleutel');
-  const publicHandle = requiredTechnicalKey(desired.publicHandle, 'De permanente publieke URL');
+  const familyKey = requiredTechnicalKey(
+    desired.familyKey,
+    'De vaste productreeks-sleutel',
+    IDENTITY_KEY_FIELD_ID,
+  );
+  const publicHandle = requiredTechnicalKey(
+    desired.publicHandle,
+    'De permanente publieke URL',
+    IDENTITY_URL_FIELD_ID,
+  );
 
   if (!previous.members.length) {
     throw new ProductFamilyIdentityFinalizationError(
@@ -98,13 +123,16 @@ export function planProductFamilyIdentityFinalization(
       member.canonicalVariantKey,
       `De bestaande interne variantcode van SKU ${sku}`,
     );
+    const field = identityVariantFieldId(member.productId);
     const canonicalVariantKey = requiredTechnicalKey(
       wanted.canonicalVariantKey,
       `De interne variantcode van SKU ${sku}`,
+      field,
     );
     if (seenTargetKeys.has(canonicalVariantKey)) {
       throw new ProductFamilyIdentityFinalizationError(
         `De interne variantcode ${canonicalVariantKey} is meer dan één keer ingevuld.`,
+        field,
       );
     }
     seenTargetKeys.add(canonicalVariantKey);
@@ -197,12 +225,17 @@ function uniqueMembersByProductId(
   return byId;
 }
 
-function requiredTechnicalKey(value: string | null | undefined, label: string): string {
+function requiredTechnicalKey(
+  value: string | null | undefined,
+  label: string,
+  field: string | null = null,
+): string {
   const key = clean(value);
-  if (!key) throw new ProductFamilyIdentityFinalizationError(`${label} ontbreekt.`);
+  if (!key) throw new ProductFamilyIdentityFinalizationError(`${label} ontbreekt.`, field);
   if (!TECHNICAL_KEY.test(key)) {
     throw new ProductFamilyIdentityFinalizationError(
       `${label} mag alleen kleine letters, cijfers en koppeltekens bevatten.`,
+      field,
     );
   }
   return key;

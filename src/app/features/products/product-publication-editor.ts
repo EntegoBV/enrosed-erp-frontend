@@ -18,6 +18,9 @@ import {
 } from '../../shared/product-featured-eligibility';
 import {
   canEditProductFamilyIdentity,
+  IDENTITY_KEY_FIELD_ID,
+  IDENTITY_URL_FIELD_ID,
+  identityVariantFieldId,
 } from './product-family-identity';
 
 interface FamilyFeaturedOption {
@@ -257,6 +260,7 @@ interface FamilyFeaturedOption {
                 <span>Vaste productreeks-sleutel</span>
                 <input
                   class="input mono"
+                  [id]="keyFieldId"
                   [ngModel]="family.familyKey"
                   [readOnly]="!identityEditable()"
                   (ngModelChange)="patch({ familyKey: $event })"
@@ -272,6 +276,7 @@ interface FamilyFeaturedOption {
                   <small>/products/</small>
                   <input
                     class="input mono"
+                    [id]="urlFieldId"
                     [ngModel]="family.publicHandle"
                     [readOnly]="!identityEditable()"
                     (ngModelChange)="patch({ publicHandle: $event })"
@@ -300,6 +305,7 @@ interface FamilyFeaturedOption {
                       </span>
                       <input
                         class="input mono"
+                        [id]="variantFieldId(member.productId)"
                         [ngModel]="member.canonicalVariantKey ?? ''"
                         [readOnly]="!identityEditable()"
                         (ngModelChange)="patchCanonicalVariantKey(member.productId, $event)"
@@ -777,6 +783,10 @@ export class ProductPublicationEditor {
   readonly identityFinalizationPending = computed(
     () => this.family()?.id != null && this.identityEditable(),
   );
+  /** The editor jumps to these inputs when a save refuses the identity. */
+  readonly keyFieldId = IDENTITY_KEY_FIELD_ID;
+  readonly urlFieldId = IDENTITY_URL_FIELD_ID;
+  readonly variantFieldId = identityVariantFieldId;
   readonly members = computed(() => this.family()?.members ?? []);
   readonly cardFeaturedOptions = computed<FamilyFeaturedOption[]>(() => {
     const family = this.family();

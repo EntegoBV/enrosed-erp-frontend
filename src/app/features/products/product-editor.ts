@@ -22,7 +22,7 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyMember, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductFamilyMember, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
@@ -59,7 +59,7 @@ import {
 import type { ProductFamilySharedField } from './product-family-shared-fields';
 import {
   hasFinalizableDraftIdentity, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
-  planProductFamilyIdentityFinalization,
+  planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError,
 } from './product-family-identity';
 import {
   productCatalogNavigation,
@@ -3763,6 +3763,16 @@ export class ProductEditor implements OnDestroy {
       this.focusField(first.tab, first.field);
       return;
     }
+    /* The series identity is checked before any question is asked: its message comes first. */
+    try {
+      this.plannedIdentityFinalization();
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Opslaan mislukt');
+      this.saveError.set(message);
+      this.ui.toast(message, 'err');
+      this.showIdentityField(failure);
+      return;
+    }
     /* A new price basis converts nothing on its own: say what stays as it is,
        and ask before anything in the draft changes, so Annuleren leaves it
        exactly as it was. The answer is awaited: a caller that saves first
@@ -3870,9 +3880,31 @@ export class ProductEditor implements OnDestroy {
       }
       this.saveError.set(message);
       this.ui.toast(message, 'err');
+      this.showIdentityField(failure);
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /**
+   * A refused series identity is shown where it is typed, like every other reason not to save:
+   * the save may have been pressed on another tab. Nothing happens for other failures, or where
+   * the section does not exist (the phone).
+   */
+  private showIdentityField(failure: unknown): void {
+    if (!(failure instanceof ProductFamilyIdentityFinalizationError) || failure.field === null) return;
+    if (!this.visibleTabs().some((tab) => tab.id === 'publication')) return;
+    this.focusField('publication', failure.field);
+  }
+
+  /**
+   * The one-time identity command this save will send, or null. Throws the local validation
+   * message; the series is only read, nothing is sent.
+   */
+  private plannedIdentityFinalization(): ProductFamilyIdentityFinalization | null {
+    const desired = this.family();
+    if (!desired || desired.id === null || !this.familyDirty()) return null;
+    return planProductFamilyIdentityFinalization(this.savedFamily(), desired);
   }
 
   private async persistFamilyDraft(): Promise<void> {
