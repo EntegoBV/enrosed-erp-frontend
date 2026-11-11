@@ -1532,6 +1532,7 @@ function layoutKey(order: SalesOrder): string {
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
+                [issued]="issuedBefore()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -3160,6 +3161,18 @@ export class SalesEditor {
     return this.customers().find((c) => c.id === id)?.language ?? 'NL';
   });
   readonly history = signal<QuoteEvent[]>([]);
+  /** The document the history on screen was read for; null while none could be read. */
+  private readonly historyOf = signal<number | null>(null);
+  /**
+   * An invoice that was issued before. "Uitgeven zonder e-mail" leaves no sent date, and putting the
+   * invoice back on concept leaves only the step in its history; while that history is not in, the
+   * invoice counts as issued. The planner's one-tap return of a 220 cm height asks this.
+   */
+  readonly issuedBefore = computed(() => {
+    const order = this.view()?.order;
+    if (!order || order.docType !== 'FACTUUR') return false;
+    return this.historyOf() !== order.id || this.history().some((step) => step.type === 'UITGEREIKT');
+  });
 
   /** The pick-lists and the catalogue, loaded once; an order waits for them before it shows. */
   private referenceLoad: Promise<void> = Promise.resolve();
@@ -3766,10 +3779,18 @@ export class SalesEditor {
     this.saving.set(true);
     this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
+    /* The pallet height goes along only when it was changed here, and then with the mark that says so:
+       without a height the server keeps the document's own. A screen opened before the server put a
+       concept quote back on the standard (2026-11-10, 220 to 260 cm) would otherwise write its old 220
+       back with any other save; the answer brings the server's height onto the screen
+       (mergeOrderAfterSave compares with data.order). */
+    const sent: SalesOrder = (data.order.maxPalletHeightCm ?? null) === (this.savedDocument()?.maxPalletHeightCm ?? null)
+      ? { ...data.order, maxPalletHeightCm: null } : data.order;
+    const heightPicked = sent.maxPalletHeightCm != null;
     try {
       const saved = fullDraft
-        ? await this.sales.updateOrder(data.order.id, data.order, webOrderRevision(current))
-        : await this.sales.updateShipping(data.order.id, shippingSnapshot(data.order), webOrderRevision(current));
+        ? await this.sales.updateOrder(data.order.id, sent, webOrderRevision(current), heightPicked)
+        : await this.sales.updateShipping(data.order.id, shippingSnapshot(sent), webOrderRevision(current), heightPicked);
       const latest = this.view();
       if (!latest || latest.order.id !== data.order.id) return true;
       const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);
@@ -4365,8 +4386,10 @@ export class SalesEditor {
   protected async loadHistory(orderId: number): Promise<void> {
     try {
       this.history.set(await this.sales.history(orderId));
+      this.historyOf.set(orderId);
     } catch {
       this.history.set([]);
+      this.historyOf.set(null);
     }
   }
 

@@ -24,16 +24,26 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
 
 /**
  * SalesSettings' defaults (enrosed.pallet.*); production overrides none of them. The max height is
- * the standard (Emre, 2026-11-07: 220 cm, 260 before): Palletberekening, the catalogue and a new
- * sales document count with it, while a document keeps the height it was made with.
+ * the standard (Emre, 2026-11-10: 260 cm with the pallet itself; 220 from 7 to 10 November, 260
+ * before): Palletberekening, the catalogue and a new sales document count with it, while a
+ * document keeps the height it was made with.
  */
 export const PALLET_BASE_HEIGHT_CM = 14.4;
-export const PALLET_MAX_HEIGHT_CM = 220;
+export const PALLET_MAX_HEIGHT_CM = 260;
 /** The height every document made before 2026-11-07 keeps (the server reads its missing height as this). */
 export const PALLET_LEGACY_MAX_HEIGHT_CM = 260;
+/** The standard of 7 to 10 November 2026: documents and devices of those days may still carry it unpicked. */
+export const PALLET_FORMER_STANDARD_CM = 220;
 export const PALLET_MAX_WEIGHT_KG = 700;
-/** The backend's ceiling for an order's maximum pallet height. */
+/** The backend's ceiling for an order's maximum pallet height (blokpallet, halve pallet). */
 export const PALLET_HEIGHT_LIMIT_CM = 300;
+/** A europallet is loaded at most 2,60 m high, the pallet included (Emre, 2026-11-10); the backend refuses a new pick above it. */
+export const EURO_PALLET_HEIGHT_LIMIT_CM = 260;
+
+/** The highest height that can be picked for a pallet type. */
+export function palletHeightLimit(profile: PalletProfile): number {
+  return profile === 'EURO_120X80' ? EURO_PALLET_HEIGHT_LIMIT_CM : PALLET_HEIGHT_LIMIT_CM;
+}
 
 export interface PalletChoice {
   id: PalletProfile;
@@ -70,10 +80,11 @@ export function palletSpec(profile: PalletProfile, maxHeightCm: number): PalletS
   };
 }
 
-/** A typed maximum height within the backend's bounds: above the wood, at most 300 cm, whole centimetres. */
-export function clampPalletHeight(value: number): number {
-  if (!Number.isFinite(value)) return PALLET_MAX_HEIGHT_CM;
-  return Math.min(PALLET_HEIGHT_LIMIT_CM, Math.max(Math.ceil(PALLET_BASE_HEIGHT_CM + 1), Math.round(value)));
+/** A picked maximum height within the bounds: above the wood, at most what the pallet type allows, whole centimetres. */
+export function clampPalletHeight(value: number, profile: PalletProfile): number {
+  const limit = palletHeightLimit(profile);
+  if (!Number.isFinite(value)) return Math.min(PALLET_MAX_HEIGHT_CM, limit);
+  return Math.min(limit, Math.max(Math.ceil(PALLET_BASE_HEIGHT_CM + 1), Math.round(value)));
 }
 
 export type ContainerId = '20GP' | '40GP' | '40HQ';

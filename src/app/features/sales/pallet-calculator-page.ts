@@ -26,8 +26,8 @@ import {
 } from './pallet-browser-model';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
-  CONTAINERS, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampPalletHeight,
-  containerCapacity, containerFill, palletFit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet,
+  CONTAINERS, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampPalletHeight,
+  containerCapacity, containerFill, palletFit, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet,
   separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
@@ -374,7 +374,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
           <button type="button" (click)="setHeight(maxHeight() - 10)" aria-label="10 cm lager">−</button>
           <input type="text" inputmode="numeric" aria-labelledby="pc-height-label" [value]="maxHeight()"
                  (change)="typeHeight($event)" (keydown.enter)="blur($event)" />
-          <button type="button" (click)="setHeight(maxHeight() + 10)" aria-label="10 cm hoger">+</button>
+          <button type="button" [disabled]="maxHeight() >= heightLimit()" (click)="setHeight(maxHeight() + 10)" aria-label="10 cm hoger">+</button>
         </div>
         <span class="pc-set__hint">cm</span>
       </div>
@@ -559,7 +559,13 @@ export class PalletCalculatorPage {
   readonly loadError = signal<string | null>(null);
   readonly query = signal('');
   readonly profile = signal<PalletProfile>('EURO_120X80');
-  readonly maxHeight = signal(PALLET_MAX_HEIGHT_CM);
+  /**
+   * The height the user holds. A pallet type shows at most what it allows (a europallet 260 cm), and a
+   * higher pick comes back when the type that allows it is chosen again while the page stays open.
+   */
+  private readonly pickedHeight = signal(PALLET_MAX_HEIGHT_CM);
+  readonly heightLimit = computed(() => palletHeightLimit(this.profile()));
+  readonly maxHeight = computed(() => Math.min(this.pickedHeight(), this.heightLimit()));
   readonly rows = signal<CalcRow[]>([]);
   /** Product ids, newest first: the Recent chip. */
   private readonly recentIds = signal<number[]>([]);
@@ -717,9 +723,9 @@ export class PalletCalculatorPage {
   constructor() {
     this.restore();
     effect(() => {
-      /* The height under heightCm since the standard went to 220 cm (2026-11-07): a device's old maxHeightCm
-         (mostly the 260 of that time) is not read again, so every device starts once at the new standard. */
-      const state = { profile: this.profile(), heightCm: this.maxHeight(), rows: this.rows(), recent: this.recentIds() };
+      /* standardCm is the standard the height was saved under: a device that holds that number never picked
+         one and follows a later standard (restore). */
+      const state = { profile: this.profile(), heightCm: this.maxHeight(), standardCm: PALLET_MAX_HEIGHT_CM, rows: this.rows(), recent: this.recentIds() };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode: the picks live as long as the page */ }
     });
     /* The capsule shows while the result is out of view (the tab bar's band counts as out of view). */
@@ -864,7 +870,7 @@ export class PalletCalculatorPage {
   }
 
   setHeight(value: number): void {
-    this.maxHeight.set(clampPalletHeight(value));
+    this.pickedHeight.set(clampPalletHeight(value, this.profile()));
   }
 
   /** A typed height within the bounds; anything unreadable shows the height that stays. */
@@ -1071,10 +1077,16 @@ export class PalletCalculatorPage {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const stored = JSON.parse(raw) as { profile?: unknown; heightCm?: unknown; rows?: unknown; recent?: unknown };
+      const stored = JSON.parse(raw) as { profile?: unknown; heightCm?: unknown; standardCm?: unknown; rows?: unknown; recent?: unknown };
       const profile = PALLET_CHOICES.find((choice) => choice.id === stored.profile);
       if (profile) this.profile.set(profile.id);
-      if (typeof stored.heightCm === 'number') this.maxHeight.set(clampPalletHeight(stored.heightCm));
+      /* A height equal to the standard it was saved under was never picked: the device follows today's
+         standard. A state without standardCm was saved while the standard was 220 cm (7-10 November 2026);
+         a 220 picked on purpose in those days cannot be told from it and follows too. */
+      const savedUnder = typeof stored.standardCm === 'number' ? stored.standardCm : PALLET_FORMER_STANDARD_CM;
+      if (typeof stored.heightCm === 'number' && stored.heightCm !== savedUnder) {
+        this.pickedHeight.set(clampPalletHeight(stored.heightCm, this.profile()));
+      }
       if (Array.isArray(stored.rows)) {
         const seen = new Set<number>();
         this.rows.set(stored.rows.filter(storedRow).filter((row) => !seen.has(row.productId) && !!seen.add(row.productId)).slice(0, MAX_ROWS));
