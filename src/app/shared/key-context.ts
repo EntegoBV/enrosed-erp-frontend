@@ -29,7 +29,8 @@ export function keyContext(event: KeyboardEvent, scope: Element | null, doc: Doc
   };
 }
 
-function isTypingTarget(target: Element | null): boolean {
+/** A field that takes text or a choice: an input (not a tick, a button or a file), a textarea, a select, editable text. */
+export function isTypingTarget(target: Element | null): boolean {
   if (!target) return false;
   if (target instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(target.type);
   if (target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return true;
