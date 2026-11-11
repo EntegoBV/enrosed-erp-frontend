@@ -142,7 +142,8 @@ export class PartnerMelden implements HasUnsavedChanges {
   readonly send = (body: PartnerReportRequest): Promise<PartnerReportResult> => this.api.createReport(body);
 
   constructor() {
-    if (!this.data.overview()) void this.data.load();
+    /* Every Melden reads the stock and today afresh (the portal may have stood open since yesterday); the last overview shows meanwhile. */
+    void this.data.load();
 
     /* The address decides the kind and the step; a step that has nothing to show goes back one (in place). */
     effect(() => {
@@ -168,9 +169,7 @@ export class PartnerMelden implements HasUnsavedChanges {
         this.draft.costs.set(overview.costs);
         this.draft.saleLimits.set(new Map(overview.stock.map((tile) => [tile.productId, tile.quantity])));
         this.draft.saleLimitOtherwise.set(0);
-        this.draft.latest.set(overview.serverDate);
-        this.draft.earliest.set(addDays(overview.serverDate, -DAYS_BACK));
-        if (!this.draft.soldOn()) this.draft.soldOn.set(overview.serverDate);
+        this.draft.setToday(overview.serverDate, addDays(overview.serverDate, -DAYS_BACK));
         if (this.pendingProduct != null) {
           const id = this.pendingProduct;
           this.pendingProduct = null;
@@ -222,6 +221,7 @@ export class PartnerMelden implements HasUnsavedChanges {
   another(): void {
     this.result.set(null);
     this.draft.reset(this.data.overview()?.serverDate);
+    void this.data.load();
     void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: this.kind(), stap: 1 }, replaceUrl: true });
   }
 

@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { Router, RouterLink, RouterOutlet } from '@angular/router';
 import { Auth } from '../../core/api/auth';
 import { PartnerPortalApi } from '../../core/api/partner-portal-api';
@@ -74,8 +75,24 @@ export class PartnerShell {
   readonly company = computed(() => this.data.overview()?.partner.name ?? null);
 
   constructor() {
+    if (this.host.present) return;
     /* The header's names (and every screen's data) come with the overview; a screen that loads it too shares the call. */
-    if (!this.host.present) void this.data.load();
+    void this.data.load();
+    const doc = inject(DOCUMENT);
+    const win = doc.defaultView;
+    /* Back in the portal (Safari brought to the front, the tab shown again, the page out of the back cache): today's
+       stock and today's date, not those of when the page was loaded. A page left open in front reads again after midnight. */
+    const back = () => { if (doc.visibilityState === 'visible') this.data.refreshIfStale(); };
+    doc.addEventListener('visibilitychange', back);
+    win?.addEventListener('focus', back);
+    win?.addEventListener('pageshow', back);
+    const timer = win?.setInterval(() => { if (doc.visibilityState === 'visible') this.data.refreshIfNewDay(); }, 60_000);
+    inject(DestroyRef).onDestroy(() => {
+      doc.removeEventListener('visibilitychange', back);
+      win?.removeEventListener('focus', back);
+      win?.removeEventListener('pageshow', back);
+      if (timer !== undefined) win?.clearInterval(timer);
+    });
   }
 
   /**

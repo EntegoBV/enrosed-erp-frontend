@@ -208,6 +208,17 @@ export class MeldingDraft {
     };
   }
 
+  /**
+   * The server's today and the first day it accepts. A date still on the old today moves along: it read "Vandaag"
+   * all the while, so a portal left open overnight books the new day, never the evening before. A day he picked stays.
+   */
+  setToday(today: string, earliest: string): void {
+    const before = this.latest();
+    this.latest.set(today);
+    this.earliest.set(earliest);
+    if (!this.soldOn() || this.soldOn() === before) this.soldOn.set(today);
+  }
+
   /** A new melding: empty form, a new clientRef; the kind and the date limits stay. */
   reset(today: string = this.latest()): void {
     this.entries.set([]);
