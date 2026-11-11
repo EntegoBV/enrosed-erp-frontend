@@ -18,6 +18,8 @@ export function identityVariantFieldId(productId: number): string {
   return `publication-variant-key-${productId}`;
 }
 
+const SERIES_CHANGED = 'De productreeks is intussen gewijzigd.';
+
 /** A local validation error that can be shown before an unsafe identity request is sent. */
 export class ProductFamilyIdentityFinalizationError extends Error {
   readonly error: { message: string };
@@ -71,9 +73,7 @@ export function planProductFamilyIdentityFinalization(
 ): ProductFamilyIdentityFinalization | null {
   if (!previous || !hasFinalizableDraftIdentity(previous)) return null;
   if (desired.id !== previous.id) {
-    throw new ProductFamilyIdentityFinalizationError(
-      'De productreeks is intussen gewijzigd. Herlaad de laatste gegevens en probeer opnieuw.',
-    );
+    throw identityChangedElsewhere(false);
   }
   if (!identityWasEdited(previous, desired)) return null;
 
@@ -157,6 +157,41 @@ export function planProductFamilyIdentityFinalization(
   return { expectedFamilyKey, familyKey, publicHandle, variants };
 }
 
+/**
+ * This editor's copy of the series is not the server's any more (finalised in another tab or by
+ * another hand, a save whose answer got lost, a colour linked meanwhile). Nothing typed can help,
+ * so it points at no field. `loaded`: the form has taken the server's copy over.
+ */
+export function identityChangedElsewhere(loaded: boolean): ProductFamilyIdentityFinalizationError {
+  return new ProductFamilyIdentityFinalizationError(loaded
+    ? `${SERIES_CHANGED} De laatste gegevens zijn geladen.`
+    : `${SERIES_CHANGED} Herlaad de laatste gegevens en probeer opnieuw.`);
+}
+
+/**
+ * Whether the server's copy differs from `saved` in what the one-time command is built from: the
+ * key, the URL, the list of SKUs and their codes.
+ */
+export function identityDiffersOnServer(saved: ProductFamily, fresh: ProductFamily): boolean {
+  if (clean(saved.familyKey) !== clean(fresh.familyKey)) return true;
+  if (clean(saved.publicHandle) !== clean(fresh.publicHandle)) return true;
+  if (saved.members.length !== fresh.members.length) return true;
+  const freshById = new Map(fresh.members.map((member) => [member.productId, member] as const));
+  return saved.members.some((member) => {
+    const other = freshById.get(member.productId);
+    return !other
+      || clean(other.sku) !== clean(member.sku)
+      || optional(other.canonicalVariantKey) !== optional(member.canonicalVariantKey);
+  });
+}
+
+/**
+ * Refusals that say the series was changed since this editor loaded it ("Familiecode is gewijzigd;
+ * verwacht x maar vond y", the same for a variant code and for the list of SKUs, and a URL that
+ * is already final). They are not about a typed value.
+ */
+const STALE_REFUSAL = /is gewijzigd; verwacht|heeft al een andere vaste publieke handle/;
+
 /** The server's words for the three identity values, and the form's label and input for each. */
 const SERVER_SUBJECTS: readonly (readonly [RegExp, string, string])[] = [
   [/^Publieke handle\b/, 'De permanente publieke URL', IDENTITY_URL_FIELD_ID],
@@ -167,13 +202,15 @@ const SERVER_SUBJECTS: readonly (readonly [RegExp, string, string])[] = [
 /**
  * The server refused the one-time identity (nothing was changed). It names the values
  * "Publieke handle", "Familiecode" and "Canonieke variantcode"; the refusal is put in the
- * labels of the form and points at that field, so it reads like the local checks above. Any
- * other refusal keeps its text and points at the section.
+ * labels of the form and points at that field, so it reads like the local checks above. A
+ * refusal about a series that was changed meanwhile points at no field. Any other refusal keeps
+ * its text and points at the section.
  */
 export function identityRefusedByServer(
   reason: string,
   desired: ProductFamily,
 ): ProductFamilyIdentityFinalizationError {
+  if (STALE_REFUSAL.test(reason)) return identityChangedElsewhere(false);
   for (const [subject, label, field] of SERVER_SUBJECTS) {
     if (!subject.test(reason)) continue;
     const rest = reason.replace(subject, '');

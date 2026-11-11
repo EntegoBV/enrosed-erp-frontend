@@ -58,7 +58,8 @@ import {
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
 import {
-  hasFinalizableDraftIdentity, identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
+  hasFinalizableDraftIdentity, identityChangedElsewhere, identityDiffersOnServer,
+  identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
   planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError,
 } from './product-family-identity';
 import {
@@ -3937,27 +3938,35 @@ export class ProductEditor implements OnDestroy {
     if (desired.id === null) {
       saved = await this.catalog.createProductFamily(desired);
     } else {
+      const familyId = desired.id;
       const finalization = planProductFamilyIdentityFinalization(previous, desired);
       if (finalization) {
         let finalized: ProductFamily;
         try {
-          finalized = await this.catalog.finalizeDraftProductFamilyIdentity(desired.id, finalization);
+          finalized = await this.catalog.finalizeDraftProductFamilyIdentity(familyId, finalization);
         } catch (failure: unknown) {
-          /* Refused as a whole, nothing changed: said in the words of the form, at its field. */
+          /* The identity was refused as a whole. Either this editor's copy of the series is old,
+             or it is said in the words of the form, at its field. */
           const reason = refusalReason(failure);
-          throw reason ? identityRefusedByServer(reason, desired) : failure;
+          if (!reason) throw failure;
+          throw await this.seriesChangedElsewhere(familyId, previous)
+            ?? identityRefusedByServer(reason, this.family() ?? desired);
         }
         /* The identity is permanent on the server from here on, whatever happens to the rest of
            this save: the draft and its baseline take it now, so a refusal below leaves the
            fields read-only and makes the next save an ordinary update. */
         this.adoptFinalizedIdentity(finalized);
         try {
-          saved = await this.saveFamilyFields(desired.id, this.family() ?? desired, previous, desired);
+          saved = await this.saveFamilyFields(familyId, this.family() ?? desired, previous, desired);
         } catch (failure: unknown) {
           throw identitySavedRestRefused(messageOf(failure, 'de rest is nog niet opgeslagen'));
         }
       } else {
-        saved = await this.saveFamilyFields(desired.id, desired, previous, desired);
+        try {
+          saved = await this.saveFamilyFields(familyId, desired, previous, desired);
+        } catch (failure: unknown) {
+          throw await this.seriesUpdateFailure(failure, familyId, previous);
+        }
       }
     }
 
@@ -3980,6 +3989,45 @@ export class ProductEditor implements OnDestroy {
         : {}),
       ...this.variantPublicationFields(),
     });
+  }
+
+  /**
+   * A refused series request may mean that this editor's copy is not the server's any more: the
+   * identity was made final in another tab or by another hand, the answer of an earlier save got
+   * lost, a colour was linked meanwhile. The series is fetched once. When its identity differs
+   * from `built`, the copy the request was built from, the form takes the server's over (fields
+   * closed on a final identity, the other edits still pending) and the message to show comes
+   * back. Null: the copy is still right, or the series could not be fetched.
+   */
+  private async seriesChangedElsewhere(
+    familyId: number,
+    built: ProductFamily | null,
+  ): Promise<ProductFamilyIdentityFinalizationError | null> {
+    if (!built) return null;
+    let fresh: ProductFamily;
+    try {
+      fresh = await this.catalog.productFamily(familyId);
+    } catch {
+      return null;
+    }
+    if (this.family()?.id !== fresh.id || !identityDiffersOnServer(built, fresh)) return null;
+    this.mergeFamilyPhotoState(fresh);
+    const now = this.savedFamily();
+    return identityChangedElsewhere(now !== null && !identityDiffersOnServer(now, fresh));
+  }
+
+  /**
+   * What to throw for a failed ordinary series update. 422 is the server saying that the key or
+   * URL in the request is not its own; this form cannot type those on a final identity, so the
+   * copy it holds may be old. Anything else is passed on as it is.
+   */
+  private async seriesUpdateFailure(
+    failure: unknown,
+    familyId: number,
+    built: ProductFamily | null,
+  ): Promise<unknown> {
+    if ((failure as { status?: number } | null)?.status !== 422) return failure;
+    return await this.seriesChangedElsewhere(familyId, built) ?? failure;
   }
 
   /**
