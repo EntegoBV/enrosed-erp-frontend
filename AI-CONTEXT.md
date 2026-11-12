@@ -5507,7 +5507,11 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   server's `PartnerSaleMoney`, so the form's Netto is the booked Netto to the cent (piece price at 4
   dp x pieces per sales unit, gross = round2(Q x unit price); PCT extra lines per sale entry, AMOUNT
   lines allocated once by gross; a buyback carries commission + transport, terugkoopkost = -net).
-  Change it only together with the backend.
+  An edit on the server's money-only path (same date, same sales units per product and side, same
+  channel or no buyback) keeps what a side was booked with while its piece price stays (`MoneyPart.booked`,
+  `MeldingDraft.keptMoney`): a sale its gross (costs follow from it), a buyback its gross, commission and
+  transport, so a round-1 melding reads in the form as the server keeps it. Change it only together
+  with the backend.
 - **Portal** (`features/partner/*`, lazy, desk first 1280/1070, phone stacks): shell with tabs
   Overzicht · Melden · Meldingen · Containers; Overzicht = action buttons, costs line, Komt eraan,
   grouped stock table (`partner-product-table.ts`), latest meldingen; Melden = one page
@@ -5515,7 +5519,9 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   (phone), buyback as an indented sub-row, side column with kind, date, Klant (direct: search
   `/api/partner-portal/customers`, "Niet gevonden? Nieuwe klant"), extra kost lines, Netto, Opslaan.
   Edit loads `GET /api/partner-portal/reports/{id}` into `MeldingDraft.loadReport` (the melding's own
-  percents, limits = stock + own old sale - own old buyback, `dirty` against the loaded snapshot) and
+  percents; the shelf checked as the server's rebook does: the net change, sale minus buyback against
+  stock + own old sale - own old buyback (`shelfShort`; the sale row is blamed when it grew, else the
+  buyback row "minstens n terug"); `dirty` against the loaded snapshot) and
   PUTs with `expectedToken`. Meldingen = table with the partner's status words (Ingediend /
   Bevestigd / Deels gefactureerd / Gefactureerd / Ingetrokken), Bewerken on `canEdit`, Ongedaan
   maken on `canUndo`. Never an inkoopkost or profit split in the portal.
@@ -5530,7 +5536,8 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   `notice` "VV-n is intussen gewijzigd door … (what changed, `reportChanges`)" with "Nieuwe versie
   laden" and Opslaan waits. Klant search: Enter takes the first hit of what is typed now (waits for
   that answer; one letter picks nothing). Same name + colour twice (`partner-twins.ts`): every list
-  adds the SKU. The product table groups by category (tile `categoryName`/`categoryOrder`, else the
+  adds the SKU (the product table on the phone on a line of its own). Portal amounts below zero read
+  "− € x" (`partner-format.ts` `euro` uses `signedEur`). The product table groups by category (tile `categoryName`/`categoryOrder`, else the
   containers answer's spec through `withCategories`), then series (a series of one is a plain row).
   The melding sheet's buyback line is count x clock price (commission and transport sit in
   Terugkoopkost).
@@ -5543,7 +5550,9 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   who paid it, = Winst → Enrosed z % / → partner; Onze waarde (never "Ons deel": the Documentnotitie
   uses that for our profit share), − Voorschot verrekend (also € 0,00 when the partner financed part of
   the cost), = Te factureren); step 1 counts a partly invoiced melding's open part (from its parts'
-  `open`, "van € x" beside it). An opened melding shows the same split per source as "Inkoop en winst"
+  `open`, "van € x" beside it), and once the preview of the ticks is in, a melding the server takes
+  along (a sale and a confirmed buyback of another melding that mirrors it: `preview.reportIds`, the
+  reason from its warnings) shows ticked and fixed, "gaat mee · hoort bij VV-n", in the footer count. An opened melding shows the same split per source as "Inkoop en winst"
   (`partner-sales-profit.ts`, the invoice preview of that melding alone with `includeUnconfirmed`).
   Kosten carries the terugkoopkost while Terugkoop is folded; Ingetrokken has no total row;
   `?meldingen=2,4` shows exactly those (a document's Meldingen links). Amounts below zero read
@@ -5551,7 +5560,8 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   home card included (the server's salePieces, else sales units × pieces per sales unit; the home
   leaves stuks out while the summary has no pieces). Melding toevoegen / Bewerken are pages `/veilingverkopen/melding` and
   `/veilingverkopen/melding/:id` around the shared `app-partner-entry` (staff buyer search = the
-  ERP customers, new buyer with the VAT number).
+  ERP customers, new buyer with the VAT number); a refused PUT re-reads the melding as Melden does
+  (lost answer = saved; changed = the notice with "Nieuwe versie laden").
 - **Elsewhere in the ERP**: report-backed sales documents hide Levering (tab, column, phone step;
   hero KPIs Meldingen and Netto opbrengst) and the margin click opens `app-report-backed-cost-sheet`
   on `GET /api/partner-sales/documents/{id}/breakdown`; Instellingen › Partnerportaal has
