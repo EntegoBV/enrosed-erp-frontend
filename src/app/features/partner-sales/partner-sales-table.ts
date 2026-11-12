@@ -14,8 +14,10 @@ import { signedEur } from '../../shared/signed-eur';
  * first, with a tick per row for the bulk bar, and one total row for the
  * whole filter. Columns fold by the card's width (v2-H): under 900 px ☐,
  * Datum, Melding (klant as sub), Producten, Netto, Status; from 900 Stuks,
- * Bruto, Kosten; from 1100 Terugkoop. A row opens in place (the detail with
- * Bewerken / Bevestigen / Intrekken). "Stuks" are pieces.
+ * Bruto, Kosten; from 1100 Terugkoop. While Terugkoop is folded, Kosten
+ * holds the terugkoopkost too ("incl. terugkoop"), so Bruto − Kosten =
+ * Netto on every width. A row opens in place (the detail with Bewerken /
+ * Bevestigen / Intrekken). "Stuks" are pieces.
  */
 @Component({
   selector: 'app-partner-sales-table',
@@ -57,7 +59,10 @@ import { signedEur } from '../../shared/signed-eur';
             <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ pieces.sale ? num(pieces.sale) : '—' }}
               @if (pieces.buyback > 0) { <span class="vv-sub">−{{ num(pieces.buyback) }} terug</span> }</span>
             <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ r.totals.saleQuantity ? eur(r.totals.grossEur) : '—' }}</span>
-            <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ costs(r) ? eur(costs(r)) : '—' }}</span>
+            <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">
+              <span class="vv-if-wide">{{ costs(r) ? eur(costs(r)) : '—' }}</span>
+              <span class="vv-if-mid">{{ costs(r) + r.totals.buybackEur ? eur(costs(r) + r.totals.buybackEur) : '—' }}
+                @if (r.totals.buybackEur) { <span class="vv-sub" [title]="'waarvan terugkoopkost ' + eur(r.totals.buybackEur)">incl. terugkoop</span> }</span></span>
             <span class="wk-td wk-td--num vv-cell vv-num vv-wide" role="cell">{{ r.totals.buybackEur ? eur(r.totals.buybackEur) : '—' }}</span>
             <span class="wk-td wk-td--num vv-cell vv-total" role="cell">{{ eur(r.totals.netEur) }}</span>
             <span class="wk-td vv-cell" role="cell">
@@ -79,7 +84,10 @@ import { signedEur } from '../../shared/signed-eur';
               @if (totalsNote()) { <span class="vv-sub">{{ totalsNote() }}</span> }</span>
             <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ num(t.salePieces) }}</span>
             <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ eur(t.grossEur) }}</span>
-            <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">{{ eur(t.costsEur) }}</span>
+            <span class="wk-td wk-td--num vv-cell vv-num vv-mid" role="cell">
+              <span class="vv-if-wide">{{ eur(t.costsEur) }}</span>
+              <span class="vv-if-mid">{{ eur(t.costsEur + t.buybackEur) }}
+                @if (t.buybackEur) { <span class="vv-sub" [title]="'waarvan terugkoopkost ' + eur(t.buybackEur)">incl. terugkoop</span> }</span></span>
             <span class="wk-td wk-td--num vv-cell vv-num vv-wide" role="cell">{{ eur(t.buybackEur) }}</span>
             <span class="wk-td wk-td--num vv-cell vv-total" role="cell">{{ eur(t.netEur) }}</span>
             <span class="wk-td" role="cell"></span>
@@ -97,9 +105,12 @@ import { signedEur } from '../../shared/signed-eur';
     .vv-table{--wk-gap:10px;--wk-pad-x:14px;
       --wk-cols:16px 118px minmax(112px,140px) minmax(0,1fr) 96px 120px 16px}
     .vv-mid,.vv-wide{display:none!important}
+    /* Kosten: with the buyback cost while Terugkoop is folded (900-1100), its own figure beside Terugkoop. */
+    .vv-if-mid{display:contents}
+    .vv-if-wide{display:none}
     .vv-sum__label{grid-column:span 4}
     @container vv (min-width:900px){
-      .vv-table{--wk-cols:16px 118px 132px minmax(0,1fr) 56px 88px 78px 96px 118px 16px}
+      .vv-table{--wk-cols:16px 118px 132px minmax(0,1fr) 56px 86px 90px 96px 118px 16px}
       .vv-mid{display:grid!important}
       .wk-th.vv-mid{display:flex!important}
       .vv-under-mid{display:none}
@@ -108,6 +119,8 @@ import { signedEur } from '../../shared/signed-eur';
       .vv-table{--wk-cols:16px 118px 140px minmax(0,1fr) 60px 92px 80px 84px 100px 124px 16px}
       .vv-wide{display:grid!important}
       .wk-th.vv-wide{display:flex!important}
+      .vv-if-mid{display:none}
+      .vv-if-wide{display:contents}
     }
     .vv-row{min-height:52px;cursor:pointer}
     .vv-row:hover{background:color-mix(in srgb,var(--surface-2) 60%,var(--surface))}
