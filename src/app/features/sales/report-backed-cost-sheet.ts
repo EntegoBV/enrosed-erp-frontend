@@ -27,7 +27,7 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
   imports: [EurPipe, RouterLink, Sheet],
   template: `
     <app-sheet [title]="request().title" [variant]="variant()" [backdropCloses]="true" (closed)="closed.emit()">
-      <div body class="rbc">
+      <div body class="rbc" [class.rbc--ios]="variant() === 'ios'">
         <p class="rbc-lead">{{ view().quantities }}@if (view().meldingen.length) { · {{ view().meldingen.length }} {{ view().meldingen.length === 1 ? 'melding' : 'meldingen' }} }</p>
         @if (breakdown() === undefined) {
           <p class="rbc-note" role="status">Opbouw laden…</p>
@@ -70,6 +70,9 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
   `,
   styles: `
     .rbc { display: grid; gap: 10px; }
+    /* The iOS sheet's body runs edge to edge: the table keeps the inset of the grouped lists. */
+    .rbc--ios { padding: 4px 16px 12px; }
+    .rbc--ios .rbc-table { background: var(--surface); }
     .rbc-lead { margin: 0; color: var(--muted); font-size: 12.5px; }
     .rbc-table { display: grid; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .rbc-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px 104px; align-items: center; column-gap: 10px; min-height: 38px;
