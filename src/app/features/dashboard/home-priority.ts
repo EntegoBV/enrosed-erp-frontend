@@ -548,7 +548,7 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
     out.push({ ...base, key: 'partner-confirm', source: 'partner-confirm', tier: 'ooknog', title: `Veilingverkopen bevestigen (${confirm})`,
       context: `${confirm} ${plural(confirm, 'melding', 'meldingen')} van de partner · hij kan ze wijzigen tot je bevestigt`,
       chip: { label: 'gemeld', tone: 'grey' }, eur: input.partnerSales?.unconfirmedEur ?? null, count: confirm,
-      verb: 'Bevestigen', target: { kind: 'route', path: ['/veilingverkopen'] },
+      verb: 'Bevestigen', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'te-bevestigen' } },
       detail: `${confirm}|${Math.round((input.partnerSales?.unconfirmedEur ?? 0) * 100)}` });
   }
   /* Only with a sale open: a buyback alone waits for the next sale of that product, Factureren cannot take it. */
@@ -557,7 +557,7 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
     out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: `Veilingverkopen factureren (${open.count})`,
       context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht`,
       chip: { label: 'gemeld', tone: 'grey' }, eur: open.eur, count: open.count,
-      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'] }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
+      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'bevestigd' } }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
   }
   if (input.catalog > 0) {
     const n = input.catalog;
