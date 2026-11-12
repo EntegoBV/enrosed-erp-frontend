@@ -7,8 +7,10 @@ import { Icon } from '../../shared/icon';
 
 /** Searches buyers: an empty query answers the last ones. */
 export type BuyerSearchFn = (query: string) => Promise<PartnerBuyer[]>;
+/** The mini form's body; staff (askVat) also give the VAT number the normal customer creation needs. */
+export type BuyerCreateBody = PartnerBuyerRequest & { vatNumber?: string | null };
 /** Adds a buyer with the fewest fields (or answers the one already added under that name). */
-export type BuyerCreateFn = (body: PartnerBuyerRequest) => Promise<PartnerBuyer>;
+export type BuyerCreateFn = (body: BuyerCreateBody) => Promise<PartnerBuyer>;
 
 const PREFERRED: readonly PreferredCountry[] = [{ code: 'NL' }, { code: 'BE' }, { code: 'DE' }, { code: 'FR' }];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -37,9 +39,14 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           <input name="company" maxlength="160" autocomplete="organization" required [ngModel]="company()" (ngModelChange)="company.set($event)" />
         </label>
         <div class="bf-field"><span>Land</span>
-          <app-country-picker [value]="country()" [preferred]="preferred" preferredLabel="Meest gekozen" placeholder="Zelfde land als jij"
+          <app-country-picker [value]="country()" [preferred]="preferred" preferredLabel="Meest gekozen" [placeholder]="askVat() ? 'Zelfde land als de partner' : 'Zelfde land als jij'"
                               (changed)="country.set($event || null)" />
         </div>
+        @if (askVat()) {
+          <label class="bf-field"><span>BTW-nummer</span>
+            <input name="vat" maxlength="40" autocomplete="off" required [ngModel]="vat()" (ngModelChange)="vat.set($event)" />
+          </label>
+        }
         <label class="bf-field"><span>Stad</span>
           <input name="city" maxlength="100" autocomplete="address-level2" [ngModel]="city()" (ngModelChange)="city.set($event)" />
         </label>
@@ -53,9 +60,9 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         @if (error()) { <p class="bf-bad" role="alert">{{ error() }}</p> }
         <div class="bf-actions">
           <button class="bf-btn" type="button" (click)="creating.set(false)">Annuleren</button>
-          <button class="bf-btn bf-btn--primary" type="submit" [disabled]="busy() || !!formProblem() || !company().trim()">{{ busy() ? 'Bezig…' : 'Toevoegen' }}</button>
+          <button class="bf-btn bf-btn--primary" type="submit" [disabled]="busy() || !!formProblem() || !company().trim() || (askVat() && !vat().trim())">{{ busy() ? 'Bezig…' : 'Toevoegen' }}</button>
         </div>
-        <p class="bf-note">Enrosed vult de rest aan.</p>
+        <p class="bf-note">{{ askVat() ? 'Vul de rest aan bij Klanten.' : 'Enrosed vult de rest aan.' }}</p>
       </form>
     } @else {
       <label class="bf-search">
@@ -126,6 +133,8 @@ export class PartnerBuyerField {
   readonly value = input<PartnerBuyerRef | null>(null);
   readonly search = input.required<BuyerSearchFn>();
   readonly create = input<BuyerCreateFn | null>(null);
+  /** Staff: the form asks the VAT number too (the normal customer creation refuses a customer without one). */
+  readonly askVat = input(false);
   readonly changed = output<PartnerBuyerRef | null>();
 
   readonly preferred = PREFERRED;
@@ -141,6 +150,7 @@ export class PartnerBuyerField {
   readonly city = signal('');
   readonly email = signal('');
   readonly phone = signal('');
+  readonly vat = signal('');
   /** The query the shown results answer ('' = the last buyers). */
   private readonly answered = signal<string | null>(null);
   private run = 0;
@@ -218,6 +228,7 @@ export class PartnerBuyerField {
     this.city.set('');
     this.email.set('');
     this.phone.set('');
+    this.vat.set('');
     this.error.set(null);
     this.creating.set(true);
     this.open.set(false);
@@ -226,7 +237,7 @@ export class PartnerBuyerField {
   async add(): Promise<void> {
     const create = this.create();
     const company = this.company().trim();
-    if (!create || !company || this.busy() || this.formProblem()) return;
+    if (!create || !company || this.busy() || this.formProblem() || (this.askVat() && !this.vat().trim())) return;
     this.busy.set(true);
     this.error.set(null);
     try {
@@ -236,6 +247,7 @@ export class PartnerBuyerField {
         city: this.city().trim() || null,
         email: this.email().trim() || null,
         phone: this.phone().trim() || null,
+        ...(this.askVat() ? { vatNumber: this.vat().trim() } : {}),
       });
       this.creating.set(false);
       this.changed.emit({ customerId: buyer.customerId, company: buyer.company, city: buyer.city });

@@ -103,7 +103,7 @@ const PRICE_JUMP = 5;
         @if (kind === 'direct' && buyerSearch(); as search) {
           <section class="box" aria-label="Klant">
             <span class="box__label">Klant</span>
-            <app-partner-buyer-field [value]="d.buyer()" [search]="search" [create]="buyerCreate()" (changed)="d.buyer.set($event)" />
+            <app-partner-buyer-field [value]="d.buyer()" [search]="search" [create]="buyerCreate()" [askVat]="buyerVat()" (changed)="d.buyer.set($event)" />
           </section>
         }
 
@@ -170,17 +170,21 @@ const PRICE_JUMP = 5;
     }
   `,
   styles: `
-    :host{display:flex;flex-direction:column;min-width:0}
+    /* The two columns follow the form's own width, not the screen's: beside the ERP sidebar a 1070 px screen leaves
+       too little for the entry table and the side column together (it then stacks, as on the phone). */
+    :host{display:flex;flex-direction:column;min-width:0;container:pe/inline-size}
     .kinds{display:grid;height:44px;margin:0 0 12px}
     .kinds--desk{height:34px;margin:0}
     .layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-bottom:16px}
     .layout__main{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px;min-width:0;--wk-sticky-top:var(--pp-sticky-top,0px)}
     .layout__side{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:10px;min-width:0}
-    @media (min-width: 1000px) and (hover: hover), (min-width: 1024px){
+    /* Stacked on a desk: the side column sits under the table on the right, as a document's totals. */
+    @container pe (min-width: 640px) and (max-width: 1007.98px){.layout__side{width:min(100%,420px);justify-self:end}}
+    @container pe (min-width: 1008px){
       .layout{grid-template-columns:minmax(0,1fr) 272px;gap:20px;align-items:start}
       .layout__side{position:sticky;top:calc(var(--pp-sticky-top,60px) + 12px)}
     }
-    @media (min-width: 1180px){.layout{grid-template-columns:minmax(0,1fr) 300px}}
+    @container pe (min-width: 1120px){.layout{grid-template-columns:minmax(0,1fr) 300px}}
     .pick{border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     .pick__head{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 8px 0 4px}
     .pick__toggle{display:flex;flex:1;align-items:center;gap:8px;min-width:0;min-height:44px;padding:0 8px;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
@@ -219,7 +223,7 @@ const PRICE_JUMP = 5;
     .error{padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:13.5px;font-weight:500;line-height:1.4}
     .send{min-height:48px;font-size:16px}
     .hint{margin:0;color:var(--muted);font-size:12.5px;text-align:center}
-    .bar{position:sticky;bottom:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
+    .bar{position:sticky;bottom:var(--pp-bar-bottom,0px);z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--pp-bar-safe,var(--safe-b,0px)));border-radius:var(--pp-bar-radius,0);background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
     .bar::before{content:'';position:absolute;inset:0;z-index:-1;backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
     .bar__error{flex:1 0 100%;max-height:30dvh;margin:0;overflow-y:auto;padding:10px 12px;border-radius:14px;background:var(--danger-soft);color:#83261e;font-size:14.5px;font-weight:500;line-height:1.4}
     .bar__sum{display:grid;flex:1;min-width:0}
@@ -272,6 +276,8 @@ export class PartnerEntry implements OnInit {
   readonly buyerSearch = input<BuyerSearchFn | null>(null);
   /** "Niet gevonden? Nieuwe klant": the screen's customer creation; without it only the search shows. */
   readonly buyerCreate = input<BuyerCreateFn | null>(null);
+  /** Staff: the new-customer form asks the VAT number too. */
+  readonly buyerVat = input(false);
   readonly done = output<PartnerReportResult>();
   /** Opslaan was refused (shown in place): the screen may read the stock again, the rows then say which is too many. */
   readonly refused = output<void>();
