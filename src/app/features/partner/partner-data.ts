@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { PartnerOverview, PartnerPortalApi, PartnerRecentSale, PartnerReport, PartnerStockTile } from '../../core/api/partner-portal-api';
 import { localToday } from './partner-format';
+import { bySoldOn } from './partner-report-format';
 
 /** How old the overview may be when he comes back to the portal before it is read again. */
 const STALE_MS = 60_000;
@@ -69,7 +70,7 @@ export class PartnerData {
     this.overview.update((overview) => {
       if (!overview) return overview;
       const others = overview.reports.filter((item) => item.id !== report.id);
-      const reports = [report, ...others].sort((a, b) => b.id - a.id).slice(0, 10);
+      const reports = [report, ...others].sort(bySoldOn).slice(0, 10);
       return { ...overview, reports };
     });
   }

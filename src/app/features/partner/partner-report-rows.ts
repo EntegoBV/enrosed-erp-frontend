@@ -1,23 +1,20 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import type { PartnerReport } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
-import {
-  KIND_ICON, KIND_SHORT, KIND_TONE, STATUS_LABEL, STATUS_TONE, count, dayLabel, euro, productsLine, reportKind,
-} from './partner-format';
+import { KIND_ICON, KIND_SHORT, KIND_TONE, dayLabel, euro, reportKind } from './partner-format';
+import { buyerLine, partnerStatus, piecesWords, productsShort, reportPieces } from './partner-report-format';
 
-/** How many of what a melding moved, in one short fact: "120 stuks", "1 display". */
+/** How many pieces a melding moved, in one short fact: "144 rozen", "12 stuks terug". */
 export function reportQuantity(report: PartnerReport): string {
-  const buybackOnly = reportKind(report) === 'terugkoop';
-  const quantity = buybackOnly ? report.totals.buybackQuantity : report.totals.saleQuantity;
-  const first = report.entries[0];
-  const sameUnit = first && report.entries.every((entry) => entry.unitOther === first.unitOther);
-  const unit = sameUnit ? (quantity === 1 ? first.unitOne : first.unitOther) : 'stuks';
-  return `${count(quantity)} ${unit}`;
+  const pieces = reportPieces(report);
+  if (reportKind(report) === 'terugkoop') return piecesWords(report, pieces.buyback) + ' terug';
+  return piecesWords(report, pieces.sale);
 }
 
 /**
- * Meldingen as rows: kind and how many, netto; then number, day, products and
- * the status pill. The whole row opens the melding.
+ * Meldingen as rows on the phone: kind and how many pieces, netto; then
+ * number, day, products (or the buyer) and the status pill. The whole row
+ * opens the melding. The desk shows app-partner-report-table instead.
  */
 @Component({
   selector: 'app-partner-report-rows',
@@ -27,6 +24,7 @@ export function reportQuantity(report: PartnerReport): string {
     <div class="rows" role="list">
       @for (report of reports(); track report.id) {
         @let kind = kindOf(report);
+        @let status = statusOf(report);
         <div role="listitem">
           <button class="rp-row" type="button" [class.is-void]="report.status === 'VOIDED'" (click)="opened.emit(report)">
             <span class="rp-row__icon {{ tone[kind] }}" aria-hidden="true"><app-icon [name]="icon[kind]" [size]="20" /></span>
@@ -36,8 +34,8 @@ export function reportQuantity(report: PartnerReport): string {
                 <b class="rp-row__net">{{ eur(report.totals.netEur) }}</b>
               </span>
               <span class="rp-row__bottom">
-                <span class="rp-row__sub">{{ report.number }} · {{ day(report.soldOn) }} · {{ products(report) }}</span>
-                <span class="pill {{ statusTone[report.status] }}">{{ statusLabel[report.status] }}</span>
+                <span class="rp-row__sub">{{ report.number }} · {{ day(report.soldOn) }} · {{ subOf(report) }}</span>
+                <span class="pill {{ status.tone }}">{{ status.label }}</span>
               </span>
             </span>
           </button>
@@ -50,7 +48,6 @@ export function reportQuantity(report: PartnerReport): string {
     .rows{overflow:hidden;border-radius:20px;background:var(--surface)}
     .rows>div+div .rp-row{box-shadow:inset 0 .5px 0 var(--ios-sep,rgb(60 50 45/16%))}
     .rp-row{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 14px;border:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
-    .rp-row:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
     .rp-row:active{background:color-mix(in srgb,var(--ink) 6%,transparent)}
     .rp-row:focus-visible{outline:3px solid color-mix(in srgb,var(--rose) 55%,transparent);outline-offset:-3px}
     .rp-row__icon{display:grid;flex:none;place-items:center;width:40px;height:40px;border-radius:12px;background:color-mix(in srgb,var(--tone) 14%,var(--surface));color:var(--tone)}
@@ -71,12 +68,11 @@ export class PartnerReportRows {
   readonly short = KIND_SHORT;
   readonly icon = KIND_ICON;
   readonly tone = KIND_TONE;
-  readonly statusLabel = STATUS_LABEL;
-  readonly statusTone = STATUS_TONE;
 
   kindOf(report: PartnerReport) { return reportKind(report); }
+  statusOf(report: PartnerReport) { return partnerStatus(report); }
   quantityOf(report: PartnerReport): string { return reportQuantity(report); }
-  products(report: PartnerReport): string { return productsLine(report); }
+  subOf(report: PartnerReport): string { return buyerLine(report) || productsShort(report); }
   eur(value: number): string { return euro(value); }
   day(iso: string): string { return dayLabel(iso, this.today()); }
 }
