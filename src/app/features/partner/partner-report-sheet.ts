@@ -34,7 +34,8 @@ export function confirmUndo(ui: Ui, api: PartnerPortalApi, report: PartnerReport
 
 /**
  * One melding: per product what was sold (as typed: "120 rozen × € 0,50")
- * and bought back on the clock, the buyer, the costs with every extra kost
+ * and bought back on the clock (at the clock price, so the line adds up; its
+ * commission and transport sit in Terugkoopkost below), the buyer, the costs with every extra kost
  * line, Terugkoopkost and Netto; Bewerken and Ongedaan maken while Enrosed has
  * not confirmed it (the server decides: canEdit, canUndo).
  */
@@ -65,7 +66,7 @@ export function confirmUndo(ui: Ui, api: PartnerPortalApi, report: PartnerReport
                   <div class="fact"><span>{{ countOf(entry, sale) }} × {{ price(entry, sale) }}@if (piecesOf(entry, sale); as p) { <small>{{ p }}</small> }</span><b>{{ eur(sale.grossEur) }}</b></div>
                 }
                 @if (entry.buyback; as buyback) {
-                  <div class="fact fact--buyback"><span>Teruggekocht {{ countOf(entry, buyback) }} × {{ price(entry, buyback) }}</span><b>{{ minus(buyback.costEur ?? buyback.grossEur) }}</b></div>
+                  <div class="fact fact--buyback"><span>Teruggekocht {{ countOf(entry, buyback) }} × {{ price(entry, buyback) }}</span><b>{{ minus(buyback.grossEur) }}</b></div>
                 }
               </div>
             </div>

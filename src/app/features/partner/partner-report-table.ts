@@ -45,12 +45,12 @@ import {
             <span class="wk-td rt-cell" role="cell"><b>{{ day(r.soldOn) }}</b>@if (yearOf(r)) { <small>{{ yearOf(r) }}</small> }</span>
             <span class="wk-td rt-cell w" role="cell"><b class="rt-vv">{{ r.number }}</b></span>
             <span class="wk-td rt-cell w" role="cell"><span class="rt-kind {{ tone[kind] }}"><i class="wk-dot"></i>{{ short[kind] }}</span></span>
-            <span class="wk-td rt-cell w" role="cell">{{ buyer(r) || '—' }}</span>
+            <span class="wk-td rt-cell rt-wrap w" role="cell">{{ buyer(r) || '—' }}</span>
             <span class="wk-td rt-cell m" role="cell">
               <b class="rt-vv">{{ r.number }} <span class="rt-kind {{ tone[kind] }}">· {{ short[kind] }}</span></b>
               @if (buyer(r)) { <small>{{ buyer(r) }}</small> }
             </span>
-            <span class="wk-td rt-cell" role="cell">{{ products(r) }}</span>
+            <span class="wk-td rt-cell rt-wrap" role="cell">{{ products(r) }}</span>
             <span class="wk-td wk-td--num rt-cell f" role="cell">
               @if (pieces.sale) { <b>{{ num(pieces.sale) }}</b> }
               @if (pieces.buyback) { <small>{{ num(pieces.buyback) }} terug</small> }
@@ -78,15 +78,15 @@ import {
   styles: `
     :host{display:block;min-width:0}
     .rt{container:rt / inline-size}
-    .rt-table{--wk-cols:76px 132px minmax(0,1fr) 88px 132px 60px;--wk-pad-x:12px;--wk-gap:8px}
+    .rt-table{--wk-cols:76px 132px minmax(0,1fr) 88px 108px 60px;--wk-pad-x:12px;--wk-gap:8px}
     .rt-table .w,.rt-table .f{display:none}
     @container rt (min-width: 900px){
-      .rt-table{--wk-cols:76px 132px minmax(0,1fr) 60px 84px 76px 80px 88px 132px 60px}
+      .rt-table{--wk-cols:76px 132px minmax(0,1fr) 56px 80px 72px 78px 86px 108px 60px}
       .rt-table .f{display:block}
       .rt-table .wk-th.f{display:flex}
     }
     @container rt (min-width: 1150px){
-      .rt-table{--wk-cols:76px 58px 88px minmax(0,1fr) minmax(0,1.3fr) 60px 84px 76px 80px 88px 132px 60px;--wk-gap:10px}
+      .rt-table{--wk-cols:72px 54px 82px minmax(0,1fr) minmax(0,1.4fr) 50px 78px 70px 78px 84px 108px 60px;--wk-gap:8px}
       .rt-table .w{display:block}
       .rt-table .wk-th.w{display:flex}
       .rt-table .m{display:none}
@@ -94,6 +94,11 @@ import {
     .rt-tr{min-height:48px}
     .rt-tr:hover{background:var(--surface-2)}
     .rt-cell{display:block}
+    /* Klant and Producten take two lines rather than cut the name; the long state ("Deels gefactureerd") may too. */
+    .rt-table .rt-wrap{display:-webkit-box;overflow:hidden;line-height:1.3;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+    .rt-table .rt-wrap.w{display:none}
+    @container rt (min-width: 1150px){.rt-table .rt-wrap.w{display:-webkit-box}}
+    .rt-table .wk-pill{white-space:normal;line-height:1.2;text-align:center}
     .rt-cell b{font-weight:650}
     .rt-cell small{display:block;overflow:hidden;color:var(--muted);font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
     .rt-vv{font-variant-numeric:tabular-nums}
