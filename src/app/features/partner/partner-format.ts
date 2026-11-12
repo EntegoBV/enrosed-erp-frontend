@@ -49,6 +49,7 @@ export const STATUS_TONE: Record<PartnerReportStatus, string> = {
 };
 
 const NUMBER = new Intl.NumberFormat('nl-BE', { maximumFractionDigits: 0 });
+const PRICE = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PERCENT = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
@@ -58,6 +59,11 @@ export function count(value: number | null | undefined): string {
 
 export function euro(value: number | null | undefined): string {
   return EURO.format(Number(value) || 0);
+}
+
+/** A price per piece: "€ 0,45", "€ 0,4567" (up to the 4 decimals it is stored with). */
+export function priceEuro(value: number | null | undefined): string {
+  return PRICE.format(Number(value) || 0);
 }
 
 /** A cost line's minus amount: "− € 14,40" (nothing to subtract: "€ 0,00"). */
