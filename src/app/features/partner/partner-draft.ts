@@ -26,8 +26,10 @@ import {
  * Editing (`loadReport`): the costs are the melding's own percentages while
  * its channel stays, the shelf is checked on the net change as the server
  * does (the sale minus the buyback against what lies there plus the
- * melding's own old sale minus its old buyback), an unchanged date of any
- * age is fine, and `dirty` compares with what was loaded.
+ * melding's own old sale minus its old buyback), a side whose price stays
+ * keeps the money it was booked with while the edit moves no stock (the
+ * server's money-only path), an unchanged date of any age is fine, and
+ * `dirty` compares with what was loaded.
  */
 
 export interface DraftPart {
@@ -69,10 +71,22 @@ export interface DraftEditing {
   soldOn: string;
 }
 
-/** What the edited melding booked of one product: sales units per side. */
+/** The money a booked side keeps while its price stays (the server's money-only path). */
+export interface BookedMoney {
+  /** The piece price it shows (4 decimals): the side keeps its money while the form holds this price. */
+  price: number;
+  grossEur: number;
+  /** A buyback keeps its own commission and transport too (a round-1 buyback has 0 %); a sale recomputes them. */
+  commissionEur?: number;
+  transportEur?: number;
+}
+
+/** What the edited melding booked of one product: sales units per side and the money of each side. */
 interface Booked {
   sale: number;
   buyback: number;
+  saleMoney: BookedMoney | null;
+  buybackMoney: BookedMoney | null;
 }
 
 /**
@@ -178,7 +192,7 @@ export class MeldingDraft {
   private readonly bound = signal('');
   /** The melding being edited; null for a new one. */
   readonly editing = signal<DraftEditing | null>(null);
-  /** Per product what the edited melding booked: the shelf check adds its net back. */
+  /** Per product what the edited melding booked: the shelf check adds its net back, an unchanged price keeps its money. */
   private readonly booked = signal<ReadonlyMap<number, Booked>>(new Map());
   /** The stock there as last applied (sales units, not clamped), for the server's shelf rule; null before applyStock. */
   private readonly shelf = signal<{ stock: ReadonlyMap<number, number>; otherwise: number | null } | null>(null);
@@ -225,7 +239,43 @@ export class MeldingDraft {
   }
 
   private moneyPart(entry: DraftEntry, which: 'sale' | 'buyback'): MoneyPart {
-    return { salesUnits: this.salesUnits(entry, which), piecesPerSalesUnit: piecesPerSalesUnit(entry.product), piecePrice: entry[which].price };
+    const part: MoneyPart = { salesUnits: this.salesUnits(entry, which), piecesPerSalesUnit: piecesPerSalesUnit(entry.product), piecePrice: entry[which].price };
+    const kept = this.keptMoney(entry, which);
+    return kept ? { ...part, booked: kept } : part;
+  }
+
+  /**
+   * The server's money-only path: an edit that keeps the date, every product's sale and buyback (sales units) and
+   * the channel (or has no buyback at all) moves no stock and re-prices the very same parts.
+   */
+  private readonly moneyOnly = computed(() => {
+    const editing = this.editing();
+    const booked = this.booked();
+    if (!editing || !booked.size || this.soldOn() !== editing.soldOn) return false;
+    const kind = this.kind();
+    const entries = this.entries();
+    const anyBuyback = [...booked.values()].some((old) => old.buyback > 0) || entries.some((entry) => this.showsBuyback(entry, kind));
+    if (KIND_CHANNEL[kind] !== editing.channel && anyBuyback) return false;
+    if (entries.length !== booked.size) return false;
+    return entries.every((entry) => {
+      const old = booked.get(entry.product.productId);
+      const sale = kind !== 'terugkoop' ? this.salesUnits(entry, 'sale') : 0;
+      const back = this.showsBuyback(entry, kind) ? this.salesUnits(entry, 'buyback') : 0;
+      return !!old && sale === old.sale && back === old.buyback;
+    });
+  });
+
+  /**
+   * On the money-only path a side whose piece price is the one it showed keeps what it was booked with (the server
+   * keeps it, so a round-1 melding keeps its typed total and its buyback without commission): a sale its gross, a
+   * buyback all its money. A changed price is priced again by the round-2 rules.
+   */
+  private keptMoney(entry: DraftEntry, which: 'sale' | 'buyback'): BookedMoney | null {
+    if (!this.moneyOnly()) return null;
+    const old = this.booked().get(entry.product.productId);
+    const side = which === 'sale' ? old?.saleMoney : old?.buybackMoney;
+    const price = entry[which].price;
+    return side && price != null && Number.isFinite(price) && round4(price) === side.price ? side : null;
   }
 
   partComplete(entry: DraftEntry, which: 'sale' | 'buyback'): boolean {
@@ -536,7 +586,15 @@ export class MeldingDraft {
       const product = tileOfEntry(entry);
       const sale = entry.sale ? partOfReport(product, entry.sale) : emptyPart(product);
       const buyback = entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product, 'buyback');
-      booked.set(entry.productId, { sale: entry.sale?.quantity ?? 0, buyback: entry.buyback?.quantity ?? 0 });
+      booked.set(entry.productId, {
+        sale: entry.sale?.quantity ?? 0,
+        buyback: entry.buyback?.quantity ?? 0,
+        saleMoney: entry.sale && sale.price != null ? { price: round4(sale.price), grossEur: entry.sale.grossEur } : null,
+        buybackMoney: entry.buyback && buyback.price != null ? {
+          price: round4(buyback.price), grossEur: entry.buyback.grossEur,
+          commissionEur: entry.buyback.commissionEur ?? 0, transportEur: entry.buyback.transportEur ?? 0,
+        } : null,
+      });
       return { product, sale, buyback, buybackOpen: kind === 'veiling' && !!entry.buyback };
     });
     this.booked.set(booked);

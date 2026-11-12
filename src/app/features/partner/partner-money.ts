@@ -19,6 +19,10 @@
  *   the melding's percentages; terugkoopkost = gross + commission + transport,
  *   its net = -terugkoopkost. No extra kost on a buyback.
  * - Netto = sale net - terugkoopkost.
+ * - Editing without moving stock (the server's money-only path), a side whose
+ *   price stays keeps what it was booked with (`booked`): a sale its gross
+ *   (its costs follow from it as above), a buyback its gross, commission
+ *   and transport (a round-1 melding keeps its history).
  *
  * Rounding is half up on the decimal value (BigDecimal HALF_UP), on whole
  * cents in BigInt: no binary float ever decides a cent.
@@ -33,6 +37,11 @@ export interface MoneyPart {
   piecesPerSalesUnit: number;
   /** Average per piece (per roos); taken at 4 decimals. */
   piecePrice: number | null;
+  /**
+   * What the side was booked with, kept by the server while the edit moves no stock and the price stays: the gross
+   * (a sale's costs follow from it); a buyback also keeps its commission and transport.
+   */
+  booked?: { grossEur: number; commissionEur?: number; transportEur?: number } | null;
 }
 
 export interface MoneyEntry {
@@ -166,7 +175,8 @@ function partGross(part: MoneyPart): { quantity: number; pieces: number; cents: 
   const per = perSalesUnit(part);
   const piece4 = scaled(part.piecePrice!, 4);
   const unit4 = piece4 * per;
-  return { quantity, pieces: quantity * Number(per), cents: divideHalfUp(BigInt(quantity) * unit4, 100n), piece4, unit4 };
+  const cents = part.booked ? scaled(part.booked.grossEur, 2) : divideHalfUp(BigInt(quantity) * unit4, 100n);
+  return { quantity, pieces: quantity * Number(per), cents, piece4, unit4 };
 }
 
 /** round2(gross x pct / 100) in cents; pct taken at 4 decimals (the column). */
@@ -251,8 +261,9 @@ export function meldingMoney(input: MoneyInput): MeldingMoney {
     let buybackMoney: BuybackMoney | null = null;
     if (auction && entry.buyback && partComplete(entry.buyback)) {
       const part = partGross(entry.buyback);
-      const c = percentOf(part.cents, commissionPct);
-      const t = percentOf(part.cents, transportPct);
+      const kept = entry.buyback.booked;
+      const c = kept?.commissionEur != null ? scaled(kept.commissionEur, 2) : percentOf(part.cents, commissionPct);
+      const t = kept?.transportEur != null ? scaled(kept.transportEur, 2) : percentOf(part.cents, transportPct);
       const cost = part.cents + c + t;
       buybackMoney = {
         quantity: part.quantity, pieces: part.pieces, piecePriceEur: Number(part.piece4) / 10_000, unitPriceEur: Number(part.unit4) / 10_000,
