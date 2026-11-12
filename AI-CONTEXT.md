@@ -5488,6 +5488,52 @@ date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
 - **Native app**: untouched. It reads the feed itself with its own port of the rules; host
   messages, the today snapshot and `tools/host-contract.json` did not change.
 
+## Partnerportaal (Verhoeven): round 2 (2026-11-12)
+Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend AI-CONTEXT
+"Partnerportaal (Verhoeven)" section holds the server rules; this is where the screens live.
+- **Deploy rule**: every round-2 response field is optional in `core/api/partner-portal-api.ts` and
+  `partner-sales-api.ts` (a round-1 server reads fine). The screens that build round-2 bodies
+  (`partner-melden.ts`, `partner-sales-entry-page.ts`) refuse to save with "De server wordt
+  bijgewerkt; probeer het zo opnieuw." unless the overview / staff page or summary answers
+  `apiVersion: 2`. Backend first, frontend after one green check.
+- **Count units** (`features/partner/partner-units.ts`, pure mirror of the server's
+  `PartnerCountUnits`): STUK (the piece noun: roos, bowl, stuk), VERPAKKING (display of 2+), OMDOOS
+  (known carton content > 1); sales units = count x pieces / piecesPerSalesUnit and must be whole
+  (the stepper steps keep it whole). The staff unit editor has its own small mirror for a `Product`
+  (`features/settings/partner-unit-choices.ts`); both must say what the server says.
+- **Money** (`features/partner/partner-money.ts`, BigInt cents, half up): the same arithmetic as the
+  server's `PartnerSaleMoney`, so the form's Netto is the booked Netto to the cent (piece price at 4
+  dp x pieces per sales unit, gross = round2(Q x unit price); PCT extra lines per sale entry, AMOUNT
+  lines allocated once by gross; a buyback carries commission + transport, terugkoopkost = -net).
+  Change it only together with the backend.
+- **Portal** (`features/partner/*`, lazy, desk first 1280/1070, phone stacks): shell with tabs
+  Overzicht · Melden · Meldingen · Containers; Overzicht = action buttons, costs line, Komt eraan,
+  grouped stock table (`partner-product-table.ts`), latest meldingen; Melden = one page
+  (`?soort`, `?product`, `?bewerk=<id>`): collapsible product choice + entry table (desk) / cards
+  (phone), buyback as an indented sub-row, side column with kind, date, Klant (direct: search
+  `/api/partner-portal/customers`, "Niet gevonden? Nieuwe klant"), extra kost lines, Netto, Opslaan.
+  Edit loads `GET /api/partner-portal/reports/{id}` into `MeldingDraft.loadReport` (the melding's own
+  percents, limits = stock + own old sale - own old buyback, `dirty` against the loaded snapshot) and
+  PUTs with `expectedToken`. Meldingen = table with the partner's status words (Ingediend /
+  Bevestigd / Deels gefactureerd / Gefactureerd / Ingetrokken), Bewerken on `canEdit`, Ongedaan
+  maken on `canUndo`. Never an inkoopkost or profit split in the portal.
+- **Staff** (`features/partner-sales/*`): Veilingverkopen page with Status / Soort / Periode /
+  Partner filters in the address, the table by sold-on date (fold plan: under 900 px card width
+  Datum, Melding, Producten, Netto, Status; Stuks/Bruto/Kosten from 900, Terugkoop from 1100), one
+  "Totaal · n meldingen" row from `filteredTotals`, bulk Bevestigen / Terugzetten / Factureren with
+  edit tokens. Factureren sheet: step 1 Kies de meldingen (confirmed open only), step 2 Controleren
+  (Netto opbrengst − Inkoopkost (x % · y %) = Winst → Enrosed / partner, Ons deel = the value, −
+  Voorschot, = Te factureren). Melding toevoegen / Bewerken are pages `/veilingverkopen/melding` and
+  `/veilingverkopen/melding/:id` around the shared `app-partner-entry` (staff buyer search = the
+  ERP customers, new buyer with the VAT number).
+- **Elsewhere in the ERP**: report-backed sales documents hide Levering (tab, column, phone step;
+  hero KPIs Meldingen and Netto opbrengst) and the margin click opens `app-report-backed-cost-sheet`
+  on `GET /api/partner-sales/documents/{id}/breakdown`; Instellingen › Partnerportaal has
+  "Eenheid per product" (`settings-partner-units.ts`); a partner-made customer shows its origin row
+  with Nagekeken and a "via Verhoeven" pill, `/customers?klant=<id>` opens it; the bell has
+  PARTNER_KLANT (keyed by notificationId) and the home has "Veilingverkopen bevestigen" and
+  "Veilingverkopen factureren".
+
 ## Partnerportaal (Verhoeven): Containers (round 2, 2026-11-12)
 - **What**: the portal tab `/partner/containers` (`features/partner/partner-containers.ts`) and the
   "Komt eraan" strip on the Overzicht (`partner-coming.ts`, next 3 still coming, links to
