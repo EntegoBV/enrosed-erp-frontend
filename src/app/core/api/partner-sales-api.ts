@@ -122,11 +122,24 @@ export interface PartnerSalesPartnerSummary extends PartnerSalesOpenTotals {
   lastReportAt: string | null;
 }
 
+/**
+ * Round 2 (Bevestigen): what waits on staff to confirm, and what Factureren can take now (confirmed and still open).
+ * Absent on a round-1 backend: then everything open counts as before.
+ */
+export interface PartnerSalesConfirmTotals {
+  unconfirmedReports?: number | null;
+  confirmedOpenReports?: number | null;
+  confirmedOpenSaleQuantity?: number | null;
+  confirmedOpenNetEur?: number | null;
+}
+
 /** The cheap count behind the nav, the bell and the home card. */
-export interface PartnerSalesSummary extends PartnerSalesOpenTotals {
+export interface PartnerSalesSummary extends PartnerSalesOpenTotals, PartnerSalesConfirmTotals {
   lastReportAt: string | null;
   recentReports14d: number;
-  partners: PartnerSalesPartnerSummary[];
+  partners: (PartnerSalesPartnerSummary & PartnerSalesConfirmTotals)[];
+  /** 2 from a round-2 backend; a round-2 screen refuses to save round-2 shapes without it. */
+  apiVersion?: number | null;
 }
 
 export interface PartnerSalesAnalyticsReport {
@@ -240,6 +253,91 @@ export interface PartnerInvoiceResult {
   skipped: PartnerInvoiceSkipped[];
 }
 
+/* ------------------------------------------------ sales documents (round 2) */
+
+/** A melding behind a document made by Factureren. */
+export interface PartnerDocumentMelding {
+  id: number;
+  number: string;
+  soldOn: string;
+  channel: PartnerChannel;
+}
+
+/**
+ * One product line of a report-backed document, as the margin popup explains it
+ * (GET /api/partner-sales/documents/{id}/breakdown). Money in euros for the
+ * whole line; quantities in the product's sales unit (pieces = those in pieces).
+ * Bruto − commissie − transport − extra − terugkoopkost = proceedsEur (netto
+ * opbrengst); proceedsEur − costEur (inkoopkost, extern) = profitEur;
+ * valueEur (onze waarde) − costEur = enrosedProfitEur; proceedsEur − valueEur =
+ * what the partner keeps; valueEur − advanceEur = what this document invoices.
+ * ERP only: never in a partner response.
+ */
+export interface PartnerDocumentBreakdownLine {
+  productId: number;
+  name: string;
+  variant: string | null;
+  soldQuantity: number;
+  boughtBackQuantity: number;
+  /** soldQuantity − boughtBackQuantity: the invoice line's quantity. */
+  quantity: number;
+  pieces?: number | null;
+  grossEur: number;
+  commissionEur: number;
+  transportEur: number;
+  extraEur: number;
+  buybackCostEur: number;
+  proceedsEur: number;
+  /** Proceeds moved onto this line from products sold and bought back (q = 0 netting); negative when moved off it. */
+  absorbedEur?: number | null;
+  /** The products whose proceeds moved here, by name. */
+  absorbedFrom?: string[] | null;
+  costEur: number;
+  /** The partner's financed part of the cost (advance agreement / container); 0 for own stock. */
+  costSharePct: number | null;
+  profitEur: number;
+  /** Our share of the profit, in percent. */
+  profitSharePct: number | null;
+  enrosedProfitEur: number;
+  partnerProfitEur?: number | null;
+  valueEur: number;
+  advanceEur: number;
+  /** A slotfactuur's true-up of earlier deelfacturen, on the line that carries it. */
+  correctionEur?: number | null;
+}
+
+export interface PartnerDocumentBreakdown {
+  salesOrderId?: number | null;
+  source?: PartnerInvoiceSource | null;
+  finalSettlement?: boolean | null;
+  lines: PartnerDocumentBreakdownLine[];
+  meldingen: PartnerDocumentMelding[];
+  /** AUCTION, DIRECT, or MIXED when the meldingen are of both. */
+  channel?: PartnerChannel | 'MIXED' | null;
+  correctionEur?: number | null;
+  /** A document from before round 2: the figures come from its invoice lines, no detail was kept. */
+  fallback?: boolean | null;
+  /** The server's own words for that fallback, when it sends them. */
+  fallbackNote?: string | null;
+}
+
+/* ----------------------------------------- Eenheid per product (round 2) */
+
+/** How the partner counts a product in the portal: per piece (roos, bowl …), per display, per outer carton. */
+export type PartnerCountUnitCode = 'STUK' | 'VERPAKKING' | 'OMDOOS';
+
+/** A stored default of one product; a product without a row counts per piece. */
+export interface PartnerProductUnitRow {
+  productId: number;
+  unit: PartnerCountUnitCode;
+}
+
+/** A partial update: null = back to the default (per piece). */
+export interface PartnerProductUnitChange {
+  productId: number;
+  unit: PartnerCountUnitCode | null;
+}
+
 /** A melding staff enter for the partner (Frans phoned it in): the partner's body plus the customer. */
 export type StaffPartnerReportRequest = PartnerReportRequest & { customerId: number };
 
@@ -270,6 +368,32 @@ export class PartnerSalesApi {
 
   saveSettings(customerId: number, body: PartnerPortalSettingsRequest): Promise<PartnerPortalAdminRow> {
     return firstValueFrom(this.http.put<PartnerPortalAdminRow>(api(`/api/partner-portal-admin/${customerId}/settings`), body));
+  }
+
+  /** The stored unit defaults of the partner's products (rows only; no row = per piece). */
+  units(customerId: number): Promise<PartnerProductUnitRow[]> {
+    return firstValueFrom(this.http.get<PartnerProductUnitRow[]>(api(`/api/partner-portal-admin/${customerId}/units`)));
+  }
+
+  /** Changes only the products named (never a full replace); answers the stored rows when the server sends them. */
+  async saveUnits(customerId: number, changes: PartnerProductUnitChange[]): Promise<PartnerProductUnitRow[] | null> {
+    const answer = await firstValueFrom(this.http.put<unknown>(api(`/api/partner-portal-admin/${customerId}/units`), { changes }));
+    return Array.isArray(answer) ? answer as PartnerProductUnitRow[] : null;
+  }
+
+  /** Nagekeken: staff checked a customer the partner made (the bell item goes away). */
+  async markCustomerReviewed(customerId: number): Promise<string | null> {
+    const answer = await firstValueFrom(this.http.post<unknown>(api(`/api/partner-portal-admin/customers/${customerId}/reviewed`), {}));
+    const reviewedAt = (answer as { reviewedAt?: unknown; partnerOrigin?: { reviewedAt?: unknown } } | null);
+    const at = reviewedAt?.reviewedAt ?? reviewedAt?.partnerOrigin?.reviewedAt;
+    return typeof at === 'string' ? at : null;
+  }
+
+  /* ---- sales documents */
+
+  /** The margin popup of a report-backed document: per product line the way from bruto to what this document invoices. */
+  documentBreakdown(salesOrderId: number): Promise<PartnerDocumentBreakdown> {
+    return firstValueFrom(this.http.get<PartnerDocumentBreakdown>(api(`/api/partner-sales/documents/${salesOrderId}/breakdown`)));
   }
 
   /* ---- Veilingverkopen */
