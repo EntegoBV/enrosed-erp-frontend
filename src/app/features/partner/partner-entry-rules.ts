@@ -91,8 +91,20 @@ export function stockLine(draft: MeldingDraft, entry: DraftEntry, lastSoldOn: st
   return `${stockFigure(entry.product, limit).main} ${draft.editing() ? 'beschikbaar' : 'op voorraad'}`;
 }
 
-/** The price column's head: "Prijs per roos" when every product counts in roses, else "Prijs per stuk". */
-export function pricePerLabel(entries: readonly DraftEntry[], prefix = 'Prijs'): string {
+/** The piece noun every product of the melding shares ("roos"), or null when they differ (each row then says its own). */
+export function sharedPieceNoun(entries: readonly DraftEntry[]): string | null {
   const nouns = new Set(entries.map((entry) => pieceUnit(entry.product).one));
-  return `${prefix} per ${nouns.size === 1 ? [...nouns][0] : 'stuk'}`;
+  return nouns.size === 1 ? [...nouns][0] : nouns.size === 0 ? 'stuk' : null;
+}
+
+/** The price column's head: "Prijs per roos" when every product counts in roses, else "Prijs" (each row says per what). */
+export function pricePerLabel(entries: readonly DraftEntry[], prefix = 'Prijs'): string {
+  const noun = sharedPieceNoun(entries);
+  return noun ? `${prefix} per ${noun}` : prefix;
+}
+
+/** Under an Aantal that is no whole number ("2,5"): what to type instead. */
+export function countUnreadableText(entry: DraftEntry, unit: PartnerCountUnit): string {
+  const piece = pieceUnit(entry.product);
+  return unit.unit === piece.unit ? 'Alleen hele aantallen' : `Alleen hele ${unit.other}: tel de rest per ${piece.one}`;
 }

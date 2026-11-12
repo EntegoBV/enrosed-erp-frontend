@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import type { PartnerCountUnitKey, PartnerRecentSale } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
 import { DraftEntry, MeldingDraft } from './partner-draft';
-import { PartLine, partLine, pricePerLabel, stockLine, unitOption } from './partner-entry-rules';
+import { PartLine, partLine, pricePerLabel, sharedPieceNoun, stockLine, unitOption } from './partner-entry-rules';
 import { euro, shortDate } from './partner-format';
 import { PartnerCountField } from './partner-count-field';
 import { PartnerMoneyField } from './partner-money-field';
@@ -25,7 +25,8 @@ import { safeColour } from './partner-photo';
     @let d = draft();
     @let kind = d.kind();
     @let money = d.money();
-    <div class="wk-table et" role="table" aria-label="Producten van de melding">
+    @let noun = pieceNoun();
+    <div class="et-wrap"><div class="wk-table et" [class.et--per]="!noun" role="table" aria-label="Producten van de melding">
       <div class="wk-thead et-row" role="row">
         <span class="wk-th" role="columnheader">Product</span>
         <span class="wk-th" role="columnheader">Eenheid</span>
@@ -81,7 +82,7 @@ import { safeColour } from './partner-photo';
           <button class="wk-link et-add" type="button" (click)="addProducts.emit()"><app-icon name="plus" [size]="14" />Product</button>
         </span>
       </div>
-    </div>
+    </div></div>
 
     <ng-template #part let-entry="entry" let-which="which" let-line="line" let-em="em">
       <span class="wk-td" role="cell">
@@ -107,6 +108,7 @@ import { safeColour } from './partner-photo';
           <input appPartnerMoney #price="partnerMoney" placeholder="0,00"
                  [attr.aria-label]="(which === 'buyback' ? 'Klokprijs per ' : 'Prijs per ') + line.units[0].one + ' ' + entry.product.name"
                  [ngModel]="entry[which].price" (ngModelChange)="draft().updatePart(entry.product.productId, which, { price: $event })" />
+          @if (!pieceNoun()) { <span class="et-per" aria-hidden="true">/ {{ line.units[0].one }}</span> }
         </label>
         @if (price.unreadable()) { <span class="et-bad">Geen bedrag</span> }
       </span>
@@ -131,7 +133,10 @@ import { safeColour } from './partner-photo';
   `,
   styles: `
     :host{display:block;min-width:0}
+    .et-wrap{container:et / inline-size}
     .et{--wk-cols:minmax(140px,1fr) 112px 68px 80px 100px 88px 56px;--wk-gap:8px;--wk-pad-x:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+    /* Products that count in different pieces: each price field says "/ roos", so it gets the room. */
+    .et--per{--wk-cols:minmax(130px,1fr) 108px 64px 76px 128px 86px 56px}
     .et .wk-thead{border-radius:14px 14px 0 0}
     .et .wk-th{white-space:normal;line-height:1.15}
     .et-main{min-height:52px}
@@ -152,6 +157,7 @@ import { safeColour } from './partner-photo';
     .et-num[aria-invalid=true]{border-color:var(--danger);background:var(--danger-soft);color:var(--danger)}
     .et-pieces{color:var(--muted);font-size:12px}
     .et-money{display:flex;align-items:center;gap:4px;height:32px;padding:0 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--muted);font-size:12.5px;cursor:text}
+    .et-per{flex:none;color:var(--muted);font-size:11.5px;white-space:nowrap}
     .et-money input{flex:1;width:100%;min-width:0;height:30px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums;text-align:right;outline:none}
     .et-money:has(input[aria-invalid=true]){border-color:var(--danger);background:var(--danger-soft)}
     .et-bad{display:block;color:var(--danger);font-size:11px;font-weight:600}
@@ -178,6 +184,8 @@ export class PartnerEntryTable {
   private readonly recentById = computed(() => new Map(this.recent().map((tile) => [tile.productId, tile])));
 
   readonly priceHead = computed(() => pricePerLabel(this.draft().entries(), this.draft().kind() === 'terugkoop' ? 'Klokprijs' : 'Prijs'));
+  /** The piece noun all products share (the head says it), or null (each row says its own). */
+  readonly pieceNoun = computed(() => sharedPieceNoun(this.draft().entries()));
 
   lineOf(entry: DraftEntry, which: 'sale' | 'buyback'): PartLine {
     return partLine(this.draft(), entry, which);
