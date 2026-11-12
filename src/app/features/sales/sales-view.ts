@@ -17,7 +17,7 @@ import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { REPORT_SHIPPED_LABEL, isReportBacked, reportShipSplits, shipsViaReports } from './report-backed';
 import { reportBreakdownOf } from './report-backed-breakdown';
 import { ReportBackedCostSheet, ReportCostRequest } from './report-backed-cost-sheet';
-import { reportLineCost, reportLineMargin, reportProceeds } from './report-backed-cost';
+import { reportLineCost, reportLineMargin, reportMeldingQuery, reportProceeds } from './report-backed-cost';
 import { partnerShortName } from '../../shared/partner-short-name';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -244,7 +244,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if (data.advanceBilling?.stage === 'ADVANCE' && billingQuoteId()) {
                   <span aria-hidden="true"> · </span>voorschot op offerte <a class="sales-hero__link" [routerLink]="['/sales', billingQuoteId()]">{{ data.advanceBilling?.quoteNumber || 'bekijken' }}</a>
                 }
-                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen">uit veilingverkopen</a> }
+                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen" [queryParams]="reportMeldingLink()">uit veilingverkopen</a> }
               </p>
             </div>
             <div class="sales-hero__badges">
@@ -907,7 +907,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   }
                   @if (reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data))) {
-                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen">meldingen ›</a></p>
+                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen" [queryParams]="reportMeldingLink()">meldingen ›</a></p>
                   } @else if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
@@ -2314,6 +2314,8 @@ export class SalesView {
   /* ---- a document from Veilingverkopen: the meldingen's figures and the margin popup ---- */
   /** The way from bruto to this document per product; null when the server has none. */
   readonly reportBreakdown = reportBreakdownOf(() => this.view());
+  /** Where the document's Veilingverkopen links go: its meldingen, never the page's own first filter. */
+  readonly reportMeldingLink = computed(() => reportMeldingQuery(this.reportBreakdown()));
   readonly reportCost = signal<ReportCostRequest | null>(null);
   readonly reportNetFigure = computed(() => reportProceeds(this.reportBreakdown(), this.view()?.settlement?.lines));
   readonly reportMeldingenLine = computed(() => {

@@ -1,16 +1,21 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import type { PartnerInvoicePreview, PartnerInvoicePreviewGroup, PartnerInvoicePreviewLine } from '../../core/api/partner-sales-api';
-import { count, euro, minusEuro, percent } from '../partner/partner-format';
+import { signedEur } from '../../shared/signed-eur';
+import { count } from '../partner/partner-format';
+import { FigureRow, hasProfitFigures, invoiceRows, profitRows } from './partner-sales-figures';
 
 /**
  * Factureren, step 2: the server's preview of the chosen meldingen, one
  * group per concept (a container settlement, one invoice for own stock).
  * Per group the lines (pieces, bruto, kosten, terugkoop, netto opbrengst,
- * inkoopkost, ons deel) and the way to the invoice: Netto opbrengst −
- * Inkoopkost (Verhoeven x % · Enrosed y %) = Winst → Enrosed z % /
- * Verhoeven; Ons deel − Voorschot = Te factureren. Every figure is the
- * server's (an older server without them shows Ons deel − Voorschot only);
- * nothing is recomputed here. ERP only, never in the partner's portal.
+ * inkoopkost, onze waarde) and the way to the invoice: Netto opbrengst −
+ * Inkoopkost (→ Verhoeven x %, → Enrosed y %: who paid it) = Winst →
+ * Enrosed z % / → Verhoeven; Onze waarde − Voorschot = Te factureren
+ * (partner-sales-figures.ts, also behind the melding's Inkoop en winst).
+ * "Onze waarde", as the Documentnotitie and the margin popup say it ("ons
+ * deel" there is our profit share). Every figure is the server's (an older
+ * server without them shows Onze waarde − Voorschot only). ERP only, never
+ * in the partner's portal.
  */
 @Component({
   selector: 'app-partner-sales-invoice-preview',
@@ -38,7 +43,7 @@ import { count, euro, minusEuro, percent } from '../partner/partner-format';
               <span role="columnheader" class="pv-hide">Bruto</span><span role="columnheader" class="pv-hide">Kosten</span>
               <span role="columnheader" class="pv-hide">Terugkoop</span>
             }
-            <span role="columnheader"><span class="pv-long">Netto opbr.</span><span class="pv-short">Netto</span></span><span role="columnheader" class="pv-hide">Inkoopkost</span><span role="columnheader">Ons deel</span>
+            <span role="columnheader"><span class="pv-long">Netto opbr.</span><span class="pv-short">Netto</span></span><span role="columnheader" class="pv-hide">Inkoopkost</span><span role="columnheader"><span class="pv-long">Onze waarde</span><span class="pv-short">Waarde</span></span>
           </div>
           @for (line of group.lines; track line.productId) {
             <div class="pv-line" role="row">
@@ -61,17 +66,10 @@ import { count, euro, minusEuro, percent } from '../partner/partner-format';
           <p class="pv-bad" role="alert">Wordt niet gemaakt: {{ group.blocked }}</p>
         } @else {
           <dl class="wk-equation pv-sum">
-            @if (full) {
-              <div><dt>Netto opbrengst</dt><dd>{{ money(group.proceedsEur) }}</dd></div>
-              <div class="is-sub"><dt>Inkoopkost<small>{{ costShare(group) }}</small></dt><dd>{{ minus(group.costEur) }}</dd></div>
-              <div class="pv-mid"><dt>Winst</dt><dd>{{ signed(group.profitEur) }}</dd></div>
-              <div class="is-sub"><dt>→ Enrosed{{ share(group) }}</dt><dd>{{ signed(group.enrosedProfitEur) }}</dd></div>
-              @if (group.partnerProfitEur != null) { <div class="is-sub"><dt>→ {{ partner() }}</dt><dd>{{ signed(group.partnerProfitEur) }}</dd></div> }
+            @for (row of rows(group, full); track row.key) {
+              <div [class.is-sub]="row.kind === 'sub'" [class.pv-mid]="row.kind === 'mid'" [class.is-total]="row.kind === 'total'">
+                <dt>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</dt><dd [class.pv-neg]="row.negative">{{ row.value }}</dd></div>
             }
-            <div [class.pv-mid]="full"><dt>Ons deel</dt><dd>{{ money(group.valueEur) }}</dd></div>
-            @if (group.correctionEur) { <div class="is-sub"><dt>waarvan correctie eerdere deelfacturen</dt><dd>{{ eur(group.correctionEur) }}</dd></div> }
-            @if ((group.advanceEur ?? 0) !== 0) { <div class="is-sub"><dt>Voorschot verrekend</dt><dd>{{ minus(group.advanceEur) }}</dd></div> }
-            <div class="is-total"><dt>Te factureren</dt><dd>{{ money(group.balanceEur) }}</dd></div>
           </dl>
         }
         @for (warning of group.warnings; track $index) { <p class="pv-warn">{{ warning }}</p> }
@@ -108,6 +106,7 @@ import { count, euro, minusEuro, percent } from '../partner/partner-format';
     .pv-sum>div{padding:3px 0}
     .pv-sum dt small{display:block;color:var(--muted);font-size:11.5px;font-weight:500}
     .pv-mid{border-top:1px solid var(--line);font-weight:650}
+    .pv-sum dd.pv-neg{color:var(--danger)}
     .pv-bad{margin:0;color:var(--danger);font-size:13px;font-weight:600;line-height:1.4}
     .pv-warn{margin:0;color:#7c450b;font-size:13px;line-height:1.4}
     .pv-skip{margin:0;color:var(--ink-2);font-size:13px;line-height:1.45}
@@ -129,9 +128,14 @@ export class PartnerSalesInvoicePreview {
   /** A container group's share when the server leaves it out (an older server). */
   readonly shareFallback = input<(group: PartnerInvoicePreviewGroup) => number | null>(() => null);
 
-  /** The round-2 figures are there (an older server sends only Ons deel, Voorschot, Te factureren). */
+  /** The round-2 figures are there (an older server sends only Onze waarde, Voorschot, Te factureren). */
   hasFigures(group: PartnerInvoicePreviewGroup): boolean {
-    return group.proceedsEur != null && group.costEur != null && group.profitEur != null;
+    return hasProfitFigures(group);
+  }
+
+  /** The way to the invoice, one row per line (the cost split and the voorschot line included). */
+  rows(group: PartnerInvoicePreviewGroup, full: boolean): FigureRow[] {
+    return [...(full ? profitRows(group, this.partner(), this.shareOf(group)) : []), ...invoiceRows(group, full)];
   }
 
   groupKey(group: PartnerInvoicePreviewGroup): string {
@@ -147,18 +151,9 @@ export class PartnerSalesInvoicePreview {
     return name?.trim() || this.containerName()(purchaseOrderId) || `Inkoop #${purchaseOrderId}`;
   }
 
-  /** "Verhoeven 100 % · Enrosed 0 %" (who financed the cost); own stock "Enrosed 100 %". */
-  costShare(group: PartnerInvoicePreviewGroup): string {
-    if (group.source === 'OWN') return 'Enrosed 100 %';
-    const pct = group.costSharePct;
-    if (pct == null) return '';
-    return `${this.partner()} ${percent(pct)} · Enrosed ${percent(Math.round((100 - pct) * 100) / 100)}`;
-  }
-
-  /** " 50 %": our share of the profit, when known. */
-  share(group: PartnerInvoicePreviewGroup): string {
-    const pct = group.profitSharePct ?? (group.source === 'OWN' ? this.preview().profitSharePct : this.shareFallback()(group));
-    return pct == null ? '' : ` ${percent(pct)}`;
+  /** Our share of the profit, when known (an older server: the customer's for own stock, the container's own). */
+  private shareOf(group: PartnerInvoicePreviewGroup): number | null {
+    return group.profitSharePct ?? (group.source === 'OWN' ? this.preview().profitSharePct : this.shareFallback()(group));
   }
 
   /** The line's quantity in pieces (sold − bought back); sales units when the server sends no pieces. */
@@ -179,15 +174,8 @@ export class PartnerSalesInvoicePreview {
   }
 
   abs(value: number): number { return Math.abs(value); }
-  eur(value: number): string { return euro(value); }
-  /** A figure that may be below zero: "− € 1.172,72". */
-  signed(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return value < 0 ? '− ' + euro(-value) : euro(value);
-  }
-
-  /** A figure of the preview; "—" where the server computed none. */
-  money(value: number | null | undefined): string { return value == null ? '—' : euro(value); }
-  minus(value: number | null | undefined): string { return value == null ? '—' : minusEuro(value); }
+  eur(value: number): string { return signedEur(value); }
+  /** A figure of the preview, below zero as "− € x"; "—" where the server computed none. */
+  money(value: number | null | undefined): string { return signedEur(value); }
   num(value: number): string { return count(value); }
 }

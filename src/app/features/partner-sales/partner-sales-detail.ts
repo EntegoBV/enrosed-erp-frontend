@@ -6,6 +6,8 @@ import { count, euro, longDate, minusEuro, percent, priceEuro, productTitle, uni
 import { partCount, partPiecePrice, partPiecesText, pieceNoun } from '../partner/partner-report-format';
 import { shortDay } from './partner-sales-filters';
 import { partsBySource, timeOf, whoOf } from './partner-sales-format';
+import { PartnerSalesProfit } from './partner-sales-profit';
+import { signedEur } from '../../shared/signed-eur';
 
 /** A cost line as staff get it: round 2 also sends what it costs in euros. */
 type CostLine = PartnerExtraCostLine & { amountEur?: number | null };
@@ -17,15 +19,17 @@ interface CostRow { label: string; amount: number }
  * "3 omdozen = 144 rozen") at which price per piece, the buyback on the clock
  * with its commission and transport, the extra kost lines with their
  * description, the buyer of a direct sale, the parts per source (a partner
- * container or our own stock) with the document each went on, who reported,
- * changed and confirmed it. Desk: inside the expanded row with Bewerken,
- * Bevestigen / Terugzetten and Intrekken; phone: the body of the sheet (the
- * page puts the buttons in its foot).
+ * container or our own stock) with the document each went on, Inkoop en
+ * winst per source (partner-sales-profit.ts: who paid the inkoop and the
+ * profit split, ERP only), who reported, changed and confirmed it. Desk:
+ * inside the expanded row with Bewerken, Bevestigen / Terugzetten and
+ * Intrekken; phone: the body of the sheet (the page puts the buttons in its
+ * foot).
  */
 @Component({
   selector: 'app-partner-sales-detail',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  imports: [PartnerSalesProfit, RouterLink],
   template: `
     @let r = report();
     @let t = r.totals;
@@ -79,6 +83,8 @@ interface CostRow { label: string; amount: number }
               </div>
             }
           </div>
+
+          <app-partner-sales-profit [report]="r" variant="desk" />
 
           @for (line of metaLines(); track $index) { <p class="vd-meta">{{ line }}</p> }
           @if (r.note) { <p class="vd-meta">{{ r.note }}</p> }
@@ -184,6 +190,7 @@ interface CostRow { label: string; amount: number }
             }
           </div>
         </section>
+        <app-partner-sales-profit [report]="r" variant="ios" />
         @if (r.note) { <p class="vp-meta">{{ r.note }}</p> }
         @if (blockedLine(); as why) { <p class="vp-meta">{{ why }}</p> }
       </div>
@@ -320,10 +327,11 @@ export class PartnerSalesDetail {
   entryNet(entry: PartnerReportEntry): string {
     const sale = entry.sale?.netEur ?? 0;
     const back = entry.buyback ? this.buybackCost(entry.buyback) : 0;
-    return euro(Math.round((sale - back) * 100) / 100);
+    return signedEur(Math.round((sale - back) * 100) / 100);
   }
 
-  eur(value: number | null | undefined): string { return euro(value); }
+  /** Netto may be below zero: "− € 9,00" (the ERP's minus), never "€ -9,00". */
+  eur(value: number | null | undefined): string { return signedEur(value ?? 0); }
   minus(value: number | null | undefined): string { return minusEuro(value); }
   pct(value: number): string { return percent(value); }
 }

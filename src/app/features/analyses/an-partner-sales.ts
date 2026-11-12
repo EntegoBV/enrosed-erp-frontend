@@ -1,26 +1,28 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { EurPipe, NumPipe } from '../../shared/pipes';
+import { NumPipe } from '../../shared/pipes';
+import { SignedEurPipe } from '../../shared/signed-eur';
 import { AnDrillHost } from './drill-host';
 import { partnerProductView, partnerSalesView, type PartnerSalesFigureKey } from './drill-partner-sales';
 import type { PartnerSalesFigures, PartnerSalesProductRow } from './partner-sales-analysis';
 
-/** The sales unit words of a product ("stuk"/"stuks", "display"/"displays"). */
+/** The piece words of a product ("stuk"/"stuks", "roos"/"rozen"): what one piece is, also inside a display. */
 export type PartnerSalesUnitFn = (productId: number) => { one: string; other: string };
 
 const PRODUCTS_SHOWN = 6;
 
 /**
- * Verkoop › Veilingverkopen (contract 7c Analyses): what the partner reported in the period, by sold_on - stuks,
- * bruto, netto and what is still to invoice, each opening its meldingen (rows that add up to it); per product the
- * weighted average price per sales unit (never summed across products); Veiling, Direct and Terugkoop apart. Not in
- * Omzet or Resultaat: the invoice made from the meldingen counts there. Under the TICA card, in the page's an-card
- * look (analyses-*.scss, global); its own figure cells are component styles.
+ * Verkoop › Veilingverkopen (contract 7c Analyses): what the partner reported in the period, by sold_on - stuks
+ * (pieces: a display of 12 rozen counts 12), bruto, netto and what is not invoiced yet (confirmed or not: the sub says
+ * how many wait for Bevestigen), each opening its meldingen (rows that add up to it); per product the weighted
+ * average price per piece (never summed across products); Veiling, Direct and Terugkoop apart. Not in Omzet or
+ * Resultaat: the invoice made from the meldingen counts there. Under the TICA card, in the page's an-card look
+ * (analyses-*.scss, global); its own figure cells are component styles. Amounts below zero read "− € x".
  */
 @Component({
   selector: 'app-an-partner-sales',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, EurPipe, NumPipe],
+  imports: [RouterLink, SignedEurPipe, NumPipe],
   template: `
     @let f = figures();
     <section class="an-card an-tica" aria-labelledby="an-vv-title">
@@ -33,14 +35,14 @@ const PRODUCTS_SHOWN = 6;
             <span class="vva__label">Stuks</span><b class="vva__value">{{ f.all.pieces | num }}</b>
             <span class="vva__sub">{{ plural(f.all.reports, 'melding', 'meldingen') }}</span></button>
           <button class="vva__fig" type="button" aria-haspopup="dialog" [disabled]="!f.all.grossEur" (click)="open('gross', f.all.grossEur)">
-            <span class="vva__label">Bruto</span><b class="vva__value">{{ f.all.grossEur | eur: 0 }}</b>
-            <span class="vva__sub">kosten {{ f.all.costsEur | eur: 0 }}</span></button>
+            <span class="vva__label">Bruto</span><b class="vva__value">{{ f.all.grossEur | signedEur: 0 }}</b>
+            <span class="vva__sub">kosten {{ f.all.costsEur | signedEur: 0 }}</span></button>
           <button class="vva__fig" type="button" aria-haspopup="dialog" [disabled]="!f.all.reports" (click)="open('net', f.all.netEur)">
-            <span class="vva__label">Netto</span><b class="vva__value" [class.is-neg]="f.all.netEur < 0">{{ f.all.netEur | eur: 0 }}</b>
+            <span class="vva__label">Netto</span><b class="vva__value" [class.is-neg]="f.all.netEur < 0">{{ f.all.netEur | signedEur: 0 }}</b>
             <span class="vva__sub">na kosten en terugkoop</span></button>
           <button class="vva__fig" type="button" aria-haspopup="dialog" [class.is-warn]="f.open.pieces > 0" [disabled]="!f.open.reports" (click)="open('open', f.open.netEur)">
-            <span class="vva__label">Nog te factureren</span><b class="vva__value">{{ f.open.pieces > 0 ? (f.open.netEur | eur: 0) : '—' }}</b>
-            <span class="vva__sub">{{ f.open.pieces > 0 ? plural(f.open.reports, 'melding', 'meldingen') : f.open.reports ? 'terugkoop wacht' : 'alles gefactureerd' }}</span></button>
+            <span class="vva__label">Nog niet gefactureerd</span><b class="vva__value">{{ f.open.pieces > 0 ? (f.open.netEur | signedEur: 0) : '—' }}</b>
+            <span class="vva__sub">{{ f.open.pieces > 0 ? openSub() : f.open.reports ? 'terugkoop wacht' : 'alles gefactureerd' }}</span></button>
         </div>
         <div class="an-tica__lists an-tica__lists--two">
           <div>
@@ -49,8 +51,8 @@ const PRODUCTS_SHOWN = 6;
               <button class="an-row an-row--chev" type="button" aria-haspopup="dialog" (click)="openProduct(product)">
                 <span class="an-rank">{{ $index + 1 }}</span>
                 <span class="an-row__body"><span class="an-row__title">{{ product.name }}@if (product.variant) { · {{ product.variant }} }</span>
-                  <span class="an-row__sub">{{ units(product.productId, product.pieces) }}@if (product.averageEur !== null) { · gem. {{ product.averageEur | eur }} per {{ unitOf()(product.productId).one }} }@if (product.buybackPieces) { · {{ product.buybackPieces | num }} terug }</span></span>
-                <span class="an-row__end"><span class="an-row__value">{{ product.grossEur | eur: 0 }}</span></span>
+                  <span class="an-row__sub">{{ units(product.productId, product.pieces) }}@if (product.averageEur !== null) { · gem. {{ product.averageEur | signedEur }} per {{ unitOf()(product.productId).one }} }@if (product.buybackPieces) { · {{ product.buybackPieces | num }} terug }</span></span>
+                <span class="an-row__end"><span class="an-row__value">{{ product.grossEur | signedEur: 0 }}</span></span>
                 <span class="an-row__chev" aria-hidden="true">›</span>
               </button>
             } @empty { <p class="an-empty">Geen producten in deze periode.</p> }
@@ -62,18 +64,18 @@ const PRODUCTS_SHOWN = 6;
             <h3 class="an-tica__h">Soort</h3>
             <div class="an-row an-row--nolead">
               <span class="an-row__body"><span class="an-row__title">Verkocht op de veiling</span>
-                <span class="an-row__sub">{{ plural(f.auction.reports, 'melding', 'meldingen') }} · {{ f.auction.pieces | num }} st · bruto {{ f.auction.grossEur | eur: 0 }}</span></span>
-              <span class="an-row__end"><span class="an-row__value">{{ f.auction.netEur + f.auction.buybackEur | eur: 0 }}</span></span>
+                <span class="an-row__sub">{{ plural(f.auction.reports, 'melding', 'meldingen') }} · {{ f.auction.pieces | num }} st · bruto {{ f.auction.grossEur | signedEur: 0 }}</span></span>
+              <span class="an-row__end"><span class="an-row__value">{{ f.auction.netEur + f.auction.buybackEur | signedEur: 0 }}</span></span>
             </div>
             <div class="an-row an-row--nolead">
               <span class="an-row__body"><span class="an-row__title">Direct verkocht</span>
-                <span class="an-row__sub">{{ plural(f.direct.reports, 'melding', 'meldingen') }} · {{ f.direct.pieces | num }} st · bruto {{ f.direct.grossEur | eur: 0 }}</span></span>
-              <span class="an-row__end"><span class="an-row__value">{{ f.direct.netEur | eur: 0 }}</span></span>
+                <span class="an-row__sub">{{ plural(f.direct.reports, 'melding', 'meldingen') }} · {{ f.direct.pieces | num }} st · bruto {{ f.direct.grossEur | signedEur: 0 }}</span></span>
+              <span class="an-row__end"><span class="an-row__value">{{ f.direct.netEur | signedEur: 0 }}</span></span>
             </div>
             <div class="an-row an-row--nolead">
               <span class="an-row__body"><span class="an-row__title">Teruggekocht op de klok</span>
                 <span class="an-row__sub">{{ f.all.buybackPieces | num }} st · komt terug op voorraad</span></span>
-              <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="f.all.buybackEur ? 'danger' : null">{{ f.all.buybackEur ? '− ' : '' }}{{ f.all.buybackEur | eur: 0 }}</span></span>
+              <span class="an-row__end"><span class="an-row__value" [attr.data-tone]="f.all.buybackEur ? 'danger' : null">{{ f.all.buybackEur ? '− ' : '' }}{{ f.all.buybackEur | signedEur: 0 }}</span></span>
             </div>
             <p class="an-empty vva__foot">Veiling en direct na kosten; de terugkoop gaat van het netto af.</p>
           </div>
@@ -110,6 +112,13 @@ export class AnPartnerSales {
   readonly productsShown = PRODUCTS_SHOWN;
   readonly allProducts = signal(false);
   readonly shown = computed(() => this.allProducts() ? this.figures().products : this.figures().products.slice(0, PRODUCTS_SHOWN));
+
+  /** "4 meldingen · 2 te bevestigen": Factureren takes the confirmed ones only. */
+  openSub(): string {
+    const f = this.figures();
+    const waiting = f.openUnconfirmed;
+    return this.plural(f.open.reports, 'melding', 'meldingen') + (waiting ? ` · ${waiting} te bevestigen` : '');
+  }
 
   plural(count: number, one: string, many: string): string {
     return `${count.toLocaleString('nl-BE')} ${count === 1 ? one : many}`;

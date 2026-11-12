@@ -1,5 +1,6 @@
 import type { SettlementSnapshotLine } from '../../core/api/models';
 import type { PartnerDocumentBreakdown, PartnerDocumentBreakdownLine, PartnerDocumentMelding } from '../../core/api/partner-sales-api';
+import { signedEur } from '../../shared/signed-eur';
 
 /*
  * The "Marge / eenheid" popup of a document made from the partner's meldingen
@@ -7,7 +8,9 @@ import type { PartnerDocumentBreakdown, PartnerDocumentBreakdownLine, PartnerDoc
  * bruto to what this document invoices, per unit and for the whole line.
  * Every amount is the server's (the breakdown, else the document's own
  * settlement snapshot and line): nothing is recomputed differently, only
- * divided by the line's quantity for the per-unit column. Pure: types only.
+ * divided by the line's quantity for the per-unit column (the invoiced
+ * quantity: sold − bought back, said in the head when they differ) and the
+ * inkoopkost split by who paid it (the server's costSharePct). Pure.
  */
 
 export type CostSign = '' | '−' | '+' | '=' | '→';
@@ -26,8 +29,10 @@ export interface ReportCostRow {
 }
 
 export interface ReportCostView {
-  /** "100 verkocht · 1 teruggekocht" (quantities in the line's unit). */
+  /** "48 stuks verkocht · 6 teruggekocht · 42 op de factuur" (quantities in the line's unit). */
   quantities: string;
+  /** The per-unit column's head: "Per stuk", or "Per gefactureerd stuk" when some were bought back. */
+  unitHead: string;
   rows: ReportCostRow[];
   /** The row equal to the clicked "Marge" cell: our profit on this line. */
   highlight: string;
@@ -77,8 +82,10 @@ function pct(value: number | null | undefined): string {
   return `${new Intl.NumberFormat('nl-BE', { maximumFractionDigits: 2 }).format(n)} %`;
 }
 
+const NL = new Intl.NumberFormat('nl-BE');
+
 function count(n: number, one: string, other: string): string {
-  return `${new Intl.NumberFormat('nl-BE').format(n)} ${n === 1 ? one : other}`;
+  return `${NL.format(n)} ${n === 1 ? one : other}`;
 }
 
 /** The breakdown's line of this product, when there is one. */
@@ -133,11 +140,12 @@ export function reportCostView(input: ReportCostInput): ReportCostView {
   if (line) {
     const fallback = input.breakdown?.fallback === true;
     const sold = line.soldQuantity ?? q, back = line.boughtBackQuantity ?? 0;
-    quantities = back > 0 ? `${count(sold, unit.singular, unit.plural)} verkocht · ${new Intl.NumberFormat('nl-BE').format(back)} teruggekocht`
+    quantities = back > 0
+      ? `${count(sold, unit.singular, unit.plural)} verkocht · ${NL.format(back)} teruggekocht · ${NL.format(q)} op de factuur`
       : `${count(sold, unit.singular, unit.plural)} verkocht`;
     const hasTop = !fallback || cents(line.grossEur) !== 0;
     if (hasTop) {
-      add('gross', '', 'Bruto', line.grossEur, 'plain', `verkocht ${reportChannelLabel(input.breakdown) || ''}`.trim());
+      add('gross', '', 'Bruto', line.grossEur, 'plain', grossHint(line, unit, reportChannelLabel(input.breakdown)));
       if (cents(line.commissionEur)) add('commission', '−', 'Veilingcommissie', line.commissionEur);
       if (cents(line.transportEur)) add('transport', '−', 'Transport', line.transportEur);
       if (cents(line.extraEur)) add('extra', '−', 'Extra kost', line.extraEur);
@@ -150,11 +158,18 @@ export function reportCostView(input: ReportCostInput): ReportCostView {
       }
     }
     add('proceeds', hasTop ? '=' : '', 'Netto opbrengst', line.proceedsEur, 'sum');
-    const costShare = line.costSharePct;
-    const costHint = costShare == null ? null
-      : costShare >= 100 ? `${input.partner} ${pct(100)}` : costShare <= 0 ? `Enrosed ${pct(100)}`
-      : `${input.partner} ${pct(costShare)} · Enrosed ${pct(100 - costShare)}`;
-    add('cost', '−', 'Inkoopkost', line.costEur, 'plain', costHint);
+    /* Who paid the inkoop, as separate lines (owner: "aparte regel volgens % wie wat heeft betaald"): the partner's
+       financed part (costSharePct) and ours; own stock is ours alone. */
+    const own = input.breakdown?.source === 'OWN';
+    const costShare = own ? 0 : line.costSharePct;
+    add('cost', '−', 'Inkoopkost', line.costEur, 'plain', own || costShare == null ? null : 'wie betaalde wat');
+    if (own || costShare == null) {
+      if (own) add('cost-ours', '→', `Enrosed ${pct(100)}`, line.costEur, 'part');
+    } else {
+      const theirsCost = cents(line.costEur * costShare / 100);
+      add('cost-theirs', '→', `${input.partner} ${pct(costShare)}`, theirsCost, 'part');
+      add('cost-ours', '→', `Enrosed ${pct(Math.round((100 - costShare) * 100) / 100)}`, cents(line.costEur) - theirsCost, 'part');
+    }
     const profit = cents(line.profitEur ?? (line.proceedsEur - line.costEur));
     add('profit', '=', 'Winst', profit, 'sum');
     const share = line.profitSharePct ?? input.sharePct;
@@ -165,13 +180,15 @@ export function reportCostView(input: ReportCostInput): ReportCostView {
     add('value', '', 'Onze waarde', line.valueEur, 'sum', 'inkoopkost + winst Enrosed');
     const correction = cents(line.correctionEur);
     if (correction) add('correction', '', 'waarvan correctie eerdere deelfacturen', correction, 'part');
-    if (cents(line.advanceEur)) add('advance', '−', 'Voorschot verrekend', line.advanceEur);
+    /* Shown also at € 0,00 when the partner financed part of the cost: then it says no prefinance was netted. */
+    if (cents(line.advanceEur) || (!own && (costShare ?? 0) > 0)) add('advance', '−', 'Voorschot verrekend', line.advanceEur ?? 0);
     const invoiced = cents(line.valueEur - (line.advanceEur ?? 0));
     add('invoice', '=', 'Te factureren', invoiced, 'total');
     /* Without an advance this equals his profit share above: said once. */
     if (cents(line.advanceEur)) add('keeps', '', `${input.partner} houdt`, cents(line.proceedsEur - invoiced), 'plain', 'netto opbrengst − te factureren');
     if (fallback) notes.push(input.breakdown?.fallbackNote || FALLBACK_NOTE);
-    return { quantities, rows, highlight: 'ours', perPiece: perPiece(ours, q, unit), meldingen: input.breakdown?.meldingen ?? [], notes };
+    const unitHead = back > 0 && q > 0 ? `Per gefactureerd ${unit.singular}` : `Per ${unit.singular}`;
+    return { quantities, unitHead, rows, highlight: 'ours', perPiece: perPiece(ours, q, unit), meldingen: input.breakdown?.meldingen ?? [], notes };
   }
 
   /* No breakdown (an older backend): what the document itself kept. */
@@ -195,12 +212,38 @@ export function reportCostView(input: ReportCostInput): ReportCostView {
     add('ours', '=', 'Winst Enrosed', ours, 'part');
   }
   notes.push(input.breakdown === null ? FALLBACK_NOTE + ' Bruto en kosten per melding staan bij Veilingverkopen.' : '');
-  return { quantities, rows, highlight: 'ours', perPiece: perPiece(ours, q, unit), meldingen: [], notes: notes.filter(Boolean) };
+  return { quantities, unitHead: `Per ${unit.singular}`, rows, highlight: 'ours', perPiece: perPiece(ours, q, unit), meldingen: [], notes: notes.filter(Boolean) };
+}
+
+/**
+ * Under Bruto: the auction's own price, never bruto ÷ the invoiced quantity: "48 × € 2,10 op de veiling", per piece
+ * for a display ("36 × € 1,25 per roos"), "gem." when the meldingen sold at several prices.
+ */
+function grossHint(line: PartnerDocumentBreakdownLine, unit: ReportCostUnit, channel: string): string {
+  const display = !!unit.piecesPerDisplay && unit.piecesPerDisplay > 1;
+  const sold = display ? (line.salePieces ?? (line.soldQuantity ?? 0) * unit.piecesPerDisplay!) : (line.salePieces ?? line.soldQuantity ?? 0);
+  const where = channel || 'verkocht';
+  if (!(sold > 0) || !cents(line.grossEur)) return where;
+  const price = line.grossEur / sold;
+  const exact = Math.abs(Math.round(price * 100) * sold - Math.round(line.grossEur * 100)) < 1;
+  return `${NL.format(sold)} × ${exact ? '' : 'gem. '}${signedEur(price, exact ? 2 : 3)}${display ? ` per ${unit.pieceOne}` : ''} ${where}`;
 }
 
 function perPiece(eur: number, quantity: number, unit: ReportCostUnit): number | null {
   const pieces = unit.piecesPerDisplay;
   return pieces && pieces > 1 && quantity > 0 ? eur / quantity / pieces : null;
+}
+
+/**
+ * Where a document's "Meldingen" links go on Veilingverkopen: one melding opens it (?melding=), several show exactly
+ * those (?meldingen=2,4), and while the breakdown is unknown every status (?status=alles), never the page's own
+ * first-visit filter ("Te bevestigen" would hide meldingen that are on a document).
+ */
+export function reportMeldingQuery(breakdown: PartnerDocumentBreakdown | null | undefined): Record<string, string | number> {
+  const meldingen = breakdown?.meldingen ?? [];
+  if (meldingen.length === 1) return { melding: meldingen[0].id };
+  if (meldingen.length > 1) return { meldingen: meldingen.map((melding) => melding.id).join(',') };
+  return { status: 'alles' };
 }
 
 /**

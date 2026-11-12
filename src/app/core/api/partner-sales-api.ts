@@ -121,8 +121,11 @@ export interface StaffPartnerReport extends PartnerReport {
 
 export interface PartnerSalesOpenTotals {
   openReports: number;
+  /** In sales units (a display counts 1). */
   openSaleQuantity: number;
   openNetEur: number;
+  /** The same open sale in pieces (a display of 12 rozen counts 12); absent from a server that does not send it. */
+  openSalePieces?: number | null;
 }
 
 /** Round 2: the sums of the whole filtered list (voided meldingen left out); "Stuks" in pieces. */
@@ -182,8 +185,11 @@ export interface PartnerSalesPartnerSummary extends PartnerSalesOpenTotals {
 export interface PartnerSalesConfirmTotals {
   unconfirmedReports?: number | null;
   confirmedOpenReports?: number | null;
+  /** In sales units. */
   confirmedOpenSaleQuantity?: number | null;
   confirmedOpenNetEur?: number | null;
+  /** The confirmed open sale in pieces; absent from a server that does not send it. */
+  confirmedOpenSalePieces?: number | null;
 }
 
 /** The cheap count behind the nav, the bell and the home card. */
@@ -211,6 +217,11 @@ export interface PartnerSalesAnalyticsReport {
   /** The part not invoiced yet (open parts only); absent from an older backend. */
   openSaleQuantity?: number | null;
   openNetEur?: number | null;
+  /* round 2 (additive): pieces (roos, bowl …) beside the sales units; confirmed as the staff list says it */
+  salePieces?: number | null;
+  buybackPieces?: number | null;
+  openSalePieces?: number | null;
+  confirmed?: boolean | null;
 }
 
 /** One row per melding x product: per-product averages are derived, never summed across products. */
@@ -230,6 +241,10 @@ export interface PartnerSalesAnalyticsProduct {
   /** The part not invoiced yet (open parts only); absent from an older backend. */
   openSaleQuantity?: number | null;
   openNetEur?: number | null;
+  /* round 2 (additive): pieces beside the sales units */
+  salePieces?: number | null;
+  buybackPieces?: number | null;
+  openSalePieces?: number | null;
 }
 
 export interface PartnerSalesAnalytics {
@@ -360,7 +375,10 @@ export interface PartnerDocumentBreakdownLine {
   boughtBackQuantity: number;
   /** soldQuantity − boughtBackQuantity: the invoice line's quantity. */
   quantity: number;
+  /** The invoice quantity in pieces. */
   pieces?: number | null;
+  /** What was sold, in pieces (the bruto's own count). */
+  salePieces?: number | null;
   grossEur: number;
   commissionEur: number;
   transportEur: number;
@@ -552,6 +570,16 @@ export class PartnerSalesApi {
   /** reportIds null = every open melding of the partner; until limits by sold_on. */
   invoicePreview(customerId: number, reportIds: number[] | null = null, until: string | null = null): Promise<PartnerInvoicePreview> {
     return firstValueFrom(this.http.post<PartnerInvoicePreview>(api('/api/partner-sales/invoice-preview'), { customerId, reportIds, until }));
+  }
+
+  /**
+   * Inkoop en winst of one melding (Veilingverkopen, ERP only): the Factureren preview of that melding's open parts
+   * alone, read-only. `includeUnconfirmed` asks a server that knows it to take an unconfirmed melding too; one that
+   * does not refuses it ("VV-n is nog niet bevestigd …") and the screen says so.
+   */
+  reportFigures(customerId: number, reportId: number): Promise<PartnerInvoicePreview> {
+    return firstValueFrom(this.http.post<PartnerInvoicePreview>(api('/api/partner-sales/invoice-preview'),
+      { customerId, reportIds: [reportId], until: null, includeUnconfirmed: true }));
   }
 
   /** Makes the concept invoices of a preview: send the preview's reportIds, never more. */

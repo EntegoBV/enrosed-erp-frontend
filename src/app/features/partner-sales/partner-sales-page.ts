@@ -14,7 +14,7 @@ import { PageHeader } from '../../shared/page-header';
 import { partnerShortName } from '../../shared/partner-short-name';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { count, euro, localToday } from '../partner/partner-format';
+import { count, localToday } from '../partner/partner-format';
 import { buyerLine, productsShort, reportPieces } from '../partner/partner-report-format';
 import { PartnerSalesDetail, canConfirmReport, canUnconfirmReport } from './partner-sales-detail';
 import {
@@ -24,6 +24,7 @@ import {
 import { reportTitle } from './partner-sales-format';
 import { InvoicePartner, PartnerSalesInvoiceSheet, invoiceable } from './partner-sales-invoice-sheet';
 import { PartnerSalesTable } from './partner-sales-table';
+import { signedEur } from '../../shared/signed-eur';
 
 /** The server's cap per list: a period holds fewer, "Alles" may say there is more. */
 const LIST_LIMIT = 1000;
@@ -39,7 +40,8 @@ const LIST_LIMIT = 1000;
  * iOS list per day, a melding opens in a sheet. Melding toevoegen and
  * Bewerken are pages (/veilingverkopen/melding[/id]). The filters live in
  * the address (?status=…&soort=…&periode=…&partner=…); ?melding=<id> (the
- * bell, a push, the Logboek) shows that one.
+ * bell, a push, the Logboek) shows that one; ?meldingen=<id>,<id> (a
+ * document's Meldingen) shows exactly those until a filter changes.
  */
 @Component({
   selector: 'app-partner-sales-page',
@@ -96,6 +98,9 @@ const LIST_LIMIT = 1000;
                 </select>
               </label>
             }
+            @if (onlyLine(); as line) {
+              <button class="wk-chip vv-only" type="button" aria-pressed="true" title="Toon alle meldingen" (click)="clearOnly()">{{ line }}<app-icon name="close" [size]="12" /></button>
+            }
             <label class="wk-search vv-search">
               <app-icon name="search" [size]="14" />
               <input type="search" placeholder="Zoek VV, product, klant" aria-label="Zoek in de meldingen" autocomplete="off" [value]="query()"
@@ -117,6 +122,9 @@ const LIST_LIMIT = 1000;
           }
         </div>
       } @else {
+        @if (onlyLine(); as line) {
+          <div class="ios-chips vv-ichips"><button class="ios-chip" type="button" aria-pressed="true" (click)="clearOnly()">{{ line }} ✕</button></div>
+        }
         <div class="ios-chips vv-ichips" role="group" aria-label="Status">
           @for (option of statuses; track option.id) {
             <button class="ios-chip" type="button" [attr.aria-pressed]="status() === option.id" (click)="setStatus(option.id)">{{ option.label }}@if (statusCount(option.id); as n) { · {{ n }} }</button>
@@ -140,7 +148,7 @@ const LIST_LIMIT = 1000;
             </label>
           }
         </div>
-        @if (loaded() && !missing() && total(); as t) {
+        @if (loaded() && !missing() && shownTotal(); as t) {
           <div class="ios-card vv-sum">
             <span class="vv-sum__label">Totaal · {{ t.reports === 1 ? '1 melding' : num(t.reports) + ' meldingen' }}</span>
             <b class="vv-sum__value">{{ eur(t.netEur) }}</b>
@@ -175,7 +183,7 @@ const LIST_LIMIT = 1000;
       } @else if (desk.active()) {
         @if (error(); as message) { <p class="vv-error" role="alert">{{ message }}</p> }
         <app-partner-sales-table [reports]="visible()" [today]="today" [selected]="selected()" [expanded]="expanded()" [flash]="flash()"
-                                 [totals]="total()" [totalsNote]="totalNote()" [showCustomer]="showCustomer()" [busy]="voidBusy() || bulkBusy()"
+                                 [totals]="shownTotal()" [totalsNote]="totalNote()" [showCustomer]="showCustomer()" [busy]="voidBusy() || bulkBusy()"
                                  [canWrite]="round2()"
                                  (toggled)="toggle($event)" (selectionChange)="selected.set($event)" (editAsked)="edit($event)"
                                  (voidAsked)="askVoid($event)" (confirmAsked)="confirmOne($event)" (unconfirmAsked)="unconfirmOne($event)" />
@@ -260,6 +268,7 @@ const LIST_LIMIT = 1000;
     .vv-range{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px}
     .vv-date{height:28px;padding:0 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
     .vv-search{width:228px;margin-left:auto}
+    .vv-only{gap:6px;max-width:280px}
     .vv-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--rose-line);border-radius:10px;background:var(--rose-soft)}
     .vv-bulk__count{margin-right:4px;color:var(--rose-dark);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
     .vv-bulk__note{color:var(--muted);font-size:12px}
@@ -320,6 +329,8 @@ export class PartnerSalesPage {
   readonly period = signal<PeriodChoice>({ kind: 'alles' });
   readonly customer = signal<number | null>(null);
   readonly query = signal('');
+  /** ?meldingen=: exactly these meldingen (a document's), until a filter changes. */
+  readonly only = signal<ReadonlySet<number> | null>(null);
 
   /** What the server answered for the filter. */
   readonly rows = signal<StaffPartnerReport[]>([]);
@@ -351,6 +362,8 @@ export class PartnerSalesPage {
   private started = false;
   /** The melding a ?melding= link asked for, until it is shown. */
   private wanted: number | null = null;
+  /** The meldingen a ?meldingen= link asked for, until the list holds them. */
+  private wantedAll: number[] | null = null;
   /** The summary's last melding when the list was read: a newer one (a push, the bell's refresh) reads the list again. */
   private seenLastReportAt: string | null | undefined = undefined;
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
@@ -369,21 +382,33 @@ export class PartnerSalesPage {
       list = list.filter((r) => matchesState(r, state) && (!channel || r.channel === channel)
         && (!range.from || r.soldOn >= range.from) && (!range.to || r.soldOn <= range.to) && (customer == null || r.customerId === customer));
     }
+    const only = this.only();
+    if (only) list = list.filter((r) => only.has(r.id));
     const query = this.query().trim();
     list = query ? list.filter((r) => reportMatches(r, query)) : list;
     return [...list].sort((a, b) => b.soldOn.localeCompare(a.soldOn) || b.id - a.id);
   });
+  /** "VV-2, VV-4": the chip of a ?meldingen= view. */
+  readonly onlyLine = computed(() => {
+    const only = this.only();
+    if (!only) return null;
+    const numbers = this.rows().filter((r) => only.has(r.id)).sort((a, b) => a.id - b.id).map((r) => r.number);
+    return numbers.length ? numbers.join(', ') : `${only.size} meldingen`;
+  });
   readonly days = computed(() => byDay(this.visible()));
   readonly sheetReport = computed(() => this.rows().find((report) => report.id === this.opened()) ?? null);
 
-  /** The total row: the server's for the whole filter; a search (or an older server) sums what is shown. */
+  /** The total row: the server's for the whole filter; a search, ?meldingen= (or an older server) sums what is shown. */
   readonly total = computed<PartnerSalesFilteredTotals>(() => {
     const server = this.serverTotals();
-    return server && !this.query().trim() ? server : totalsOf(this.visible());
+    return server && !this.query().trim() && !this.only() ? server : totalsOf(this.visible());
   });
+  /** Withdrawn meldingen count for nothing: under Ingetrokken there is no total to show. */
+  readonly shownTotal = computed<PartnerSalesFilteredTotals | null>(() => (this.status() === 'ingetrokken' ? null : this.total()));
   readonly totalNote = computed(() => {
     if (this.query().trim()) return 'gevonden';
-    return this.more() && !this.serverFiltered() ? `van de nieuwste ${count(this.rows().length)}` : null;
+    if (this.more() && !this.serverFiltered()) return `van de nieuwste ${count(this.rows().length)}`;
+    return this.visible().some((r) => r.status === 'VOIDED') ? 'zonder ingetrokken' : null;
   });
 
   readonly partnerChoices = computed<PartnerSalesPartnerSummary[]>(() => this.work.partnerSales()?.partners ?? []);
@@ -446,6 +471,23 @@ export class PartnerSalesPage {
 
   /** The filters from the address; the first time without ?status the page opens on what needs doing. */
   private async fromAddress(params: ParamMap): Promise<void> {
+    const some = (params.get('meldingen') ?? '').split(',').map(Number).filter((n) => Number.isSafeInteger(n) && n > 0);
+    if (some.length) {
+      /* A document's meldingen: every status (they are invoiced), only these, read by id when the list lacks one. */
+      this.only.set(new Set(some));
+      this.wantedAll = some;
+      this.status.set('alles');
+      this.channel.set('alle');
+      this.period.set({ kind: 'alles' });
+      this.customer.set(null);
+      this.query.set('');
+      this.started = true;
+      this.expanded.set(null);
+      void this.load();
+      return;
+    }
+    this.only.set(null);
+    this.wantedAll = null;
     const id = Number(params.get('melding'));
     if (Number.isSafeInteger(id) && id > 0) {
       this.wanted = id;
@@ -489,11 +531,14 @@ export class PartnerSalesPage {
     const customer = 'customer' in patch ? patch.customer ?? null : this.customer();
     void this.router.navigate([], {
       relativeTo: this.route, replaceUrl: true,
-      queryParams: { status, soort: channel === 'alle' ? null : channel, periode: periodParam(period), partner: customer, melding: null },
+      queryParams: { status, soort: channel === 'alle' ? null : channel, periode: periodParam(period), partner: customer, melding: null, meldingen: null },
     });
   }
 
-  setStatus(status: StatusChoice): void { if (status !== this.status()) this.toAddress({ status }); }
+  setStatus(status: StatusChoice): void { if (status !== this.status() || this.only()) this.toAddress({ status }); }
+
+  /** The chip's ✕: back to every melding (the address drops ?meldingen=). */
+  clearOnly(): void { this.toAddress({ status: 'alles' }); }
   setChannel(channel: ChannelChoice): void { if (channel !== this.channel()) this.toAddress({ channel }); }
 
   setPeriodKind(kind: string): void {
@@ -539,6 +584,7 @@ export class PartnerSalesPage {
       this.loaded.set(true);
       this.seenLastReportAt = lastSeen;
       await this.findWanted(run);
+      await this.findAll(run);
     } catch (failure: unknown) {
       if (run !== this.run) return;
       if (isMissingEndpoint(failure)) { this.missing.set(true); this.loaded.set(true); return; }
@@ -563,6 +609,21 @@ export class PartnerSalesPage {
     void this.router.navigate([], { relativeTo: this.route, queryParams: { melding: null, status: 'alles' }, queryParamsHandling: 'merge', replaceUrl: true });
     if (!this.rows().some((report) => report.id === id)) { this.ui.toast(`VV-${id} staat niet in de lijst`, 'err'); return; }
     this.show(id);
+  }
+
+  /** A ?meldingen= link: read the ones the list does not hold (older than its 1000 rows). */
+  private async findAll(run: number): Promise<void> {
+    const ids = this.wantedAll;
+    if (!ids) return;
+    this.wantedAll = null;
+    const missing = ids.filter((id) => !this.rows().some((report) => report.id === id));
+    for (const id of missing) {
+      try {
+        const report = await this.api.report(id);
+        if (run !== this.run) return;
+        if (!report.revisionOf) this.rows.update((list) => (list.some((known) => known.id === report.id) ? list : [report, ...list]));
+      } catch { /* gone: the chip counts what is there */ }
+    }
   }
 
   /** Opens one melding and lights its row for a moment. */
@@ -732,6 +793,6 @@ export class PartnerSalesPage {
 
   dayText(day: string): string { return soldDay(day, this.today); }
   short(name: string): string { return partnerShortName(name); }
-  eur(value: number): string { return euro(value); }
+  eur(value: number): string { return signedEur(value); }
   num(value: number): string { return count(value); }
 }

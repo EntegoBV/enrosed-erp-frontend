@@ -45,7 +45,7 @@ import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
 import { reportShipSplits } from './report-backed';
 import { ReportBackedCostSheet } from './report-backed-cost-sheet';
-import { meldingNumbersLine } from './report-backed-cost';
+import { meldingNumbersLine, reportMeldingQuery } from './report-backed-cost';
 import { billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice } from './sales-advance-billing';
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
@@ -99,7 +99,7 @@ interface JourneyStep {
           <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [title]="'Partnercontainer openen' + (containerNumber() ? ' · inkooporder ' + containerNumber() : '')">@if (containerLabel(); as name) { {{ name }} · }Partner {{ data.order.partnerSharePct | num }} %</a>
         }
         @if (billingTag(); as tag) { <a class="desk-partner-tag" [routerLink]="['/sales', billingQuoteId()]" title="Offerte openen">{{ tag }}</a> }
-        @if (reportBacked(data)) { <a class="desk-partner-tag" routerLink="/veilingverkopen" title="De meldingen achter deze factuur">{{ reportBackedLabel }}</a> }
+        @if (reportBacked(data)) { <a class="desk-partner-tag" routerLink="/veilingverkopen" [queryParams]="reportMeldingQuery()" title="De meldingen achter deze factuur">{{ reportBackedLabel }}</a> }
         @if (canEdit() && documentDirty() && !transportSaving()) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || saveConflict()" [title]="saveConflict() ? 'Laad eerst de laatste versie' : ''" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
@@ -436,7 +436,7 @@ interface JourneyStep {
             </div>
             @if (isCreditNoteDoc() && commercialEditable() && data.creditedInvoiceNumber) { <p class="desk-lines-locked"><span aria-hidden="true">↩</span>Alleen regels van {{ data.creditedInvoiceNumber }}, hoogstens de gefactureerde aantallen en prijzen.</p> }
             @if (advanceLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ advanceLockNote }}</p> }
-            @if (reportLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ reportLockNote }} <a routerLink="/veilingverkopen">Veilingverkopen ›</a></p> }
+            @if (reportLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ reportLockNote }} <a routerLink="/veilingverkopen" [queryParams]="reportMeldingQuery()">Veilingverkopen ›</a></p> }
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
@@ -739,7 +739,7 @@ interface JourneyStep {
                     <th class="c-price"></th>
                     <th class="c-disc">@if (data.priced.totals.lineDiscountTotal) { −{{ data.priced.totals.lineDiscountTotal | eur: 0 }} }</th>
                     <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
-                    @if (showsMargin()) { <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th> }
+                    @if (showsMargin()) { <th class="c-money" [class.is-bad]="marginFoot(data) < 0" [attr.title]="reportBacked(data) ? 'Som van de regels: ons deel van de winst' : null">@if (isAdvance(data.order)) { Financiering } @else { {{ marginFoot(data) | eur: 0 }} }</th> }
                     @if (!reportBacked(data)) { <th class="c-delivery"></th> }
                     @if (commercialEditable()) { <th class="c-act"></th> }
                   </tr>
@@ -1569,11 +1569,16 @@ export class SalesDesk extends SalesEditor {
   readonly customerAuthoredMessage = customerMessageIsReadOnly;
   /** "VV-12, VV-14, VV-17–19": the meldingen behind a report-backed document. */
   readonly reportMeldingNumbers = computed(() => meldingNumbersLine(this.reportBreakdown()?.meldingen ?? []));
-  /** One melding opens it on Veilingverkopen; several open the page. */
-  readonly reportMeldingQuery = computed(() => {
-    const meldingen = this.reportBreakdown()?.meldingen ?? [];
-    return meldingen.length === 1 ? { melding: meldingen[0].id } : {};
-  });
+  /** One melding opens it on Veilingverkopen; several show exactly those; unknown yet: every status. */
+  readonly reportMeldingQuery = computed(() => reportMeldingQuery(this.reportBreakdown()));
+  /**
+   * The margin column's foot: on a document from Veilingverkopen the sum of the lines above it (each the breakdown's
+   * value − cost), so the column has one meaning; elsewhere the document's own profit as before.
+   */
+  marginFoot(data: SalesOrderView): number {
+    if (!this.reportBacked(data)) return this.displayedProfit(data);
+    return data.priced.lines.reduce((sum, line) => sum + Math.round(this.lineMargin(line) * 100), 0) / 100;
+  }
   readonly customerNote = originalCustomerMessage;
   /** Which line shows its extra-discount field on a narrow screen. */
   readonly discOpen = signal<number | null>(null);

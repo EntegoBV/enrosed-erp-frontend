@@ -233,7 +233,8 @@ export interface HomeTaskSources {
   catalog: number;
   /** WorkQueue.partnerSales(): the open Veilingverkopen; null while unknown or on a backend without the portal. */
   partnerSales: { openReports: number; openSaleQuantity: number; openNetEur: number; unconfirmedReports?: number | null;
-    confirmedOpenReports?: number | null; confirmedOpenSaleQuantity?: number | null; confirmedOpenNetEur?: number | null } | null;
+    confirmedOpenReports?: number | null; confirmedOpenSaleQuantity?: number | null; confirmedOpenNetEur?: number | null;
+    openSalePieces?: number | null; confirmedOpenSalePieces?: number | null } | null;
   later: LaterState;
   sources: Readonly<Record<CoverageSource, boolean>>;
 }
@@ -244,13 +245,16 @@ export interface HomeTaskSources {
  */
 function partnerSalesOf(summary: HomeTaskSources['partnerSales']): HomeTaskInput['partnerSales'] {
   if (!summary) return null;
+  /* quantity (sales units) says whether a sale is open at all; pieces are said only when the server counts them. */
   if (summary.confirmedOpenReports == null) {
-    return { count: summary.openReports, eur: summary.openNetEur, pieces: summary.openSaleQuantity, unconfirmed: 0, unconfirmedEur: 0 };
+    return { count: summary.openReports, eur: summary.openNetEur, quantity: summary.openSaleQuantity, pieces: summary.openSalePieces ?? null,
+      unconfirmed: 0, unconfirmedEur: 0 };
   }
   const unconfirmed = Math.max(0, summary.unconfirmedReports ?? 0);
   const confirmedEur = summary.confirmedOpenNetEur ?? 0;
   return {
-    count: summary.confirmedOpenReports, eur: confirmedEur, pieces: summary.confirmedOpenSaleQuantity ?? 0,
+    count: summary.confirmedOpenReports, eur: confirmedEur, quantity: summary.confirmedOpenSaleQuantity ?? 0,
+    pieces: summary.confirmedOpenSalePieces ?? null,
     unconfirmed, unconfirmedEur: unconfirmed ? Math.round((summary.openNetEur - confirmedEur) * 100) / 100 : 0,
   };
 }

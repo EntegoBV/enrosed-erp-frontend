@@ -39,7 +39,7 @@ import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './
 import { REPORT_BACKED_LABEL, REPORT_LOCK_NOTE, isReportBacked, shipsViaReports } from './report-backed';
 import { reportBreakdownOf } from './report-backed-breakdown';
 import { ReportBackedCostSheet, ReportCostRequest } from './report-backed-cost-sheet';
-import { reportLineCost, reportLineMargin, reportProceeds } from './report-backed-cost';
+import { reportLineCost, reportLineMargin, reportMeldingQuery, reportProceeds } from './report-backed-cost';
 import { partnerShortName } from '../../shared/partner-short-name';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
@@ -456,7 +456,7 @@ function layoutKey(order: SalesOrder): string {
           <div class="alert alert--info quote-lock">
             <span class="alert__icon">✓</span>
             <div class="grow"><b>{{ reportBackedLabel }}</b><div class="small">{{ reportLockNote }}</div></div>
-            <a class="btn btn--sm" routerLink="/veilingverkopen">Veilingverkopen</a>
+            <a class="btn btn--sm" routerLink="/veilingverkopen" [queryParams]="reportMeldingLink()">Veilingverkopen</a>
           </div>
         }
 
@@ -2493,6 +2493,8 @@ export class SalesEditor {
   readonly shipsViaReports = shipsViaReports;
   /** The way from bruto to this document per product (asked once per report-backed document; null = not on the server). */
   readonly reportBreakdown = reportBreakdownOf(() => this.view());
+  /** Where the document's Veilingverkopen links go: its meldingen, never the page's own first filter. */
+  readonly reportMeldingLink = computed(() => reportMeldingQuery(this.reportBreakdown()));
   /** The open margin popup of a report-backed line. */
   readonly reportCost = signal<ReportCostRequest | null>(null);
   /** Netto opbrengst of the meldingen behind this document; null while unknown. */

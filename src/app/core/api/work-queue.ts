@@ -59,13 +59,18 @@ export class WorkQueue {
     if (!summary) return false;
     return (this.partnerSalesConfirming() ? summary.confirmedOpenSaleQuantity ?? 0 : summary.openSaleQuantity) > 0;
   });
-  /** What Factureren can take now: meldingen, pieces and netto (confirmed and open; round 1: every open one). */
+  /**
+   * What Factureren can take now: meldingen, the sale in sales units (quantity: is a sale open at all), in pieces
+   * (null when the server does not say them: never print sales units as stuks) and netto (confirmed and open; round 1:
+   * every open one).
+   */
   readonly partnerSalesToInvoice = computed(() => {
     const summary = this.partnerSales();
     if (!summary) return null;
     return this.partnerSalesConfirming()
-      ? { reports: summary.confirmedOpenReports ?? 0, quantity: summary.confirmedOpenSaleQuantity ?? 0, netEur: summary.confirmedOpenNetEur ?? 0 }
-      : { reports: summary.openReports, quantity: summary.openSaleQuantity, netEur: summary.openNetEur };
+      ? { reports: summary.confirmedOpenReports ?? 0, quantity: summary.confirmedOpenSaleQuantity ?? 0,
+        pieces: summary.confirmedOpenSalePieces ?? null, netEur: summary.confirmedOpenNetEur ?? 0 }
+      : { reports: summary.openReports, quantity: summary.openSaleQuantity, pieces: summary.openSalePieces ?? null, netEur: summary.openNetEur };
   });
   /** The count on Veilingverkopen in the nav and the host: to confirm, plus confirmed ones Factureren can take (a NavCountKey). */
   readonly partnerSalesOpen = computed(() =>

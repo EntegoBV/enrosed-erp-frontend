@@ -1,4 +1,5 @@
-import type { PartnerCountUnit, PartnerCountUnitKey, PartnerSalesUnit } from '../../core/api/partner-portal-api';
+import type { PartnerCountUnit, PartnerCountUnitKey } from '../../core/api/partner-portal-api';
+import { CARTON_NAMES, COUNT_UNIT_ORDER as ORDER, DISPLAY_NAMES, buildCountUnits, sortCountUnits as sortUnits } from '../../shared/partner-count-units';
 import { count } from './partner-format';
 
 /**
@@ -16,9 +17,10 @@ import { count } from './partner-format';
  *   and must be whole; pieces = sales units x pieces per sales unit.
  *
  * The partner's tiles carry the offered units and the default from the
- * server; `buildCountUnits` is for a staff screen that builds tiles from the
- * catalogue itself. A tile of a round-1 server (no countUnits) counts in its
- * sales unit, as round 1 did. Import-free apart from the number format.
+ * server; `buildCountUnits` (shared/partner-count-units.ts, re-exported) is
+ * for a screen that builds tiles from the catalogue itself. A tile of a
+ * round-1 server (no countUnits) counts in its sales unit, as round 1 did.
+ * Pure: the number format and the shared rule only.
  */
 
 /** What counting needs of a product: a tile, a stock tile or a melding's entry. */
@@ -32,23 +34,11 @@ export interface CountProduct {
   defaultUnit?: PartnerCountUnitKey;
 }
 
-/** The catalogue facts PartnerCountUnits reads, for a tile built from a staff Product. */
-export interface CountFacts {
-  salesUnit: PartnerSalesUnit;
-  /** The packaging is a DISPLAY (kind), whatever the basis. */
-  displayKind: boolean;
-  /** packaging.unitPieces(): 1 when unknown. */
-  unitPieces: number;
-  /** OrderSteps.knownPiecesPerCarton: the carton content in sales units, 0 when unknown. */
-  cartonContent: number;
-  /** The piece noun from UnitNames via packaging.unitKey(). */
-  pieceOne: string;
-  pieceOther: string;
-}
-
-export const DISPLAY_NAMES = { one: 'display', other: 'displays' } as const;
-export const CARTON_NAMES = { one: 'omdoos', other: 'omdozen' } as const;
-const ORDER: Record<PartnerCountUnitKey, number> = { STUK: 0, VERPAKKING: 1, OMDOOS: 2 };
+/* The offer rule itself (CountFacts, buildCountUnits, the unit names and their order) lives once in
+   shared/partner-count-units.ts, the one mirror of the server's PartnerCountUnits for the portal and the staff
+   screens; re-exported here so the portal's imports stay as they are. */
+export type { CountFacts } from '../../shared/partner-count-units';
+export { CARTON_NAMES, DISPLAY_NAMES, buildCountUnits };
 
 function positive(value: number | null | undefined): number {
   return value != null && Number.isSafeInteger(value) && value > 0 ? value : 0;
@@ -57,21 +47,6 @@ function positive(value: number | null | undefined): number {
 function gcd(a: number, b: number): number {
   while (b) [a, b] = [b, a % b];
   return a;
-}
-
-/** The units offered for these facts (smallest first) and the pieces per sales unit, as the server builds them. */
-export function buildCountUnits(facts: CountFacts): { piecesPerSalesUnit: number; countUnits: PartnerCountUnit[] } {
-  const unitPieces = Math.max(1, positive(facts.unitPieces));
-  const piecesPerSalesUnit = facts.salesUnit === 'DISPLAY' ? unitPieces : 1;
-  const units: PartnerCountUnit[] = [{ unit: 'STUK', one: facts.pieceOne, other: facts.pieceOther, pieces: 1 }];
-  if (facts.displayKind && unitPieces >= 2) units.push({ unit: 'VERPAKKING', ...DISPLAY_NAMES, pieces: unitPieces });
-  const carton = positive(facts.cartonContent);
-  if (carton > 1) units.push({ unit: 'OMDOOS', ...CARTON_NAMES, pieces: carton * piecesPerSalesUnit });
-  return { piecesPerSalesUnit, countUnits: sortUnits(units) };
-}
-
-function sortUnits(units: readonly PartnerCountUnit[]): PartnerCountUnit[] {
-  return [...units].sort((a, b) => a.pieces - b.pieces || ORDER[a.unit] - ORDER[b.unit]);
 }
 
 /** Pieces in one sales unit (12 for a display of 12 rozen sold per display); 1 on a round-1 tile. */

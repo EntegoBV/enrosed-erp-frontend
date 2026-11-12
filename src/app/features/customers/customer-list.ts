@@ -3,6 +3,8 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
+import { PartnerSalesApi } from '../../core/api/partner-sales-api';
+import { WorkQueue } from '../../core/api/work-queue';
 import { Country, CrmStatus, Customer, CustomerTouchpoint, LANGUAGES } from '../../core/api/models';
 import { countryFlag, countryName, STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -131,7 +133,7 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
         <div body>
           <p class="legend"><b>*</b> verplicht · de rest kan later.</p>
           @if (draft().id && draft().partnerOrigin; as origin) {
-            <app-customer-partner-origin [customerId]="draft().id!" [origin]="origin" (reviewed)="originReviewed(draft().id!, $event)" />
+            <app-customer-partner-origin [origin]="origin" [marked]="reviewOnSave()" [vatMissing]="vatMissing(draft().vatNumber)" (markChange)="reviewOnSave.set($event)" />
           }
           <div class="partner-field cl-followup">
             <div class="cl-followup__head">
@@ -370,6 +372,8 @@ export class CustomerList {
   }
 
   private readonly sales = inject(SalesApi);
+  private readonly partnerSales = inject(PartnerSalesApi);
+  private readonly work = inject(WorkQueue);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
@@ -463,14 +467,6 @@ export class CustomerList {
     return partnerShortName(partnerName, 'partner');
   }
 
-  /** Nagekeken on the sheet: the row's pill and the sheet's draft follow without a reload. */
-  originReviewed(customerId: number, reviewedAt: string): void {
-    const mark = (customer: Customer): Customer => customer.id === customerId && customer.partnerOrigin
-      ? { ...customer, partnerOrigin: { ...customer.partnerOrigin, reviewedAt } } : customer;
-    this.customers.update((list) => list.map(mark));
-    this.draft.update(mark);
-  }
-
   retryLoad(): void {
     if (this.loading()) return;
     this.loading.set(true);
@@ -552,8 +548,13 @@ export class CustomerList {
     this.draft.set(customer
       ? { ...customer, crmStatus: customer.crmStatus ?? null, touchpoints: customer.touchpoints ?? [] }
       : blank(this.defaultCountry()));
+    this.reviewOnSave.set(false);
     this.editing.set(true);
   }
+
+  /** A partner-made customer's Nagekeken, ticked on the sheet: sent after its Opslaan stored the customer. */
+  readonly reviewOnSave = signal(false);
+  readonly vatMissing = vatNumberMissing;
 
   /** Home first when it ships, otherwise the first configured country -
       never a hardcoded guess, which left every new customer without a
@@ -604,10 +605,12 @@ export class CustomerList {
       return;
     }
     /* A customer the partner made (name, country, maybe a city) is put right here first: while staff have not
-       marked it Nagekeken it saves without a VAT number, as the server allows. */
-    const fromPartner = !!customer.partnerOrigin && !customer.partnerOrigin.reviewedAt;
-    if (vatNumberMissing(customer.vatNumber) && !fromPartner) {
-      this.ui.toast(VAT_REQUIRED_MESSAGE, 'err');
+       marked it Nagekeken it saves without a VAT number, as the server allows. Nagekeken (ticked on the sheet) goes
+       after this save, and needs the VAT number: from then on every save does. */
+    const unreviewed = !!customer.partnerOrigin && !customer.partnerOrigin.reviewedAt;
+    const review = unreviewed && customer.id !== null && this.reviewOnSave();
+    if (vatNumberMissing(customer.vatNumber) && !(unreviewed && !review)) {
+      this.ui.toast(review ? 'Nagekeken vraagt het BTW-nummer: vul het in, of vink Nagekeken uit en sla zo op.' : VAT_REQUIRED_MESSAGE, 'err');
       setTimeout(() => document.getElementById('c-vat')?.focus(), 100);
       return;
     }
@@ -624,9 +627,21 @@ export class CustomerList {
       const { partnerOrigin: _origin, ...body } = customer;
       if (customer.id === null) await this.sales.createCustomer(body);
       else await this.sales.updateCustomer(customer.id, body);
+      /* The customer is stored: now Nagekeken (the bell item goes). A refusal keeps what was saved. */
+      let reviewed: boolean | null = null;
+      if (review && customer.id !== null) {
+        try {
+          await this.partnerSales.markCustomerReviewed(customer.id);
+          reviewed = true;
+        } catch (failure: unknown) {
+          reviewed = false;
+          this.ui.toast(`Klant opgeslagen; ${messageOf(failure, 'Nagekeken lukte niet').replace(/^./, (c) => c.toLowerCase())}`, 'err');
+        }
+        void this.work.refresh(true);
+      }
       this.editing.set(false);
       await this.load();
-      this.ui.toast('Klant opgeslagen');
+      if (reviewed !== false) this.ui.toast(reviewed ? 'Klant opgeslagen en nagekeken' : 'Klant opgeslagen');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
     } finally {
