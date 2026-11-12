@@ -46,15 +46,24 @@ export function partLine(draft: MeldingDraft, entry: DraftEntry, which: 'sale' |
   const messages: PartLineMessage[] = [];
   let invalid = false;
   let max: number | null = null;
+  /* The shelf, as the server checks it: a new melding's sale against what lies there; an edit's net change (sale
+     minus buyback), blamed on the sale when it grew, else on the buyback whose pieces were sold again since. */
+  const short = draft.shelfShort(entry);
+  const piece = pieceUnit(product);
   if (which === 'sale') {
     max = draft.maxCount(entry);
-    if (draft.overLimit(entry)) {
+    if (short?.side === 'sale') {
       invalid = true;
-      const limit = draft.saleLimit(product.productId) ?? 0;
-      const there = limit * piecesPerSalesUnit(product);
+      const there = short.most * piecesPerSalesUnit(product);
       const rest = unit.unit !== 'STUK' && there % unit.pieces !== 0;
-      messages.push({ text: `Er liggen maar ${there ? mixText(product, there) : unitText(pieceUnit(product), 0)}${rest ? ' · rest: tel per ' + pieceUnit(product).one : ''}`, bad: true });
+      messages.push({ text: `Er liggen maar ${there ? mixText(product, there) : unitText(piece, 0)}${short.back ? ' met de terugkoop' : ''}${rest ? ' · rest: tel per ' + piece.one : ''}`, bad: true });
+    } else if (short && !draft.showsBuyback(entry)) {
+      invalid = true;
+      messages.push({ text: 'De teruggekochte stuks liggen niet meer op voorraad: de terugkoop moet blijven', bad: true });
     }
+  } else if (short?.side === 'buyback') {
+    invalid = true;
+    messages.push({ text: `De teruggekochte stuks liggen niet meer op voorraad: minstens ${unitText(piece, short.leastBack * piecesPerSalesUnit(product))} terug`, bad: true });
   }
   if (part.unreadable) {
     invalid = true;
@@ -70,7 +79,6 @@ export function partLine(draft: MeldingDraft, entry: DraftEntry, which: 'sale' |
   if (which === 'buyback' && draft.kind() === 'veiling') {
     const sold = draft.pieces(entry, 'sale');
     if (sold > 0 && pieces > sold) {
-      const piece = pieceUnit(product);
       messages.push({ text: `Meer teruggekocht (${unitText(piece, pieces)}) dan verkocht (${unitText(piece, sold)}): klopt dat?`, bad: false, warn: true });
     }
   }

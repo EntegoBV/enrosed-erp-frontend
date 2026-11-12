@@ -24,9 +24,10 @@ import {
  * so flipping the kind back loses nothing; they are just not sent.
  *
  * Editing (`loadReport`): the costs are the melding's own percentages while
- * its channel stays, the sale limit of a product adds the melding's own old
- * sale and takes off its own old buyback, an unchanged date of any age is
- * fine, and `dirty` compares with what was loaded.
+ * its channel stays, the shelf is checked on the net change as the server
+ * does (the sale minus the buyback against what lies there plus the
+ * melding's own old sale minus its old buyback), an unchanged date of any
+ * age is fine, and `dirty` compares with what was loaded.
  */
 
 export interface DraftPart {
@@ -66,6 +67,26 @@ export interface DraftEditing {
   /** The melding's own percentages (its snapshot). */
   costs: PartnerCosts;
   soldOn: string;
+}
+
+/** What the edited melding booked of one product: sales units per side. */
+interface Booked {
+  sale: number;
+  buyback: number;
+}
+
+/**
+ * The shelf refuses this entry: the sale is above what lies there (a new melding), or, in an edit, the net change
+ * (sale minus buyback) takes the shelf below zero. `side` says which row to blame, as the server's wording does:
+ * the sale when it grew, else the buyback (its pieces were sold again since). `most` = the sale it can reach (sales
+ * units), `leastBack` = the buyback it needs at least.
+ */
+export interface ShelfShort {
+  side: 'sale' | 'buyback';
+  most: number;
+  /** The buyback this check counted (sales units; 0 on a new melding). */
+  back: number;
+  leastBack: number;
 }
 
 export const MAX_EXTRA_LINES = 5;
@@ -157,8 +178,10 @@ export class MeldingDraft {
   private readonly bound = signal('');
   /** The melding being edited; null for a new one. */
   readonly editing = signal<DraftEditing | null>(null);
-  /** Per product what the edited melding booked (sales units): the sale limit adds it back. */
-  private ownOld = new Map<number, { sale: number; buyback: number }>();
+  /** Per product what the edited melding booked: the shelf check adds its net back. */
+  private readonly booked = signal<ReadonlyMap<number, Booked>>(new Map());
+  /** The stock there as last applied (sales units, not clamped), for the server's shelf rule; null before applyStock. */
+  private readonly shelf = signal<{ stock: ReadonlyMap<number, number>; otherwise: number | null } | null>(null);
   /** What was loaded, to tell an edit with changes from one without. */
   private readonly snapshot = signal<string | null>(null);
   private extraKey = 0;
@@ -231,42 +254,77 @@ export class MeldingDraft {
 
   /* ---- limits */
 
-  /** The most this product can sell (sales units), or null when no limit is known. */
+  /** What lies there of this product (sales units) as the screen showed it, or null when no limit is known. */
   saleLimit(productId: number): number | null {
     return this.saleLimits().get(productId) ?? this.saleLimitOtherwise();
   }
 
+  /** The stock there (not clamped) as last applied; without applyStock only the plain limit is known. */
+  private shelfOf(productId: number): number | null {
+    const shelf = this.shelf();
+    if (!shelf) return null;
+    return shelf.stock.get(productId) ?? (this.booked().has(productId) ? 0 : shelf.otherwise);
+  }
+
+  /**
+   * The sale this entry may reach (sales units, not clamped), as the server checks it; null without a limit. A new
+   * melding: what lies there. An edit: the server checks the net change (sale minus buyback) old -> new against the
+   * shelf, so the sale may reach what lies there plus the melding's own old sale minus its old buyback plus the
+   * buyback the form holds now ("sold all, bought 5 back, those 5 resold" can still move its date or its count).
+   */
+  private saleRoom(entry: DraftEntry): number | null {
+    const productId = entry.product.productId;
+    const at = this.shelfOf(productId);
+    if (at === null) return this.saleLimit(productId);
+    if (!this.editing()) return Math.max(0, at);
+    const old = this.booked().get(productId);
+    const back = this.showsBuyback(entry) ? this.salesUnits(entry, 'buyback') ?? 0 : 0;
+    return back + (old ? old.sale - old.buyback : 0) + Math.max(0, at);
+  }
+
+  /** The most the sale can be (sales units), or null without a limit. */
+  saleMost(entry: DraftEntry): number | null {
+    const room = this.saleRoom(entry);
+    return room === null ? null : Math.max(0, room);
+  }
+
   /** The most the sale can count in its unit, or null without a limit. */
   maxCount(entry: DraftEntry): number | null {
-    const limit = this.saleLimit(entry.product.productId);
-    return limit === null ? null : maxCountOf(entry.product, this.unitOf(entry, 'sale'), limit);
+    const most = this.saleMost(entry);
+    return most === null ? null : maxCountOf(entry.product, this.unitOf(entry, 'sale'), most);
   }
 
-  /**
-   * The sale is above what lies there. An edit that keeps a product's quantities (only prices or costs change) is
-   * never held back: the server changes the money on the same parts and moves no stock.
-   */
+  /** Why the shelf refuses this entry (the server's rule, see ShelfShort), or null when it fits. */
+  shelfShort(entry: DraftEntry): ShelfShort | null {
+    const sale = this.showsSale() ? this.salesUnits(entry, 'sale') : 0;
+    if (sale === null) return null;
+    const room = this.saleRoom(entry);
+    if (room === null || sale <= room) return null;
+    const most = Math.max(0, room);
+    if (!this.editing()) return { side: 'sale', most, back: 0, leastBack: 0 };
+    const back = this.showsBuyback(entry) ? this.salesUnits(entry, 'buyback') ?? 0 : 0;
+    const old = this.booked().get(entry.product.productId);
+    return { side: sale > (old?.sale ?? 0) ? 'sale' : 'buyback', most, back, leastBack: back + sale - room };
+  }
+
+  /** The shelf refuses this entry (the sale or, in an edit, the net change); the row says which side. */
   overLimit(entry: DraftEntry): boolean {
-    if (!this.showsSale()) return false;
-    const limit = this.saleLimit(entry.product.productId);
-    const units = this.salesUnits(entry, 'sale');
-    if (limit === null || units === null || units <= limit) return false;
-    const old = this.ownOld.get(entry.product.productId);
-    if (this.editing() && old && old.sale === units && old.buyback === (this.showsBuyback(entry) ? this.salesUnits(entry, 'buyback') ?? 0 : 0)) return false;
-    return true;
+    return this.shelfShort(entry) !== null;
   }
 
   /**
-   * The stock there (sales units per product) as the sale limits; an edit adds the melding's own old sale and takes
-   * off its own old buyback. Call again after every refresh of the stock.
+   * The stock there (sales units per product): the limits the rows show ("beschikbaar" in an edit: the melding's
+   * own old sale minus its old buyback count again) and the shelf the checks use. Call again after every refresh of
+   * the stock, and after loadReport.
    */
   applyStock(stock: ReadonlyMap<number, number>, otherwise: number | null = 0): void {
     const limits = new Map(stock);
-    for (const [productId, old] of this.ownOld) {
+    for (const [productId, old] of this.booked()) {
       limits.set(productId, Math.max(0, (stock.get(productId) ?? 0) + old.sale - old.buyback));
     }
     this.saleLimits.set(limits);
     this.saleLimitOtherwise.set(otherwise);
+    this.shelf.set({ stock: new Map(stock), otherwise });
   }
 
   /* ---- problems */
@@ -457,7 +515,7 @@ export class MeldingDraft {
     this.note.set('');
     this.buyer.set(null);
     this.editing.set(null);
-    this.ownOld = new Map();
+    this.booked.set(new Map());
     this.snapshot.set(null);
     this.soldOn.set(today);
     this.clientRefValue = newClientRef();
@@ -473,18 +531,16 @@ export class MeldingDraft {
     this.soldOn.set(report.soldOn);
     this.note.set(report.note ?? '');
     this.buyer.set(report.buyer ?? null);
-    const ownOld = new Map<number, { sale: number; buyback: number }>();
-    this.entries.set(report.entries.map((entry): DraftEntry => {
+    const booked = new Map<number, Booked>();
+    const entries = report.entries.map((entry): DraftEntry => {
       const product = tileOfEntry(entry);
-      ownOld.set(entry.productId, { sale: entry.sale?.quantity ?? 0, buyback: entry.buyback?.quantity ?? 0 });
-      return {
-        product,
-        sale: entry.sale ? partOfReport(product, entry.sale) : emptyPart(product),
-        buyback: entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product, 'buyback'),
-        buybackOpen: kind === 'veiling' && !!entry.buyback,
-      };
-    }));
-    this.ownOld = ownOld;
+      const sale = entry.sale ? partOfReport(product, entry.sale) : emptyPart(product);
+      const buyback = entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product, 'buyback');
+      booked.set(entry.productId, { sale: entry.sale?.quantity ?? 0, buyback: entry.buyback?.quantity ?? 0 });
+      return { product, sale, buyback, buybackOpen: kind === 'veiling' && !!entry.buyback };
+    });
+    this.booked.set(booked);
+    this.entries.set(entries);
     const lines = report.extraCosts ?? (report.extraCost ? [{ description: null, ...report.extraCost }] : []);
     this.extraCosts.set(lines.map((line) => ({ key: ++this.extraKey, description: line.description ?? '', mode: line.mode, value: line.value })));
     this.editing.set({
