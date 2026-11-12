@@ -26,10 +26,10 @@ import {
 } from './pallet-browser-model';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
-  CONTAINERS, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampPalletHeight,
-  containerCapacity, containerFill, palletFit, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet,
-  separatePallets, shareOnePallet, startUnit, unitsPerCarton,
-  type CalcUnit, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
+  CONTAINERS, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_WIDTH_CM, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM,
+  PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight, containerCapacity, containerFill, karSpec, palletFit,
+  palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
 /** One picked product: what was typed, in which unit, and its colour on the pallets. */
@@ -82,11 +82,31 @@ const MAX_ROWS = 12;
 const MAX_RECENT = 12;
 const collator = new Intl.Collator('nl-BE', { numeric: true, sensitivity: 'base' });
 
-const PROBLEMS: Readonly<Record<string, string>> = {
-  'afmetingen ontbreken': 'Omdoosmaten ontbreken',
-  'doos past niet op de pallet': 'Omdoos te groot voor deze pallet',
-  'te hoog of te zwaar': 'Omdoos te hoog of te zwaar',
+/** The words of what the omdozen go on: "3 pallets", "3 karren". */
+interface CarrierWords {
+  one: string;
+  other: string;
+  /** The card's row and the settings' name. */
+  title: string;
+  /** The plan's list: "Pallets", "Karren". */
+  list: string;
+}
+
+const CARRIER_WORDS: Readonly<Record<CarrierKind, CarrierWords>> = {
+  pallet: { one: 'pallet', other: 'pallets', title: 'Pallet', list: 'Pallets' },
+  kar: { one: 'kar', other: 'karren', title: 'Deense kar', list: 'Karren' },
 };
+
+const CARRIERS: readonly CarrierKind[] = ['pallet', 'kar'];
+
+function problemText(problem: string, words: CarrierWords): string {
+  switch (problem) {
+    case 'afmetingen ontbreken': return 'Omdoosmaten ontbreken';
+    case 'doos past niet op de pallet': return `Omdoos te groot voor deze ${words.one}`;
+    case 'te hoog of te zwaar': return 'Omdoos te hoog of te zwaar';
+    default: return problem;
+  }
+}
 
 function cm(value: number): string {
   return value.toLocaleString('nl-BE', { maximumFractionDigits: 1 });
@@ -115,9 +135,10 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
 }
 
 /**
- * Palletberekening (Verkoop): what fits on a pallet and in a 20ft or 40ft
- * container, for one product or a mix, counted in omdozen, displays and
- * pieces. Built for the fair: photo first, one tap adds, the answer stays in
+ * Palletberekening (Verkoop): what fits on a pallet or a Deense kar and in a
+ * 20ft or 40ft container, for one product or a mix, counted in omdozen,
+ * displays and pieces. The pallet or the kar is a choice in the settings;
+ * the plan, the cards and every word follow it. Built for the fair: photo first, one tap adds, the answer stays in
  * sight. The browser (pallet-browser.ts) shows one tile per carton with its
  * pallet figure; a tap puts the product's card on top. The phone reads
  * browser, cards, result (a glass capsule carries the result while it is out
@@ -133,7 +154,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
     AuthImage, CbmPipe, Icon, LoadError, NgTemplateOutlet, NumPipe, PageHeader, PalletBrowser, RouterLink, Segmented, Sheet, Skeleton,
   ],
   template: `
-    <app-page-header title="Palletberekening" [subtitle]="desktop.active() ? 'Pallet, 20ft en 40ft' : palletLabel()">
+    <app-page-header title="Palletberekening" [subtitle]="desktop.active() ? 'Pallet, Deense kar, 20ft en 40ft' : palletLabel()">
       @if (desktop.active()) {
         <label class="wk-search pc-search">
           <app-icon name="search" [size]="15" />
@@ -145,7 +166,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
         </label>
       } @else {
         <button class="btn btn--sm btn--icon-mobile" type="button" (click)="palletSheet.set(true)"
-                aria-label="Pallet instellen" title="Pallet instellen" aria-haspopup="dialog">
+                aria-label="Pallet of kar instellen" title="Pallet of kar instellen" aria-haspopup="dialog">
           <app-icon name="pallet" [size]="18" />
         </button>
       }
@@ -162,7 +183,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
       <div class="pc-grid">
         <div class="pc-find">
           @if (products() || loading()) {
-            <app-pallet-browser [sections]="sections()" [recent]="recentTiles()" [picked]="pickedTiles()" [pallet]="pallet()"
+            <app-pallet-browser [sections]="sections()" [recent]="recentTiles()" [picked]="pickedTiles()" [pallet]="pallet()" [carrier]="carrier()"
                                 [variant]="segVariant()" [loading]="!products()" [full]="full()" [maxRows]="maxRows"
                                 [hint]="!rows().length" [foldable]="rows().length > 0" [(open)]="browserOpen" [(query)]="query"
                                 (chosen)="choose($event)" />
@@ -171,7 +192,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
 
         <div class="pc-side">
           @if (desktop.active()) {
-            <section class="pc-panel pc-set" aria-label="Pallet"><ng-container [ngTemplateOutlet]="palletSettings" /></section>
+            <section class="pc-panel pc-set" aria-label="Pallet of kar"><ng-container [ngTemplateOutlet]="palletSettings" /></section>
           }
           @if (desktop.active() || summaryKind() === 'choose' || summaryKind() === 'plan') {
             <section class="pc-panel pc-sum" aria-live="polite" #sum>
@@ -184,7 +205,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                 @case ('capacity') {
                   @if (lines()[0]; as line) {
                     @if (line.fit.cartonsPerPallet > 0) {
-                      <h2 class="pc-sum__title">{{ line.fit.cartonsPerPallet | num }} {{ line.fit.cartonsPerPallet === 1 ? 'omdoos' : 'omdozen' }} <small>per pallet</small></h2>
+                      <h2 class="pc-sum__title">{{ line.fit.cartonsPerPallet | num }} {{ line.fit.cartonsPerPallet === 1 ? 'omdoos' : 'omdozen' }} <small>per {{ words().one }}</small></h2>
                       @if (unitsLine(line, line.fit.cartonsPerPallet); as units) { <p class="pc-sum__units">{{ units }}</p> }
                     } @else {
                       <h2 class="pc-sum__title">Past niet</h2>
@@ -193,14 +214,14 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                   }
                 }
                 @case ('choose') {
-                  <h2 class="pc-sum__title">Gemengde pallet</h2>
+                  <h2 class="pc-sum__title">Gemengde {{ words().one }}</h2>
                   @if (canShare()) {
-                    <p class="pc-sum__facts">Vul aantallen in of verdeel één pallet.</p>
+                    <p class="pc-sum__facts">Vul aantallen in of verdeel één {{ words().one }}.</p>
                     <button class="btn btn--primary btn--sm pc-sum__action" type="button" (click)="share()">
-                      <app-icon name="layers" [size]="16" /><span>Verdeel 1 pallet</span>
+                      <app-icon name="layers" [size]="16" /><span>Verdeel 1 {{ words().one }}</span>
                     </button>
                   } @else {
-                    <p class="pc-sum__facts pc-warn">Geen van deze omdozen past op deze pallet.</p>
+                    <p class="pc-sum__facts pc-warn">Geen van deze omdozen past op deze {{ words().one }}.</p>
                   }
                 }
                 @case ('plan') {
@@ -224,10 +245,10 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                     }
                   </div>
                   @if (palletGroups().length) {
-                    <ol class="pc-pallets" aria-label="Pallets">
+                    <ol class="pc-pallets" [attr.aria-label]="words().list">
                       @for (group of palletGroups(); track group.from) {
                         <li class="pc-pallet">
-                          <span class="pc-stack" aria-hidden="true">
+                          <span class="pc-stack" [class.pc-stack--kar]="carrier() === 'kar'" aria-hidden="true">
                             @for (block of group.blocks; track $index) { <i [style.height.%]="block.pct" [style.background]="block.colour"></i> }
                           </span>
                           <span class="pc-pallet__text">
@@ -248,7 +269,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                   }
                   @if (room().length) {
                     <div class="pc-room">
-                      <h3>Past nog bij, zonder extra pallet</h3>
+                      <h3>Past nog bij, zonder extra {{ words().one }}</h3>
                       @for (entry of room(); track entry.line.row.productId) {
                         <div class="pc-room__row">
                           <i class="pc-dot" [style.--dot]="entry.line.colour" aria-hidden="true"></i>
@@ -263,7 +284,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                   }
                   @if (canShare()) {
                     <button class="btn btn--sm pc-sum__action" type="button" (click)="share()">
-                      <app-icon name="layers" [size]="16" /><span>Verdeel 1 pallet</span>
+                      <app-icon name="layers" [size]="16" /><span>Verdeel 1 {{ words().one }}</span>
                     </button>
                   }
                 }
@@ -319,7 +340,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                       </tr>
                     }
                     <tr class="pc-table__pallet">
-                      <th scope="row">Pallet</th>
+                      <th scope="row">{{ words().title }}</th>
                       <td>{{ cell(line.fit.cartonsPerPallet, 1) }}</td>
                       @if (line.units.displaysPerCarton; as per) { <td>{{ cell(line.fit.cartonsPerPallet, per) }}</td> }
                       @if (line.units.piecesPerCarton; as per) { <td>{{ cell(line.fit.cartonsPerPallet, per) }}</td> }
@@ -366,8 +387,12 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
     </div>
 
     <ng-template #palletSettings>
-      <app-segmented label="Pallettype" [variant]="segVariant()" [options]="palletOptions" [value]="profile()"
-                     (changed)="profile.set($any($event))" />
+      <app-segmented label="Pallet of Deense kar" [variant]="segVariant()" [options]="carrierOptions" [value]="carrier()"
+                     (changed)="carrier.set($any($event))" />
+      @if (carrier() === 'pallet') {
+        <app-segmented label="Pallettype" [variant]="segVariant()" [options]="palletOptions" [value]="profile()"
+                       (changed)="profile.set($any($event))" />
+      }
       <div class="pc-set__row">
         <span class="pc-set__label" id="pc-height-label">Max. hoogte</span>
         <div class="pc-step" role="group" aria-labelledby="pc-height-label">
@@ -378,11 +403,15 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
         </div>
         <span class="pc-set__hint">cm</span>
       </div>
-      <p class="pc-set__hint">max {{ pallet().maxWeightKg | num }} kg per pallet</p>
+      @if (carrier() === 'kar') {
+        <p class="pc-set__hint">{{ karSize }} cm binnen de stijlen · max {{ karMaxWeight | num }} kg per kar · zonder legborden</p>
+      } @else {
+        <p class="pc-set__hint">max {{ pallet().maxWeightKg | num }} kg per pallet</p>
+      }
     </ng-template>
 
     @if (palletSheet() && !desktop.active()) {
-      <app-sheet title="Pallet" variant="ios" (closed)="palletSheet.set(false)">
+      <app-sheet title="Pallet of kar" variant="ios" (closed)="palletSheet.set(false)">
         <div body class="pc-set pc-sheet"><ng-container [ngTemplateOutlet]="palletSettings" /></div>
         <div foot style="display:contents"><button class="btn btn--primary" type="button" (click)="palletSheet.set(false)">Klaar</button></div>
       </app-sheet>
@@ -396,7 +425,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
             <div><dt>Gewicht</dt><dd>{{ line.weightKg ? cm(line.weightKg) + ' kg' : 'Onbekend' }}</dd></div>
             <div><dt>Inhoud</dt><dd>{{ contents(line) }}</dd></div>
             @if (line.cbm) { <div><dt>Volume</dt><dd>{{ line.cbm | cbm }}</dd></div> }
-            <div><dt>Op de pallet</dt><dd>{{ line.fit.cartonsPerPallet > 0 ? fitFacts(line.fit, line.fit.cartonsPerPallet * line.weightKg) : line.problem }}</dd></div>
+            <div><dt>Op de {{ words().one }}</dt><dd>{{ line.fit.cartonsPerPallet > 0 ? fitFacts(line.fit, line.fit.cartonsPerPallet * line.weightKg) : line.problem }}</dd></div>
             <div><dt>Containers</dt><dd>@for (text of containerSources(line); track text) { <span>{{ text }}</span> }</dd></div>
             <div><dt>Klant bestelt per</dt><dd>{{ orderUnit(line.product) }}</dd></div>
             <div><dt>Varianten</dt>
@@ -469,6 +498,8 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
     .pc-pallet{display:flex;align-items:center;gap:12px}
     .pc-stack{flex:none;width:30px;height:46px;display:flex;flex-direction:column-reverse;overflow:hidden;border-radius:4px 4px 1px 1px;background:var(--surface-2);border-bottom:4px solid color-mix(in srgb,#a87b4f 85%,var(--surface))}
     .pc-stack i{display:block;flex:none;box-shadow:inset 0 1px 0 rgb(255 255 255 / 35%)}
+    /* A Deense kar: galvanised base plate and corner posts around the load. */
+    .pc-stack--kar{width:26px;padding:0 2px;border-radius:2px 2px 1px 1px;border-bottom-color:color-mix(in srgb,#8d969c 85%,var(--surface));background:var(--surface-2) linear-gradient(90deg,#9aa3a8 0 2px,transparent 2px calc(100% - 2px),#9aa3a8 calc(100% - 2px)) no-repeat}
     .pc-pallet__text{flex:1;min-width:0;font-size:12px;line-height:1.45;color:var(--muted)}
     .pc-pallet__text>*{display:block}.pc-pallet__text b{font-size:14px;color:var(--ink)}
     .pc-parts{max-width:55%;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:2px 10px;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
@@ -558,14 +589,20 @@ export class PalletCalculatorPage {
   readonly loading = signal(false);
   readonly loadError = signal<string | null>(null);
   readonly query = signal('');
+  /** Pallet or Deense kar: what the omdozen go on. */
+  readonly carrier = signal<CarrierKind>('pallet');
   readonly profile = signal<PalletProfile>('EURO_120X80');
   /**
    * The height the user holds. A pallet type shows at most what it allows (a europallet 260 cm), and a
    * higher pick comes back when the type that allows it is chosen again while the page stays open.
    */
   private readonly pickedHeight = signal(PALLET_MAX_HEIGHT_CM);
-  readonly heightLimit = computed(() => palletHeightLimit(this.profile()));
-  readonly maxHeight = computed(() => Math.min(this.pickedHeight(), this.heightLimit()));
+  /** The kar's own loading height, so a switch back to the pallet finds the pallet's height unchanged. */
+  private readonly karHeight = signal(KAR_MAX_HEIGHT_CM);
+  private readonly palletHeight = computed(() => Math.min(this.pickedHeight(), palletHeightLimit(this.profile())));
+  readonly heightLimit = computed(() => (this.carrier() === 'kar' ? KAR_MAX_HEIGHT_CM : palletHeightLimit(this.profile())));
+  readonly maxHeight = computed(() => (this.carrier() === 'kar' ? this.karHeight() : this.palletHeight()));
+  readonly words = computed(() => CARRIER_WORDS[this.carrier()]);
   readonly rows = signal<CalcRow[]>([]);
   /** Product ids, newest first: the Recent chip. */
   private readonly recentIds = signal<number[]>([]);
@@ -586,9 +623,13 @@ export class PalletCalculatorPage {
 
   readonly palletOptions: SegmentOption[] = PALLET_CHOICES.map((choice) =>
     ({ id: choice.id, label: `${choice.short} ${choice.size.replace(/ /g, '')}`, ariaLabel: `${choice.label} ${choice.size} cm` }));
+  readonly carrierOptions: SegmentOption[] = CARRIERS.map((id) => ({ id, label: CARRIER_WORDS[id].title }));
+  readonly karSize = `${cm(KAR_LENGTH_CM)} × ${cm(KAR_WIDTH_CM)}`;
+  readonly karMaxWeight = KAR_MAX_WEIGHT_KG;
   readonly segVariant = computed<'desk' | 'ios'>(() => (this.desktop.active() ? 'desk' : 'ios'));
-  readonly pallet = computed(() => palletSpec(this.profile(), this.maxHeight()));
+  readonly pallet = computed(() => (this.carrier() === 'kar' ? karSpec(this.karHeight()) : palletSpec(this.profile(), this.palletHeight())));
   readonly palletLabel = computed(() => {
+    if (this.carrier() === 'kar') return `Deense kar ${this.karSize} · max ${this.maxHeight()} cm`;
     const choice = PALLET_CHOICES.find((candidate) => candidate.id === this.profile()) ?? PALLET_CHOICES[0];
     return `${choice.label} ${choice.size} · max ${this.maxHeight()} cm`;
   });
@@ -615,6 +656,7 @@ export class PalletCalculatorPage {
     const products = this.byId();
     const tiles = this.tileOf();
     const pallet = this.pallet();
+    const words = this.words();
     const perTile = new Map<string, number>();
     for (const row of this.rows()) {
       const key = tiles.get(row.productId)?.key;
@@ -624,7 +666,7 @@ export class PalletCalculatorPage {
       const product = products.get(row.productId);
       if (!product) return [];
       const tile = tiles.get(row.productId) ?? null;
-      return [this.line(row, product, tile, !!tile && (perTile.get(tile.key) ?? 0) > 1, pallet)];
+      return [this.line(row, product, tile, !!tile && (perTile.get(tile.key) ?? 0) > 1, pallet, words)];
     });
   });
 
@@ -725,7 +767,10 @@ export class PalletCalculatorPage {
     effect(() => {
       /* standardCm is the standard the height was saved under: a device that holds that number never picked
          one and follows a later standard (restore). */
-      const state = { profile: this.profile(), heightCm: this.maxHeight(), standardCm: PALLET_MAX_HEIGHT_CM, rows: this.rows(), recent: this.recentIds() };
+      const state = {
+        carrier: this.carrier(), profile: this.profile(), heightCm: this.palletHeight(), standardCm: PALLET_MAX_HEIGHT_CM,
+        karHeightCm: this.karHeight(), rows: this.rows(), recent: this.recentIds(),
+      };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode: the picks live as long as the page */ }
     });
     /* The capsule shows while the result is out of view (the tab bar's band counts as out of view). */
@@ -870,7 +915,8 @@ export class PalletCalculatorPage {
   }
 
   setHeight(value: number): void {
-    this.pickedHeight.set(clampPalletHeight(value, this.profile()));
+    if (this.carrier() === 'kar') this.karHeight.set(clampKarHeight(value));
+    else this.pickedHeight.set(clampPalletHeight(value, this.profile()));
   }
 
   /** A typed height within the bounds; anything unreadable shows the height that stays. */
@@ -984,9 +1030,10 @@ export class PalletCalculatorPage {
   }
 
   palletsText(): string {
-    if (this.tooMany()) return `Meer dan ${MAX_PLANNED_PALLETS} pallets`;
+    const words = this.words();
+    if (this.tooMany()) return `Meer dan ${MAX_PLANNED_PALLETS} ${words.other}`;
     const pallets = this.plan().length;
-    return pallets === 0 ? 'Past niet' : count(pallets, 'pallet', 'pallets');
+    return pallets === 0 ? 'Past niet' : count(pallets, words.one, words.other);
   }
 
   /** "vol", "72 % vol" for one pallet, "laatste 72 %" for more. */
@@ -1000,7 +1047,8 @@ export class PalletCalculatorPage {
   }
 
   groupTitle(group: PalletGroup): string {
-    const name = group.from === group.to ? `Pallet ${group.from}` : `Pallet ${group.from}–${group.to}`;
+    const noun = capitalize(this.words().one);
+    const name = group.from === group.to ? `${noun} ${group.from}` : `${noun} ${group.from}–${group.to}`;
     return `${name} · ${group.full ? 'vol' : `${Math.round(group.fill * 100)} %`}`;
   }
 
@@ -1047,7 +1095,9 @@ export class PalletCalculatorPage {
     this.rows.update((rows) => rows.map((row) => (row.productId === productId ? { ...row, ...change } : row)));
   }
 
-  private line(row: CalcRow, product: Product, tile: PalletBrowserTile | null, twin: boolean, pallet: ReturnType<typeof palletSpec>): CalcLine {
+  private line(
+    row: CalcRow, product: Product, tile: PalletBrowserTile | null, twin: boolean, pallet: ReturnType<typeof palletSpec>, words: CarrierWords,
+  ): CalcLine {
     const units = productUnits(product);
     const piece = productSalesUnit(product).piece;
     const unitOptions: SegmentOption[] = [{ id: 'carton', label: 'Omdoos' }];
@@ -1058,7 +1108,7 @@ export class PalletCalculatorPage {
     const fit = palletFit(carton, pallet);
     const cartons = cartonsFor(row.quantity, unit, units);
     const weightKg = carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0;
-    const problem = fit.problem ? PROBLEMS[fit.problem] ?? fit.problem : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;
+    const problem = fit.problem ? problemText(fit.problem, words) : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;
     const colour = product.colour?.trim() || null;
     return {
       row, product, tile, unit, units, fit, cartons, weightKg, problem, unitOptions,
@@ -1077,7 +1127,11 @@ export class PalletCalculatorPage {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
-      const stored = JSON.parse(raw) as { profile?: unknown; heightCm?: unknown; standardCm?: unknown; rows?: unknown; recent?: unknown };
+      const stored = JSON.parse(raw) as {
+        carrier?: unknown; profile?: unknown; heightCm?: unknown; standardCm?: unknown; karHeightCm?: unknown; rows?: unknown; recent?: unknown;
+      };
+      if (CARRIERS.includes(stored.carrier as CarrierKind)) this.carrier.set(stored.carrier as CarrierKind);
+      if (typeof stored.karHeightCm === 'number') this.karHeight.set(clampKarHeight(stored.karHeightCm));
       const profile = PALLET_CHOICES.find((choice) => choice.id === stored.profile);
       if (profile) this.profile.set(profile.id);
       /* A height equal to the standard it was saved under was never picked: the device follows today's
