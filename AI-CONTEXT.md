@@ -5487,3 +5487,29 @@ date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
   one, and `?orderId=` is ignored (the whole feed comes back and the row is found in it).
 - **Native app**: untouched. It reads the feed itself with its own port of the rules; host
   messages, the today snapshot and `tools/host-contract.json` did not change.
+
+## Partnerportaal (Verhoeven): Containers (round 2, 2026-11-12)
+- **What**: the portal tab `/partner/containers` (`features/partner/partner-containers.ts`) and the
+  "Komt eraan" strip on the Overzicht (`partner-coming.ts`, next 3 still coming, links to
+  `?container=<id>`), both on `GET /api/partner-portal/containers` through `PartnerContainersData`
+  (provided by `PartnerShell`, shared, read again on every visit).
+- **Allowlist rule** (same as the backend's `PartnerContainerViews`): a partner sees every container
+  of Enrosed's except concepts, as the PO number (never the "Herkenbare naam"), own or not ("Samen
+  met jou"), status/state, type, dates, ports, the location only for his own container or MAIN,
+  quantities, pieces, cartons, m³, fill, ± pallets, weight and the product card's sizes. Never a
+  price, cost, amount, supplier or free text: nothing in the partner code may add one.
+- **Words**: Besteld (grey) / Onderweg (blue) / Binnenkort (teal) / Aangekomen (green); the
+  server's `state`, else the ERP rule of `shared/product-incoming` (copied in
+  `partner-containers-model.ts`, pure). "± do 20 nov · over 8 dagen"; overdue reads "nog niet
+  binnen" in amber; "verschoven (was 12/11)" from `arrivalMovedFrom`.
+- **Calendar** (`partner-calendar.ts`): Monday-first month from `features/dashboard/agenda-days.ts`
+  (import-free, keep it so or copy it), container chips on the expected day (the receipt day once
+  in), ‹ › Vandaag, "PO-011" below 1100 px card width; on the phone a tinted day button. Beside it
+  "Komt eraan" (5 desk / 3 phone) with a thin bar from departure (or order day) to arrival.
+- **Table** (`partner-container-table.ts`, `partner-container-lines.ts`): Container · Type ·
+  Lading · ± Pallets · Vertrek · Aankomst · Status, Type and Vertrek fold under 900 px; a row opens
+  the products grouped by category · family (photo, colour, Aantal in the partner's default count
+  unit + "= n stuks", Dozen, m³, ± Pallets, Omdoos). "Ook oude containers" adds `old` ones.
+- **Address**: a pick writes `?container=` with `Location.replaceState` (a router navigation would
+  scroll to the top: `scrollPositionRestoration: 'top'`); arriving with it, the row is opened and
+  scrolled to after the router's `Scroll` event.
