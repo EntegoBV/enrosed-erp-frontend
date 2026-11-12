@@ -211,6 +211,11 @@ export interface PartnerSalesAnalyticsReport {
   /** The part not invoiced yet (open parts only); absent from an older backend. */
   openSaleQuantity?: number | null;
   openNetEur?: number | null;
+  /* round 2 (additive): pieces (roos, bowl …) beside the sales units; confirmed as the staff list says it */
+  salePieces?: number | null;
+  buybackPieces?: number | null;
+  openSalePieces?: number | null;
+  confirmed?: boolean | null;
 }
 
 /** One row per melding x product: per-product averages are derived, never summed across products. */
@@ -230,6 +235,10 @@ export interface PartnerSalesAnalyticsProduct {
   /** The part not invoiced yet (open parts only); absent from an older backend. */
   openSaleQuantity?: number | null;
   openNetEur?: number | null;
+  /* round 2 (additive): pieces beside the sales units */
+  salePieces?: number | null;
+  buybackPieces?: number | null;
+  openSalePieces?: number | null;
 }
 
 export interface PartnerSalesAnalytics {
