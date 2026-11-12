@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { AuthImage } from '../../core/api/auth-image';
 import { Icon } from '../../shared/icon';
-import { palletFit, type PalletSpec } from './pallet-calculator-model';
+import { palletFit, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
 import { matchPalletTiles, type PalletBrowserSection, type PalletBrowserTile } from './pallet-browser-model';
 
 /** One cell of the grid: a section heading (Alle) or a tile with what it shows. */
@@ -66,7 +66,7 @@ const PROBLEMS: Readonly<Record<string, string>> = {
       </div>
     }
     @if (open() || query().trim()) {
-      @if (hint()) { <p class="pb-hint">Kies een product: je ziet meteen wat er op een pallet en in een container past.</p> }
+      @if (hint()) { <p class="pb-hint">Kies een product: je ziet meteen wat er op een {{ carrier() === 'kar' ? 'Deense kar' : 'pallet' }} en in een container past.</p> }
       @if (full()) { <p class="pb-full">Maximaal {{ maxRows() }} producten</p> }
       <div class="pb-grid">
         @if (loading()) {
@@ -150,6 +150,8 @@ export class PalletBrowser {
   /** Tile key → the pallet colour of its card. */
   readonly picked = input<ReadonlyMap<string, string>>(new Map());
   readonly pallet = input.required<PalletSpec>();
+  /** What the pallet spec is: a tile reads "per pallet" or "per kar". */
+  readonly carrier = input<CarrierKind>('pallet');
   readonly variant = input<'ios' | 'desk'>('ios');
   readonly loading = input(false);
   readonly full = input(false);
@@ -188,7 +190,7 @@ export class PalletBrowser {
     return recent ? 'recent' : 'all';
   });
 
-  /** A tile's answer for the pallet in use: the same figure as the card's Pallet row. */
+  /** A tile's answer for the pallet or kar in use: the same figure as the card's Pallet or Deense kar row. */
   private readonly figures = computed(() => {
     const pallet = this.pallet();
     const figures = new Map<string, { text: string; warn: boolean }>();
@@ -297,7 +299,7 @@ export class PalletBrowser {
     const pick = this.picked().get(tile.key) ?? null;
     const figure = this.figures().get(tile.key) ?? { text: '', warn: false };
     const label = [
-      tile.name, tile.label, figure.warn ? figure.text : `${figure.text} per pallet`,
+      tile.name, tile.label, figure.warn ? figure.text : `${figure.text} per ${this.carrier()}`,
       tile.colours.length > 1 ? `${tile.colours.length} kleuren` : null, pick ? 'staat in de berekening' : null,
     ].filter(Boolean).join(', ');
     return { key: tile.key, heading: null, tile, pick, figure: figure.text, warn: figure.warn, label };

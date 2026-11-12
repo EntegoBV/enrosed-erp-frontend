@@ -15,6 +15,8 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   backend's PalletCalculator.mixedPallets step for step), so one product
  *   alone still gets exactly its cartonsPerPallet per pallet and a mix never
  *   needs more pallets than every product on pallets of its own.
+ * - A Deense kar (karSpec) is counted as a pallet with its own floor, height
+ *   and weight, so every pallet rule below holds for it too.
  * - A container takes loose cartons: each product's own capacity (the hand
  *   count where one was confirmed, else full cartons on the practical
  *   volumes of the backend's ContainerType), a mix as the sum of the shares.
@@ -85,6 +87,40 @@ export function clampPalletHeight(value: number, profile: PalletProfile): number
   const limit = palletHeightLimit(profile);
   if (!Number.isFinite(value)) return Math.min(PALLET_MAX_HEIGHT_CM, limit);
   return Math.min(limit, Math.max(Math.ceil(PALLET_BASE_HEIGHT_CM + 1), Math.round(value)));
+}
+
+/* ------------------------------------------------------------ Deense kar */
+
+/** What the omdozen go on: a pallet of the picked type, or a Deense kar. */
+export type CarrierKind = 'pallet' | 'kar';
+
+/**
+ * De Deense kar is the CC Container of Container Centralen, the flower and
+ * pot-plant trolley. Its product sheet (CC_Feb25EN) gives 1350 × 565 ×
+ * 1900 mm outside, 1270 × 545 × 1735 mm inside, and 450 kg UDL in total
+ * with 60 kg per shelf. The omdozen are stacked on the base plate between
+ * the posts: 127 × 54,5 cm, up to the top of the posts at 190 cm from the
+ * floor. The 16,5 cm under the inside height counts as the pallet's wood
+ * does, so a height reads the same way for both. The load is at most 450 kg.
+ * Shelves are not counted, because one shelf carries only 60 kg.
+ */
+export const KAR_LENGTH_CM = 127;
+export const KAR_WIDTH_CM = 54.5;
+export const KAR_BASE_HEIGHT_CM = 16.5;
+export const KAR_MAX_HEIGHT_CM = 190;
+export const KAR_MAX_WEIGHT_KG = 450;
+
+export function karSpec(maxHeightCm: number): PalletSpec {
+  return {
+    lengthCm: KAR_LENGTH_CM, widthCm: KAR_WIDTH_CM, baseHeightCm: KAR_BASE_HEIGHT_CM,
+    maxHeightCm, maxWeightKg: KAR_MAX_WEIGHT_KG,
+  };
+}
+
+/** A picked loading height for the kar: above the base plate, at most the top of the posts, whole centimetres. */
+export function clampKarHeight(value: number): number {
+  if (!Number.isFinite(value)) return KAR_MAX_HEIGHT_CM;
+  return Math.min(KAR_MAX_HEIGHT_CM, Math.max(Math.ceil(KAR_BASE_HEIGHT_CM + 1), Math.round(value)));
 }
 
 export type ContainerId = '20GP' | '40GP' | '40HQ';
