@@ -557,6 +557,16 @@ export class PartnerSalesApi {
     return firstValueFrom(this.http.post<PartnerInvoicePreview>(api('/api/partner-sales/invoice-preview'), { customerId, reportIds, until }));
   }
 
+  /**
+   * Inkoop en winst of one melding (Veilingverkopen, ERP only): the Factureren preview of that melding's open parts
+   * alone, read-only. `includeUnconfirmed` asks a server that knows it to take an unconfirmed melding too; one that
+   * does not refuses it ("VV-n is nog niet bevestigd …") and the screen says so.
+   */
+  reportFigures(customerId: number, reportId: number): Promise<PartnerInvoicePreview> {
+    return firstValueFrom(this.http.post<PartnerInvoicePreview>(api('/api/partner-sales/invoice-preview'),
+      { customerId, reportIds: [reportId], until: null, includeUnconfirmed: true }));
+  }
+
   /** Makes the concept invoices of a preview: send the preview's reportIds, never more. */
   invoice(customerId: number, reportIds: number[]): Promise<PartnerInvoiceResult> {
     return firstValueFrom(this.http.post<PartnerInvoiceResult>(api('/api/partner-sales/invoice'), { customerId, reportIds }));
