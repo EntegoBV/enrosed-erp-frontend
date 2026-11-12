@@ -6,6 +6,15 @@ import { CHANNEL_CHOICES, ChannelChoice, PERIOD_CHOICES, PeriodKind, byDay, open
 import { reportTitle } from './partner-sales-format';
 import { signedEur } from '../../shared/signed-eur';
 
+/** A melding the ticks take along (the server invoices a sale and a buyback that mirrors it together). */
+export interface JoinedMelding {
+  number: string;
+  /** The ticked melding it belongs with ("VV-1"), when the server said so. */
+  with: string | null;
+  /** The server's own reason ("VV-2 gaat mee: die terugkoop hoort bij de verkoop van VV-1"). */
+  reason: string | null;
+}
+
 /**
  * Factureren, step 1 "Kies de meldingen": the partner's confirmed meldingen
  * that are still open, by sold-on day, each with a tick and what Factureren
@@ -14,7 +23,8 @@ import { signedEur } from '../../shared/signed-eur';
  * ticked counts), a day's tick takes that whole day, "Alleen deze dag" takes
  * only it, "Alles aanvinken" / "Niets" the shown list (named apart from the
  * Periode chip "Alles"). The host keeps the ticks (`selected`) and previews
- * them.
+ * them; a melding the preview takes along with a ticked one (`joined`) shows
+ * ticked and fixed, "gaat mee · hoort bij VV-1", until that one is unticked.
  */
 @Component({
   selector: 'app-partner-sales-invoice-pick',
@@ -55,9 +65,11 @@ import { signedEur } from '../../shared/signed-eur';
           </div>
           @for (r of day.reports; track r.id) {
             @let open = openOf(r);
-            <label class="ip-row" role="row" [class.is-on]="selected().has(r.id)">
-              <span role="cell"><input class="ip-check" type="checkbox" [checked]="selected().has(r.id)" [attr.aria-label]="r.number + ' factureren'" (change)="toggle(r.id)" /></span>
-              <span class="ip-what" role="cell"><b>{{ title(r) }}</b>@if (open.partial) { <span class="ip-muted">deels gefactureerd</span> } @else if (buyer(r); as b) { <span class="ip-muted">{{ b }}</span> }</span>
+            @let along = joined().get(r.id);
+            <label class="ip-row" role="row" [class.is-on]="selected().has(r.id) || !!along" [attr.title]="along ? alongTitle(along) : null">
+              <span role="cell"><input class="ip-check" type="checkbox" [checked]="selected().has(r.id) || !!along" [disabled]="!!along"
+                                       [attr.aria-label]="r.number + (along ? ' gaat mee' : ' factureren')" (change)="toggle(r.id)" /></span>
+              <span class="ip-what" role="cell"><b>{{ title(r) }}</b>@if (along) { <span class="ip-along">gaat mee{{ along.with ? ' · hoort bij ' + along.with : '' }}</span> } @else if (open.partial) { <span class="ip-muted">deels gefactureerd</span> } @else if (buyer(r); as b) { <span class="ip-muted">{{ b }}</span> }</span>
               <span class="ip-products" role="cell">{{ products(r) }}</span>
               <span class="ip-num" role="cell">{{ open.salePieces ? num(open.salePieces) + ' st' : '' }}@if (open.buybackPieces) { <small> −{{ num(open.buybackPieces) }} terug</small> }</span>
               <span class="ip-num ip-strong" role="cell">{{ eur(open.netEur) }}@if (open.partial) { <small>van {{ eur(r.totals.netEur) }}</small> }</span>
@@ -65,6 +77,9 @@ import { signedEur } from '../../shared/signed-eur';
           }
         }
       </div>
+      @if (alongHidden().length) {
+        <p class="ip-note">Gaat ook mee: @for (along of alongHidden(); track along.number) { {{ along.number }}{{ along.with ? ' (hoort bij ' + along.with + ')' : '' }}@if (!$last) {, } }</p>
+      }
     }
   `,
   styles: `
@@ -88,6 +103,9 @@ import { signedEur } from '../../shared/signed-eur';
     .ip-num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
     .ip-num small{display:block;color:var(--muted);font-size:11.5px;font-weight:500}
     .ip-strong{font-weight:700}
+    .ip-row:has(.ip-check:disabled){cursor:default}
+    .ip-along{overflow:hidden;color:var(--rose-dark);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+    .ip-note{margin:0;color:var(--ink-2);font-size:12.5px}
     .ip-check{width:16px;height:16px;margin:0;accent-color:var(--rose);cursor:pointer}
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){
       .ip-row{grid-template-columns:28px minmax(0,1fr) auto;min-height:56px;font-size:14px}
@@ -113,6 +131,8 @@ export class PartnerSalesInvoicePick {
   readonly channel = input<ChannelChoice>('alle');
   readonly period = input<Exclude<PeriodKind, 'van-tot'>>('alles');
   readonly emptyText = input('Geen bevestigde meldingen om te factureren.');
+  /** Meldingen the preview takes along with the ticked ones (not ticked themselves). */
+  readonly joined = input<ReadonlyMap<number, JoinedMelding>>(new Map());
   readonly selectedChange = output<ReadonlySet<number>>();
   readonly channelChange = output<ChannelChoice>();
   readonly periodChange = output<Exclude<PeriodKind, 'van-tot'>>();
@@ -122,9 +142,14 @@ export class PartnerSalesInvoicePick {
 
   readonly days = computed(() => byDay(this.shown()));
   readonly chosenCount = computed(() => this.shown().filter((r) => this.selected().has(r.id)).length);
+  /** Taken along but outside Soort / Periode: said under the list. */
+  readonly alongHidden = computed(() => {
+    const shown = new Set(this.shown().map((r) => r.id));
+    return [...this.joined()].filter(([id]) => !shown.has(id)).map(([, along]) => along);
+  });
 
   dayState(reports: readonly StaffPartnerReport[]): 'all' | 'some' | 'none' {
-    const on = reports.filter((r) => this.selected().has(r.id)).length;
+    const on = reports.filter((r) => this.selected().has(r.id) || this.joined().has(r.id)).length;
     return on === 0 ? 'none' : on === reports.length ? 'all' : 'some';
   }
 
@@ -161,6 +186,10 @@ export class PartnerSalesInvoicePick {
   /** What Factureren can still take of the day: the open part of each melding. */
   dayNet(reports: readonly StaffPartnerReport[]): number {
     return reports.reduce((sum, r) => sum + Math.round((openPartOf(r).netEur || 0) * 100), 0) / 100;
+  }
+
+  alongTitle(along: JoinedMelding): string {
+    return along.reason ?? `${along.number} gaat mee`;
   }
 
   title(r: StaffPartnerReport): string { return reportTitle(r); }

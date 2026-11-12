@@ -13,7 +13,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { count } from '../partner/partner-format';
 import { ChannelChoice, PeriodKind, channelOf, openPartOf, periodRange, reportState } from './partner-sales-filters';
-import { PartnerSalesInvoicePick } from './partner-sales-invoice-pick';
+import { JoinedMelding, PartnerSalesInvoicePick } from './partner-sales-invoice-pick';
 import { PartnerSalesInvoicePreview } from './partner-sales-invoice-preview';
 import { signedEur } from '../../shared/signed-eur';
 
@@ -21,6 +21,9 @@ import { signedEur } from '../../shared/signed-eur';
 const PREVIEW_PAUSE_MS = 450;
 
 export type InvoicePartner = PartnerSalesPartnerSummary & PartnerSalesConfirmTotals;
+
+/** The server's reason a melding came along ("VV-2 gaat mee: die terugkoop hoort bij de verkoop van VV-1"). */
+const CAME_ALONG = /^(VV-\d+) gaat mee:.*\b(VV-\d+)\.?$/;
 
 /** Factureren takes it: confirmed with an open part (a round-1 server knows no confirming: every open one). */
 export function invoiceable(report: StaffPartnerReport): boolean {
@@ -35,7 +38,10 @@ export function invoiceable(report: StaffPartnerReport): boolean {
  * that are not confirmed yet are offered as "Eerst bevestigen (n)". 2
  * "Controleren": the server's preview of exactly those (asked again a moment
  * after the ticks rest), and "Facturen maken (n)", which sends the preview's
- * own meldingen, never more. One partner at a time.
+ * own meldingen, never more. A sale and the confirmed buyback of another
+ * melding that mirrors it go together (the server adds the other one): once
+ * the preview of the ticks is in, step 1 ticks that one too, says "gaat mee ·
+ * hoort bij VV-n" and counts it in the footer. One partner at a time.
  */
 @Component({
   selector: 'app-partner-sales-invoice-sheet',
@@ -87,7 +93,7 @@ export function invoiceable(report: StaffPartnerReport): boolean {
               <app-skeleton [kind]="desk.active() ? 'table' : 'group'" [rows]="4" />
             } @else {
               <app-partner-sales-invoice-pick [shown]="shown()" [total]="candidates().length" [selected]="selected()" [today]="today()"
-                                              [channel]="channel()" [period]="period()"
+                                              [channel]="channel()" [period]="period()" [joined]="joined()"
                                               (channelChange)="channel.set($event)" (periodChange)="period.set($event)"
                                               (selectedChange)="selected.set($event)" />
             }
@@ -110,7 +116,7 @@ export function invoiceable(report: StaffPartnerReport): boolean {
         } @else if (step() === 1) {
           <span class="vi-actions__sum">{{ chosen().length ? chosenLine() : 'Niets gekozen' }}@if (aheadLine(); as ahead) {<small>{{ ahead }}</small>}</span>
           <button class="btn" type="button" (click)="close()">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="!chosen().length" (click)="toCheck()">Controleren ({{ chosen().length }})</button>
+          <button class="btn btn--primary" type="button" [disabled]="!chosen().length" (click)="toCheck()">Controleren ({{ going().length }})</button>
         } @else {
           <button class="btn" type="button" [disabled]="creating()" (click)="step.set(1)">Terug</button>
           <button class="btn btn--primary" type="button" [disabled]="!makeable() || creating() || !currentPreview()" (click)="create()">
@@ -209,8 +215,33 @@ export class PartnerSalesInvoiceSheet {
   /** What is ticked and shown: only these are previewed and invoiced. */
   readonly chosen = computed(() => this.shown().filter((r) => this.selected().has(r.id)));
   private readonly chosenKey = computed(() => this.chosen().map((r) => r.id).sort((a, b) => a - b).join(','));
+  /**
+   * What the preview of the ticks adds: a confirmed melding tied to a ticked one by a buyback (the server invoices a
+   * sale and a buyback that mirrors it together), each with the melding it belongs with, from the preview's reason.
+   */
+  readonly joined = computed<ReadonlyMap<number, JoinedMelding>>(() => {
+    const p = this.currentPreview();
+    if (!p) return new Map();
+    const chosen = new Set(this.chosen().map((r) => r.id));
+    const byId = new Map(this.candidates().map((r) => [r.id, r]));
+    const belongs = new Map<string, { with: string; reason: string }>();
+    for (const warning of p.warnings ?? []) {
+      const match = CAME_ALONG.exec(warning.trim());
+      if (match) belongs.set(match[1], { with: match[2], reason: warning.trim() });
+    }
+    const joined = new Map<number, JoinedMelding>();
+    for (const id of p.reportIds) {
+      const report = byId.get(id);
+      if (!report || chosen.has(id)) continue;
+      const why = belongs.get(report.number);
+      joined.set(id, { number: report.number, with: why?.with ?? null, reason: why?.reason ?? null });
+    }
+    return joined;
+  });
+  /** What Factureren takes: the ticks and what comes along with them. */
+  readonly going = computed(() => [...this.chosen(), ...this.candidates().filter((r) => this.joined().has(r.id))]);
   readonly chosenLine = computed(() => {
-    const list = this.chosen();
+    const list = this.going();
     /* What Factureren can still take: a partly invoiced melding counts its open part. */
     const cents = list.reduce((sum, r) => sum + Math.round((openPartOf(r).netEur || 0) * 100), 0);
     return `${list.length === 1 ? '1 melding' : count(list.length) + ' meldingen'} · netto ${signedEur(cents / 100)}`;
