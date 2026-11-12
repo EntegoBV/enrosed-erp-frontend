@@ -1,7 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
+import { PartnerSalesApi } from '../../core/api/partner-sales-api';
+import { WorkQueue } from '../../core/api/work-queue';
 import { Country, CrmStatus, Customer, CustomerTouchpoint, LANGUAGES } from '../../core/api/models';
 import { countryFlag, countryName, STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -14,6 +17,8 @@ import { messageOf } from '../../core/api/errors';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
 import { CustomerLoginBlock } from './customer-login-block';
 import { CustomerPartnerPortalRow } from './customer-partner-portal-row';
+import { CustomerPartnerOriginRow } from './customer-partner-origin';
+import { partnerShortName } from '../../shared/partner-short-name';
 import { CustomerPriceBlock } from './customer-price-block';
 import { CustomerAppliedPrices } from './customer-applied-prices';
 import {
@@ -31,7 +36,7 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, Segmented, CountryPicker, CustomerLoginBlock, CustomerPartnerPortalRow, CustomerPriceBlock, CustomerAppliedPrices, LoadError],
+  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, Segmented, CountryPicker, CustomerLoginBlock, CustomerPartnerPortalRow, CustomerPartnerOriginRow, CustomerPriceBlock, CustomerAppliedPrices, LoadError],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -95,6 +100,10 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
                   <span [class]="'badge badge--' + tone">{{ crmStatusLabel(customer.crmStatus) }}</span>
                 }
                 @if (customerSince(customer.createdAt); as since) { <span class="cl-since">{{ since }}</span> }
+                @if (customer.partnerOrigin; as origin) {
+                  <span class="cl-marks"><span class="wk-pill" [class.tone-amber]="!origin.reviewedAt" [class.tone-grey]="!!origin.reviewedAt"
+                        [title]="'Aangemaakt door ' + (origin.createdByName || 'de partner') + ' via Partnerportaal' + (origin.reviewedAt ? '' : ' · nog na te kijken')">via {{ viaName(origin.partnerName) }}</span></span>
+                }
                 @if (marks(customer); as pills) {
                   <span class="cl-marks" [title]="pills.title">
                     @for (pill of pills.shown; track pill) { <span class="wk-pill tone-grey">{{ pill }}</span> }
@@ -123,6 +132,9 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
                  (closed)="editing.set(false)">
         <div body>
           <p class="legend"><b>*</b> verplicht · de rest kan later.</p>
+          @if (draft().id && draft().partnerOrigin; as origin) {
+            <app-customer-partner-origin [origin]="origin" [marked]="reviewOnSave()" [vatMissing]="vatMissing(draft().vatNumber)" (markChange)="reviewOnSave.set($event)" />
+          }
           <div class="partner-field cl-followup">
             <div class="cl-followup__head">
               <b>Opvolging</b>
@@ -360,6 +372,8 @@ export class CustomerList {
   }
 
   private readonly sales = inject(SalesApi);
+  private readonly partnerSales = inject(PartnerSalesApi);
+  private readonly work = inject(WorkQueue);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
@@ -398,6 +412,12 @@ export class CustomerList {
     const status = (query.get('status') ?? '').toUpperCase();
     if (STATUS_VALUES.includes(status)) this.status.set(status as CrmStatus);
     void this.load();
+    /* ?klant=<id> (the bell's "Nieuwe klant via Partnerportaal", a link elsewhere): open that customer's sheet once the
+       list is there, also when the link is followed while this screen is already open. */
+    this.route.queryParamMap.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe((params) => {
+      const id = Number(params.get('klant'));
+      if (Number.isSafeInteger(id) && id > 0) { this.wantedId = id; this.openWanted(); }
+    });
     /* The phone home's '+' lands here with ?nieuw=1: open the sheet once and drop the flag so a reload does not reopen it. */
     if (query.get('nieuw') === '1') {
       void this.router.navigate([], { queryParams: { nieuw: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
@@ -415,6 +435,7 @@ export class CustomerList {
       this.customers.set(customers);
       this.countries.set(countries);
       this.loadError.set(null);
+      this.openWanted();
       /* The sheet can open before this list arrives: without repair the new
          customer sat on an empty country code. */
       if (this.editing() && this.draft().id === null && !this.draft().countryCode) {
@@ -425,6 +446,25 @@ export class CustomerList {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /** The customer ?klant= asks for, until the list holds it. */
+  private wantedId: number | null = null;
+
+  private openWanted(): void {
+    const id = this.wantedId;
+    if (id == null || this.loading() && !this.customers().length) return;
+    const customer = this.customers().find((candidate) => candidate.id === id);
+    if (!customer && !this.customers().length) return;
+    this.wantedId = null;
+    void this.router.navigate([], { queryParams: { klant: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
+    if (customer) this.open(customer);
+    else this.ui.toast('Deze klant bestaat niet meer', 'err');
+  }
+
+  /** "via Verhoeven": the partner in one word on a list row. */
+  viaName(partnerName: string | null | undefined): string {
+    return partnerShortName(partnerName, 'partner');
   }
 
   retryLoad(): void {
@@ -508,8 +548,13 @@ export class CustomerList {
     this.draft.set(customer
       ? { ...customer, crmStatus: customer.crmStatus ?? null, touchpoints: customer.touchpoints ?? [] }
       : blank(this.defaultCountry()));
+    this.reviewOnSave.set(false);
     this.editing.set(true);
   }
+
+  /** A partner-made customer's Nagekeken, ticked on the sheet: sent after its Opslaan stored the customer. */
+  readonly reviewOnSave = signal(false);
+  readonly vatMissing = vatNumberMissing;
 
   /** Home first when it ships, otherwise the first configured country -
       never a hardcoded guess, which left every new customer without a
@@ -559,8 +604,13 @@ export class CustomerList {
       this.ui.toast('Kies een land voor de klant', 'err');
       return;
     }
-    if (vatNumberMissing(customer.vatNumber)) {
-      this.ui.toast(VAT_REQUIRED_MESSAGE, 'err');
+    /* A customer the partner made (name, country, maybe a city) is put right here first: while staff have not
+       marked it Nagekeken it saves without a VAT number, as the server allows. Nagekeken (ticked on the sheet) goes
+       after this save, and needs the VAT number: from then on every save does. */
+    const unreviewed = !!customer.partnerOrigin && !customer.partnerOrigin.reviewedAt;
+    const review = unreviewed && customer.id !== null && this.reviewOnSave();
+    if (vatNumberMissing(customer.vatNumber) && !(unreviewed && !review)) {
+      this.ui.toast(review ? 'Nagekeken vraagt het BTW-nummer: vul het in, of vink Nagekeken uit en sla zo op.' : VAT_REQUIRED_MESSAGE, 'err');
       setTimeout(() => document.getElementById('c-vat')?.focus(), 100);
       return;
     }
@@ -573,11 +623,25 @@ export class CustomerList {
         return;
       }
       /* The draft goes as is: the server stamps at/by on a touchpoint that is new and keeps them on one it already has. */
-      if (customer.id === null) await this.sales.createCustomer(customer);
-      else await this.sales.updateCustomer(customer.id, customer);
+      /* partnerOrigin is the server's: never sent back. */
+      const { partnerOrigin: _origin, ...body } = customer;
+      if (customer.id === null) await this.sales.createCustomer(body);
+      else await this.sales.updateCustomer(customer.id, body);
+      /* The customer is stored: now Nagekeken (the bell item goes). A refusal keeps what was saved. */
+      let reviewed: boolean | null = null;
+      if (review && customer.id !== null) {
+        try {
+          await this.partnerSales.markCustomerReviewed(customer.id);
+          reviewed = true;
+        } catch (failure: unknown) {
+          reviewed = false;
+          this.ui.toast(`Klant opgeslagen; ${messageOf(failure, 'Nagekeken lukte niet').replace(/^./, (c) => c.toLowerCase())}`, 'err');
+        }
+        void this.work.refresh(true);
+      }
       this.editing.set(false);
       await this.load();
-      this.ui.toast('Klant opgeslagen');
+      if (reviewed !== false) this.ui.toast(reviewed ? 'Klant opgeslagen en nagekeken' : 'Klant opgeslagen');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
     } finally {

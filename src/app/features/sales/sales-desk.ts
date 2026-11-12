@@ -44,6 +44,8 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
 import { reportShipSplits } from './report-backed';
+import { ReportBackedCostSheet } from './report-backed-cost-sheet';
+import { meldingNumbersLine, reportMeldingQuery } from './report-backed-cost';
 import { billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice } from './sales-advance-billing';
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
@@ -77,7 +79,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -97,7 +99,7 @@ interface JourneyStep {
           <a class="desk-partner-tag" [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [title]="'Partnercontainer openen' + (containerNumber() ? ' · inkooporder ' + containerNumber() : '')">@if (containerLabel(); as name) { {{ name }} · }Partner {{ data.order.partnerSharePct | num }} %</a>
         }
         @if (billingTag(); as tag) { <a class="desk-partner-tag" [routerLink]="['/sales', billingQuoteId()]" title="Offerte openen">{{ tag }}</a> }
-        @if (reportBacked(data)) { <a class="desk-partner-tag" routerLink="/veilingverkopen" title="De meldingen achter deze factuur">{{ reportBackedLabel }}</a> }
+        @if (reportBacked(data)) { <a class="desk-partner-tag" routerLink="/veilingverkopen" [queryParams]="reportMeldingQuery()" title="De meldingen achter deze factuur">{{ reportBackedLabel }}</a> }
         @if (canEdit() && documentDirty() && !transportSaving()) {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="saving() || saveConflict()" [title]="saveConflict() ? 'Laad eerst de laatste versie' : ''" (click)="save()">
             {{ saving() ? 'Bezig…' : 'Opslaan' }}
@@ -207,6 +209,14 @@ interface JourneyStep {
               <strong>{{ data.priced.totals.pieces | num }}</strong>
               <span>{{ data.priced.lines.length }} {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }} · {{ data.priced.totals.cartons | num }} dozen</span>
             </div>
+            @if (reportBacked(data)) {
+            <!-- From Veilingverkopen: no delivery and no freight; the meldingen and what they brought in take those tiles. -->
+            <a class="desk-kpi desk-kpi--button" routerLink="/veilingverkopen" [queryParams]="reportMeldingQuery()" title="De meldingen achter deze factuur">
+              <small>Meldingen</small>
+              <strong>{{ reportBreakdown()?.meldingen?.length || '—' }}</strong>
+              <span>{{ reportMeldingNumbers() || 'Veilingverkopen ›' }}</span>
+            </a>
+            } @else {
             <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')">
               <small>Levering</small>
               @if (isLooseCartons(data)) {
@@ -218,8 +228,15 @@ interface JourneyStep {
               }
             </button>
             }
+            }
             @if (isAdvanceInvoice(data)) {
             <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')"><small>Planning</small><strong>{{ advanceSummary(data).arrival ? (advanceSummary(data).arrival | dateNl) : advanceSummary(data).deliveryWeek || 'Nog te bevestigen' }}</strong><span>{{ advanceSummary(data).arrival ? 'verwachte aankomst container' : 'leverweek container' }}</span></button>
+            } @else if (reportBacked(data)) {
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('check')">
+              <small>Netto opbrengst</small>
+              <strong>{{ reportNetFigure() === null ? '—' : (reportNetFigure()! | eur: 0) }}</strong>
+              <span>{{ reportMeldingenLine() }}</span>
+            </button>
             } @else {            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('delivery')"
                     [class.is-warn]="data.order.freight === 'TE_BEPALEN' || !!data.priced.validation.freightPricingIssue"
                     [attr.title]="data.order.freight === 'TE_BEPALEN' ? null : data.priced.validation.freightPricingIssue || null">
@@ -419,12 +436,12 @@ interface JourneyStep {
             </div>
             @if (isCreditNoteDoc() && commercialEditable() && data.creditedInvoiceNumber) { <p class="desk-lines-locked"><span aria-hidden="true">↩</span>Alleen regels van {{ data.creditedInvoiceNumber }}, hoogstens de gefactureerde aantallen en prijzen.</p> }
             @if (advanceLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ advanceLockNote }}</p> }
-            @if (reportLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ reportLockNote }} <a routerLink="/veilingverkopen">Veilingverkopen ›</a></p> }
+            @if (reportLocked() && data.order.status === 'CONCEPT') { <p class="adv-lock adv-lock--desk" role="note">{{ reportLockNote }} <a routerLink="/veilingverkopen" [queryParams]="reportMeldingQuery()">Veilingverkopen ›</a></p> }
 
             @if (data.priced.lines.length || (data.order.extraLines ?? []).length) {
               <div class="desk-table-wrap">
               <!-- A credit note has no margin column: the grid drops it whole (head, cells, foot). -->
-              <table class="desk-table" [class.desk-table--editing]="commercialEditable()" [class.desk-table--no-margin]="!showsMargin()" [class.desk-table--waiting]="figuresWaiting()">
+              <table class="desk-table" [class.desk-table--editing]="commercialEditable()" [class.desk-table--no-margin]="!showsMargin()" [class.desk-table--no-delivery]="reportBacked(data)" [class.desk-table--waiting]="figuresWaiting()">
                 <thead>
                   <tr>
                     <th class="c-product">Product</th>
@@ -433,7 +450,7 @@ interface JourneyStep {
                     <th class="c-disc">Korting</th>
                     <th class="c-money">Netto</th>
                     @if (showsMargin()) { <th class="c-money" title="Productmarge na alle regel- en orderkortingen, exclusief btw en transport">{{ profitPerPiece() ? 'Marge / eenheid' : 'Marge / regel' }}</th> }
-                    <th class="c-delivery">Levering</th>
+                    @if (!reportBacked(data)) { <th class="c-delivery">Levering</th> }
                     @if (commercialEditable()) { <th class="c-act"><span class="sr-only">Acties</span></th> }
                   </tr>
                 </thead>
@@ -441,7 +458,7 @@ interface JourneyStep {
                 @for (row of tableRows(); track row.key) {
                   @switch (row.kind) {
                     @case ('section') {
-                      <tr class="desk-section__row"><th [attr.colspan]="(showsMargin() ? 7 : 6) + (commercialEditable() ? 1 : 0)">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
+                      <tr class="desk-section__row"><th [attr.colspan]="(showsMargin() ? 7 : 6) + (commercialEditable() ? 1 : 0) - (reportBacked(data) ? 1 : 0)">{{ row.label }} <small>{{ row.count }} product{{ row.count === 1 ? '' : 'en' }}</small></th></tr>
                     }
                     @case ('group') {
                       <tr class="desk-group">
@@ -464,7 +481,7 @@ interface JourneyStep {
                         <td class="c-disc"></td>
                         <td class="c-money num c-money--total">@if (unavailableLineCount(row.lines) === row.lines.length) { — } @else { {{ row.net | eur }} }</td>
                         @if (showsMargin()) { <td class="c-money"></td> }
-                        <td class="c-delivery"></td>
+                        @if (!reportBacked(data)) { <td class="c-delivery"></td> }
                         @if (commercialEditable()) { <td class="c-act"></td> }
                       </tr>
                     }
@@ -521,7 +538,7 @@ interface JourneyStep {
                         </td>
                         @if (lineUnavailable(line.productId)) {
                           <td class="c-qty num"><b>0</b><small>{{ lineUnit(line.productId).plural }}</small></td>
-                          <td colspan="5">
+                          <td [attr.colspan]="reportBacked(data) ? 4 : 5">
                             <div class="desk-unavailable">
                               <span><b>Tijdelijk niet beschikbaar</b><small>Niet meegerekend in bedrag of levering</small>
                                 @if (lineAvailabilityRestoreHint(line.productId); as hint) { <small>{{ hint }}</small> }
@@ -610,14 +627,15 @@ interface JourneyStep {
                         </td>
                         @if (showsMargin()) {
                         <td class="c-money num">
-                          <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line)"
-                                  [class.is-bad]="!isAdvance(data.order) && (profitPerPiece() ? marginPerUnit(line) : line.marginEur) < 0"
-                                  [title]="(line.stockUnitCost != null ? 'Kost bij levering van ' : 'Gelande kost van ') + line.description">
-                            <b>@if (isAdvance(data.order)) { Voorschot } @else { {{ (profitPerPiece() ? marginPerUnit(line) : line.marginEur) | eur: profitPerPiece() ? 2 : 0 }} }</b>
-                            <small>kost {{ line.landedUnitCost | eur: 2 }} <i aria-hidden="true">›</i></small>
+                          <button class="desk-total desk-total--profit" type="button" (click)="openCostSheet(line, profitPerPiece() ? 'unit' : 'line')"
+                                  [class.is-bad]="!isAdvance(data.order) && (profitPerPiece() ? lineMarginPerUnit(line) : lineMargin(line)) < 0"
+                                  [title]="reportBacked(data) ? 'Opbouw van ' + line.description : (line.stockUnitCost != null ? 'Kost bij levering van ' : 'Gelande kost van ') + line.description">
+                            <b>@if (isAdvance(data.order)) { Voorschot } @else { {{ (profitPerPiece() ? lineMarginPerUnit(line) : lineMargin(line)) | eur: profitPerPiece() ? 2 : 0 }} }</b>
+                            <small>{{ reportBacked(data) ? 'inkoop' : 'kost' }} {{ lineCostPerUnit(line) | eur: 2 }} <i aria-hidden="true">›</i></small>
                           </button>
                         </td>
                         }
+                        @if (!reportBacked(data)) {
                         <td class="c-delivery">
                           @if (isCreditNoteDoc()) {
                             <span class="desk-delivery"><b class="muted">Geen levering</b><small>{{ data.order.goodsReturnedAt ? 'retour geboekt ' + (data.order.goodsReturnedAt | dateNl) : 'creditnota' }}</small></span>
@@ -657,6 +675,7 @@ interface JourneyStep {
                             </div>
                           }
                         </td>
+                        }
                         }
                         @if (commercialEditable()) {
                           <td class="c-act">
@@ -704,7 +723,7 @@ interface JourneyStep {
                     <td class="c-disc"><span class="muted">—</span></td>
                     <td class="c-money num c-money--total">{{ extraLineTotal(extra) | eur }}</td>
                     @if (showsMargin()) { <td class="c-money num"><span class="muted">—</span></td> }
-                    <td class="c-delivery"><small class="muted">{{ isCreditNoteDoc() ? 'bedrag' : 'eigen regel' }}</small></td>
+                    @if (!reportBacked(data)) { <td class="c-delivery"><small class="muted">{{ isCreditNoteDoc() ? 'bedrag' : 'eigen regel' }}</small></td> }
                     @if (commercialEditable()) {
                       <td class="c-act">
                         @if (!extraLineLocked(extra)) { <button class="desk-remove" type="button" [attr.aria-label]="'Verwijder ' + (extra.description || 'regel ' + (i + 1))" (click)="removeExtraLine(i)">×</button> }
@@ -720,8 +739,8 @@ interface JourneyStep {
                     <th class="c-price"></th>
                     <th class="c-disc">@if (data.priced.totals.lineDiscountTotal) { −{{ data.priced.totals.lineDiscountTotal | eur: 0 }} }</th>
                     <th class="c-money">{{ data.priced.totals.subtotal + (data.priced.totals.extraLinesTotal ?? 0) | eur }}@if (data.priced.totals.extraLinesTotal) { <small>goederen {{ data.priced.totals.subtotal | eur }} + andere regels</small> }</th>
-                    @if (showsMargin()) { <th class="c-money" [class.is-bad]="displayedProfit(data) < 0">@if (isAdvance(data.order)) { Financiering } @else { {{ displayedProfit(data) | eur: 0 }} }</th> }
-                    <th class="c-delivery"></th>
+                    @if (showsMargin()) { <th class="c-money" [class.is-bad]="marginFoot(data) < 0" [attr.title]="reportBacked(data) ? 'Som van de regels: ons deel van de winst' : null">@if (isAdvance(data.order)) { Financiering } @else { {{ marginFoot(data) | eur: 0 }} }</th> }
+                    @if (!reportBacked(data)) { <th class="c-delivery"></th> }
                     @if (commercialEditable()) { <th class="c-act"></th> }
                   </tr>
                 </tfoot>
@@ -743,7 +762,7 @@ interface JourneyStep {
           <aside class="desk-rail" aria-label="Documentgegevens">
             <div class="desk-tabs" role="tablist">
               <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Klant</button>
-              @if (!isCreditNoteDoc()) {
+              @if (!isCreditNoteDoc() && !reportBacked(data)) {
               <button type="button" role="tab" [class.on]="railTab() === 'delivery'" [attr.aria-selected]="railTab() === 'delivery'" (click)="railTab.set('delivery')">
                 Levering @if (data.order.freight === 'TE_BEPALEN' || data.priced.validation.freightPricingIssue || layoutAttention(data)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
@@ -925,7 +944,7 @@ interface JourneyStep {
                         <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                         @if (isSettlement(data.order)) {
-                          <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                          <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. {{ reportBacked(data) ? 'De opbouw per product zie je met een klik op de marge van een regel.' : 'De berekening per product staat in de notities.' }}</p>
                         } @else {
                           <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze container' }}</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
                           <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
@@ -936,6 +955,8 @@ interface JourneyStep {
                           </div>
                         }
                       </section>
+                    } @else if (reportBacked(data)) {
+                      <p class="desk-partner__copy">Uit veilingverkopen · eigen voorraad: per product onze kost plus ons deel van de winst. De opbouw per product zie je met een klik op de marge van een regel.</p>
                     } @else if (!isWebOrder()) {
                       <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
                         <button class="linklike" type="button" [disabled]="reportLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
@@ -956,8 +977,10 @@ interface JourneyStep {
                       @if ((data.priced.extraLines ?? []).length) {
                         <div class="desk-chain__row"><i>+</i><span>Andere regels <small>eigen lijnen, buiten de staffels</small></span><b>{{ data.priced.totals.extraLinesTotal | eur }}</b></div>
                       }
+                      @if (!reportBacked(data) || data.priced.totals.freight + data.priced.totals.handling) {
                       <div class="desk-chain__row"><i>+</i><span>Verzending <small>{{ data.order.freight === 'TE_BEPALEN' ? 'nog te bepalen' : freightBasisLabel(data) }}</small></span>
                         <b>@if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">—</span> } @else { {{ data.priced.totals.freight + data.priced.totals.handling | eur }} }</b></div>
+                      }
                       <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Totaal excl. btw</span><b>{{ data.priced.totals.total | eur }}</b></div>
                       <div class="desk-chain__row"><i>+</i><span>BTW <small>{{ data.priced.totals.vatLegalMention ? '0% · verlegd' : (data.priced.totals.vatRatePct | pct: 1) }}</small></span><b>{{ (data.priced.totals.vatLegalMention ? 0 : data.priced.totals.vatAmount) | eur }}</b></div>
                       <div class="desk-chain__row desk-chain__row--total"><i>=</i><span>Totaal <small>@if (isAdvance(data.order)) { Voorschot = financiering } @else { {{ isPartnerDocument(data.order) ? 'gerealiseerd resultaat' : 'winst' }} {{ displayedProfit(data) >= 0 ? '+' : '' }}{{ displayedProfit(data) | eur: 0 }} }</small></span><b>{{ (data.priced.totals.vatLegalMention ? data.priced.totals.total : data.priced.totals.totalInclVat) | eur }}</b></div>
@@ -1174,6 +1197,9 @@ interface JourneyStep {
         @if (costHistoryOpen() && sheet.product; as product) {
           <app-product-cost-history-sheet [product]="product" (closed)="costHistoryOpen.set(false)" />
         }
+      }
+      @if (reportCost(); as request) {
+        <app-report-backed-cost-sheet [request]="request" [breakdown]="reportBreakdown()" (closed)="reportCost.set(null)" />
       }
 
       @if (splitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || invoiceBusy()" (busyChange)="splitBusy.set($event)" (saved)="splitSaved($event)" (closed)="closeSplit()" /> }
@@ -1459,6 +1485,7 @@ interface JourneyStep {
       .desk-table tr.desk-row--variant{margin-left:14px;border-left:3px solid var(--rose-line)}
       .desk-table tr.desk-row{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,.85fr)}
       .desk-table--no-margin tr.desk-row{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:'product product' 'qty price' 'net delivery'}
+      .desk-table--no-delivery tr.desk-row{grid-template-areas:'product product product' 'qty price price' 'net profit profit'}
       .desk-table td,.desk-table--editing td.c-qty,.desk-table--editing td.c-price,.desk-table--editing td.c-disc{display:block;width:auto;min-width:0;padding:0;border:0;text-align:left;background:transparent}
       .desk-table td:empty{display:none}
       .desk-row td.c-product,.desk-group td.c-product{grid-area:product;padding-right:34px}
@@ -1540,6 +1567,18 @@ export class SalesDesk extends SalesEditor {
   }
 
   readonly customerAuthoredMessage = customerMessageIsReadOnly;
+  /** "VV-12, VV-14, VV-17–19": the meldingen behind a report-backed document. */
+  readonly reportMeldingNumbers = computed(() => meldingNumbersLine(this.reportBreakdown()?.meldingen ?? []));
+  /** One melding opens it on Veilingverkopen; several show exactly those; unknown yet: every status. */
+  readonly reportMeldingQuery = computed(() => reportMeldingQuery(this.reportBreakdown()));
+  /**
+   * The margin column's foot: on a document from Veilingverkopen the sum of the lines above it (each the breakdown's
+   * value − cost), so the column has one meaning; elsewhere the document's own profit as before.
+   */
+  marginFoot(data: SalesOrderView): number {
+    if (!this.reportBacked(data)) return this.displayedProfit(data);
+    return data.priced.lines.reduce((sum, line) => sum + Math.round(this.lineMargin(line) * 100), 0) / 100;
+  }
   readonly customerNote = originalCustomerMessage;
   /** Which line shows its extra-discount field on a narrow screen. */
   readonly discOpen = signal<number | null>(null);
@@ -1657,7 +1696,7 @@ export class SalesDesk extends SalesEditor {
   /** The checklist and the website review jump to a rail tab instead of scrolling a page. */
   override scrollToSection(id: string): void {
     const tab: RailTab | null = id === 'quote-setup' ? 'order'
-      : id === 'quote-logistics' ? 'delivery'
+      : id === 'quote-logistics' ? (this.reportLocked() ? 'check' : 'delivery')
       : id === 'quote-check' ? 'check'
       : id === 'quote-status' ? 'status' : null;
     if (tab) this.showRail(tab);
@@ -1790,11 +1829,11 @@ export class SalesDesk extends SalesEditor {
     /* The rail survives document navigation in this reused instance: a tab the new document does not offer falls back to Klant. */
     effect(() => {
       const id = this.view()?.order.id;
-      const credit = this.isCreditNoteDoc(), claim = this.isClaimDoc();
+      const credit = this.isCreditNoteDoc(), claim = this.isClaimDoc(), reports = this.reportLocked();
       untracked(() => {
         if (id == null) return;
         const tab = this.railTab();
-        if ((tab === 'delivery' && credit) || (tab === 'payments' && !claim)) this.railTab.set('order');
+        if ((tab === 'delivery' && (credit || reports)) || (tab === 'payments' && !claim)) this.railTab.set('order');
       });
     });
     /* A consumed receipt or refund request must not reopen its sheet when the tab is re-entered. */

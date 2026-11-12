@@ -2,26 +2,41 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Router } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import { PARTNER_REPORT_PAGE_SIZE, PartnerPortalApi, PartnerReport } from '../../core/api/partner-portal-api';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
+import { Ui } from '../../shared/ui';
 import { PartnerData } from './partner-data';
+import { twinKeys } from './partner-twins';
 import { localToday } from './partner-format';
 import { PartnerHead } from './partner-head';
+import { bySoldOn } from './partner-report-format';
 import { PartnerReportRows } from './partner-report-rows';
-import { PartnerReportSheet } from './partner-report-sheet';
+import { PartnerReportSheet, confirmUndo } from './partner-report-sheet';
+import { PartnerReportTable } from './partner-report-table';
 
-/** Every melding of the partner, newest first, 50 at a time; a row opens its detail. */
+/**
+ * Every melding of the partner, newest sale day first, 50 at a time: a table
+ * on the desk (rows on the phone); a row opens its detail, Bewerken opens it
+ * on the Melden page while Enrosed has not confirmed it.
+ */
 @Component({
   selector: 'app-partner-meldingen',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [LoadError, Skeleton, PartnerHead, PartnerReportRows, PartnerReportSheet],
+  imports: [LoadError, Skeleton, PartnerHead, PartnerReportRows, PartnerReportSheet, PartnerReportTable],
   template: `
-    <app-partner-head title="Meldingen" backLabel="Terug naar overzicht" (back)="home()" />
+    <app-partner-head title="Meldingen" [sub]="sub()" />
     @if (reports(); as list) {
       @if (list.length) {
-        <app-partner-report-rows [reports]="list" [today]="today()" (opened)="open.set($event)" />
+        @if (desk.active()) {
+          <div class="pm-card">
+            <app-partner-report-table [reports]="list" [today]="today()" [twins]="twins()" (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
+          </div>
+        } @else {
+          <app-partner-report-rows [reports]="list" [today]="today()" [twins]="twins()" (opened)="open.set($event)" />
+        }
         @if (more()) {
-          <button class="more ios-capsule ios-capsule--tinted ios-capsule--block" type="button" [disabled]="loading()" (click)="loadMore()">
+          <button class="more ios-capsule ios-capsule--tinted" type="button" [disabled]="loading()" (click)="loadMore()">
             {{ loading() ? 'Laden…' : 'Meer meldingen' }}
           </button>
         }
@@ -32,17 +47,18 @@ import { PartnerReportSheet } from './partner-report-sheet';
     } @else if (failure()) {
       <app-load-error [message]="failureText()" [busy]="loading()" (retry)="loadFirst()" />
     } @else {
-      <app-skeleton kind="list" [rows]="6" />
+      <app-skeleton [kind]="desk.active() ? 'table' : 'list'" [rows]="6" />
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" [related]="reports() ?? []" (closed)="open.set(null)" (changed)="changed($event)" />
+      <app-partner-report-sheet [report]="report" [twins]="twins()" [related]="reports() ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
     }
   `,
   styles: `
     :host{display:block;padding-bottom:calc(24px + var(--safe-b,0px))}
-    .more{margin-top:14px}
-    .none{margin:0;padding:24px;border-radius:20px;background:var(--surface);color:var(--muted);text-align:center}
+    .pm-card{border:1px solid var(--line);border-radius:14px;background:var(--surface);--wk-sticky-top:var(--pp-sticky-top,0px)}
+    .more{display:flex;margin:14px auto 0;min-width:220px}
+    .none{margin:0;padding:24px;border-radius:16px;background:var(--surface);color:var(--muted);text-align:center}
     .bad{margin:10px 0 0;color:var(--danger);font-size:14px;font-weight:600;text-align:center}
   `,
 })
@@ -50,6 +66,8 @@ export class PartnerMeldingen {
   private readonly api = inject(PartnerPortalApi);
   private readonly data = inject(PartnerData);
   private readonly router = inject(Router);
+  private readonly ui = inject(Ui);
+  readonly desk = inject(DesktopViewport);
 
   readonly reports = signal<PartnerReport[] | null>(null);
   readonly more = signal(false);
@@ -59,6 +77,9 @@ export class PartnerMeldingen {
   readonly open = signal<PartnerReport | null>(null);
   readonly failureText = computed(() => messageOf(this.failure(), LOAD_ERROR_FALLBACK));
   readonly today = computed(() => this.data.overview()?.serverDate ?? localToday());
+  /** Names and colours more than one product shares, over the stock and every melding listed here. */
+  readonly twins = computed(() => twinKeys([...this.data.stock(), ...this.data.recentSales(), ...(this.reports() ?? []).flatMap((report) => report.entries)]));
+  readonly sub = computed(() => this.desk.active() ? 'Wijzigen kan tot Enrosed een melding bevestigt.' : null);
 
   constructor() {
     void this.loadFirst();
@@ -70,7 +91,7 @@ export class PartnerMeldingen {
     this.failure.set(null);
     try {
       const page = await this.api.reports(null, PARTNER_REPORT_PAGE_SIZE);
-      this.reports.set(page.reports);
+      this.reports.set([...page.reports].sort(bySoldOn));
       this.more.set(page.more);
     } catch (failure: unknown) {
       this.failure.set(failure);
@@ -79,21 +100,33 @@ export class PartnerMeldingen {
     }
   }
 
+  /** The next page: ids below the lowest one shown (the server pages by id), merged and sorted by sale day. */
   async loadMore(): Promise<void> {
     const list = this.reports();
     if (this.loading() || !list?.length) return;
     this.loading.set(true);
     this.moreError.set(null);
     try {
-      const page = await this.api.reports(list[list.length - 1].id, PARTNER_REPORT_PAGE_SIZE);
+      const lowest = Math.min(...list.map((report) => report.id));
+      const page = await this.api.reports(lowest, PARTNER_REPORT_PAGE_SIZE);
       const known = new Set(list.map((report) => report.id));
-      this.reports.set([...list, ...page.reports.filter((report) => !known.has(report.id))]);
+      this.reports.set([...list, ...page.reports.filter((report) => !known.has(report.id))].sort(bySoldOn));
       this.more.set(page.more);
     } catch (failure: unknown) {
       this.moreError.set(messageOf(failure, 'Meer meldingen laden lukt nu niet.'));
     } finally {
       this.loading.set(false);
     }
+  }
+
+  edit(report: PartnerReport): void {
+    this.open.set(null);
+    void this.router.navigate(['/partner/melden'], { queryParams: { bewerk: report.id } });
+  }
+
+  async undo(report: PartnerReport): Promise<void> {
+    const voided = await confirmUndo(this.ui, this.api, report);
+    if (voided) this.changed(voided);
   }
 
   changed(report: PartnerReport): void {
@@ -111,9 +144,5 @@ export class PartnerMeldingen {
       const fresh = new Map(page.reports.map((report) => [report.id, report]));
       this.reports.update((list) => list?.map((item) => fresh.get(item.id) ?? item) ?? list);
     } catch { /* the list keeps what it showed; the next visit reads it again */ }
-  }
-
-  home(): void {
-    void this.router.navigate(['/partner']);
   }
 }

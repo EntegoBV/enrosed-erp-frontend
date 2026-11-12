@@ -5487,3 +5487,116 @@ date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
   one, and `?orderId=` is ignored (the whole feed comes back and the row is found in it).
 - **Native app**: untouched. It reads the feed itself with its own port of the rules; host
   messages, the today snapshot and `tools/host-contract.json` did not change.
+
+## Partnerportaal (Verhoeven): round 2 (2026-11-12)
+Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend AI-CONTEXT
+"Partnerportaal (Verhoeven)" section holds the server rules; this is where the screens live.
+- **Deploy rule**: every round-2 response field is optional in `core/api/partner-portal-api.ts` and
+  `partner-sales-api.ts` (a round-1 server reads fine). The screens that build round-2 bodies
+  (`partner-melden.ts`, `partner-sales-entry-page.ts`) refuse to save with "De server wordt
+  bijgewerkt; probeer het zo opnieuw." unless the overview / staff page or summary answers
+  `apiVersion: 2`. Backend first, frontend after one green check.
+- **Count units** (`features/partner/partner-units.ts`, pure mirror of the server's
+  `PartnerCountUnits`): STUK (the piece noun: roos, bowl, stuk), VERPAKKING (display of 2+), OMDOOS
+  (known carton content > 1); sales units = count x pieces / piecesPerSalesUnit and must be whole
+  (the stepper steps keep it whole). The offer rule itself (which units, pieces per sales unit, the
+  order) is ONE module, `shared/partner-count-units.ts` (`buildCountUnits`, `countFactsOf` for a staff
+  `Product`); `partner-units.ts` re-exports it and the staff screens (`settings/partner-unit-choices.ts`,
+  the staff melding page, Analyses) read it. Change it only together with the server.
+- **Money** (`features/partner/partner-money.ts`, BigInt cents, half up): the same arithmetic as the
+  server's `PartnerSaleMoney`, so the form's Netto is the booked Netto to the cent (piece price at 4
+  dp x pieces per sales unit, gross = round2(Q x unit price); PCT extra lines per sale entry, AMOUNT
+  lines allocated once by gross; a buyback carries commission + transport, terugkoopkost = -net).
+  An edit on the server's money-only path (same date, same sales units per product and side, same
+  channel or no buyback) keeps what a side was booked with while its piece price stays (`MoneyPart.booked`,
+  `MeldingDraft.keptMoney`): a sale its gross (costs follow from it), a buyback its gross, commission and
+  transport, so a round-1 melding reads in the form as the server keeps it. Change it only together
+  with the backend.
+- **Portal** (`features/partner/*`, lazy, desk first 1280/1070, phone stacks): shell with tabs
+  Overzicht · Melden · Meldingen · Containers; Overzicht = action buttons, costs line, Komt eraan,
+  grouped stock table (`partner-product-table.ts`), latest meldingen; Melden = one page
+  (`?soort`, `?product`, `?bewerk=<id>`): collapsible product choice + entry table (desk) / cards
+  (phone), buyback as an indented sub-row, side column with kind, date, Klant (direct: search
+  `/api/partner-portal/customers`, "Niet gevonden? Nieuwe klant"), extra kost lines, Netto, Opslaan.
+  Edit loads `GET /api/partner-portal/reports/{id}` into `MeldingDraft.loadReport` (the melding's own
+  percents; the shelf checked as the server's rebook does: the net change, sale minus buyback against
+  stock + own old sale - own old buyback (`shelfShort`; the sale row is blamed when it grew, else the
+  buyback row "minstens n terug"); `dirty` against the loaded snapshot) and
+  PUTs with `expectedToken`. Meldingen = table with the partner's status words (Ingediend /
+  Bevestigd / Deels gefactureerd / Gefactureerd / Ingetrokken), Bewerken on `canEdit`, Ongedaan
+  maken on `canUndo`. Never an inkoopkost or profit split in the portal.
+- **Portal details (review round 1)**: a buyback on the clock starts per piece (`emptyPart(…,
+  'buyback')`; a sale starts in Enrosed's default unit) and says in amber when it books more pieces
+  than the same row sold (not a refusal: it may take back an earlier sale). An Aantal that is no whole
+  count ("2,5") stays in the field, red, with "Alleen hele …" (`DraftPart.unreadable`, set from
+  `unreadableChange` of `appPartnerCount` / the stepper). Products of one melding with different piece
+  nouns: the head says "Prijs", each field "/ roos". A changed date must lie within today - 90
+  (`bound`), whatever the picker's min. After a refused or lost PUT Melden re-reads the melding: a new
+  `editToken` with the form's exact content = saved (`MeldingDraft.sameAs`); else the entry shows the
+  `notice` "VV-n is intussen gewijzigd door … (what changed, `reportChanges`)" with "Nieuwe versie
+  laden" and Opslaan waits. Klant search: Enter takes the first hit of what is typed now (waits for
+  that answer; one letter picks nothing). Same name + colour twice (`partner-twins.ts`): every list
+  adds the SKU (the product table on the phone on a line of its own). Portal amounts below zero read
+  "− € x" (`partner-format.ts` `euro` uses `signedEur`). The product table groups by category (tile `categoryName`/`categoryOrder`, else the
+  containers answer's spec through `withCategories`), then series (a series of one is a plain row).
+  The melding sheet's buyback line is count x clock price (commission and transport sit in
+  Terugkoopkost).
+- **Staff** (`features/partner-sales/*`): Veilingverkopen page with Status / Soort / Periode /
+  Partner filters in the address, the table by sold-on date (fold plan: under 900 px card width
+  Datum, Melding, Producten, Netto, Status; Stuks/Bruto/Kosten from 900, Terugkoop from 1100), one
+  "Totaal · n meldingen" row from `filteredTotals`, bulk Bevestigen / Terugzetten / Factureren with
+  edit tokens. Factureren sheet: step 1 Kies de meldingen (confirmed open only), step 2 Controleren
+  (`partner-sales-figures.ts`: Netto opbrengst − Inkoopkost, split → partner x % / → Enrosed y % by
+  who paid it, = Winst → Enrosed z % / → partner; Onze waarde (never "Ons deel": the Documentnotitie
+  uses that for our profit share), − Voorschot verrekend (also € 0,00 when the partner financed part of
+  the cost), = Te factureren); step 1 counts a partly invoiced melding's open part (from its parts'
+  `open`, "van € x" beside it), and once the preview of the ticks is in, a melding the server takes
+  along (a sale and a confirmed buyback of another melding that mirrors it: `preview.reportIds`, the
+  reason from its warnings) shows ticked and fixed, "gaat mee · hoort bij VV-n", in the footer count. An opened melding shows the same split per source as "Inkoop en winst"
+  (`partner-sales-profit.ts`, the invoice preview of that melding alone with `includeUnconfirmed`).
+  Kosten carries the terugkoopkost while Terugkoop is folded; Ingetrokken has no total row;
+  `?meldingen=2,4` shows exactly those (a document's Meldingen links). Amounts below zero read
+  "− € x" (`shared/signed-eur.ts`, the Analyses way). "Stuks" are pieces everywhere, Analyses and the
+  home card included (the server's salePieces, else sales units × pieces per sales unit; the home
+  leaves stuks out while the summary has no pieces). Melding toevoegen / Bewerken are pages `/veilingverkopen/melding` and
+  `/veilingverkopen/melding/:id` around the shared `app-partner-entry` (staff buyer search = the
+  ERP customers, new buyer with the VAT number); a refused PUT re-reads the melding as Melden does
+  (lost answer = saved; changed = the notice with "Nieuwe versie laden").
+- **Elsewhere in the ERP**: report-backed sales documents hide Levering (tab, column, phone step;
+  hero KPIs Meldingen and Netto opbrengst) and the margin click opens `app-report-backed-cost-sheet`
+  on `GET /api/partner-sales/documents/{id}/breakdown`; Instellingen › Partnerportaal has
+  "Eenheid per product" (`settings-partner-units.ts`, the SKU on look-alike rows, stock in pieces); a
+  partner-made customer shows its origin row with Nagekeken (ticked on the sheet, sent after its own
+  Opslaan, needs the VAT number) and a "via Verhoeven" pill, `/customers?klant=<id>` opens it; the
+  margin popup reads per gefactureerd stuk with the auction's own price under Bruto; the bell has
+  PARTNER_KLANT (keyed by notificationId) and the home has "Veilingverkopen bevestigen" and
+  "Veilingverkopen factureren".
+
+## Partnerportaal (Verhoeven): Containers (round 2, 2026-11-12)
+- **What**: the portal tab `/partner/containers` (`features/partner/partner-containers.ts`) and the
+  "Komt eraan" strip on the Overzicht (`partner-coming.ts`, next 3 still coming, links to
+  `?container=<id>`), both on `GET /api/partner-portal/containers` through `PartnerContainersData`
+  (provided by `PartnerShell`, shared, read again on every visit).
+- **Allowlist rule** (same as the backend's `PartnerContainerViews`): a partner sees every container
+  of Enrosed's except concepts, as the PO number (never the "Herkenbare naam"), own or not ("Samen
+  met jou"), status/state, type, dates, ports, the location only for his own container or MAIN,
+  quantities, pieces, cartons, m³, fill, ± pallets, weight and the product card's sizes. Never a
+  price, cost, amount, supplier or free text: nothing in the partner code may add one.
+- **Words**: Besteld (grey) / Onderweg (blue) / Binnenkort (teal) / Aangekomen (green); the
+  server's `state`, else the ERP rule of `shared/product-incoming` (copied in
+  `partner-containers-model.ts`, pure). "± do 20 nov · over 8 dagen"; overdue reads "nog niet
+  binnen" in amber; "verschoven (was 12/11)" from `arrivalMovedFrom`.
+- **Calendar** (`partner-calendar.ts`): Monday-first month from `features/dashboard/agenda-days.ts`
+  (import-free, keep it so or copy it), container chips on the expected day (the receipt day once
+  in), ‹ › Vandaag, "PO-011" below 1100 px card width; on the phone a tinted day button. Beside it
+  "Komt eraan" (5 desk / 3 phone) with a thin bar from departure (or order day) to arrival.
+- **Table** (`partner-container-table.ts`, `partner-container-lines.ts`): Container · Type ·
+  Lading · ± Pallets · Vertrek · Aankomst · Status, Type and Vertrek fold under 900 px; a row opens
+  the products grouped by category · family (photo, colour, Afmeting = the product's own B × D × H,
+  weight and packaging, Aantal in the partner's default count unit + "= n stuks", Dozen, m³, ±
+  Pallets, Omdoos + "± n dozen per pallet"; Afmeting folds into the product cell under 980 px table
+  width, Omdoos under 820). A photo opens the product larger (medium photo) with its whole
+  specification. "Ook oude containers" adds `old` ones.
+- **Address**: a pick writes `?container=` with `Location.replaceState` (a router navigation would
+  scroll to the top: `scrollPositionRestoration: 'top'`); arriving with it, the row is opened and
+  scrolled to after the router's `Scroll` event.

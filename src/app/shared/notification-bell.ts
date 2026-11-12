@@ -39,7 +39,7 @@ import { notificationTarget } from './notification-target';
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'containermelding' : 'containermeldingen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> nog te factureren} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'containermelding' : 'containermeldingen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> {{ partnerWord() }}} @else if (partnerCustomerOpen()) {<b>{{ partnerCustomerOpen() }} {{ partnerCustomerOpen() === 1 ? 'nieuwe klant' : 'nieuwe klanten' }}</b> na te kijken} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -84,6 +84,15 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
+          @if (partnerCustomerRows().length) {
+            <h3 class="bell-sec">Nieuwe klanten via de partner</h3>
+            <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
+              @for (row of partnerCustomerRows(); track $index) {
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: row.item.actionNeeded ? 'tone-warn' : '',
+                  tile: row.item.actionNeeded ? 'tone-warn' : 'tone-grey', aria: row.item.actionNeeded ? row.when + ', na te kijken' : row.when }" />
+              }
+            </ul>
+          }
           @if (newsRows().length) {
             <h3 class="bell-sec">Van de klant</h3>
             <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
@@ -92,7 +101,7 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
-          @if (!actionRows().length && !newsRows().length && !arrivalRows().length && !partnerRows().length) {
+          @if (!actionRows().length && !newsRows().length && !arrivalRows().length && !partnerRows().length && !partnerCustomerRows().length) {
             @if (desk()) {
               <div class="wk-empty"><span class="wk-empty__icon" aria-hidden="true"><app-icon name="bell" [size]="20" /></span>
                 <p class="wk-empty__title">Niets openstaand</p><p class="wk-empty__text">Geen klanten die op ons wachten.</p></div>
@@ -241,8 +250,8 @@ export class NotificationBell {
     void this.work.refresh();
   }
 
-  /** What we must do, the arrivals, and the partner's meldingen not invoiced yet (each counted the way arrivals are). */
-  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length + this.partnerOpen());
+  /** What we must do, the arrivals, the partner's meldingen to confirm or invoice, and customers he made still to check. */
+  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length + this.partnerOpen() + this.partnerCustomerOpen());
   readonly actions = this.work.actions;
   readonly news = this.work.news;
   readonly loading = this.work.loading;
@@ -267,11 +276,18 @@ export class NotificationBell {
   readonly partnerRows = computed(() => this.work.partnerSaleItems()
     .map(item => ({ item, when: whenLabel(item.at, this.nowMs()), open: item.open === true })));
   readonly partnerOpen = computed(() => {
-    /* Nothing to invoice (only a buyback waits for the next sale): the badge does not ask. Unknown summary: the items count. */
+    /* Nothing to confirm and nothing to invoice (only a buyback waits for the next sale): the badge does not ask.
+       Unknown summary: the open items count. */
     const summary = this.work.partnerSales();
-    if (summary && !this.work.partnerSalesInvoiceable()) return 0;
+    if (summary && !this.work.partnerSalesInvoiceable() && !this.work.partnerSalesUnconfirmed()) return 0;
     return this.work.partnerSaleItems().filter((item) => item.open === true).length;
   });
+  /** "te bevestigen" while some wait on a confirmation, else "nog te factureren". */
+  readonly partnerWord = computed(() => !this.work.partnerSalesUnconfirmed() ? 'nog te factureren'
+    : this.work.partnerSalesInvoiceable() ? 'te bevestigen of te factureren' : 'te bevestigen');
+  /** Customers the partner made in the portal, newest first as the feed sends them. */
+  readonly partnerCustomerRows = computed(() => this.work.partnerCustomerItems().map((item) => ({ item, when: whenLabel(item.at, this.nowMs()) })));
+  readonly partnerCustomerOpen = computed(() => this.work.partnerCustomerItems().filter((item) => item.actionNeeded).length);
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
   /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */
@@ -312,6 +328,7 @@ export class NotificationBell {
       case 'BEKEKEN': return 'eye';
       case 'CONTAINER_AANKOMST': return 'purchase';
       case 'PARTNER_VERKOOP': return 'arrow-in';
+      case 'PARTNER_KLANT': return 'customers';
       default: return 'bell';
     }
   }

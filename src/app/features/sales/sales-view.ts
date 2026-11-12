@@ -15,6 +15,10 @@ import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { REPORT_SHIPPED_LABEL, isReportBacked, reportShipSplits, shipsViaReports } from './report-backed';
+import { reportBreakdownOf } from './report-backed-breakdown';
+import { ReportBackedCostSheet, ReportCostRequest } from './report-backed-cost-sheet';
+import { reportLineCost, reportLineMargin, reportMeldingQuery, reportProceeds } from './report-backed-cost';
+import { partnerShortName } from '../../shared/partner-short-name';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
@@ -78,7 +82,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand],
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet],
   template: `
     @if (view(); as data) {
       @if (cancelSheet()) {
@@ -240,7 +244,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if (data.advanceBilling?.stage === 'ADVANCE' && billingQuoteId()) {
                   <span aria-hidden="true"> · </span>voorschot op offerte <a class="sales-hero__link" [routerLink]="['/sales', billingQuoteId()]">{{ data.advanceBilling?.quoteNumber || 'bekijken' }}</a>
                 }
-                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen">uit veilingverkopen</a> }
+                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen" [queryParams]="reportMeldingLink()">uit veilingverkopen</a> }
               </p>
             </div>
             <div class="sales-hero__badges">
@@ -273,6 +277,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <span>Afgehandeld</span>
               <strong>{{ data.order.status === 'CONCEPT' ? '—' : ((creditSettlement().offsetEur + creditSettlement().refundedEur) | eur: 0) }}</strong>
               <small>{{ data.order.status === 'CONCEPT' ? 'nog niet uitgereikt' : 'verrekend of terugbetaald' }}</small>
+            </div>
+            } @else if (reportBacked(data)) {
+            <!-- From Veilingverkopen: nothing is delivered; what the meldingen brought in is the figure. -->
+            <div>
+              <span>Netto opbrengst</span>
+              <strong>{{ reportNetFigure() === null ? '—' : (reportNetFigure()! | eur: 0) }}</strong>
+              <small>{{ reportMeldingenLine() }}</small>
             </div>
             } @else {
             <div>
@@ -407,6 +418,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Producten</b>
               <small>{{ isAdvanceInvoice(data) ? advanceSummary(data).productLines : data.priced.lines.length + (data.priced.lines.length === 1 ? ' regel' : ' regels') }}</small></span>
           </button>
+          @if (!reportBacked(data)) {
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-delivery'"
                   [class.workflow-nav__active]="activeDetailSection() === 'sales-delivery'"
@@ -416,13 +428,14 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">2</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Levering</b><small>{{ isCreditNote() ? 'Geen levering · creditnota' : deliveryState(data) }}</small></span>
           </button>
+          }
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-control'"
                   [class.workflow-nav__active]="activeDetailSection() === 'sales-control'"
                   [class.active]="activeDetailSection() === 'sales-control'"
                   [attr.aria-current]="activeDetailSection() === 'sales-control' ? 'true' : null"
                   (click)="scrollToSection('sales-control')">
-            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">3</span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) ? 2 : 3 }}</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
@@ -431,7 +444,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [class.active]="activeDetailSection() === 'sales-status'"
                   [attr.aria-current]="activeDetailSection() === 'sales-status' ? 'true' : null"
                   (click)="scrollToSection('sales-status')">
-            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">4</span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) ? 3 : 4 }}</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Status</b><small>{{ statusOf(data).label }}</small></span>
           </button>
         </nav>
@@ -631,6 +644,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     <div class="line-facts">
                       <span><small>Aantal</small><strong>{{ line.quantity | num }} {{ lineUnit(line.productId).short }}</strong></span>
                       <span><small>Dozen</small><strong>{{ line.cartons | num }}</strong></span>
+                      @if (reportBacked(data)) {
+                        <span><small>Inkoop</small><strong>{{ lineCostPerUnit(line) | eur: 2 }}</strong></span>
+                      } @else {
                       <button type="button"
                               [class.line-facts__ok]="!deliveryOpen(line, data)"
                               [class.line-facts__warn]="deliveryOpen(line, data)"
@@ -638,6 +654,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         <small>Levering</small>
                         <strong>{{ deliveryShort(line, data) }}<i aria-hidden="true">›</i></strong>
                       </button>
+                      }
                     </div>
 
                     <!-- The stored price leads in its own unit; the display side follows. -->
@@ -686,14 +703,17 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         <div class="stat-row"><span>Verkoop na korting</span>
                           <span class="num">{{ profitNet(line) | eur: 2 }}</span></div>
                         @if (showsMargin()) {
-                        <div class="stat-row"><span>Kostprijs</span>
+                        <div class="stat-row"><span>{{ reportBacked(data) ? 'Inkoop' : 'Kostprijs' }}</span>
                           <span class="num">− {{ profitCost(line) | eur: 2 }}</span></div>
                         @if (isAdvance(data.order)) { <p class="muted">Voorschot voor de containerfinanciering. Het resultaat volgt bij elke uitgegeven veilingafrekening.</p> }
                         @else { <div class="stat-row line-breakdown__result"
                              [class.line-breakdown__result--negative]="line.marginEur < 0">
-                          <span>{{ line.marginEur < 0 ? 'Verlies' : 'Winst' }}</span>
+                          <span>{{ profitAmount(line) < 0 ? 'Verlies' : 'Winst' }}</span>
                           <span class="num">{{ profitPill(line) }}</span>
                         </div> }
+                        @if (reportBacked(data)) {
+                          <button class="line-breakdown__open" type="button" (click)="openReportCost(line)">Opbouw uit de meldingen <span aria-hidden="true">›</span></button>
+                        }
                         }
                       </div>
                     }
@@ -708,6 +728,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
             @if (isAdvanceInvoice(data)) { <section id="sales-delivery" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
             @else if (isCreditNote()) { <section class="section-card erp-workspace__section" id="sales-delivery" aria-label="Levering"><div class="credit-none-cell"><span aria-hidden="true">—</span>Geen levering · creditnota</div></section> }
+            @else if (reportBacked(data)) { <!-- From Veilingverkopen: the stock left with the meldingen; nothing to deliver. --> }
             @else {<section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Logistiek</span><h2 id="delivery-details-title">Levering</h2></div>
@@ -759,7 +780,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if ((data.priced.extraLines ?? []).length) {
                   <div><dt>Andere regels</dt><dd>{{ data.priced.totals.extraLinesTotal | eur: 2 }}</dd></div>
                 }
-                @if (!isCreditNote()) {
+                @if (!isCreditNote() && (!reportBacked(data) || data.priced.totals.freight + data.priced.totals.handling)) {
                 <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
                 }
@@ -886,7 +907,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   }
                   @if (reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data))) {
-                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen">meldingen ›</a></p>
+                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen" [queryParams]="reportMeldingLink()">meldingen ›</a></p>
                   } @else if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
@@ -1023,6 +1044,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}</button>
         </div>
       </app-sheet>
+    }
+
+    @if (reportCost(); as request) {
+      <app-report-backed-cost-sheet [request]="request" [breakdown]="reportBreakdown()" [variant]="desktop.active() ? 'default' : 'ios'" (closed)="reportCost.set(null)" />
     }
 
     @if (deliveryInfo(); as line) {
@@ -1198,6 +1223,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .line-breakdown__result { border-top:1px solid var(--line);font-weight:760 }
     .line-breakdown__result>span { color:var(--ok)!important }
     .line-breakdown__result--negative>span { color:var(--danger)!important }
+    .line-breakdown__open { display:flex;width:100%;min-height:44px;align-items:center;justify-content:space-between;margin-top:6px;padding:0 2px;border:0;border-top:1px solid var(--line);background:none;color:var(--rose-dark);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer }
     .negative { color:var(--danger)!important }
     .products-empty { padding:36px 18px;text-align:center;color:var(--muted) }.products-empty>span { display:block;font-size:32px;opacity:.55 }.products-empty strong { display:block;margin-top:6px;color:var(--ink-2);font-size:13px }.products-empty p { margin:4px 0 0;font-size:11.5px }
     .details-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line) }
@@ -1527,9 +1553,10 @@ export class SalesView {
     const railBottom = document.querySelector('.sales-section-nav')?.getBoundingClientRect().bottom ?? 0;
     /* Controle is a parallel sticky rail on desktop, so it must not eclipse
        Producten merely because both columns start at the same y-position. */
-    const tracked: readonly SalesDetailSectionId[] = this.desktop.active()
-      ? ['sales-products', 'sales-delivery', 'sales-status']
-      : this.detailSections;
+    const reports = isReportBacked(this.view());
+    const tracked: readonly SalesDetailSectionId[] = (this.desktop.active()
+      ? ['sales-products', 'sales-delivery', 'sales-status'] as const
+      : this.detailSections).filter((id) => id !== 'sales-delivery' || !reports);
     let current: SalesDetailSectionId = tracked[0];
     for (const id of tracked) {
       const section = document.getElementById(id);
@@ -2262,9 +2289,10 @@ export class SalesView {
   }
 
   profitAmount(line: PricedLine): number {
+    const margin = isReportBacked(this.view()) ? reportLineMargin(this.reportBreakdown(), line.productId, line.marginEur) : line.marginEur;
     return this.profitMode() === 'UNIT' && line.quantity > 0
-      ? line.marginEur / line.quantity
-      : line.marginEur;
+      ? margin / line.quantity
+      : margin;
   }
 
   profitNet(line: PricedLine): number {
@@ -2274,9 +2302,44 @@ export class SalesView {
   }
 
   profitCost(line: PricedLine): number {
+    if (isReportBacked(this.view())) {
+      const unit = this.lineCostPerUnit(line);
+      return this.profitMode() === 'UNIT' && line.quantity > 0 ? unit : Math.round(unit * line.quantity * 100) / 100;
+    }
     return this.profitMode() === 'UNIT' && line.quantity > 0
       ? line.landedUnitCost
       : line.costTotal;
+  }
+
+  /* ---- a document from Veilingverkopen: the meldingen's figures and the margin popup ---- */
+  /** The way from bruto to this document per product; null when the server has none. */
+  readonly reportBreakdown = reportBreakdownOf(() => this.view());
+  /** Where the document's Veilingverkopen links go: its meldingen, never the page's own first filter. */
+  readonly reportMeldingLink = computed(() => reportMeldingQuery(this.reportBreakdown()));
+  readonly reportCost = signal<ReportCostRequest | null>(null);
+  readonly reportNetFigure = computed(() => reportProceeds(this.reportBreakdown(), this.view()?.settlement?.lines));
+  readonly reportMeldingenLine = computed(() => {
+    const meldingen = this.reportBreakdown()?.meldingen ?? [];
+    if (!meldingen.length) return 'uit veilingverkopen';
+    const channels = new Set(meldingen.map((melding) => melding.channel));
+    const kind = channels.size > 1 ? 'veiling en direct' : channels.has('DIRECT') ? 'direct' : 'veiling';
+    return `${meldingen.length} ${meldingen.length === 1 ? 'melding' : 'meldingen'} · ${kind}`;
+  });
+  lineCostPerUnit(line: PricedLine): number {
+    return reportLineCost(this.reportBreakdown(), line.productId, line.quantity, line.landedUnitCost);
+  }
+  openReportCost(line: PricedLine): void {
+    const data = this.view();
+    if (!data) return;
+    const unit = this.lineUnit(line.productId);
+    this.reportCost.set({
+      title: line.description, mode: this.profitMode() === 'UNIT' ? 'unit' : 'line', productId: line.productId, quantity: line.quantity,
+      unit: { singular: unit.singular, plural: unit.plural, piecesPerDisplay: unit.isDisplay ? unit.piecesPerDisplay : null, pieceOne: unit.piece.one },
+      line: { net: line.net, landedUnitCost: line.landedUnitCost, marginEur: reportLineMargin(this.reportBreakdown(), line.productId, line.marginEur) },
+      settlementLine: data.settlement?.lines?.find((item) => item.productId === line.productId) ?? null,
+      sharePct: data.order.partnerSharePct ?? null,
+      partner: partnerShortName(this.customerName()),
+    });
   }
 
   label = (status: QuoteStatus) => STATUS_LABEL[status];

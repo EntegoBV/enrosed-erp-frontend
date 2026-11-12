@@ -1,46 +1,56 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { Location } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Auth } from '../../core/api/auth';
 import { messageOf } from '../../core/api/errors';
-import { PartnerPortalApi, PartnerReportRequest, PartnerReportResult } from '../../core/api/partner-portal-api';
+import {
+  PARTNER_API_VERSION, PartnerBuyerRequest, PartnerPortalApi, PartnerReport, PartnerReportBuyback, PartnerReportEntry,
+  PartnerReportRequest, PartnerReportResult, PartnerReportSale,
+} from '../../core/api/partner-portal-api';
 import type { HasUnsavedChanges } from '../../core/guards/unsaved-changes.guard';
 import { Icon } from '../../shared/icon';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
+import { PartnerContainersData } from './partner-containers-data';
 import { PartnerData } from './partner-data';
-import { MeldingDraft } from './partner-draft';
-import { PartnerEntry } from './partner-entry';
-import {
-  KIND_LABEL, PartnerKind, addDays, count, euro, longDate, parseKind, productTitle, reportKind, units,
-} from './partner-format';
-import { GridProduct, PartnerGrid } from './partner-grid';
+import { MeldingDraft, reportChanges } from './partner-draft';
+import { EntryNotice, PartnerEntry } from './partner-entry';
+import { KIND_LABEL, PartnerKind, addDays, euro, longDate, parseKind, priceEuro, reportKind } from './partner-format';
 import { PartnerHead } from './partner-head';
-
-type Step = 1 | 2 | 3;
+import { withCategories } from './partner-product-table';
+import { canEditReport, partCount, partPiecePrice, partnerStatus, pieceNoun } from './partner-report-format';
+import { twinTitle } from './partner-twins';
 
 /** How far back a melding may be dated (the server's rule). */
 const DAYS_BACK = 90;
 
+/** The version a melding was loaded at (sent back as expectedToken). */
+function tokenOf(report: PartnerReport): string {
+  return report.editToken ?? report.updatedAt ?? report.createdAt;
+}
+
+/** Said when the server is still round 1 (the deploy window): nothing round-2 is sent to it. */
+export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
+
 /**
- * Melden, in one screen with three steps in the address (?soort=…&stap=…),
- * so a swipe back goes a step back and keeps what was typed:
- * 1 Kies de producten (the stock, or for Terugkoop the recent sales),
- * 2 the form (app-partner-entry), 3 Gemeld with the summary.
- * A stock tile on the home comes in at step 2 with ?product=<id>.
+ * Melden: one page (desk first) with the product choice, the products as an
+ * entry table and the side column; ?soort=veiling|direct|terugkoop picks the
+ * kind, ?product=<id> (Melden on a stock row) puts that product on the form,
+ * ?bewerk=<id> loads a saved melding to change it (while Enrosed has not
+ * confirmed it). A new melding ends on "Opgeslagen" with its summary; an edit
+ * goes back to the Meldingen.
  */
 @Component({
   selector: 'app-partner-melden',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, LoadError, Skeleton, PartnerEntry, PartnerGrid, PartnerHead],
+  imports: [Icon, LoadError, Skeleton, PartnerEntry, PartnerHead],
   template: `
     @let o = data.overview();
-    @if (step() === 3 && result(); as done) {
+    @if (result(); as done) {
       @let r = done.report;
       <section class="done" aria-live="polite">
-        <span class="done__check" aria-hidden="true"><app-icon name="tick" [size]="40" /></span>
-        <h1 class="done__title">Gemeld</h1>
+        <span class="done__check" aria-hidden="true"><app-icon name="tick" [size]="36" /></span>
+        <h1 class="done__title">Opgeslagen</h1>
         <p class="done__sub">{{ r.number }} · {{ kindLabel(r) }} · {{ date(r.soldOn) }}</p>
         @if (done.existing) { <p class="done__note">Deze melding was al binnen; er is niets dubbel geboekt.</p> }
         <div class="done__list">
@@ -48,214 +58,312 @@ const DAYS_BACK = 90;
             <div class="done__row">
               <span class="done__name">{{ title(entry) }}</span>
               <span class="done__fact">
-                @if (entry.sale; as sale) { {{ unitsOf(entry, sale.quantity) }} · gem. {{ eur(sale.unitPriceEur) }} }
+                @if (entry.sale; as sale) { {{ countOf(entry, sale) }} · {{ price(piecePrice(entry, sale)) }} per {{ noun(entry) }} }
                 @if (entry.sale && entry.buyback) { · }
-                @if (entry.buyback; as buyback) { {{ unitsOf(entry, buyback.quantity) }} terug }
+                @if (entry.buyback; as buyback) { {{ countOf(entry, buyback) }} terug }
               </span>
             </div>
           }
           <div class="done__total"><span>Netto</span><b>{{ eur(r.totals.netEur) }}</b></div>
         </div>
+        <p class="done__hint">Je kunt ze wijzigen tot Enrosed ze bevestigt.</p>
         <div class="done__actions">
           <button class="ios-capsule ios-capsule--tinted ios-capsule--block" type="button" (click)="another()">Nog een melding</button>
-          <button class="ios-capsule ios-capsule--accent ios-capsule--block" type="button" (click)="home()">Naar overzicht</button>
+          <button class="ios-capsule ios-capsule--accent ios-capsule--block" type="button" (click)="toList()">Naar meldingen</button>
         </div>
       </section>
-    } @else if (!o) {
-      <app-partner-head [title]="kindTitle()" backLabel="Terug naar overzicht" (back)="home()" />
-      @if (data.failure()) {
-        <app-load-error [message]="failureText()" [busy]="data.loading()" (retry)="reload()" />
-      } @else {
-        <app-skeleton kind="card" [rows]="3" />
-      }
-    } @else if (step() === 1) {
-      <app-partner-head title="Kies de producten" [sub]="kindTitle()" backLabel="Terug naar overzicht" (back)="home()" />
-      <app-partner-grid [items]="pickList()" [selectable]="true" [selected]="selectedIds()"
-                        [emptyText]="kind() === 'terugkoop' ? 'Geen verkopen van de laatste 60 dagen. Meld eerst de verkoop op de veiling.' : 'Er ligt nu geen voorraad.'"
-                        (picked)="draft.toggle($event)" />
-      <div class="bar">
-        <span class="bar__count">{{ chosen() }} gekozen</span>
-        <button class="ios-capsule ios-capsule--accent bar__next" type="button" [disabled]="!chosen()" (click)="next()">Verder</button>
-      </div>
     } @else {
-      <app-partner-head title="Melden" backLabel="Terug" (back)="back()" />
-      <app-partner-entry [draft]="draft" [stock]="o.stock" [recent]="o.recentSales" [today]="o.serverDate"
-                         [submit]="send" (done)="sent($event)" (refused)="reload()" (kindChanged)="kindChanged($event)" />
+      <app-partner-head [title]="headTitle()" [sub]="headSub()" />
+      @if (!o || editLoading()) {
+        @if (data.failure() && !o) {
+          <app-load-error [message]="failureText()" [busy]="data.loading()" (retry)="reload()" />
+        } @else {
+          <app-skeleton kind="card" [rows]="3" />
+        }
+      } @else if (editFailure(); as failure) {
+        <app-load-error [message]="failure" [busy]="editLoading()" (retry)="loadEdit()" />
+      } @else if (locked(); as why) {
+        <div class="locked">
+          <p>{{ why }}</p>
+          <button class="ios-capsule ios-capsule--tinted" type="button" (click)="toList()">Naar meldingen</button>
+        </div>
+      } @else {
+        <app-partner-entry [draft]="draft" [stock]="stock()" [recent]="recent()" [today]="o.serverDate"
+                           [startPicking]="startPicking" [submit]="send" [buyerSearch]="findBuyers" [buyerCreate]="addBuyer"
+                           [notice]="notice()" (noticeAction)="loadEdit()"
+                           (done)="sent($event)" (refused)="refused()" (kindChanged)="kindChanged($event)" />
+      }
     }
   `,
   styles: `
-    /* The page fills the screen, so a bottom bar stands at the bottom also under a short list. */
-    :host{display:flex;flex-direction:column;min-height:calc(100dvh - var(--pp-head-h,60px) - 8px)}
+    :host{display:flex;flex-direction:column;min-height:calc(100dvh - var(--pp-sticky-top,60px) - 8px)}
     app-partner-entry{flex:1}
-    .bar{position:sticky;bottom:0;z-index:20;display:flex;align-items:center;gap:12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--safe-b,0px));background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
-    .bar::before{content:'';position:absolute;inset:0;z-index:-1;backdrop-filter:var(--ios-glass-filter,blur(20px));-webkit-backdrop-filter:var(--ios-glass-filter,blur(20px))}
-    .bar__count{flex:1;font-size:17px;font-weight:700}
-    app-partner-grid{margin-bottom:16px}
-    .bar__next{min-width:150px;min-height:52px;font-size:17px;font-weight:700}
-    .bar__next::before{inset:0}
-    .done{display:grid;justify-items:center;gap:6px;max-width:560px;margin:12px auto 0;padding-bottom:calc(24px + var(--safe-b,0px));text-align:center}
-    .done__check{display:grid;place-items:center;width:84px;height:84px;margin-bottom:6px;border-radius:50%;background:var(--rose);color:#fff;box-shadow:0 10px 26px color-mix(in srgb,var(--rose) 35%,transparent)}
-    .done__title{margin:0;font-size:30px;font-weight:800;letter-spacing:-.03em}
+    .locked{display:grid;justify-items:start;gap:12px;max-width:560px;padding:18px 20px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+    .locked p{margin:0;color:var(--ink-2);font-size:15px;line-height:1.45}
+    .done{display:grid;justify-items:center;gap:6px;max-width:560px;margin:16px auto 0;padding-bottom:calc(24px + var(--safe-b,0px));text-align:center}
+    .done__check{display:grid;place-items:center;width:72px;height:72px;margin-bottom:6px;border-radius:50%;background:var(--rose);color:#fff;box-shadow:0 10px 26px color-mix(in srgb,var(--rose) 35%,transparent)}
+    .done__title{margin:0;font-size:28px;font-weight:800;letter-spacing:-.03em}
     .done__sub{margin:0;color:var(--muted);font-size:15px}
-    .done__note{margin:4px 0 0;color:var(--ink-2);font-size:14px}
-    .done__list{display:grid;width:100%;margin-top:14px;padding:6px 16px 10px;border-radius:20px;background:var(--surface);text-align:left}
+    .done__note,.done__hint{margin:4px 0 0;color:var(--ink-2);font-size:14px}
+    .done__list{display:grid;width:100%;margin-top:14px;padding:6px 16px 10px;border:1px solid var(--line);border-radius:16px;background:var(--surface);text-align:left}
     .done__row{display:grid;gap:2px;padding:10px 0;box-shadow:inset 0 -.5px 0 var(--ios-sep,rgb(60 50 45/16%))}
-    .done__name{font-size:15.5px;font-weight:650}
-    .done__fact{color:var(--muted);font-size:14px}
-    .done__total{display:flex;align-items:baseline;justify-content:space-between;padding-top:12px;font-size:17px;font-weight:700}
-    .done__total b{font-size:22px;font-weight:800}
-    .done__actions{display:grid;gap:10px;width:100%;margin-top:16px}
+    .done__name{font-size:15px;font-weight:650}
+    .done__fact{color:var(--muted);font-size:13.5px}
+    .done__total{display:flex;align-items:baseline;justify-content:space-between;padding-top:12px;font-size:16px;font-weight:700}
+    .done__total b{font-size:21px;font-weight:800}
+    .done__actions{display:grid;gap:10px;width:100%;margin-top:14px}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){.done__actions{grid-template-columns:1fr 1fr}}
   `,
 })
 export class PartnerMelden implements HasUnsavedChanges {
   readonly data = inject(PartnerData);
+  private readonly containers = inject(PartnerContainersData);
   private readonly api = inject(PartnerPortalApi);
   private readonly auth = inject(Auth);
   private readonly ui = inject(Ui);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
-  private readonly location = inject(Location);
 
   /** Query parameters (withComponentInputBinding). */
   readonly soort = input<string | undefined>();
-  readonly stap = input<string | undefined>();
   readonly product = input<string | undefined>();
+  readonly bewerk = input<string | undefined>();
 
   readonly draft = new MeldingDraft();
   readonly result = signal<PartnerReportResult | null>(null);
-  readonly kind = computed<PartnerKind>(() => parseKind(this.soort()));
-  readonly step = computed<Step>(() => (this.stap() === '3' ? 3 : this.stap() === '2' ? 2 : 1));
-  readonly kindTitle = computed(() => KIND_LABEL[this.kind()]);
+  /** The melding being edited as the server answered it. */
+  readonly editReport = signal<PartnerReport | null>(null);
+  readonly editLoading = signal(false);
+  readonly editFailure = signal<string | null>(null);
+  /** A newer version of the edited melding than the one on the form (an edit refused because it changed meanwhile), and what changed. */
+  readonly stale = signal<{ report: PartnerReport; changes: string[] } | null>(null);
   readonly failureText = computed(() => messageOf(this.data.failure(), LOAD_ERROR_FALLBACK));
+  /** A new melding opens the product choice; Melden on a stock row or an edit starts with the form. */
+  readonly startPicking: boolean;
 
-  readonly pickList = computed<readonly GridProduct[]>(() =>
-    this.kind() === 'terugkoop' ? this.data.recentSales() : this.data.stock());
-  readonly selectedIds = computed(() => new Set(this.draft.entries().map((entry) => entry.product.productId)));
-  readonly chosen = computed(() => this.draft.entries().length);
+  readonly editId = computed(() => {
+    const id = Number(this.bewerk());
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  });
 
-  /** The product of a stock tap, added once the overview is there. */
+  readonly headTitle = computed(() => {
+    const report = this.editReport();
+    return this.editId() !== null ? (report ? `${report.number} wijzigen` : 'Melding wijzigen') : 'Melden';
+  });
+
+  readonly headSub = computed(() => {
+    const report = this.editReport();
+    if (!report || this.editId() === null) return null;
+    return `${partnerStatus(report).label} · ${KIND_LABEL[reportKind(report)].toLowerCase()} · ${longDate(report.soldOn)}`;
+  });
+
+  /** The stock and recent sales with their category (the product choice groups by it). */
+  readonly stock = computed(() => withCategories(this.data.stock(), this.containers.specs()));
+  readonly recent = computed(() => withCategories(this.data.recentSales(), this.containers.specs()));
+
+  /** The edited melding changed meanwhile: what changed, by whom, and "Nieuwe versie laden". */
+  readonly notice = computed<EntryNotice | null>(() => {
+    const stale = this.stale();
+    if (!stale) return null;
+    const fresh = stale.report;
+    const by = fresh.updatedByName && fresh.updatedByName !== this.auth.username() ? ` door ${fresh.updatedByName}` : '';
+    const changes = stale.changes;
+    const what = changes.length ? ` (${changes.slice(0, 3).join(', ')}${changes.length > 3 ? ' …' : ''})` : '';
+    return {
+      text: `${fresh.number} is intussen gewijzigd${by}${what}. Laad de nieuwe versie; wat je hier invulde, vervalt dan.`,
+      action: 'Nieuwe versie laden',
+    };
+  });
+
+  /** Why a loaded melding cannot be changed here (the server decides with canEdit). */
+  readonly locked = computed<string | null>(() => {
+    const report = this.editReport();
+    if (this.editId() === null || !report) return null;
+    if (canEditReport(report)) return null;
+    if (report.status === 'VOIDED') return 'Deze melding is ingetrokken.';
+    if (report.status !== 'OPEN') return 'Deze melding is al (deels) gefactureerd; vraag Enrosed om een wijziging.';
+    if (report.confirmed) return 'Enrosed heeft deze melding al bevestigd; vraag Enrosed om een wijziging.';
+    if (report.canEdit === undefined) return SERVER_UPDATING;
+    return 'Een latere terugkoop hoort bij deze melding. Maak die eerst ongedaan.';
+  });
+
+  /** The product of a Melden on a stock row, added once the overview is there. */
   private pendingProduct: number | null = null;
-  private productTaken = false;
+  private loadedEdit: number | null = null;
+  private editRun = 0;
 
-  /** Sends the partner's melding (the entry component calls this, and shows a refusal in place). */
-  readonly send = (body: PartnerReportRequest): Promise<PartnerReportResult> => this.api.createReport(body);
+  /** Sends the melding: new (POST) or the edit (PUT); never a round-2 body to a round-1 server. */
+  readonly send = (body: PartnerReportRequest): Promise<PartnerReportResult> => {
+    if ((this.data.overview()?.apiVersion ?? 1) < PARTNER_API_VERSION) return Promise.reject({ status: 503, error: { message: SERVER_UPDATING } });
+    const editing = this.draft.editing();
+    return editing ? this.api.updateReport(editing.id, body) : this.api.createReport(body);
+  };
+
+  readonly findBuyers = (query: string) => this.api.customers(query);
+  readonly addBuyer = (body: PartnerBuyerRequest) => this.api.createCustomer(body);
 
   constructor() {
-    /* Every Melden reads the stock and today afresh (the portal may have stood open since yesterday); the last overview shows meanwhile. */
+    this.draft.buyerRequired.set(true);
+    const params = this.route.snapshot.queryParamMap;
+    this.startPicking = !params.get('product') && !params.get('bewerk');
+    /* Every Melden reads the stock and today afresh (the portal may have stood open since yesterday). */
     void this.data.load();
+    /* The products' categories for the product choice (the containers answer carries them; one shared read). */
+    if (!this.containers.page()) void this.containers.load();
 
-    /* The address decides the kind and the step; a step that has nothing to show goes back one (in place). */
+    /* The kind from the address (a new melding only: an edit takes the melding's own). */
     effect(() => {
-      const kind = this.kind();
-      const step = this.step();
-      const product = Number(this.product());
+      const kind = parseKind(this.soort());
+      untracked(() => { if (!this.draft.editing() && this.editId() === null) this.draft.kind.set(kind); });
+    });
+
+    /* ?bewerk=<id>: load that melding; without it, a new melding (once an edit was shown). */
+    effect(() => {
+      const id = this.editId();
       untracked(() => {
-        /* Once products are on the form its kind is what he chose last (on step 2): an older history entry (back to
-           step 1) never puts the old kind back; the address follows the form instead. */
-        if (step !== 3 && this.draft.entries().length && kind !== this.draft.kind()) this.followKind();
-        else this.draft.kind.set(kind);
-        if (!this.productTaken && Number.isSafeInteger(product) && product > 0) this.pendingProduct = product;
-        this.productTaken = true;
-        /* Back from Gemeld (or a fresh step 1/2 after it): a new melding. */
-        if (step !== 3 && this.result()) { this.result.set(null); this.draft.reset(this.data.overview()?.serverDate); }
-        if (step === 3 && !this.result()) this.go(this.draft.entries().length ? 2 : 1, true);
+        if (id === this.loadedEdit) return;
+        this.loadedEdit = id;
+        this.result.set(null);
+        if (id === null) {
+          this.editReport.set(null);
+          this.editFailure.set(null);
+          this.draft.reset(this.data.overview()?.serverDate);
+          this.draft.kind.set(parseKind(this.soort()));
+          this.applyOverview();
+        } else {
+          void this.loadEdit();
+        }
       });
     });
 
-    /* With the overview: the costs, the stock limits, the date range, the tapped product; an empty step 2 goes to 1. */
+    /* Melden on a stock row: that product, once. */
+    const product = Number(params.get('product'));
+    if (Number.isSafeInteger(product) && product > 0 && !params.get('bewerk')) this.pendingProduct = product;
+
+    /* With every overview: the costs, the limits (an edit adds its own old quantities), the date range. */
     effect(() => {
       const overview = this.data.overview();
-      const step = this.step();
       if (!overview) return;
-      untracked(() => {
-        this.draft.costs.set(overview.costs);
-        this.draft.saleLimits.set(new Map(overview.stock.map((tile) => [tile.productId, tile.quantity])));
-        this.draft.saleLimitOtherwise.set(0);
-        this.draft.setToday(overview.serverDate, addDays(overview.serverDate, -DAYS_BACK));
-        if (this.pendingProduct != null) {
-          const id = this.pendingProduct;
-          this.pendingProduct = null;
-          const tile = overview.stock.find((item) => item.productId === id)
-            ?? overview.recentSales.find((item) => item.productId === id);
-          if (tile) this.draft.add(tile);
-        }
-        /* Not right after Melden: the draft is already empty while the way to Gemeld is under way. */
-        if (step === 2 && !this.result() && !this.draft.entries().length) this.go(1, true);
-      });
+      untracked(() => this.applyOverview());
     });
+  }
+
+  private applyOverview(): void {
+    const overview = this.data.overview();
+    if (!overview) return;
+    this.draft.costs.set(overview.costs);
+    this.draft.applyStock(new Map(overview.stock.map((tile) => [tile.productId, tile.quantity])), 0);
+    this.draft.setToday(overview.serverDate, addDays(overview.serverDate, -DAYS_BACK));
+    if (this.pendingProduct != null) {
+      const id = this.pendingProduct;
+      this.pendingProduct = null;
+      const tile = overview.stock.find((item) => item.productId === id) ?? overview.recentSales.find((item) => item.productId === id);
+      if (tile) this.draft.add(tile);
+    }
+  }
+
+  /** Reads the melding of ?bewerk and puts it on the form. */
+  async loadEdit(): Promise<void> {
+    const id = this.editId();
+    if (id === null) return;
+    const run = ++this.editRun;
+    this.editLoading.set(true);
+    this.editFailure.set(null);
+    this.stale.set(null);
+    try {
+      const report = await this.api.report(id);
+      if (run !== this.editRun) return;
+      this.editReport.set(report);
+      this.draft.reset(this.data.overview()?.serverDate);
+      this.draft.loadReport(report);
+      this.applyOverview();
+    } catch (failure: unknown) {
+      if (run !== this.editRun) return;
+      const status = (failure as { status?: number } | null)?.status;
+      this.editFailure.set(status === 404 ? 'Deze melding bestaat niet (meer).' : messageOf(failure, 'De melding laden lukt nu niet.'));
+    } finally {
+      if (run === this.editRun) this.editLoading.set(false);
+    }
   }
 
   canDeactivate(): boolean | Promise<boolean> {
     /* Signed out underneath (a 401): nothing can be sent any more, so nothing is kept back. */
     if (!this.draft.dirty() || !this.auth.isLoggedIn()) return true;
+    const editing = this.draft.editing();
     return new Promise<boolean>((resolve) => {
       this.ui.confirm(
-        { title: 'Melding nog niet verstuurd', message: 'Wat je invulde gaat verloren.', confirmLabel: 'Niet melden', danger: true },
+        editing
+          ? { title: 'Wijziging nog niet opgeslagen', message: `Wat je in ${editing.number} wijzigde gaat verloren.`, confirmLabel: 'Niet opslaan', danger: true }
+          : { title: 'Melding nog niet opgeslagen', message: 'Wat je invulde gaat verloren.', confirmLabel: 'Niet opslaan', danger: true },
         () => resolve(true), undefined, () => resolve(false),
       );
     });
   }
 
-  next(): void {
-    if (this.chosen()) this.go(2);
-  }
-
-  /** Step 2's back: to step 1 when it came from there, else where it came from (the home). */
-  back(): void {
-    if (this.route.snapshot.queryParamMap.get('product') === null) { this.location.back(); return; }
-    void this.router.navigate(['/partner']);
-  }
-
   kindChanged(kind: PartnerKind): void {
-    void this.router.navigate([], {
-      relativeTo: this.route, queryParams: { soort: kind }, queryParamsHandling: 'merge', replaceUrl: true,
-    });
-  }
-
-  /** The address takes the form's kind (in place), so the step's title, its list and the next step agree with it. */
-  private followKind(): void {
-    void this.router.navigate([], {
-      relativeTo: this.route, queryParams: { soort: this.draft.kind() }, queryParamsHandling: 'merge', replaceUrl: true,
-    });
+    if (this.draft.editing()) return;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: kind }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   sent(result: PartnerReportResult): void {
-    this.result.set(result);
-    this.draft.reset(this.data.overview()?.serverDate);
+    const editing = this.draft.editing();
     this.data.upsertReport(result.report);
     void this.data.load();
-    this.go(3, true);
+    if (editing) {
+      this.draft.markSaved();
+      this.ui.toast(`${result.report.number} opgeslagen`);
+      this.toList();
+      return;
+    }
+    this.result.set(result);
+    this.draft.reset(this.data.overview()?.serverDate);
   }
 
   another(): void {
     this.result.set(null);
     this.draft.reset(this.data.overview()?.serverDate);
+    this.applyOverview();
     void this.data.load();
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: this.draft.kind(), stap: 1 }, replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { soort: this.draft.kind() }, replaceUrl: true });
   }
 
-  home(): void {
-    void this.router.navigate(['/partner']);
+  toList(): void {
+    void this.router.navigate(['/partner/meldingen']);
   }
 
-  /** A retry of the overview, and after a refusal of Melden: the stock may have changed meanwhile (the cards then say where). */
+  /** A retry of the overview, and after a refusal: the stock may have changed meanwhile (the rows then say where). */
   reload(): void {
     void this.data.load();
   }
 
-  private go(step: Step, replace = false): void {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: { soort: this.draft.kind(), stap: step, product: step === 2 ? this.route.snapshot.queryParamMap.get('product') : null },
-      replaceUrl: replace,
-    });
+  /**
+   * Opslaan was refused (or its answer got lost). The stock is read again; an edit also reads its melding: when that
+   * changed meanwhile and now holds exactly what the form holds, the save did go through; otherwise the form offers
+   * the new version (a retry would be refused for ever with the old token).
+   */
+  async refused(): Promise<void> {
+    this.reload();
+    const editing = this.draft.editing();
+    if (!editing) return;
+    try {
+      const fresh = await this.api.report(editing.id);
+      if (this.draft.editing() !== editing) return;
+      if (tokenOf(fresh) === editing.token) return;
+      if (this.draft.sameAs(fresh)) { this.sent({ report: fresh, existing: true }); return; }
+      const loaded = this.editReport();
+      const twins = this.data.twins();
+      this.stale.set({ report: fresh, changes: loaded ? reportChanges(loaded, fresh, (product) => twinTitle(product, twins)) : [] });
+    } catch {
+      /* The refusal stays on the form; reloading the page still reads the melding afresh. */
+    }
   }
 
-  kindLabel(report: PartnerReportResult['report']): string { return KIND_LABEL[reportKind(report)]; }
-  title(entry: { name: string; variant: string | null }): string { return productTitle(entry); }
-  unitsOf(entry: { unitOne: string; unitOther: string }, quantity: number): string { return units(quantity, entry); }
+  kindLabel(report: PartnerReport): string { return KIND_LABEL[reportKind(report)]; }
+  title(entry: PartnerReportEntry): string { return twinTitle(entry, this.data.twins()); }
+  countOf(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string { return partCount(entry, part); }
+  piecePrice(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): number { return partPiecePrice(entry, part); }
+  noun(entry: PartnerReportEntry): string { return pieceNoun(entry); }
   eur(value: number): string { return euro(value); }
-  num(value: number): string { return count(value); }
+  price(value: number): string { return priceEuro(value); }
   date(iso: string): string { return longDate(iso); }
 }

@@ -76,6 +76,22 @@ export const routes: Routes = [
       import('./features/sales/pallet-calculator-page').then((m) => m.PalletCalculatorPage),
   },
   {
+    path: 'veilingverkopen/melding',
+    title: 'Melding toevoegen',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () =>
+      import('./features/partner-sales/partner-sales-entry-page').then((m) => m.PartnerSalesEntryPage),
+  },
+  {
+    path: 'veilingverkopen/melding/:id',
+    title: 'Melding wijzigen',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () =>
+      import('./features/partner-sales/partner-sales-entry-page').then((m) => m.PartnerSalesEntryPage),
+  },
+  {
     path: 'veilingverkopen',
     title: 'Veilingverkopen',
     canActivate: [authGuard],

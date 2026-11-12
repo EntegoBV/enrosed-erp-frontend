@@ -32,6 +32,7 @@ import {
 import { withTicaResult, withTicaSales } from './tica-analysis';
 import { AnPartnerSales, type PartnerSalesUnitFn } from './an-partner-sales';
 import { partnerSalesInPeriod } from './partner-sales-analysis';
+import { buildCountUnits, countFactsOf } from '../../shared/partner-count-units';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
@@ -1480,13 +1481,18 @@ export class AnalysesPage {
   readonly partnerPace = computed(() => this.partnerSalesData()?.products ?? null);
   readonly partnerSalesFigures = computed(() => {
     const data = this.partnerSalesData();
-    return data ? partnerSalesInPeriod(data, this.salesFromDate() || null, this.salesToDate() || null) : null;
+    return data ? partnerSalesInPeriod(data, this.salesFromDate() || null, this.salesToDate() || null, this.partnerPiecesPer) : null;
   });
-  /** A product's sales unit words for the card ("stuk"/"stuks", "display"/"displays"). */
+  /** Pieces in one sales unit of a product (a display of 12 rozen: 12), for a server that sends no pieces. */
+  private readonly partnerPiecesPer = (productId: number): number => {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    return product ? buildCountUnits(countFactsOf(product, productSalesUnit(product).piece)).piecesPerSalesUnit : 1;
+  };
+  /** A product's piece words for the card ("stuk"/"stuks", "roos"/"rozen"): the card counts pieces. */
   readonly partnerUnitOf: PartnerSalesUnitFn = (productId) => {
     const product = this.products().find((candidate) => candidate.id === productId);
-    const unit = product ? productSalesUnit(product) : null;
-    return unit ? { one: unit.singular, other: unit.plural } : { one: 'stuk', other: 'stuks' };
+    const piece = product ? productSalesUnit(product).piece : null;
+    return piece ? { one: piece.one, other: piece.other } : { one: 'stuk', other: 'stuks' };
   };
   /**
    * Verkoop's TICA card: the period's lines (loaded when the tab shows and TICA sold in the period), keyed by their
@@ -2449,8 +2455,11 @@ export class AnalysesPage {
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
       if (tica.status === 'fulfilled') this.ticaDays.set(tica.value); else warnings.push('TICA verkopen');
       /* A backend without the portal (404) has none: no card, no warning. Another failure keeps the last rows. */
-      if (partnerSales.status === 'fulfilled') this.partnerSalesData.set(partnerSales.value);
-      else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
+      if (partnerSales.status === 'fulfilled') {
+        this.partnerSalesData.set(partnerSales.value);
+        /* The Veilingverkopen card counts pieces in their own noun (rozen, bowls): the unit names, once (a signal). */
+        if (partnerSales.value?.reports?.length) void this.catalog.unitNames().catch(() => undefined);
+      } else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
       else warnings.push('veilingverkopen');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');

@@ -1,6 +1,8 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { PartnerOverview, PartnerPortalApi, PartnerRecentSale, PartnerReport, PartnerStockTile } from '../../core/api/partner-portal-api';
 import { localToday } from './partner-format';
+import { bySoldOn } from './partner-report-format';
+import { twinKeys } from './partner-twins';
 
 /** How old the overview may be when he comes back to the portal before it is read again. */
 const STALE_MS = 60_000;
@@ -29,6 +31,10 @@ export class PartnerData {
 
   readonly stock = computed<PartnerStockTile[]>(() => this.overview()?.stock ?? []);
   readonly recentSales = computed<PartnerRecentSale[]>(() => this.overview()?.recentSales ?? []);
+  /** Names and colours more than one product shares (stock, recent sales, latest meldingen): those rows add the code. */
+  readonly twins = computed(() => twinKeys([
+    ...this.stock(), ...this.recentSales(), ...(this.overview()?.reports ?? []).flatMap((report) => report.entries),
+  ]));
 
   /** Fetches the overview; a fetch under way is shared. The screens show the last one meanwhile. */
   load(): Promise<void> {
@@ -69,7 +75,7 @@ export class PartnerData {
     this.overview.update((overview) => {
       if (!overview) return overview;
       const others = overview.reports.filter((item) => item.id !== report.id);
-      const reports = [report, ...others].sort((a, b) => b.id - a.id).slice(0, 10);
+      const reports = [report, ...others].sort(bySoldOn).slice(0, 10);
       return { ...overview, reports };
     });
   }

@@ -44,12 +44,37 @@ export class WorkQueue {
    */
   readonly partnerSales = signal<PartnerSalesSummary | null>(null);
   /**
-   * Something of the open meldingen can be invoiced: a sale is open. A buyback alone (its sale invoiced before) is
-   * open too, but Factureren can only net it against the next sale of that product, so it asks nobody to act.
+   * Round 2: Factureren takes only meldingen staff confirmed. A round-1 backend sends no confirmed figures; then every
+   * open melding counts as before (and nothing waits on a confirmation).
    */
-  readonly partnerSalesInvoiceable = computed(() => (this.partnerSales()?.openSaleQuantity ?? 0) > 0);
-  /** Open meldingen while something can be invoiced: the count on Veilingverkopen in the nav (a NavCountKey). */
-  readonly partnerSalesOpen = computed(() => (this.partnerSalesInvoiceable() ? this.partnerSales()!.openReports : 0));
+  readonly partnerSalesConfirming = computed(() => this.partnerSales()?.confirmedOpenReports != null);
+  /** Meldingen waiting for Bevestigen (0 on a round-1 backend). */
+  readonly partnerSalesUnconfirmed = computed(() => Math.max(0, this.partnerSales()?.unconfirmedReports ?? 0));
+  /**
+   * Something can be invoiced now: a confirmed sale is open (round 1: any open sale). A buyback alone is open too, but
+   * Factureren can only net it against the next sale of that product, so it asks nobody to act.
+   */
+  readonly partnerSalesInvoiceable = computed(() => {
+    const summary = this.partnerSales();
+    if (!summary) return false;
+    return (this.partnerSalesConfirming() ? summary.confirmedOpenSaleQuantity ?? 0 : summary.openSaleQuantity) > 0;
+  });
+  /**
+   * What Factureren can take now: meldingen, the sale in sales units (quantity: is a sale open at all), in pieces
+   * (null when the server does not say them: never print sales units as stuks) and netto (confirmed and open; round 1:
+   * every open one).
+   */
+  readonly partnerSalesToInvoice = computed(() => {
+    const summary = this.partnerSales();
+    if (!summary) return null;
+    return this.partnerSalesConfirming()
+      ? { reports: summary.confirmedOpenReports ?? 0, quantity: summary.confirmedOpenSaleQuantity ?? 0,
+        pieces: summary.confirmedOpenSalePieces ?? null, netEur: summary.confirmedOpenNetEur ?? 0 }
+      : { reports: summary.openReports, quantity: summary.openSaleQuantity, pieces: summary.openSalePieces ?? null, netEur: summary.openNetEur };
+  });
+  /** The count on Veilingverkopen in the nav and the host: to confirm, plus confirmed ones Factureren can take (a NavCountKey). */
+  readonly partnerSalesOpen = computed(() =>
+    this.partnerSalesUnconfirmed() + (this.partnerSalesInvoiceable() ? this.partnerSalesToInvoice()?.reports ?? 0 : 0));
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;
@@ -74,6 +99,8 @@ export class WorkQueue {
   readonly arrivals = computed(() => this.visible().filter((item) => item.kind === 'CONTAINER_AANKOMST'));
   /** The partner's meldingen of the last 14 days: their own bell section, never customer work or a sales-order link. */
   readonly partnerSaleItems = computed(() => this.visible().filter((item) => item.kind === 'PARTNER_VERKOOP'));
+  /** Customers the partner made in the portal, until staff mark them Nagekeken: their own bell rows, links to the sheet. */
+  readonly partnerCustomerItems = computed(() => this.visible().filter((item) => item.kind === 'PARTNER_KLANT'));
 
   /**
    * Fetches the queue. Not forced, it shares a fetch that is under way, and
@@ -200,12 +227,14 @@ export class WorkQueue {
  * whoever dismissed the first does want to see the second.
  */
 function key(item: AppNotification): string {
-  if ((item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP') && item.notificationId)
+  /* These have no order: their own id. A melding's id carries its revision ("partner-sale:12:<editToken>"), so an
+     edited melding comes back after a dismiss; a partner-made customer is "partner-customer:<id>". */
+  if (ownBucket(item) && item.notificationId)
     return `${item.kind}|${item.notificationId}|${item.detail ?? ''}`;
   return `${item.kind}|${item.orderNumber}|${item.detail ?? ''}`;
 }
 
 /** Kinds with a bell section of their own: never in "Wij zijn aan zet" or "Van de klant". */
 function ownBucket(item: AppNotification): boolean {
-  return item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP';
+  return item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP' || item.kind === 'PARTNER_KLANT';
 }

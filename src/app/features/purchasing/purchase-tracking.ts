@@ -54,7 +54,10 @@ import { purchaseTrackingRow, purchaseTrackingScope } from './purchase-tracking-
   `,
 })
 export class PurchaseTracking {
-  readonly orderId = input.required<number>();
+  /* Not input.required: the order pages read row() through viewChild in bindings above this element, before
+     Angular has set the inputs (NG0950 broke every order with a track & trace reference on 2026-11-11).
+     Without an order the scope and the row are null, as for an order without a reference. */
+  readonly orderId = input<number | null>(null);
   readonly trackingReference = input<string | null>(null);
   readonly active = input(true);
   readonly scope = computed(() => purchaseTrackingScope(this.orderId(), this.trackingReference()));
@@ -136,7 +139,9 @@ export class PurchaseTracking {
     const version = ++this.requestVersion;
     this.loading.set(true);
     try {
-      const feed = await this.api.list(this.orderId());
+      const orderId = this.orderId();
+      if (orderId === null) return;
+      const feed = await this.api.list(orderId);
       if (!this.accepts(version, scope)) return;
       this.feed.set(feed);
       this.error.set(null);
