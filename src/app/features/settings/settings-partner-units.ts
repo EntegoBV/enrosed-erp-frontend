@@ -8,8 +8,7 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Skeleton } from '../../shared/skeleton';
 import { productParts } from '../customers/customer-price-state';
-import { productSalesUnit } from '../products/product-sales-unit';
-import { PartnerUnitChoice, effectiveUnit, partnerUnitChoices, searchText, storedUnits } from './partner-unit-choices';
+import { PartnerUnitChoice, effectiveUnit, partnerUnitChoices, piecesPerSalesUnit, searchText, storedUnits } from './partner-unit-choices';
 
 const NL = new Intl.NumberFormat('nl-BE');
 
@@ -17,7 +16,7 @@ interface UnitRow {
   productId: number;
   head: string;
   tail: string | null;
-  /** "120 op voorraad", "op container". */
+  /** "36 rozen op voorraad", "op container"; with the SKU in front when another row reads the same. */
   where: string;
   choices: PartnerUnitChoice[];
   search: string;
@@ -276,20 +275,27 @@ export class SettingsPartnerUnits {
       for (const line of view.order.lines ?? []) onContainers.add(line.productId);
     }
     const stored = this.stored();
-    return this.products()
+    const rows = this.products()
       .filter((product) => product.id != null && (stock.has(product.id) || onContainers.has(product.id) || stored.has(product.id)))
       .map((product) => {
         const id = product.id!;
         const parts = productParts(product, { productId: id, name: product.name, sku: product.sku });
-        const unit = productSalesUnit(product);
-        const pieces = stock.get(id) ?? 0;
+        const choices = partnerUnitChoices(product);
+        /* Stock in pieces, the way the partner counts (a display of 12 rozen is 12 rozen). */
+        const piece = choices.find((choice) => choice.unit === 'STUK') ?? choices[0];
+        const pieces = (stock.get(id) ?? 0) * piecesPerSalesUnit(product);
         return {
-          productId: id, familyId: product.familyId ?? null, head: parts.head, tail: parts.tail,
-          where: pieces > 0 ? `${NL.format(pieces)} ${pieces === 1 ? unit.singular : unit.plural} op voorraad` : onContainers.has(id) ? 'op container' : 'niet op voorraad',
-          choices: partnerUnitChoices(product),
+          productId: id, familyId: product.familyId ?? null, head: parts.head, tail: parts.tail, sku: product.sku?.trim() || null,
+          where: pieces > 0 ? `${NL.format(pieces)} ${pieces === 1 ? piece.one : piece.other} op voorraad` : onContainers.has(id) ? 'op container' : 'niet op voorraad',
+          choices,
           search: searchText(`${product.name} ${product.sku ?? ''} ${product.colour ?? ''} ${product.variantSize ?? ''}`),
         };
       });
+    /* Two products that read the same (name, colour and Maat alike): the SKU tells them apart. */
+    const label = (row: { head: string; tail: string | null }) => searchText(`${row.head}${row.tail ?? ''}`);
+    const seen = new Map<string, number>();
+    for (const row of rows) seen.set(label(row), (seen.get(label(row)) ?? 0) + 1);
+    return rows.map(({ sku, ...row }) => ((seen.get(label(row)) ?? 0) > 1 ? { ...row, where: `${sku ?? `#${row.productId}`} · ${row.where}` } : row));
   });
 
   readonly groups = computed<UnitGroup[]>(() => {
