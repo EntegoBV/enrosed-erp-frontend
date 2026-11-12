@@ -173,9 +173,9 @@ const PRICE_JUMP = 5;
     :host{display:flex;flex-direction:column;min-width:0}
     .kinds{display:grid;height:44px;margin:0 0 12px}
     .kinds--desk{height:34px;margin:0}
-    .layout{display:grid;gap:14px;margin-bottom:16px}
-    .layout__main{display:grid;align-content:start;gap:12px;min-width:0;--wk-sticky-top:var(--pp-sticky-top,0px)}
-    .layout__side{display:grid;align-content:start;gap:10px;min-width:0}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;margin-bottom:16px}
+    .layout__main{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px;min-width:0;--wk-sticky-top:var(--pp-sticky-top,0px)}
+    .layout__side{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:10px;min-width:0}
     @media (min-width: 1000px) and (hover: hover), (min-width: 1024px){
       .layout{grid-template-columns:minmax(0,1fr) 272px;gap:20px;align-items:start}
       .layout__side{position:sticky;top:calc(var(--pp-sticky-top,60px) + 12px)}
