@@ -113,7 +113,7 @@ interface ProfitGroup {
     .vpf-head{margin:0;color:var(--ink-2);font-size:12px;font-weight:700}
     .vpf-head small{margin-left:6px;color:var(--muted);font-weight:500}
     .vpf-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
-    .vpf-group{display:grid;gap:2px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+    .vpf-group{display:grid;align-content:start;gap:2px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
     .vpf-group__head{color:var(--ink-2);font-size:12px;font-weight:700}
     .vpf-sum>div{padding:3px 0;font-size:12.5px}
     .vpf-sum>.is-sub{font-size:12px}
