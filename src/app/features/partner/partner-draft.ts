@@ -5,7 +5,7 @@ import {
   type PartnerExtraCostLine, type PartnerProductTile, type PartnerReport, type PartnerReportBuyback, type PartnerReportEntry,
   type PartnerReportEntryRequest, type PartnerReportPartRequestV2, type PartnerReportRequest, type PartnerReportSale,
 } from '../../core/api/partner-portal-api';
-import { KIND_CHANNEL, PartnerKind, reportKind } from './partner-format';
+import { KIND_CHANNEL, PartnerKind, productTitle, reportKind } from './partner-format';
 import { MeldingMoney, MoneyPart, meldingMoney, partComplete, round2, round4 } from './partner-money';
 import {
   defaultUnitOf, maxCountOf, pieceUnit, piecesOf, piecesPerSalesUnit, salesUnitsOf, switchCount, unitOf,
@@ -507,4 +507,38 @@ export class MeldingDraft {
   markSaved(): void {
     this.snapshot.set(this.signature());
   }
+
+  /** The form holds exactly what this saved melding holds (a save whose answer was lost did go through). */
+  sameAs(report: PartnerReport): boolean {
+    return MeldingDraft.fromReport(report).signature() === this.signature();
+  }
+}
+
+/**
+ * What differs between two versions of one melding, in the partner's words: the products whose count, unit or price
+ * changed (or that came or went), "de datum", "de soort", "de klant", "de extra kosten", "de opmerking".
+ */
+export function reportChanges(before: PartnerReport, after: PartnerReport,
+    title: (product: PartnerProductTile) => string = productTitle): string[] {
+  const a = MeldingDraft.fromReport(before);
+  const b = MeldingDraft.fromReport(after);
+  const changes: string[] = [];
+  const part = (entry: DraftEntry | undefined, which: 'sale' | 'buyback', kind: PartnerKind) =>
+    !entry || (which === 'sale' ? kind === 'terugkoop' : !b.showsBuyback(entry, kind)) ? null
+      : JSON.stringify([entry[which].unit, entry[which].count, entry[which].price == null ? null : round4(entry[which].price!)]);
+  const ids = [...new Set([...a.entries(), ...b.entries()].map((entry) => entry.product.productId))];
+  for (const id of ids) {
+    const was = a.entries().find((entry) => entry.product.productId === id);
+    const now = b.entries().find((entry) => entry.product.productId === id);
+    if (!was || !now || part(was, 'sale', a.kind()) !== part(now, 'sale', b.kind()) || part(was, 'buyback', a.kind()) !== part(now, 'buyback', b.kind())) {
+      changes.push(title((now ?? was)!.product));
+    }
+  }
+  if (a.kind() !== b.kind()) changes.push('de soort');
+  if (a.soldOn() !== b.soldOn()) changes.push('de datum');
+  if ((a.buyer()?.customerId ?? null) !== (b.buyer()?.customerId ?? null)) changes.push('de klant');
+  const extras = (draft: MeldingDraft) => JSON.stringify(draft.extraCosts().map((line) => [line.description.trim(), line.mode, line.value]));
+  if (extras(a) !== extras(b)) changes.push('de extra kosten');
+  if (a.note().trim() !== b.note().trim()) changes.push('de opmerking');
+  return changes;
 }

@@ -22,6 +22,12 @@ import { PartnerProductTable, TableProduct } from './partner-product-table';
 import { twinKeys, twinTitle } from './partner-twins';
 import { pieceUnit, piecesPerSalesUnit } from './partner-units';
 
+/** A message the screen puts in place of a refusal, with one way on (a newer version of the melding to load). */
+export interface EntryNotice {
+  text: string;
+  action: string;
+}
+
 /** How far the piece price may rise above the partner's last one before Opslaan asks "Klopt de prijs?". */
 const PRICE_JUMP = 5;
 
@@ -150,7 +156,9 @@ const PRICE_JUMP = 5;
         </section>
 
         @if (desk.active()) {
-          @if (error()) { <div class="error" role="alert">{{ error() }}</div> }
+          @if (notice(); as n) {
+            <div class="error notice" role="alert"><span>{{ n.text }}</span><button class="notice__btn" type="button" (click)="noticeAction.emit()">{{ n.action }}</button></div>
+          } @else if (error()) { <div class="error" role="alert">{{ error() }}</div> }
           <button class="ios-capsule ios-capsule--accent ios-capsule--block send" type="button" [disabled]="!canSend() || busy()" (click)="send()">
             {{ busy() ? 'Bezig…' : submitLabel() }}
           </button>
@@ -162,7 +170,9 @@ const PRICE_JUMP = 5;
     @if (!desk.active()) {
       <div class="bar">
         <!-- A refusal stands right above Opslaan: on the phone the side column is far below the cards. -->
-        @if (error()) { <p class="bar__error" role="alert">{{ error() }}</p> }
+        @if (notice(); as n) {
+          <div class="bar__error notice" role="alert"><span>{{ n.text }}</span><button class="notice__btn" type="button" (click)="noticeAction.emit()">{{ n.action }}</button></div>
+        } @else if (error()) { <p class="bar__error" role="alert">{{ error() }}</p> }
         <div class="bar__sum"><small>Netto</small><b [class.is-neg]="t.netEur < 0">{{ eur(t.netEur) }}</b></div>
         <button class="ios-capsule ios-capsule--accent bar__send" type="button" [disabled]="!canSend() || busy()" (click)="send()">
           {{ busy() ? 'Bezig…' : submitLabel() }}
@@ -222,6 +232,8 @@ const PRICE_JUMP = 5;
     .link{display:flex;align-items:center;gap:5px;min-height:34px;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-size:13.5px;font-weight:650;cursor:pointer}
     .bad{margin:0;color:var(--danger);font-size:12.5px;font-weight:600}
     .error{padding:10px 12px;border-radius:12px;background:var(--danger-soft);color:#83261e;font-size:13.5px;font-weight:500;line-height:1.4}
+    .notice{display:grid;justify-items:start;gap:8px}
+    .notice__btn{min-height:34px;padding:0 14px;border:1px solid color-mix(in srgb,#83261e 30%,transparent);border-radius:9px;background:var(--surface);color:#83261e;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
     .send{min-height:48px;font-size:16px}
     .hint{margin:0;color:var(--muted);font-size:12.5px;text-align:center}
     .bar{position:sticky;bottom:var(--pp-bar-bottom,0px);z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin:auto calc(-1 * var(--pp-gutter,16px)) 0;padding:10px var(--pp-gutter,16px) calc(10px + var(--pp-bar-safe,var(--safe-b,0px)));border-radius:var(--pp-bar-radius,0);background:var(--ios-glass,rgb(242 239 235/90%));box-shadow:0 -1px 0 rgb(26 22 20/8%)}
@@ -253,6 +265,7 @@ const PRICE_JUMP = 5;
       .x{width:44px;height:44px}
       .link{min-height:44px;font-size:15px}
       .hint{font-size:13.5px}
+      .notice__btn{min-height:44px;font-size:15px}
     }
   `,
 })
@@ -279,6 +292,9 @@ export class PartnerEntry implements OnInit {
   readonly buyerCreate = input<BuyerCreateFn | null>(null);
   /** Staff: the new-customer form asks the VAT number too. */
   readonly buyerVat = input(false);
+  /** Shown instead of a refusal, with its action (e.g. the melding changed meanwhile: load the new version); Opslaan waits. */
+  readonly notice = input<EntryNotice | null>(null);
+  readonly noticeAction = output<void>();
   readonly done = output<PartnerReportResult>();
   /** Opslaan was refused (shown in place): the screen may read the stock again, the rows then say which is too many. */
   readonly refused = output<void>();
@@ -366,11 +382,11 @@ export class PartnerEntry implements OnInit {
       return draft.kind() === 'terugkoop' ? 'Vul bij elk product het aantal en de klokprijs in.' : 'Vul bij elk product het aantal en de prijs in.';
     }
     if (draft.buyerProblem()) return draft.buyerProblem();
-    return draft.editing() && !draft.dirty() ? 'Nog niets gewijzigd.' : null;
+    return draft.editing() && !draft.dirty() && !this.notice() ? 'Nog niets gewijzigd.' : null;
   });
 
-  /** Complete, and an edit holds a change (an untouched edit has nothing to save). */
-  readonly canSend = computed(() => this.draft().complete() && (!this.draft().editing() || this.draft().dirty()));
+  /** Complete, and an edit holds a change (an untouched edit has nothing to save); a notice waits for its action. */
+  readonly canSend = computed(() => this.draft().complete() && (!this.draft().editing() || this.draft().dirty()) && !this.notice());
 
   private limitOf(productId: number): number | null {
     return this.draft().saleLimit(productId);
