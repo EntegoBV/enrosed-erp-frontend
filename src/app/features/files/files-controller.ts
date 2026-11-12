@@ -383,6 +383,16 @@ export class FilesController {
     ].filter(Boolean);
     return parts.length ? parts.join(' · ') : null;
   });
+  /**
+   * The tray holds files only in memory: picked and not sent yet, on their way, or failed and not dismissed. The page
+   * then carries data-unsaved, so the app's own reload for a newer build waits (core/platform/reload-guard.ts).
+   */
+  readonly trayHoldsWork = computed(() => {
+    const tray = this.tray();
+    if (!tray) return false;
+    const stats = this.trayStats();
+    return !tray.done || stats.failed > 0 || stats.linkFailed > 0;
+  });
   /** "{n} toegevoegd · Toon", for a moment after the tray finished while closed (phone). */
   readonly uploadedNote = signal<{ count: number; folderId: number | null } | null>(null);
   private trayId = 0;

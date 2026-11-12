@@ -37,6 +37,8 @@ export function returnLabel(url: string): string {
   if (/^\/sales\/\d+(?:[/]|$)/.test(path)) return 'verkooporder';
   if (under(path, '/sales') || under(path, '/revisions')) return 'Verkoop';
   if (under(path, '/tica')) return 'TICA verkopen';
+  if (under(path, '/veilingverkopen')) return 'Veilingverkopen';
+  if (under(path, '/palletberekening')) return 'Palletberekening';
   if (under(path, '/analyses')) return 'Analyses';
   if (/^\/products\/\d+(?:[/]|$)/.test(path)) return 'product';
   if (under(path, '/products')) return 'Producten';
@@ -47,6 +49,7 @@ export function returnLabel(url: string): string {
   if (under(path, '/suppliers')) return 'Leveranciers';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';
+  if (under(path, '/voorraadradar')) return 'Voorraadradar';
   if (under(path, '/website')) return 'Website';
   if (under(path, '/more')) return 'Meer';
   if (under(path, '/dashboard')) return 'Dashboard';
@@ -72,6 +75,7 @@ const SETTINGS_VIEW_LABELS: Readonly<Record<string, string>> = {
   discounts: 'Kortingen',
   'order-discounts': 'Kortingen',
   'catalog-data': 'Catalogusdata',
+  'partner-portal': 'Partnerportaal',
   device: 'Dit toestel',
   appearance: 'Dit toestel',
   notifications: 'Dit toestel',
@@ -98,6 +102,8 @@ export function screenLabel(url: string): string {
   if (/^\/sales\/[^/]+(?:[/]|$)/.test(path)) return 'Order';
   if (under(path, '/sales')) return 'Verkoop';
   if (under(path, '/tica')) return 'TICA';
+  if (under(path, '/veilingverkopen')) return 'Veiling';
+  if (under(path, '/palletberekening')) return 'Pallets';
   if (under(path, '/revisions')) return 'Wijzigingen';
   if (path === '/purchasing/tracking') return 'Track & trace';
   if (/^\/purchasing\/[^/]+(?:[/]|$)/.test(path)) return 'Inkooporder';
@@ -122,6 +128,7 @@ export function screenLabel(url: string): string {
   if (path === '/settings') return settingsViewLabel(url) ?? 'Instellingen';
   if (under(path, '/settings')) return 'Instellingen';
   if (under(path, '/activity')) return 'Logboek';
+  if (under(path, '/voorraadradar')) return 'Voorraadradar';
   if (under(path, '/analyses')) return 'Analyses';
   if (under(path, '/more')) return 'Meer';
   if (under(path, '/costs')) return 'Kosten & bank';

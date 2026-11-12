@@ -1,6 +1,7 @@
 import { capitalize, DEFAULT_UNIT_KEY, otherBasisPrice, packagingSummary, priceBasisChange, priceBasisConfirmation, productSalesUnit, salesQuantityDetail, unitCount, unitName } from './product-sales-unit';
 import { ProductSalesSetup } from './product-sales-setup';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource, stockMovementDeletable } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementAfter, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
@@ -21,11 +22,13 @@ import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuthImage } from '../../core/api/auth-image';
-import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
+import { Category, Currency, HsCode, Product, ProductFamily, ProductFamilyIdentityFinalization, ProductFamilyMember, ProductFamilyText, ProductPublicTranslationsSnapshot, Supplier, LanguageCode, Dimensions, StockMovement, ProductStock, UnitName } from '../../core/api/models';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet, type StockBooked } from './stock-booking-sheet';
 import { stockCellEdit, type BookingKind } from './stock-booking';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { HostPage, HostStickyBand, menuRows } from '../../shared/host-page';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
@@ -54,7 +57,12 @@ import {
   ProductFamilySharedFieldsSheet,
 } from './product-family-shared-fields-sheet';
 import type { ProductFamilySharedField } from './product-family-shared-fields';
-import { planProductFamilyIdentityFinalization } from './product-family-identity';
+import {
+  conceptBeforeIdentity, hasFinalizableDraftIdentity, identityChangedElsewhere, identityDiffersOnServer,
+  identityRefusedByServer, identitySavedRestRefused, keepTypedIdentity, keepTypedVariantKeys,
+  planProductFamilyIdentityFinalization, ProductFamilyIdentityFinalizationError, withConceptStatuses,
+} from './product-family-identity';
+import { plainPublicationRefusal } from './publication-issues';
 import {
   productCatalogNavigation,
   productVariantNavigation,
@@ -98,11 +106,10 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     FormsModule, PageHeader, PhotoManager, ProductPhotosPanel, ProductPublicationEditor, ProductSupplierAgreementEditor,
     ProductVariantGroup, ProductFamilySharedFieldsSheet, Sheet, EurPipe, NumPipe, CbmPipe,
     DateTimeNlPipe, DecimalInput, RouterLink, AuthImage, Icon, ContextMenu, NgTemplateOutlet, ProductSalesSetup, ProductCostHistorySheet,
-    Skeleton, StockBookingSheet, ProductChannelPrice, StockMovementSource, ProductSupplierList,
-  ],
+    Skeleton, StockBookingSheet, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, ProductSupplierList, HostPage, HostStickyBand],
   template: `
     @if (!desktop.active()) {
-      <header class="product-mobile-header">
+      <header class="product-mobile-header" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
         <!-- A long name gets the room: the back capsule folds to the kit's circle (foundation rule B10). -->
         <a class="product-mobile-back" [class.ios-capsule]="!phoneBackCompact()" [class.ios-circle]="phoneBackCompact()"
            [routerLink]="!isNew() && editorReady() ? ['/products', draft().id] : ['/products']"
@@ -332,7 +339,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
     </div>
 
     <div class="content product-editor-page erp-workspace erp-workspace--product erp-workspace--edit">
-      <nav class="subnav erp-workspace__nav" aria-label="Productonderdelen">
+      <nav class="subnav erp-workspace__nav" hostStickyBand aria-label="Productonderdelen">
         @if (!desktop.active()) {
           <div class="product-mobile-tabs" role="group" aria-label="Bewerkonderdeel">
             @for (tab of mobilePrimaryTabs; track tab.id) {
@@ -998,6 +1005,8 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
               <strong class="num">{{ salesPrice() | eur }}</strong>
               <small>{{ priceStrategy() === 'FIXED' ? 'Vaste prijs' : 'Kostprijs + opslag' }}</small>
               @if (otherPrice(draft(), salesPrice()); as other) { <small>{{ other.text }}</small> }
+              <!-- Customers with an own price: a chip, and once the price is typed "2 klanten hebben een eigen prijs". -->
+              <app-product-customer-prices class="pcu-dark" [product]="savedDraft()" [changed]="savedPriceDiffers()" />
             </div>
             <!-- Two aligned rows: label left, figure right, nothing wraps. -->
             <dl class="price-preview__meta">
@@ -1175,6 +1184,7 @@ function blankProduct(supplierId: number | null, currency: Currency): Product {
         [expanded]="activeTab() === 'publication'"
         [product]="draft()"
         [family]="family()"
+        [savedFamily]="savedFamily()"
         [categories]="categories()"
         [busy]="saving() || photoUploading() || agreementBusy() || translationSaving()"
         [familyLoading]="familyLoading()"
@@ -2005,6 +2015,34 @@ export class ProductEditor implements OnDestroy {
   readonly variantOptionLabel = productVariantOptionLabel;
   readonly catalogueNeighbours = computed(() => !this.editorReady() || this.isNew() || !this.navFamiliesReady() ? null
     : productCatalogNavigation(this.catalogueProducts(), this.families(), this.categories(), this.draft().id));
+  /**
+   * The native host's chrome (the phone header and the dock are hidden there): the name as the title, the dock's
+   * state as the subtitle, Opslaan/Aanmaken as the primary, the toolbar menu's rows as the menu, the way back.
+   */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const ready = this.editorReady();
+    const isNew = this.isNew();
+    const draft = this.draft();
+    const busy = this.saveBusy();
+    const dirty = this.workspaceDirty();
+    const toProduct = !isNew && ready;
+    return {
+      title: ready ? (draft.name || 'Nieuw product') : 'Product laden',
+      subtitle: this.dockPhotoNote() ? 'Foto’s worden meteen bewaard' : busy ? this.saveActionLabel() : dirty ? 'Wijzigingen klaar' : isNew ? (draft.name ? 'Nieuw product' : '') : 'Alles opgeslagen',
+      back: { label: toProduct ? 'Product' : 'Producten', url: toProduct ? `/products/${draft.id}` : '/products' },
+      primary: { id: 'save', label: isNew ? 'Aanmaken' : 'Opslaan', symbol: isNew ? 'plus' : 'checkmark', disabled: busy || !dirty },
+      actions: [],
+      menu: ready && !isNew ? menuRows(this.toolbarMenuItems()) : [],
+      guardsBack: this.dirty() || this.familyDirty() || this.agreementDirty(),
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'save') { void this.save(); return; }
+    const item = this.toolbarMenuItems().find((candidate) => candidate.id === event.id);
+    if (item) this.pickToolbarAction(item);
+  }
+
   readonly toolbarMenu = signal<MenuPoint | null>(null);
   private toolbarMenuTrigger: HTMLElement | null = null;
   private toolbarMenuDesktop: boolean | null = null;
@@ -2113,6 +2151,9 @@ export class ProductEditor implements OnDestroy {
   }
 
   setProductColour(colour: string): void {
+    /* Typed in the name field: it stays open, also when the text is empty for a moment or
+       passes a list colour ("Rood" on the way to "Roodbruin"). */
+    this.customColour.set(true);
     const changed = this.normalizeColour(colour) !== this.normalizeColour(this.draft().colour);
     /* A standard colour brings its own swatch; a hand-picked sample on the
        same colour stays, a colour change starts from the default again. */
@@ -2306,10 +2347,13 @@ export class ProductEditor implements OnDestroy {
   readonly sharedFieldsInitial = signal<readonly ProductFamilySharedField[] | null>(null);
   readonly sharedFieldsBusy = signal(false);
   private familyLoadVersion = 0;
-  private readonly savedFamily = signal<ProductFamily | null>(null);
+  /** The series as last loaded or saved (the server's). The publication editor reads it: the identity fields follow this, not the draft. */
+  readonly savedFamily = signal<ProductFamily | null>(null);
   private readonly savedProductFamilyId = signal<number | null>(null);
   private productLoadVersion = 0;
   private activeProductId: number | null = null;
+  /** On its way from a new product's entry to the product that entry already created: nothing here to ask about. */
+  private openingCreatedProduct = false;
   readonly familyDirty = computed(() =>
     JSON.stringify(this.family()) !== JSON.stringify(this.savedFamily()));
   readonly saving = signal(false);
@@ -2745,6 +2789,12 @@ export class ProductEditor implements OnDestroy {
           this.productLoading.set(false);
           this.productLoadError.set(null);
           this.activeProductId = null;
+          /* A reload of, or a return to, a new product's entry that already got its id (rememberCreatedProduct): that product. */
+          const created = (this.location.getState() as { createdProductId?: unknown } | null)?.createdProductId;
+          if (typeof created === 'number') {
+            this.openingCreatedProduct = true;
+            queueMicrotask(() => void this.router.navigate(['/products', created, 'edit'], { replaceUrl: true, queryParamsHandling: 'preserve' }));
+          }
         }
       });
     });
@@ -2777,6 +2827,8 @@ export class ProductEditor implements OnDestroy {
       this.savedSupplierId.set(null);
       this.translationDirty.set(false);
       this.translationSaving.set(false);
+      /* The next product starts from its own colour, not from the previous one's name field. */
+      this.customColour.set(false);
       this.draft.set(blankProduct(null, 'USD'));
       this.markClean();
     }
@@ -2996,7 +3048,11 @@ export class ProductEditor implements OnDestroy {
       issues.push('Start gedeelde websitegegevens voor deze productreeks.');
     } else {
       if (!family.name.trim()) issues.push('Vul de publieke productnaam in.');
-      if (!family.publicHandle?.trim()) issues.push('Vul een stabiele publieke URL in.');
+      /* The server already counts a saved series without URL; twice was one point too many, and
+         the local half followed the draft, so the count dropped on the first typed character. */
+      if (!family.publicHandle?.trim() && !server.includes(MISSING_PUBLIC_URL_ISSUE)) {
+        issues.push('Vul een stabiele publieke URL in.');
+      }
       if (!family.images.length) issues.push('Voeg minstens één publieke productfoto toe.');
     }
     if (this.salesPrice() <= 0) issues.push('Stel een verkoopprijs in.');
@@ -3123,7 +3179,17 @@ export class ProductEditor implements OnDestroy {
   async onVariantLinked(family: ProductFamily): Promise<void> {
     if (this.translationDirty() || this.translationSaving()) return;
     const productId = this.draft().id;
+    /* The server reloads the series; unsaved series edits go with that, as always. Not the identity
+       of the same series while it is still open: a colour is linked or taken out half way the code
+       list, and the key, URL and codes typed so far must still be there afterwards. */
+    const draft = this.family();
+    const saved = this.savedFamily();
+    const typed = draft && saved && draft.id !== null && draft.id === family.id && saved.id === family.id
+        && hasFinalizableDraftIdentity(saved) && hasFinalizableDraftIdentity(family)
+      ? structuredClone(keepTypedIdentity(family, draft, saved))
+      : null;
     this.replaceFamily(family);
+    if (typed) this.onFamilyChange(typed);
     this.savedProductFamilyId.set(family.id);
     if (productId === null) return;
 
@@ -3435,15 +3501,24 @@ export class ProductEditor implements OnDestroy {
    * the whole family is replaced; with them, only the photo fields move into
    * both the draft and its baseline, so the pending edits stay pending. The
    * product draft is left alone: photo work never changes its membership.
+   * The members and their count come along (photo state, and a colour copied
+   * in meanwhile); variant codes that are being typed stay in the draft.
    */
   private mergeFamilyPhotoState(fresh: ProductFamily): void {
     if (this.family()?.id !== fresh.id) return;
+    /* The identity became final elsewhere (another tab, or a save whose answer got lost): the
+       fields follow what the server has, so they close here too, whatever was being typed. */
+    if (hasFinalizableDraftIdentity(this.savedFamily()) && !hasFinalizableDraftIdentity(fresh)) {
+      this.adoptFinalizedIdentity(fresh);
+    }
     this.families.update((families) => families.map((item) => item.id === fresh.id ? fresh : item));
     if (!this.familyDirty()) {
       this.setFamilyDraft(fresh);
       return;
     }
-    const withPhotoState = (family: ProductFamily | null): ProductFamily | null => family && {
+    const draftMembers = this.family()?.members ?? [];
+    const savedMembers = this.savedFamily()?.members ?? [];
+    const withPhotoState = (family: ProductFamily | null, members: ProductFamilyMember[]): ProductFamily | null => family && {
       ...family,
       images: structuredClone(fresh.images),
       cataloguePhotoOptions: structuredClone(fresh.cataloguePhotoOptions),
@@ -3452,11 +3527,13 @@ export class ProductEditor implements OnDestroy {
       catalogueDetailSize: fresh.catalogueDetailSize,
       websiteQuotePhotoId: fresh.websiteQuotePhotoId,
       effectiveWebsiteQuotePhotoId: fresh.effectiveWebsiteQuotePhotoId,
-      members: structuredClone(fresh.members),
+      members,
+      variantCount: fresh.variantCount,
       publicationIssues: [...fresh.publicationIssues],
     };
-    this.family.update(withPhotoState);
-    this.savedFamily.update(withPhotoState);
+    /* The server's members, with a variant code that is being typed kept in the draft. */
+    this.family.update((family) => withPhotoState(family, keepTypedVariantKeys(fresh.members, draftMembers, savedMembers)));
+    this.savedFamily.update((family) => withPhotoState(family, structuredClone(fresh.members)));
   }
 
   setSupplier(supplierId: number): void {
@@ -3601,6 +3678,10 @@ export class ProductEditor implements OnDestroy {
         variantSize: this.copySize().trim(),
       });
       this.copying.set(false);
+      /* The copy is a new member of the series, and the list this editor keeps is from before it:
+         the copy's editor (this same component) would show the code list without the new colour,
+         and saving the identity there is refused with "SKU-lidmaatschap is gewijzigd". */
+      if (copy.familyId != null) await this.refreshCachedFamily(copy.familyId);
       this.ui.toast(`${copy.sku} aangemaakt en gekoppeld — vul de barcodes en foto's nog aan`);
       // The write has completed; the leave guard can now review any source edits.
       this.saving.set(false);
@@ -3610,6 +3691,21 @@ export class ProductEditor implements OnDestroy {
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /**
+   * Fetches one series again into the list loadFamilyForProduct reads; without an answer the entry
+   * goes, so the next open fetches it. When it is the series on screen (the leave question kept us
+   * on the source product), that one takes the new member too, pending edits kept.
+   */
+  private async refreshCachedFamily(familyId: number): Promise<void> {
+    const fresh = await this.catalog.productFamily(familyId).catch(() => null);
+    this.families.update((families) => fresh === null
+      ? families.filter((item) => item.id !== familyId)
+      : families.some((item) => item.id === familyId)
+        ? families.map((item) => item.id === familyId ? fresh : item)
+        : [...families, fresh]);
+    if (fresh) this.mergeFamilyPhotoState(fresh);
   }
 
   private normalizeColour(value: string | null | undefined): string {
@@ -3678,6 +3774,21 @@ export class ProductEditor implements OnDestroy {
       this.focusField(first.tab, first.field);
       return;
     }
+    /* The series identity is checked before any question is asked: its message comes first. */
+    let identityFinalization: ProductFamilyIdentityFinalization | null;
+    try {
+      identityFinalization = this.plannedIdentityFinalization();
+    } catch (failure: unknown) {
+      const message = messageOf(failure, 'Opslaan mislukt');
+      this.identityError = { message, refused: null };
+      this.saveError.set(message);
+      this.ui.toast(message, 'err');
+      this.showIdentityField(failure);
+      return;
+    }
+    /* The identity passes its check, so what the banner still says about it is no longer true:
+       it goes now, before the questions, or Annuleren would leave it standing. */
+    this.forgetIdentityError(identityFinalization);
     /* A new price basis converts nothing on its own: say what stays as it is,
        and ask before anything in the draft changes, so Annuleren leaves it
        exactly as it was. The answer is awaited: a caller that saves first
@@ -3694,6 +3805,17 @@ export class ProductEditor implements OnDestroy {
       }, () => resolve(true), undefined, () => resolve(false)));
       if (!confirmed || busy()) return;
     }
+    /* The URL can be typed in any order now, so any Opslaan, on any tab, may be the one that makes
+       it permanent: one last look. Annuleren leaves everything typed and editable. */
+    if (identityFinalization) {
+      const url = `/products/${identityFinalization.publicHandle}`;
+      const confirmed = await new Promise<boolean>((resolve) => this.ui.confirm({
+        title: 'URL vastleggen?',
+        message: `<b>${escapeHtml(url)}</b> is daarna definitief, samen met de reeks- en variantcodes.`,
+        confirmLabel: 'Vastleggen',
+      }, () => resolve(true), undefined, () => resolve(false)));
+      if (!confirmed || busy()) return;
+    }
     if ((this.draft().carton.piecesPerCarton ?? 0) <= 0 && this.autoCartonPieces() !== null) {
       /* Left empty on purpose: the sizes already say what fits. */
       this.patchCarton({ piecesPerCarton: this.autoCartonPieces() });
@@ -3706,6 +3828,7 @@ export class ProductEditor implements OnDestroy {
     const rowsMode = this.purchaseMode();
     const queuedPhotoCount = this.photoManager()?.pendingCount() ?? 0;
     this.saveError.set(null);
+    this.identityError = null;
     this.saving.set(true);
     try {
       await this.persistFamilyDraft();
@@ -3766,7 +3889,8 @@ export class ProductEditor implements OnDestroy {
       }
       this.savedHere.set(true);
       if (saved.id !== null) { void this.loadStockHistory(saved.id); void this.loadStockLevels(saved.id); }
-      if (wasNew && saved.id !== null) {
+      /* Also a later try of a new product whose first save only got half way: until now it stood on /products/new. */
+      if (saved.id !== null && (!this.id() || this.id() === 'new')) {
         await this.router.navigate(['/products', saved.id, 'edit'],
           { replaceUrl: true, state: { savedHere: true } });
       }
@@ -3774,7 +3898,8 @@ export class ProductEditor implements OnDestroy {
       const fallback = wasNew && this.draft().id !== null
         ? 'Product is aangemaakt, maar kon nog niet volledig worden afgewerkt'
         : 'Opslaan mislukt';
-      const message = messageOf(failure, fallback);
+      /* The server lists a missing URL as "Publieke handle ontbreekt"; the form has one name for it. */
+      const message = plainPublicationRefusal(messageOf(failure, fallback));
       /* A publication blocker is not a dead end: open the fix sheet with
          the missing pieces spelled out, fillable on the spot. */
       const plan = this.planPublishFix(message);
@@ -3782,11 +3907,55 @@ export class ProductEditor implements OnDestroy {
         this.publishFix.set(plan);
         return;
       }
+      /* A refusal of typed identity values (it points at a field) is remembered with the command
+         it answered: it leaves the banner once other values pass the check. */
+      this.identityError = failure instanceof ProductFamilyIdentityFinalizationError && failure.field !== null
+        ? { message, refused: JSON.stringify(identityFinalization) }
+        : null;
       this.saveError.set(message);
       this.ui.toast(message, 'err');
+      this.showIdentityField(failure);
     } finally {
       this.saving.set(false);
     }
+  }
+
+  /**
+   * A refused series identity is shown where it is typed, like every other reason not to save:
+   * the save may have been pressed on another tab. Nothing happens for other failures, or where
+   * the section does not exist (the phone).
+   */
+  private showIdentityField(failure: unknown): void {
+    if (!(failure instanceof ProductFamilyIdentityFinalizationError) || failure.field === null) return;
+    if (!this.visibleTabs().some((tab) => tab.id === 'publication')) return;
+    this.focusField('publication', failure.field);
+  }
+
+  /**
+   * The identity message in the banner, and the command the server refused with it (null: a local
+   * check, nothing was sent). Only used to take that message away again.
+   */
+  private identityError: { message: string; refused: string | null } | null = null;
+
+  /**
+   * The identity check passed with `plan`. A local message is solved by that; a refusal by the
+   * server is, unless the very same command would go out again.
+   */
+  private forgetIdentityError(plan: ProductFamilyIdentityFinalization | null): void {
+    const shown = this.identityError;
+    if (shown === null || (shown.refused !== null && shown.refused === JSON.stringify(plan))) return;
+    if (this.saveError() === shown.message) this.saveError.set(null);
+    this.identityError = null;
+  }
+
+  /**
+   * The one-time identity command this save will send, or null. Throws the local validation
+   * message; the series is only read, nothing is sent.
+   */
+  private plannedIdentityFinalization(): ProductFamilyIdentityFinalization | null {
+    const desired = this.family();
+    if (!desired || desired.id === null || !this.familyDirty()) return null;
+    return planProductFamilyIdentityFinalization(this.savedFamily(), desired);
   }
 
   private async persistFamilyDraft(): Promise<void> {
@@ -3798,45 +3967,44 @@ export class ProductEditor implements OnDestroy {
     if (desired.id === null) {
       saved = await this.catalog.createProductFamily(desired);
     } else {
+      const familyId = desired.id;
       const finalization = planProductFamilyIdentityFinalization(previous, desired);
       if (finalization) {
-        const finalized = await this.catalog.finalizeDraftProductFamilyIdentity(
-          desired.id,
-          finalization,
-        );
-        /* The one-time command owns immutable identity. Feed its authoritative result into the
-           ordinary editable-fields update, never the stale pre-finalization projection. */
-        saved = await this.catalog.updateProductFamily(desired.id, {
-          ...desired,
-          familyKey: finalized.familyKey,
-          publicHandle: finalized.publicHandle,
-          members: finalized.members,
-          variantCount: finalized.variantCount,
-        });
-      } else {
-        saved = await this.catalog.updateProductFamily(desired.id, desired);
-      }
-    }
-
-    if (saved.id !== null && desired.id !== null && previous?.id === desired.id) {
-      const familyId = saved.id;
-      const desiredImages = [...desired.images].sort((left, right) => left.position - right.position);
-      const previousImages = [...previous.images].sort((left, right) => left.position - right.position);
-      const desiredIds = desiredImages.map((image) => image.id);
-      const previousIds = previousImages.map((image) => image.id);
-      if (desiredIds.join(',') !== previousIds.join(',')) {
-        saved = await this.catalog.reorderProductFamilyImages(familyId, desiredIds);
-      }
-
-      for (const image of desired.images) {
-        const before = previous.images.find((item) => item.id === image.id);
-        for (const alt of image.altTexts) {
-          const oldAlt = before?.altTexts.find((item) => item.language === alt.language)?.alt ?? '';
-          const nextAlt = alt.alt ?? '';
-          if (oldAlt !== nextAlt) {
-            saved = await this.catalog.updateProductFamilyImageAlt(
-              familyId, image.id, alt.language, nextAlt);
+        /* The server finalises only a series it has as concept on every channel, and reads that
+           from what is stored: a channel the form just put on concept is saved first. */
+        const concept = previous ? conceptBeforeIdentity(previous) : null;
+        if (concept) {
+          try {
+            this.adoptConceptStatuses(await this.catalog.updateProductFamily(familyId, concept));
+          } catch (failure: unknown) {
+            throw await this.seriesUpdateFailure(failure, familyId, previous);
           }
+        }
+        let finalized: ProductFamily;
+        try {
+          finalized = await this.catalog.finalizeDraftProductFamilyIdentity(familyId, finalization);
+        } catch (failure: unknown) {
+          /* The identity was refused as a whole. Either this editor's copy of the series is old,
+             or it is said in the words of the form, at its field. */
+          const reason = refusalReason(failure);
+          if (!reason) throw failure;
+          throw await this.seriesChangedElsewhere(familyId, previous)
+            ?? identityRefusedByServer(reason, this.family() ?? desired);
+        }
+        /* The identity is permanent on the server from here on, whatever happens to the rest of
+           this save: the draft and its baseline take it now, so a refusal below leaves the
+           fields read-only and makes the next save an ordinary update. */
+        this.adoptFinalizedIdentity(finalized);
+        try {
+          saved = await this.saveFamilyFields(familyId, this.family() ?? desired, previous, desired);
+        } catch (failure: unknown) {
+          throw identitySavedRestRefused(messageOf(failure, 'de rest is nog niet opgeslagen'));
+        }
+      } else {
+        try {
+          saved = await this.saveFamilyFields(familyId, desired, previous, desired);
+        } catch (failure: unknown) {
+          throw await this.seriesUpdateFailure(failure, familyId, previous);
         }
       }
     }
@@ -3859,6 +4027,138 @@ export class ProductEditor implements OnDestroy {
           }
         : {}),
       ...this.variantPublicationFields(),
+    });
+  }
+
+  /**
+   * A refused series request may mean that this editor's copy is not the server's any more: the
+   * identity was made final in another tab or by another hand, the answer of an earlier save got
+   * lost, a colour was linked meanwhile. The series is fetched once. When its identity differs
+   * from `built`, the copy the request was built from, the form takes the server's over (fields
+   * closed on a final identity, the other edits still pending) and the message to show comes
+   * back. Null: the copy is still right, or the series could not be fetched.
+   */
+  private async seriesChangedElsewhere(
+    familyId: number,
+    built: ProductFamily | null,
+  ): Promise<ProductFamilyIdentityFinalizationError | null> {
+    if (!built) return null;
+    let fresh: ProductFamily;
+    try {
+      fresh = await this.catalog.productFamily(familyId);
+    } catch {
+      return null;
+    }
+    if (this.family()?.id !== fresh.id || !identityDiffersOnServer(built, fresh)) return null;
+    this.mergeFamilyPhotoState(fresh);
+    const now = this.savedFamily();
+    return identityChangedElsewhere(now !== null && !identityDiffersOnServer(now, fresh));
+  }
+
+  /**
+   * What to throw for a failed ordinary series update. 422 is the server saying that the key or
+   * URL in the request is not its own; this form cannot type those on a final identity, so the
+   * copy it holds may be old. Anything else is passed on as it is.
+   */
+  private async seriesUpdateFailure(
+    failure: unknown,
+    familyId: number,
+    built: ProductFamily | null,
+  ): Promise<unknown> {
+    if ((failure as { status?: number } | null)?.status !== 422) return failure;
+    return await this.seriesChangedElsewhere(familyId, built) ?? failure;
+  }
+
+  /**
+   * The update that goes before the one-time identity is on the server as `updated`: every
+   * channel is concept there. The baseline takes that; the draft too, except a channel the form
+   * wants live, which is saved after the identity.
+   */
+  private adoptConceptStatuses(updated: ProductFamily): void {
+    this.family.update((family) => family && family.id === updated.id
+      ? withConceptStatuses(family, updated, true)
+      : family);
+    this.savedFamily.update((family) => family && family.id === updated.id
+      ? withConceptStatuses(family, updated, false)
+      : family);
+    this.families.update((families) =>
+      families.map((item) => item.id === updated.id ? structuredClone(updated) : item));
+  }
+
+  /**
+   * The ordinary series update with `body`, then the photo order and the alt texts of `desired`
+   * that differ from `previous`. `body` is `desired`, or `desired` with a just finalised identity.
+   */
+  private async saveFamilyFields(
+    familyId: number,
+    body: ProductFamily,
+    previous: ProductFamily | null,
+    desired: ProductFamily,
+  ): Promise<ProductFamily> {
+    let saved = await this.catalog.updateProductFamily(familyId, body);
+    if (saved.id === null || previous?.id !== desired.id) return saved;
+
+    const desiredImages = [...desired.images].sort((left, right) => left.position - right.position);
+    const previousImages = [...previous.images].sort((left, right) => left.position - right.position);
+    const desiredIds = desiredImages.map((image) => image.id);
+    const previousIds = previousImages.map((image) => image.id);
+    if (desiredIds.join(',') !== previousIds.join(',')) {
+      saved = await this.catalog.reorderProductFamilyImages(familyId, desiredIds);
+    }
+
+    for (const image of desired.images) {
+      const before = previous.images.find((item) => item.id === image.id);
+      for (const alt of image.altTexts) {
+        const oldAlt = before?.altTexts.find((item) => item.language === alt.language)?.alt ?? '';
+        const nextAlt = alt.alt ?? '';
+        if (oldAlt !== nextAlt) {
+          saved = await this.catalog.updateProductFamilyImageAlt(
+            familyId, image.id, alt.language, nextAlt);
+        }
+      }
+    }
+    return saved;
+  }
+
+  /**
+   * The one-time identity is on the server (finalised by this save, or seen in a fresh copy). The
+   * draft and its baseline both take it, as the photo fields do in mergeFamilyPhotoState, so
+   * other pending edits stay pending and the fields close. This product's own copy of the key
+   * and code follows in draft and baseline too: a product PUT with the old code would put the
+   * old code back, and nothing here is left to save.
+   */
+  private adoptFinalizedIdentity(finalized: ProductFamily): void {
+    const withIdentity = (family: ProductFamily | null): ProductFamily | null =>
+      family && family.id === finalized.id
+        ? {
+            ...family,
+            familyKey: finalized.familyKey,
+            publicHandle: finalized.publicHandle,
+            members: structuredClone(finalized.members),
+            variantCount: finalized.variantCount,
+            publicationIssues: [...finalized.publicationIssues],
+          }
+        : family;
+    this.family.update(withIdentity);
+    this.savedFamily.update(withIdentity);
+    /* A sibling opened next takes the series from this list (loadFamilyForProduct). */
+    this.families.update((families) =>
+      families.map((item) => item.id === finalized.id ? structuredClone(finalized) : item));
+    const member = finalized.members.find((item) => item.productId === this.draft().id);
+    const withProductIdentity = (product: Product): Product => product.familyId === finalized.id
+      ? {
+          ...product,
+          familyKey: finalized.familyKey,
+          ...(member ? { canonicalVariantKey: member.canonicalVariantKey } : {}),
+        }
+      : product;
+    this.draft.update(withProductIdentity);
+    this.baseline.update((saved) => {
+      try {
+        return saved ? JSON.stringify(withProductIdentity(JSON.parse(saved) as Product)) : saved;
+      } catch {
+        return saved;
+      }
     });
   }
 
@@ -3897,7 +4197,7 @@ export class ProductEditor implements OnDestroy {
       websiteStatus: product.websiteStatus,
       orderAppStatus: product.orderAppStatus,
     });
-    if (created.id !== null) this.replaceNewProductUrl(created.id);
+    if (created.id !== null) this.rememberCreatedProduct(created.id);
 
     if (created.id !== null && !await this.flushPendingPhotos(photoManager, created.id, true)) {
       return null;
@@ -3955,12 +4255,15 @@ export class ProductEditor implements OnDestroy {
     return false;
   }
 
-  /** Keep the assigned id on refresh without destroying the local photo queue. */
-  private replaceNewProductUrl(productId: number): void {
-    const currentUrl = this.location.path(true);
-    const queryStart = currentUrl.indexOf('?');
-    const query = queryStart < 0 ? '' : currentUrl.slice(queryStart + 1);
-    this.location.replaceState(`/products/${productId}/edit`, query);
+  /**
+   * Keep the assigned id on refresh without destroying the local photo queue: it goes with this history entry (the effect
+   * in the constructor reads it) and the URL stays the router's. The address bar with the new id left the router on
+   * /products/new, so a refused back, which comes forward to this entry again, was a navigation to another screen: the
+   * leave question a second time, and Niet opslaan reopened the product instead of leaving. save() navigates when all went well.
+   */
+  private rememberCreatedProduct(productId: number): void {
+    const [path, query = ''] = this.location.path(true).split('?');
+    this.location.replaceState(path, query, { ...(this.location.getState() as object | null), createdProductId: productId });
   }
 
   remove(): void {
@@ -3985,6 +4288,7 @@ export class ProductEditor implements OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    if (this.openingCreatedProduct) return true;
     const channelPrices = this.channelPrices?.();
     if (channelPrices?.saving()) return false;
     if (channelPrices?.dirty()) return channelPrices.canDeactivate().then(allowed => allowed ? this.canDeactivate() : false);
@@ -4035,6 +4339,20 @@ export class ProductEditor implements OnDestroy {
       'Je hebt vertalingen die nog niet zijn opgeslagen. Deze vertaalwijzigingen laten vervallen? Andere productwijzigingen worden daarna apart gecontroleerd.',
     );
   }
+}
+
+
+/** How the server lists a saved series without a public URL (ProductFamilyDto.publicationIssues). */
+const MISSING_PUBLIC_URL_ISSUE = 'Publieke handle ontbreekt';
+
+/** The server's own sentence of a refused request (409 or 422); null for anything else, a dropped connection included. */
+function refusalReason(failure: unknown): string | null {
+  const response = failure as { status?: number; error?: { message?: unknown } | string | null } | null;
+  const body = response?.error;
+  const message = body && typeof body === 'object' ? body.message : null;
+  return (response?.status === 409 || response?.status === 422) && typeof message === 'string' && message.trim()
+    ? message.trim()
+    : null;
 }
 
 

@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { Auth } from '../../core/api/auth';
+import { buildCode, buildIdOf } from '../../core/platform/fresh-build';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
 import { THEMES, Theme } from '../../core/platform/theme';
@@ -122,7 +124,9 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
         <div class="ios-group">
           <button class="ios-cell ios-cell--danger" type="button" (click)="logout()">Afmelden</button>
         </div>
-        <p class="ios-section__foot">Aangemeld als {{ auth.username() }}</p>
+        <!-- The code after the name is the build this document runs (fresh-build.ts buildCode). In a browser tab and the home-screen app that is the app;
+             in the native shell every tab is its own web view that loads on its own, so it is the Meer tab's build only (another tab may be older). -->
+        <p class="ios-section__foot">Aangemeld als {{ auth.username() }}@if (build) { · {{ build }} }</p>
       </section>
     </div>
   `,
@@ -156,6 +160,12 @@ import type { NavCountKey, NavGroup, NavItem } from '../../core/platform/nav-ite
 })
 export class MorePage {
   readonly auth = inject(Auth);
+  /**
+   * The running build of this document in a few characters ("D5NX-SZC5": the first four of the main script's and the
+   * stylesheet's hash); '' in a development build. In the native shell: the Meer tab's web view only.
+   */
+  readonly build = buildCode(buildIdOf(Array.from(inject(DOCUMENT).querySelectorAll('script[src], link[rel="stylesheet"][href]'),
+    (element) => element.getAttribute('src') ?? element.getAttribute('href'))));
   readonly theme = inject(Theme);
   readonly themes = THEMES;
   private readonly router = inject(Router);
@@ -173,7 +183,7 @@ export class MorePage {
 
   /** A group's rows on Meer: everything except the phone's tab roots. */
   itemsOf(group: NavGroup): NavItem[] {
-    return meerItems(group);
+    return meerItems(group, this.auth.user()?.username ?? null);
   }
 
   titleOf(item: NavItem): string {

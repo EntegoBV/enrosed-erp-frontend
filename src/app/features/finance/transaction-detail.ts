@@ -29,12 +29,16 @@ import type { FeeCard } from './transaction-fees';
 const euro = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' });
 const WEEKDAY_LONG = new Intl.DateTimeFormat('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const PAYEE_LABEL: Readonly<Record<string, string>> = { SUPPLIER: 'Leverancier', LOGISTICS: 'Douane & transport', SEPARATE: 'Inspectie & andere kosten', OTHER: 'Bijkomende kosten' };
+/** Inkoop's payee tones (purchase-payment-ledger PAYEE_TONE). */
+const PAYEE_TONE: Readonly<Record<string, string>> = { SUPPLIER: 'tone-accent', LOGISTICS: 'tone-blue', SEPARATE: 'tone-amber', OTHER: 'tone-grey' };
 const STATUS_LABEL: Readonly<Record<string, string>> = { CONCEPT: 'Concept', BESTELD: 'Besteld', ONDERWEG: 'Onderweg', ONTVANGEN: 'Ontvangen' };
 const cents = (value: number): number => Math.round(value * 100);
 type View = 'auto' | 'search' | 'containers';
 
 /** One part on a linked line, as "Gekoppeld aan" lists it. */
-interface LinkedPart { key: string; title: string; sub: string | null; amountEur: number; open: () => void; others: { text: string; lineId: number }[]; }
+interface LinkedPart { key: string; title: string; sub: string | null; amountEur: number; open: () => void; others: { text: string; lineId: number }[];
+  /** A container part's payee colour (Inkoop's tones), so who got what reads at a glance. */
+  tone?: string | null; }
 /** One line under "Factuur": an invoice with data, an invoice file without (a PI too), or a cost's document. */
 interface InvoiceRow {
   key: string; text: string; coverage: string | null;
@@ -141,7 +145,7 @@ interface InvoiceBlock {
             <section class="wk-section">
               <h3 class="wk-section__title">Gekoppeld aan</h3>
               @for (part of linkedParts(); track part.key) {
-                <button class="fin-txd__part" type="button" (click)="part.open()"><span><b>{{ part.title }}</b>@if (part.sub) { <small>{{ part.sub }}</small> }</span><span class="fin-txd__part-amount">{{ part.amountEur | eur }}</span></button>
+                <button class="fin-txd__part" type="button" (click)="part.open()"><span><b>@if (part.tone) { <span class="wk-dot fin-txd__dot" [class]="part.tone" aria-hidden="true"></span> }{{ part.title }}</b>@if (part.sub) { <small>{{ part.sub }}</small> }</span><span class="fin-txd__part-amount">{{ part.amountEur | eur }}</span></button>
                 @for (other of part.others; track other.lineId) { <button class="wk-link fin-txd__other" type="button" (click)="state.openLine(other.lineId)">{{ other.text }} ›</button> }
               } @empty { <p class="fin-hint">{{ row.allocationLabel || 'Gekoppeld' }}</p> }
               @if (linkedParts().length) {
@@ -543,9 +547,12 @@ export class TransactionDetail extends BankMovementPanel {
       const group = payment.groupId != null ? this.state.payments().filter((item) => item.groupId === payment.groupId).sort((a, b) => a.paidOn.localeCompare(b.paidOn) || a.id - b.id) : [];
       const index = group.findIndex((item) => item.id === payment.id);
       const payee = PAYEE_LABEL[payment.payee ?? 'SUPPLIER'];
+      const label = (payment.label ?? '').trim();
+      // Who got what first ('Leverancier · 1/3 bij bestelling', 'Transactiekosten'), the container under it; never the payee twice.
+      const what = label === 'Transactiekosten' ? label : label && label.toLocaleLowerCase('nl-BE') !== payee.toLocaleLowerCase('nl-BE') ? `${payee} · ${label}` : payee;
       parts.push({ key: `p${payment.id}`, amountEur: payment.amountEur, open: () => this.state.inspectRelated({ kind: 'container', id: payment.orderId }),
-        title: group.length > 1 ? `Deel ${index + 1} van ${group.length} · ${payment.label || payee}` : `${this.orderName(payment)} · ${payee}${payment.label ? ' · ' + payment.label : ''}`,
-        sub: group.length > 1 ? `${this.orderName(payment)} · ${payee}` : null,
+        tone: PAYEE_TONE[payment.payee ?? 'SUPPLIER'], title: what,
+        sub: group.length > 1 ? `${this.orderName(payment)} · deel ${index + 1} van ${group.length}` : this.orderName(payment),
         others: group.filter((item) => item.id !== payment.id && item.bankStatementLineId != null).map((item) => {
           const other = this.state.bankStatements().find((line) => line.id === item.bankStatementLineId);
           return { lineId: item.bankStatementLineId!, text: `andere delen: ${other ? this.accountName(other.account) : 'op de bank'} ${ddmm(item.paidOn)} ${euro.format(item.amountEur)}` };
@@ -905,7 +912,7 @@ export class TransactionDetail extends BankMovementPanel {
   /** "Splitsing aanpassen": unlink, then reopen "Al genoteerd" with the parts selected. */
   adjustSplit(row: BankStatementLine): void {
     const keys = this.linkedPurchases().map((payment) => `purchase:${payment.id}`);
-    this.state.unlinkLine(row);
+    this.state.unlinkLine(row, true);
     const stop = effect(() => {
       const current = this.line();
       if (!current || this.allocated(current) || this.selected()?.id !== current.id) return;

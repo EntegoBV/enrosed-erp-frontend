@@ -1,4 +1,5 @@
-import type { ContainerTracking, TrackingPosition } from '../../core/api/container-tracking-models';
+import type { ContainerTracking, TrackingPosition, TrackingRecognised } from '../../core/api/container-tracking-models';
+import { recogniseTrackingReference, validContainerNumber } from './tracking-reference';
 
 export type TrackingFilter = 'all' | 'active' | 'arrived';
 
@@ -59,17 +60,10 @@ export interface CarrierLookup {
 
 /** ISO 6346 check digit. Identifying a box never identifies its contractual carrier. */
 export function validatedContainerReference(raw: string): string | null {
-  const candidates = [...raw.toUpperCase().matchAll(/(?<![A-Z0-9])([A-Z]{3}[UJZ])[ -]?([0-9]{7})(?![A-Z0-9])/g)]
-    .map((match) => match[1] + match[2]);
+  const candidates = [...raw.toUpperCase().matchAll(/(?<![A-Z0-9])([A-Z]{3}[UJZ])[ -]?([0-9]{6})[ -]?([0-9])(?![A-Z0-9])/g)]
+    .map((match) => match[1] + match[2] + match[3]);
   const unique = [...new Set(candidates)];
-  if (unique.length !== 1) return null;
-  const number = unique[0];
-  const sum = [...number.slice(0, 10)].reduce((total, char, index) => {
-    const alphabet = char.charCodeAt(0) - 65;
-    const value = /[0-9]/.test(char) ? Number(char) : 10 + alphabet + Math.floor((alphabet + 9) / 10);
-    return total + value * 2 ** index;
-  }, 0);
-  return (sum % 11) % 10 === Number(number[10]) ? number : null;
+  return unique.length === 1 && validContainerNumber(unique[0]) ? unique[0] : null;
 }
 
 /** Manual carrier portals from explicit B/L/carrier evidence only, never a vessel name or box prefix. */
@@ -119,21 +113,174 @@ export function trackingMapLink(position: TrackingPosition | null | undefined): 
   return `https://www.openstreetmap.org/?mlat=${position.lat}&mlon=${position.lon}#map=${position.kind === 'VESSEL' ? 6 : 10}/${position.lat}/${position.lon}`;
 }
 
-/** Fetch freshness never claims that the carrier's coordinates were observed recently. */
-export function trackingStale(row: Pick<ContainerTracking, 'updatedAt' | 'error'>, now = Date.now(), intervalHours = 6): boolean {
-  if (row.error) return true;
-  const fetched = row.updatedAt ? Date.parse(row.updatedAt) : NaN;
-  return Number.isFinite(fetched) && now - fetched > (intervalHours * 60 + 10) * 60_000;
+/** The server's reading of the reference; an older server sends none and the same rule runs here. */
+export function recognisedOf(row: Pick<ContainerTracking, 'trackingReference' | 'recognised'>): TrackingRecognised {
+  return row.recognised ?? recogniseTrackingReference(row.trackingReference);
 }
 
-/** A suppressed/cooldown response reuses a snapshot; it is not evidence that a new provider check ran. */
-export function trackingRefreshNotice(before: Pick<ContainerTracking, 'checkedAt' | 'changedAt'>,
-    after: Pick<ContainerTracking, 'checkedAt' | 'changedAt' | 'error'>): string | null {
+/** The expected arrival the screens show: the order's own date (one rule for list, panel and order). */
+export function trackingArrival(row: Pick<ContainerTracking, 'orderExpectedArrival' | 'source' | 'eta'>): string | null {
+  return row.orderExpectedArrival !== undefined ? row.orderExpectedArrival ?? null : row.source !== 'VOYDAR' ? row.eta : null;
+}
+
+/** The last attempt failed. Older servers: the error of a linked source, as the panel showed it. */
+export function trackingFailure(row: Pick<ContainerTracking, 'failure' | 'error' | 'source'>): string | null {
+  return row.failure !== undefined ? row.failure || null : row.source && row.error ? row.error : null;
+}
+
+export interface TrackingStatusView { text: string; tone: 'ok' | 'warn' | 'muted' }
+
+/** One status for the overview list and the panel. The server's status codes and labels stay as they are. */
+export function trackingStatus(row: ContainerTracking, configured = true): TrackingStatusView {
+  if (row.orderStatus === 'ONTVANGEN') return { text: 'Ontvangen', tone: 'ok' };
+  if (trackingArrived(row)) return { text: row.statusLabel, tone: 'ok' };
+  const failed = configured && !!trackingFailure(row);
+  if (row.source || row.dateSource) return { text: row.statusLabel, tone: failed ? 'warn' : 'muted' };
+  if (failed) return { text: 'Controle niet gelukt', tone: 'warn' };
+  const seen = recognisedOf(row);
+  if (!seen.evergreenBl && (seen.kind === 'UNKNOWN' || seen.kind === 'MULTIPLE')) return { text: 'Referentie niet herkend', tone: 'warn' };
+  if (!row.automatic) return { text: 'Schip nog niet gekoppeld', tone: 'muted' };
+  return { text: row.checkedAt ? 'Nog geen gegevens' : 'Eerste controle afwachten', tone: 'muted' };
+}
+
+export interface TrackingMove {
+  /** The date that stood before tracking moved it. */
+  from: string;
+  days: number;
+  later: boolean;
+  /** "3 dagen later" */
+  text: string;
+  /** "+3 d" */
+  short: string;
+  /** News: two days or more and moved in the last 14 days. Only news is tinted; after that it reads muted. */
+  news: boolean;
+}
+
+/** What tracking did to the expected arrival, against the planning that stood; null when it did not move it. */
+export function trackingMove(row: Pick<ContainerTracking, 'orderStatus' | 'arrivalMovedFrom' | 'arrivalMovedAt' | 'arrivalMovedDays'> | null | undefined,
+    now = Date.now()): TrackingMove | null {
+  if (!row || row.orderStatus === 'ONTVANGEN' || !row.arrivalMovedFrom || !row.arrivalMovedDays) return null;
+  const days = Math.abs(row.arrivalMovedDays), later = row.arrivalMovedDays > 0;
+  const at = Date.parse(row.arrivalMovedAt ?? '');
+  return {
+    from: row.arrivalMovedFrom, days: row.arrivalMovedDays, later,
+    text: `${days} ${days === 1 ? 'dag' : 'dagen'} ${later ? 'later' : 'eerder'}`, short: `${later ? '+' : '−'}${days} d`,
+    news: days >= 2 && Number.isFinite(at) && now - at <= 14 * 86_400_000,
+  };
+}
+
+/** "zojuist", "12 min geleden", "3 u geleden" (under 48 h), "4 d geleden"; null without a time or for a future one. */
+export function trackingAge(value: string | null | undefined, now = Date.now()): string | null {
+  const at = Date.parse(value ?? '');
+  if (!Number.isFinite(at) || at > now + 60_000) return null;
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  if (minutes < 2) return 'zojuist';
+  if (minutes < 60) return `${minutes} min geleden`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} u geleden` : `${Math.floor(hours / 24)} d geleden`;
+}
+
+/** "15 nov": day and short month of a calendar date or an instant, in Europe/Brussels. */
+export function trackingDay(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? value + 'T12:00:00Z' : value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', timeZone: 'Europe/Brussels' }).format(date).replace('.', '');
+}
+
+/** "14:32": hour and minute in Europe/Brussels; null without a valid time. */
+export function trackingClock(value: string | null | undefined): string | null {
+  const date = new Date(value ?? '');
+  if (!value || !Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat('nl-BE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' }).format(date);
+}
+
+/**
+ * The last ATTEMPT is older than the interval plus ten minutes: the scheduled check did not come by.
+ * A failed check is not "stale": it has its own notice. Fetch freshness never claims that the carrier's
+ * coordinates were observed recently.
+ */
+export function trackingStale(row: Pick<ContainerTracking, 'checkedAt' | 'updatedAt'>, now = Date.now(), intervalHours = 6): boolean {
+  const last = Date.parse(row.checkedAt ?? row.updatedAt ?? '');
+  return Number.isFinite(last) && now - last > (intervalHours * 60 + 10) * 60_000;
+}
+
+export interface TrackingListLine {
+  status: TrackingStatusView;
+  /** "15 nov", or "12 → 15 nov" while a move is news. */
+  arrival: string | null;
+  /** Set only while the move is news. */
+  move: TrackingMove | null;
+  reference: string;
+  /** How old the last check is. */
+  age: string | null;
+  ageWarn: boolean;
+}
+
+/** One row of the overview list: status, expected arrival and how old the last check is. */
+export function trackingListLine(row: ContainerTracking, configured: boolean, intervalHours: number, now = Date.now()): TrackingListLine {
+  const done = trackingArrived(row);
+  const failed = configured && !done && !!trackingFailure(row);
+  const date = row.orderStatus === 'ONTVANGEN' ? null : trackingArrival(row);
+  const moved = trackingMove(row, now);
+  const move = moved?.news ? moved : null;
+  const day = trackingDay(date);
+  const was = move ? trackingDay(move.from) : null;
+  /* "12 → 15 nov" within one month, "28 okt → 2 nov" across two. */
+  const from = was && day && was.split(' ')[1] === day.split(' ')[1] ? was.split(' ')[0] : was;
+  return {
+    status: trackingStatus(row, configured), arrival: day && from ? `${from} → ${day}` : day, move,
+    reference: validatedContainerReference(row.trackingReference) ?? recognisedOf(row).number ?? row.trackingReference,
+    age: done ? null : trackingAge(failed ? row.failureAt ?? row.checkedAt : row.checkedAt, now),
+    ageWarn: failed || (configured && !done && row.automatic && trackingStale(row, now, intervalHours)),
+  };
+}
+
+/** The containers whose last check failed, for the one summary on the Track & trace page. */
+export function trackingProblems(rows: readonly ContainerTracking[], configured: boolean, now = Date.now()):
+    { row: ContainerTracking; text: string; age: string | null }[] {
+  if (!configured) return [];
+  return rows.filter((row) => !trackingArrived(row) && !!trackingFailure(row))
+    .map((row) => ({ row, text: trackingFailure(row)!, age: trackingAge(row.failureAt ?? row.checkedAt, now) }));
+}
+
+type RefreshRow = Pick<ContainerTracking, 'checkedAt' | 'changedAt' | 'error' | 'source' | 'failure' | 'refreshOutcome' | 'manualCheckAt' | 'orderExpectedArrival'>;
+
+/**
+ * What a manual check did, in the server's own words (refreshOutcome). A check that did nothing says why and
+ * from when it can run again. An older server sends no outcome: then a reused snapshot is not presented as a
+ * new check, as before.
+ */
+export function trackingRefreshNotice(before: Pick<ContainerTracking, 'checkedAt' | 'changedAt' | 'orderExpectedArrival'>, after: RefreshRow): string | null {
+  switch (after.refreshOutcome) {
+    case 'BUSY': return 'De automatische controle is bezig. Probeer het over enkele minuten opnieuw.';
+    case 'COOLDOWN': {
+      const from = trackingClock(after.manualCheckAt);
+      return from ? `Net gecontroleerd. Opnieuw kan vanaf ${from}.` : 'Net gecontroleerd. Probeer het zo meteen opnieuw.';
+    }
+    case 'OFF': return 'Automatische controles staan uit.';
+    case 'NO_SOURCE': return 'Er is nog niets om te controleren. Koppel eerst een schip.';
+    case 'CHECKED':
+      if (trackingFailure(after)) return null;
+      if ((after.orderExpectedArrival ?? null) !== (before.orderExpectedArrival ?? null)) return 'De verwachte aankomst is aangepast.';
+      return after.changedAt && after.changedAt !== before.changedAt
+        ? 'Er is een wijziging gevonden. De tracking is bijgewerkt.'
+        : 'Controle afgerond. Er zijn geen nieuwe wijzigingen gemeld.';
+  }
   if (after.error) return null;
   if (after.checkedAt === before.checkedAt) return 'De opgeslagen gegevens worden getoond; er is nog geen nieuwe controle uitgevoerd.';
   return after.changedAt && after.changedAt !== before.changedAt
     ? 'Er is een wijziging gevonden. De tracking is bijgewerkt.'
     : 'Controle afgerond. Er zijn geen nieuwe wijzigingen gemeld.';
+}
+
+/**
+ * Until when the notice of a manual check holds (ms), or null: until the row shows a newer check. "Opnieuw kan
+ * vanaf 14:32" is over at 14:32; "de automatische controle is bezig" after a few minutes.
+ */
+export function trackingRefreshNoticeUntil(after: Pick<ContainerTracking, 'refreshOutcome' | 'manualCheckAt'>, now = Date.now()): number | null {
+  if (after.refreshOutcome === 'COOLDOWN') { const at = Date.parse(after.manualCheckAt ?? ''); return Number.isFinite(at) ? at : now + 60_000; }
+  return after.refreshOutcome === 'BUSY' ? now + 5 * 60_000 : null;
 }
 
 export function trackingTime(value: string | null | undefined, includeTime = true): string {

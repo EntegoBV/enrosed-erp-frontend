@@ -5,7 +5,7 @@ import { messageOf } from '../../core/api/errors';
 import { Customer, PurchaseOrder, PurchaseOrderView, SalesOrderView } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
-import { DateNlPipe, EurPipe } from '../../shared/pipes';
+import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import { partnerDocumentKind } from '../sales/partner-settlement';
 import { STATUS_LABEL } from '../sales/quote-status';
@@ -21,7 +21,7 @@ import { pctLabel } from './purchase-nacalc-metrics';
 @Component({
   selector: 'app-purchase-partner-panel',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, RouterLink, EurPipe, DateNlPipe],
+  imports: [FormsModule, RouterLink, EurPipe, DateNlPipe, NumPipe],
   template: `
     <section class="po-partner" [class.po-partner--on]="on()" aria-labelledby="po-partner-title">
       <header class="po-partner__head">
@@ -92,6 +92,15 @@ import { pctLabel } from './purchase-nacalc-metrics';
           </ul>
         }
 
+        @if (reported(); as open) {
+          <!-- Veilingverkopen: what the partner reported from this container and nobody invoiced yet (Factureren there). -->
+          <a class="po-partner__reported" routerLink="/veilingverkopen">
+            <span>Veilingverkopen nog te factureren</span>
+            <b>{{ open.quantity | num }} {{ open.quantity === 1 ? 'stuk' : 'stuks' }} · netto {{ open.netEur | eur }}</b>
+            <i aria-hidden="true">›</i>
+          </a>
+        }
+
         <div class="po-partner__buttons">
           <button class="btn btn--sm" [class.btn--primary]="!costDocument()" type="button" [disabled]="!canQuote()" (click)="quote.emit()">Conceptvoorschotfacturen maken</button>
           <button class="btn btn--sm" [class.btn--primary]="!!costDocument()" type="button" (click)="schedule.emit()">{{ costDocument() ? 'Voorschotfacturen per termijn' : 'Betaalafspraken bekijken' }}</button>
@@ -101,6 +110,15 @@ import { pctLabel } from './purchase-nacalc-metrics';
         @if (!costDocument() && !canQuote()) { <p class="hint">Reken de container eerst door; de voorschotfacturen volgen de afgesproken bijdrage in het inkooptotaal incl. aparte kosten.</p> }
       }
     </section>
+  `,
+  styles: `
+    .po-partner__reported { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 44px; margin: 10px 0 0; padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+      color: inherit; font-size: 13px; text-decoration: none; }
+    .po-partner__reported span { flex: 1 1 auto; color: var(--ink-2); }
+    .po-partner__reported b { color: var(--warn); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .po-partner__reported i { color: var(--muted); font-style: normal; }
+    .po-partner__reported:hover { border-color: var(--warn); }
   `,
 })
 export class PurchasePartnerPanel {
@@ -142,6 +160,12 @@ export class PurchasePartnerPanel {
   readonly draftSharePct = signal(50);
 
   readonly on = computed(() => this.order().partnerCustomerId != null);
+  /**
+   * Veilingverkopen still to invoice on this container, summed over the lines of partner-settlement-availability
+   * (openReportedQuantity / openReportedNetEur); null when there is nothing, on an older backend or when it failed.
+   */
+  readonly reported = signal<{ quantity: number; netEur: number } | null>(null);
+  private availabilityRound = 0;
   readonly partners = computed(() => this.customers().filter((customer) => customer.partner));
   readonly partnerName = computed(() => {
     const id = this.order().partnerCustomerId;
@@ -154,6 +178,27 @@ export class PurchasePartnerPanel {
     void this.loadCustomers();
     /* An outside change (the container adopted a partner through a link) closes the form. */
     effect(() => { this.order().partnerCustomerId; this.editing.set(false); });
+    /* The reported line: asked again when the container or its documents change (a new settlement takes pieces). */
+    effect(() => {
+      const id = this.order().id, partner = this.on() && this.canAuction();
+      this.docs().length;
+      void this.loadReported(partner ? id : null);
+    });
+  }
+
+  private async loadReported(orderId: number | null): Promise<void> {
+    const round = ++this.availabilityRound;
+    if (orderId === null) { this.reported.set(null); return; }
+    try {
+      const available = await this.sourcing.partnerSettlementAvailability(orderId);
+      if (round !== this.availabilityRound) return;
+      const quantity = available.lines.reduce((sum, line) => sum + (line.openReportedQuantity ?? 0), 0);
+      const netEur = Math.round(available.lines.reduce((sum, line) => sum + (line.openReportedNetEur ?? 0), 0) * 100) / 100;
+      this.reported.set(quantity !== 0 || netEur !== 0 ? { quantity, netEur } : null);
+    } catch {
+      /* The line is a pointer, not a figure anything depends on: no line when the call fails. */
+      if (round === this.availabilityRound) this.reported.set(null);
+    }
   }
 
   private async loadCustomers(): Promise<void> {

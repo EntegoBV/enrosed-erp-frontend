@@ -1,22 +1,45 @@
-import { ChangeDetectionStrategy, Component, ElementRef, afterNextRender, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, effect, inject, signal, viewChild } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import type { HostPageInput } from '../../core/platform/host-bridge';
+import { HostPage } from '../../shared/host-page';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Auth } from '../../core/api/auth';
+import { Auth, isPartnerUser } from '../../core/api/auth';
+import { PARTNER_PASSWORD_HINT } from '../../core/api/partner-password';
+import { useAppManifest } from '../../core/platform/app-manifest';
+import { HostBridge } from '../../core/platform/host-bridge';
 import { Icon } from '../../shared/icon';
-import { readLastAccount, rememberLastAccount } from './last-account';
+import {
+  forgetLastPartner, partnerUsername, readLastAccount, readLastPartner, rememberLastAccount, rememberLastPartner,
+} from './last-account';
 
 /** localStorage, or null where the browser blocks it. */
 function deviceStore(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
 }
 
-/** Aanmeldscherm voor de twee vaste Enrosed-medewerkers. */
+/** The password goes out through btoa (Basic auth), which takes no character above U+00FF; a partner's is printable ASCII. */
+function unsendable(password: string, partner: boolean): boolean {
+  return partner ? !/^[\x20-\x7E]*$/.test(password) : /[^\u0000-\u00ff]/.test(password);
+}
+
+/** A path inside the partner portal (where a partner may return to; staff never). */
+function isPartnerPath(url: string): boolean {
+  return url === '/partner' || url.startsWith('/partner/') || url.startsWith('/partner?');
+}
+
+/**
+ * Aanmeldscherm voor de twee vaste Enrosed-medewerkers, en in partnermodus
+ * voor het partnerportaal (Verhoeven): gebruikersnaam en wachtwoord. Partner
+ * mode opens with ?partner=1 or when this device's last sign-in was a partner;
+ * the native iOS app never offers it.
+ */
 @Component({
   selector: 'app-login-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Icon],
+  imports: [FormsModule, Icon, HostPage],
   template: `
-    <main class="login">
+    <main class="login" [hostPage]="hostPage">
       <picture class="login__art" aria-hidden="true">
         <source media="(max-width: 679px)" srcset="login/enrosed-login-mobile.webp" />
         <img src="login/enrosed-login-desktop.webp" alt="" fetchpriority="high" />
@@ -24,37 +47,56 @@ function deviceStore(): Storage | null {
       <div class="login__shade" aria-hidden="true"></div>
 
       <form class="login__card" (ngSubmit)="submit()" [attr.aria-busy]="busy()">
-        <header class="login__head">
-          <img class="login__logo" src="logo-ui.png" alt="Enrosed" />
-          <span class="login__eyebrow">Sales &amp; Sourcing</span>
-          <h1>Welkom terug</h1>
-          <p>Kies je account en ga verder in de Enrosed-werkruimte.</p>
-        </header>
+        @if (partnerMode()) {
+          <header class="login__head">
+            <img class="login__logo" src="logo-ui.png" alt="Enrosed" />
+            <span class="login__eyebrow">Enrosed</span>
+            <h1>Partnerportaal</h1>
+            <p>Meld je aan met je gebruikersnaam en wachtwoord.</p>
+          </header>
 
-        <div class="field">
-          <label for="username">Account</label>
-          <div class="login__select-wrap">
-            @if (username()) {
-              <span class="login__avatar" aria-hidden="true">{{ username() === 'emre' ? 'E' : 'B' }}</span>
-            } @else {
-              <span class="login__avatar login__avatar--empty" aria-hidden="true">•</span>
-            }
-            <select #accountField class="select login__select" id="username" name="username"
-                    autocomplete="username" required
-                    [attr.aria-invalid]="submitted() && !username() ? 'true' : null"
-                    [ngModel]="username()" (ngModelChange)="username.set($event)">
-              <option value="" disabled>Kies Emre of Berat</option>
-              <option value="emre">Emre</option>
-              <option value="berat">Berat</option>
-            </select>
+          <div class="field">
+            <label for="partner-username">Gebruikersnaam</label>
+            <input #partnerField class="input" id="partner-username" name="partner-username" type="text"
+                   autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required
+                   [attr.aria-invalid]="submitted() && !partnerName().trim() ? 'true' : null"
+                   [ngModel]="partnerName()" (ngModelChange)="partnerName.set($event)" />
           </div>
-        </div>
+        } @else {
+          <header class="login__head">
+            <img class="login__logo" src="logo-ui.png" alt="Enrosed" />
+            <span class="login__eyebrow">Sales &amp; Sourcing</span>
+            <h1>Welkom terug</h1>
+            <p>Kies je account en ga verder in de Enrosed-werkruimte.</p>
+          </header>
+
+          <div class="field">
+            <label for="username">Account</label>
+            <div class="login__select-wrap">
+              @if (username()) {
+                <span class="login__avatar" aria-hidden="true">{{ username() === 'emre' ? 'E' : 'B' }}</span>
+              } @else {
+                <span class="login__avatar login__avatar--empty" aria-hidden="true">•</span>
+              }
+              <select #accountField class="select login__select" id="username" name="username"
+                      autocomplete="username" required
+                      [attr.aria-invalid]="submitted() && !username() ? 'true' : null"
+                      [ngModel]="username()" (ngModelChange)="pickAccount($event)">
+                <option value="" disabled>Kies Emre of Berat</option>
+                <option value="emre">Emre</option>
+                <option value="berat">Berat</option>
+                @if (!host.present) { <option value="partner">Partner…</option> }
+              </select>
+            </div>
+          </div>
+        }
 
         <div class="field">
           <label for="password">Wachtwoord</label>
           <div class="login__password">
+            <!-- With the eye on it is a text field: no capital, autocorrect or curly quote may change what he types. -->
             <input #passwordField class="input" id="password" name="password" [type]="showPassword() ? 'text' : 'password'"
-                   autocomplete="current-password" required
+                   autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required
                    [attr.aria-invalid]="error() ? 'true' : null"
                    [attr.aria-describedby]="error() ? 'login-error' : null"
                    [ngModel]="password()" (ngModelChange)="password.set($event)" />
@@ -80,7 +122,12 @@ function deviceStore(): Storage | null {
           {{ busy() ? 'Aanmelden…' : 'Aanmelden' }}
         </button>
 
-        <p class="login__private"><span aria-hidden="true">●</span> Privé werkruimte voor Emre en Berat</p>
+        @if (partnerMode()) {
+          <button class="login__other" type="button" (click)="otherAccount()">Ander account</button>
+        } @else {
+          <p class="login__private"><span aria-hidden="true">●</span> Privé werkruimte voor Emre en Berat</p>
+          @if (!host.present) { <button class="login__other login__other--partner" type="button" (click)="pickAccount('partner')">Aanmelden als partner</button> }
+        }
       </form>
     </main>
   `,
@@ -92,25 +139,68 @@ function deviceStore(): Storage | null {
     @media (max-width: 679.98px) and (max-height: 650px), (hover: none) and (max-width: 1023.98px) and (max-height: 650px) {.login{align-items:flex-start;padding-top:145px}.login__card{padding-block:21px 17px}.login__head p{display:none}.login__head{margin-bottom:14px}.login__logo{margin-bottom:8px}.login__head h1{font-size:23px}}
     @media (min-width: 1024px) and (max-height: 650px), (min-width: 680px) and (hover: hover) and (max-height: 650px) {.login{align-items:flex-start;padding-block:24px}.login__card{padding-block:25px 21px}.login__head{margin-bottom:17px}.login__logo{margin-bottom:9px}.login__head p{margin-top:4px}}
     @media(prefers-reduced-motion:reduce){.login__spinner{animation-duration:1.4s}}
+    .login__other--partner{margin-top:2px}.login__other{display:flex;align-items:center;justify-content:center;width:100%;min-height:44px;margin-top:8px;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.login__other:hover{color:var(--ink)}
   `,
 })
 export class LoginPage {
+  /** The native host draws no bars here: the dark artwork wants light status text, and the tab bar waits for the sign-in. */
+  readonly hostPage: HostPageInput = { title: 'Aanmelden', chrome: false, tabBar: 'hidden', statusBar: 'light' };
   private readonly auth = inject(Auth);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  readonly host = inject(HostBridge);
 
   /** The account that signed in last on this device, preselected (only the name is kept). */
   readonly username = signal<'emre' | 'berat' | ''>(readLastAccount(deviceStore()));
+  /** The partner who signed in last on this device: the login opens in partner mode with the name filled in. */
+  private readonly lastPartner = this.host.present ? '' : readLastPartner(deviceStore());
+  readonly partnerMode = signal(!this.host.present
+    && (this.route.snapshot.queryParamMap.get('partner') === '1' || this.lastPartner !== ''));
+  readonly partnerName = signal(this.lastPartner);
   readonly showPassword = signal(false);
   private readonly accountField = viewChild<ElementRef<HTMLSelectElement>>('accountField');
+  private readonly partnerField = viewChild<ElementRef<HTMLInputElement>>('partnerField');
   private readonly passwordField = viewChild<ElementRef<HTMLInputElement>>('passwordField');
 
   constructor() {
+    /* "Zet op beginscherm" from the partner login gives an app that starts in the portal (core/platform/app-manifest.ts). */
+    const doc = inject(DOCUMENT);
+    effect(() => useAppManifest(doc, this.partnerMode() ? 'partner' : 'staff'));
+    inject(DestroyRef).onDestroy(() => useAppManifest(doc, 'staff'));
     /* Straight to the password when the account is known; otherwise the account first. */
     afterNextRender(() => {
-      const field = this.username() ? this.passwordField() : this.accountField();
+      const field = this.partnerMode()
+        ? (this.partnerName() ? this.passwordField() : this.partnerField())
+        : (this.username() ? this.passwordField() : this.accountField());
       field?.nativeElement.focus({ preventScroll: true });
     });
+  }
+
+  /** The account select; its last option "Partner…" switches to partner mode. */
+  pickAccount(value: string): void {
+    if (value === 'partner') {
+      const select = this.accountField()?.nativeElement;
+      if (select) select.value = this.username();
+      this.error.set('');
+      this.submitted.set(false);
+      this.partnerName.set('');
+      this.partnerMode.set(true);
+      setTimeout(() => this.partnerField()?.nativeElement.focus({ preventScroll: true }));
+      return;
+    }
+    this.username.set(value === 'emre' || value === 'berat' ? value : '');
+  }
+
+  /** "Ander account": back to the staff form; this device no longer opens in partner mode. */
+  otherAccount(): void {
+    forgetLastPartner(deviceStore());
+    this.error.set('');
+    this.submitted.set(false);
+    this.partnerMode.set(false);
+    if (this.route.snapshot.queryParamMap.get('partner') !== null) {
+      void this.router.navigate([], { relativeTo: this.route, queryParams: { partner: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    }
+    setTimeout(() => this.accountField()?.nativeElement.focus({ preventScroll: true }));
   }
 
   togglePassword(): void {
@@ -125,22 +215,41 @@ export class LoginPage {
   async submit(): Promise<void> {
     if (this.busy()) return;
     this.submitted.set(true);
-    if (!this.username() || !this.password()) {
-      this.error.set('Kies je account en vul je wachtwoord in.');
+    const partner = this.partnerMode();
+    const name = partner ? partnerUsername(this.partnerName()) : this.username();
+    if (!name || !this.password()) {
+      this.error.set(partner ? 'Vul je gebruikersnaam en wachtwoord in.' : 'Kies je account en vul je wachtwoord in.');
+      return;
+    }
+    if (unsendable(this.password(), partner)) {
+      this.error.set(`Dit wachtwoord heeft een teken dat niet kan. ${PARTNER_PASSWORD_HINT}.`);
       return;
     }
     this.error.set('');
     this.busy.set(true);
     try {
-      await this.auth.login(this.username(), this.password());
-      rememberLastAccount(deviceStore(), this.username());
+      const user = await this.auth.login(name, this.password());
       const returnTo = this.route.snapshot.queryParamMap.get('returnTo');
+      let target: string;
+      if (isPartnerUser(user)) {
+        /* A partner only ever returns into the portal. */
+        rememberLastPartner(deviceStore(), user.username);
+        target = returnTo && isPartnerPath(returnTo) ? returnTo : '/partner';
+      } else {
+        forgetLastPartner(deviceStore());
+        rememberLastAccount(deviceStore(), user.username);
+        target = returnTo && !isPartnerPath(returnTo) ? returnTo : '/dashboard';
+      }
       /* The screen takes the login form's place in the history: back never shows the form to a signed-in user. */
-      await this.router.navigateByUrl(returnTo ?? '/dashboard', { replaceUrl: true });
+      await this.router.navigateByUrl(target, { replaceUrl: true });
     } catch (failure: unknown) {
       const status = (failure as { status?: number }).status;
+      if (failure instanceof DOMException && failure.name === 'InvalidCharacterError') {
+        this.error.set(`Dit wachtwoord heeft een teken dat niet kan. ${PARTNER_PASSWORD_HINT}.`);
+        return;
+      }
       this.error.set(status === 401
-        ? 'Account of wachtwoord klopt niet.'
+        ? (partner ? 'Gebruikersnaam of wachtwoord klopt niet.' : 'Account of wachtwoord klopt niet.')
         : status === 0
           ? 'Geen verbinding met Enrosed. Controleer je internetverbinding en probeer opnieuw.'
           : 'Aanmelden lukt momenteel niet. Probeer het straks opnieuw.');

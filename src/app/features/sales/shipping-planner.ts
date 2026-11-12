@@ -1,13 +1,29 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import {
-  FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, SalesOrderView,
-  Carrier, CarrierShipQuote,
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import type {
+  Carrier, FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, PalletRule, SalesOrderView,
 } from '../../core/api/models';
-import { CbmPipe, EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
-import { SalesApi } from '../../core/api/sales-api';
-import { salesLineUnavailable } from './sales-line-availability';
-
-import { PALLET_PRODUCT_COLOURS, estimatePalletHeightCm, normalizeManualPalletType } from './pallet-stack';
+import { AuthImage } from '../../core/api/auth-image';
+import { DesktopViewport } from '../../core/platform/desktop-viewport';
+import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { MenuPoint } from '../../shared/context-menu-position';
+import { Icon } from '../../shared/icon';
+import { scrollBehavior } from '../../shared/motion';
+import { EurPipe } from '../../shared/pipes';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { Sheet, Ui } from '../../shared/ui';
+import { PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, clampPalletHeight, palletHeightLimit } from './pallet-calculator-model';
+import { PalletGlyph } from './pallet-glyph';
+import { PalletSheet } from './pallet-sheet';
+import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
+import { PlannerFreight } from './planner-freight';
+import { PlannerLoad } from './planner-load';
+import { PlannerPallet, omdozen } from './planner-pallet';
+import {
+  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, palletCount,
+  placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
+} from './shipping-planner-model';
 
 export { normalizeManualPalletType } from './pallet-stack';
 
@@ -42,515 +58,302 @@ export type ShippingPalletAction =
   | { type: 'add-item'; palletIndex: number; productId: number }
   | { type: 'set-item-cartons'; palletIndex: number; productId: number; cartons: number };
 
-type PlannerSection = 'mode' | 'layout' | 'freight';
+const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 
 /**
- * Shipping planner shared by the phone editor's sheet and the desk's wide
- * sheet: how the order travels, how the pallets are stacked, what the
- * freight costs.
+ * Transport & levering, shared by the phone editor's sheet and the desk's
+ * wide sheet: the answer first (how many pallets, how full, the freight),
+ * then the pallets one by one, the products and the freight.
  *
- * On a phone the three parts fold into an accordion under one summary
- * strip; on a desk they sit side by side with the pallet layout taking the
- * room. The component only explains and collects choices. The sales editor
- * keeps ownership of its serial save queue and the backend remains the only
- * place that calculates pallet fits, CBM and freight amounts.
+ * Automatisch is the backend's count and layout, which the freight follows:
+ * under palletRule MIXED (new and concept documents) the products stack
+ * together the way Palletberekening stacks them; under STRICT (documents
+ * past concept, which keep their count) every product stands on pallets of
+ * its own, and when mixing saves a pallet Palletberekening's mix is one tap
+ * away. An older server sends no layout: its palletsStrict is laid out
+ * here. Zelf indelen starts from the automatic pallets. The planner only
+ * emits patches and pallet actions: the sales editor keeps its serial save
+ * queue, and the backend stays the one that calculates fits, m³ and freight.
+ *
+ * Overlays (the pallet sheet, Lading, the menus) sit at the root of this
+ * template, outside .sp-layout: its container query traps position:fixed.
  */
 @Component({
   selector: 'app-shipping-planner',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CbmPipe, EurPipe, NumPipe, PctPipe],
+  imports: [AuthImage, ContextMenu, EurPipe, Icon, NgTemplateOutlet, PalletGlyph, PalletSheet, PlannerFreight, PlannerLoad,
+    PlannerPallet, RouterLink, Segmented, Sheet],
   template: `
-    <div class="planner">
-      <!-- ============================ the strip: where the order stands -->
-      <div class="plan-summary" aria-label="Samenvatting van transport en levering">
-        <button class="plan-summary__tile" type="button" (click)="openSection.set('mode')"
-                [class.is-open]="openSection() === 'mode'" [attr.aria-current]="openSection() === 'mode' ? 'true' : null">
-          <small>Lading</small>
-          <strong>{{ loadSummary() }}</strong>
-          <span>{{ loadDetail() }}</span>
-        </button>
-        <button class="plan-summary__tile" type="button" (click)="openSection.set('layout')"
-                [class.is-open]="openSection() === 'layout'" [attr.aria-current]="openSection() === 'layout' ? 'true' : null"
-                [class.is-ok]="layoutState() === 'ok'" [class.is-warn]="layoutState() === 'warn'">
-          <small>Indeling</small>
-          <strong>{{ layoutSummary() }}</strong>
-          <span>{{ layoutDetail() }}</span>
-        </button>
-        <button class="plan-summary__tile" type="button" (click)="openSection.set('freight')"
-                [class.is-open]="openSection() === 'freight'" [attr.aria-current]="openSection() === 'freight' ? 'true' : null"
-                [class.is-warn]="freightPending()">
-          <small>Vracht</small>
-          <strong>@if (freightPending()) { later bepalen } @else { {{ view().priced.totals.freight | eur }} }</strong>
-          <span>{{ strategyLabel(pricingStrategy()) }}</span>
-        </button>
-      </div>
-
-      <div class="plan-columns">
-        <!-- ============================ how it travels -->
-        <section class="plan-section plan-section--mode" [class.plan-section--open]="openSection() === 'mode'">
-          <button class="plan-section__toggle" type="button" (click)="toggleSection('mode')"
-                  [attr.aria-expanded]="openSection() === 'mode'">
-            <span><small class="eyebrow">Verzendwijze</small><strong>{{ loadMode() === 'PALLETS' ? 'Op pallets' : 'Losse dozen' }}</strong></span>
-            <i aria-hidden="true">⌄</i>
+    <div class="sp">
+      <section class="sp-hero" aria-label="Lading">
+        <div class="sp-hero__answer">
+          @if (!desk() && canEdit() && lines().length) {
+            <button class="sp-hero__spec" type="button" aria-haspopup="dialog" aria-label="Lading aanpassen" (click)="loadOpen.set(true)">
+              <span>{{ specText() }}</span><app-icon name="chevron-right" [size]="14" />
+            </button>
+          } @else {
+            <p class="sp-hero__spec"><span>{{ specText() }}</span></p>
+          }
+          <h3 class="sp-hero__title">{{ heroTitle() }}@if (fill()) { <small>{{ fill() }}</small> }
+            @if (heroPill(); as pill) { <span class="badge" [class]="'badge--' + pill.tone">{{ pill.text }}</span> }</h3>
+          @if (lines().length) { <p class="sp-hero__facts">{{ factsText() }}</p> }
+        </div>
+        @if (!desk()) {
+          <button class="sp-hero__freight" type="button" aria-label="Naar vracht" (click)="toFreight()">
+            @if (pending()) { <b class="is-warn">later</b><small>te bepalen</small> }
+            @else if (freightIssue()) { <b class="is-danger">nakijken</b><small>{{ strategyText() }}</small> }
+            @else { <b>{{ view().priced.totals.freight | eur }}</b><small>{{ strategyText() }}</small> }
           </button>
-          <div class="plan-section__body">
-            <div class="choice-grid" role="radiogroup" aria-label="Verzendwijze">
-              <button class="choice-card" type="button" role="radio"
-                      [class.choice-card--active]="loadMode() === 'PALLETS'"
-                      [attr.aria-checked]="loadMode() === 'PALLETS'"
-                      [disabled]="!canEdit()" (click)="chooseLoadMode('PALLETS')">
-                <span class="choice-card__icon" aria-hidden="true">▦</span>
-                <span class="choice-card__copy">
-                  <strong>Op pallets</strong>
-                  <small>Gestapeld op vloermaat en laadhoogte</small>
-                </span>
-                <span class="choice-card__check" aria-hidden="true">✓</span>
-              </button>
-              <button class="choice-card" type="button" role="radio"
-                      [class.choice-card--active]="loadMode() === 'LOOSE_CARTONS'"
-                      [attr.aria-checked]="loadMode() === 'LOOSE_CARTONS'"
-                      [disabled]="!canEdit()" (click)="chooseLoadMode('LOOSE_CARTONS')">
-                <span class="choice-card__icon" aria-hidden="true">▤</span>
-                <span class="choice-card__copy">
-                  <strong>Losse dozen</strong>
-                  <small>Volume uit de buitenmaten van de omdozen</small>
-                </span>
-                <span class="choice-card__check" aria-hidden="true">✓</span>
-              </button>
-            </div>
-            @if (loadMode() === 'LOOSE_CARTONS' && view().order.pallets.length) {
-              @if (preservedLayoutMatches()) {
-                <p class="note">Je handmatige palletindeling blijft bewaard, maar telt niet mee zolang ‘Losse dozen’ is gekozen.</p>
-              } @else {
-                <p class="note note--warn">De bewaarde palletindeling past niet meer bij de producten, aantallen of laadhoogte. Bij terugschakelen naar pallets herstellen we de automatische berekening.</p>
-              }
-            }
-            @if (loadMode() === 'PALLETS') {
-              <div class="settings">
-                <div class="field-row">
-                  <label for="shipping-pallet-profile">Pallettype</label>
-                  <select id="shipping-pallet-profile" class="select" [value]="palletProfile()"
-                          [disabled]="!canEdit()" (change)="setPalletProfile($any($event.target).value)">
-                    <option value="EURO_120X80">Europallet · 120 × 80 cm</option>
-                    <option value="BLOCK_120X100">Blokpallet · 120 × 100 cm</option>
-                    <option value="HALF_80X60">Halve pallet · 80 × 60 cm</option>
-                  </select>
-                </div>
-                <div class="field-row">
-                  <label for="shipping-max-height">Max. pallethoogte <small>incl. pallet van {{ palletBaseHeightCm() | num }} cm</small></label>
-                  <div class="unit-input">
-                    <input id="shipping-max-height" class="input num" type="number" min="50" max="300" step="1" inputmode="numeric"
-                           [value]="maxPalletHeightCm()" [disabled]="!canEdit()" (change)="setMaxHeight($any($event.target).value)" />
-                    <span>cm</span>
-                  </div>
-                  @if (order().maxPalletHeightCm != null) {
-                    <button class="text-action" type="button" [disabled]="!canEdit()" (click)="patch.emit({ maxPalletHeightCm: null })">Terug naar standaardhoogte</button>
-                  }
-                </div>
-              </div>
-            }
-          </div>
-        </section>
+        } @else if (showSwitch()) {
+          <ng-container [ngTemplateOutlet]="modeSwitch" />
+        }
+      </section>
+      @if (!desk() && showSwitch()) { <ng-container [ngTemplateOutlet]="modeSwitch" /> }
+      @if (infoOpen() && showSwitch()) {
+        @if (rule() === 'MIXED') {
+          <p class="sp-caption" id="sp-caption">Automatisch zet elk product in eigen lagen en stapelt die samen op zo weinig mogelijk pallets; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        } @else {
+          <p class="sp-caption" id="sp-caption">Automatisch zet elk product op eigen pallets en volgt de aantallen; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        }
+      }
+      @if (!lines().length) { <p class="sp-empty">Voeg producten toe: de pallets verschijnen hier vanzelf.</p> }
 
-        <!-- ============================ the pallets, or the loose volume -->
-        <section class="plan-section plan-section--layout" [class.plan-section--open]="openSection() === 'layout'">
-          <button class="plan-section__toggle" type="button" (click)="toggleSection('layout')"
-                  [attr.aria-expanded]="openSection() === 'layout'">
-            <span><small class="eyebrow">{{ loadMode() === 'PALLETS' ? 'Palletindeling' : 'Volume' }}</small><strong>{{ layoutSummary() }}</strong></span>
-            <i aria-hidden="true">⌄</i>
-          </button>
-          <div class="plan-section__body">
-            @if (loadMode() === 'PALLETS') {
-              @if (!view().order.pallets.length) {
-                <!-- the calculator's proposal -->
-                <dl class="tiles">
-                  <div><dt>Pallets</dt><dd>{{ palletCount() | num }}</dd></div>
-                  <div><dt>Dozen</dt><dd>{{ view().priced.totals.cartons | num }}</dd></div>
-                  <div><dt>Volume</dt><dd>{{ view().priced.totals.cbm | cbm }}</dd></div>
-                  <div><dt>Gewicht</dt><dd>{{ view().priced.totals.weightKg | num: 0 }} <small>kg</small></dd></div>
-                </dl>
-                @if (invalidPalletLines().length) {
-                  <div class="warning" id="invalid-pallet-fit" role="alert">
-                    <strong>Nog geen geldige stapeling</strong>
-                    <span>Controleer omdoosafmetingen, gewicht of laadhoogte voor {{ invalidPalletLineNames() }}.</span>
-                  </div>
-                }
-                <ul class="stack-list" aria-label="Stapeling per product">
-                  @for (line of activeLines(); track line.productId; let i = $index) {
-                    <li>
-                      <i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>
-                      <span class="stack-list__name">{{ line.description }}</span>
-                      @if (line.cartonsPerLayer && line.palletLayers) {
-                        <span class="stack-list__facts">{{ line.cartons | num }} dozen · {{ line.pallets }} {{ line.pallets === 1 ? 'pallet' : 'pallets' }}
-                          <small>{{ line.cartonsPerLayer }} per laag · {{ line.palletLayers }} {{ line.palletLayers === 1 ? 'laag' : 'lagen' }}@if (line.calculatedPalletHeightCm) { · {{ line.calculatedPalletHeightCm | num: 0 }} cm }</small></span>
-                      } @else {
-                        <span class="stack-list__facts danger-text">Geen geldige palletberekening</span>
-                      }
-                    </li>
-                  }
-                </ul>
-                <p class="note">Dozen per laag × lagen binnen {{ maxPalletHeightCm() | num }} cm, begrensd door gewicht. Elke pallet draagt één product; wil je mengen of een uitzondering, deel dan zelf in.</p>
-                <button class="btn btn--primary btn--block" type="button"
-                        [disabled]="!canEdit() || !activeLines().length || invalidPalletLines().length > 0"
-                        [attr.aria-describedby]="invalidPalletLines().length ? 'invalid-pallet-fit' : null"
-                        (click)="action.emit({ type: 'auto-layout' })">Zelf indelen vanuit dit voorstel</button>
-              } @else {
-                <!-- the hand-built layout -->
-                <div class="tray" [class.tray--ok]="layoutOk()">
-                  <div class="tray__progress">
-                    <span><b>{{ assignedCartons() | num }}</b> van {{ view().priced.totals.cartons | num }} dozen geplaatst</span>
-                    <em>{{ view().order.pallets.length }} {{ view().order.pallets.length === 1 ? 'pallet' : 'pallets' }}@if (layoutOk()) { · compleet }</em>
-                  </div>
-                  <div class="tray__bar" aria-hidden="true"><i [style.width.%]="assignedPercent()" [class.is-warn]="overassignedAny()"></i></div>
-                  @if (unassignedLines().length) {
-                    <div class="tray__chips" aria-label="Nog te plaatsen">
-                      @for (line of unassignedLines(); track line.productId) {
-                        <span class="chip"><i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>{{ line.description }} <b>{{ line.remaining }}</b></span>
-                      }
+      <div class="sp-layout">
+        <div class="sp-cols">
+          <div class="sp-main">
+            @if (problems().length) {
+              <section class="sp-sec" aria-labelledby="sp-check">
+                <div class="sp-sec__head"><h4 id="sp-check">Nakijken</h4></div>
+                <div class="sp-group sp-prods">
+                  @for (line of problems(); track line.productId) {
+                    <div class="sp-prod" [style.--sp-colour]="line.colour">
+                      <ng-container [ngTemplateOutlet]="thumb" [ngTemplateOutletContext]="{ $implicit: line }" />
+                      <span class="sp-prod__name">{{ line.name }}</span>
+                      <span class="sp-prod__sub">{{ line.problem }}</span>
+                      <a class="sp-prod__trail sp-link" [routerLink]="['/products', line.productId, 'edit']">Aanvullen</a>
                     </div>
                   }
-                  <div class="tray__actions">
-                    <button class="btn btn--sm" type="button" [disabled]="!canEdit()" (click)="action.emit({ type: 'add-pallet' })"><span aria-hidden="true">＋</span> Pallet</button>
-                    <button class="btn btn--sm" type="button" [disabled]="!canEdit() || invalidPalletLines().length > 0" (click)="redoLayout()">Automatisch herindelen</button>
-                    <button class="btn btn--sm btn--quiet" type="button" [disabled]="!canEdit()" (click)="returnToAutomatic()">Eigen indeling wissen</button>
-                  </div>
                 </div>
+              </section>
+            }
 
-                <p class="sr-only" aria-live="polite">{{ reorderAnnouncement() }}</p>
-                <div class="pallet-grid">
-                  <!-- Persistence rebuilds pallet rows after every save, so database ids are
-                       intentionally not a UI identity: the position keeps a focused input intact. -->
-                  @for (pallet of view().order.pallets; track $index; let pi = $index) {
-                    @let stack = stackOf(pallet);
-                    <article class="pallet" [attr.data-pallet-index]="pi"
-                             [class.pallet--empty]="!pallet.items.length"
-                             [class.pallet--dragging]="draggingIndex() === pi"
-                             [class.pallet--target]="draggingIndex() !== null && dropTargetIndex() === pi && draggingIndex() !== pi">
-                      <header class="pallet__head">
-                        <button class="pallet__drag" type="button" [disabled]="!canEdit()"
-                                [attr.aria-label]="'Pallet ' + (pi + 1) + ' verplaatsen. Sleep of gebruik de pijltjestoetsen.'"
-                                (pointerdown)="startPalletDrag($event, pi)" (pointermove)="movePalletDrag($event)"
-                                (pointerup)="finishPalletDrag($event)" (pointercancel)="cancelPalletDrag($event)"
-                                (keydown)="movePalletWithKeyboard($event, pi)"><span aria-hidden="true">⠿</span></button>
-                        <span class="pallet__number" aria-hidden="true">{{ pi + 1 }}</span>
-                        <input class="pallet__name" [value]="pallet.label" [disabled]="!canEdit()" [attr.aria-label]="'Naam van pallet ' + (pi + 1)"
-                               (change)="renamePallet(pi, $any($event.target).value)" />
-                        <span class="pallet__facts" [class.is-warn]="stack.heightCm !== null && stack.heightCm > maxPalletHeightCm()">{{ palletCartons(pallet) | num }} {{ palletCartons(pallet) === 1 ? 'doos' : 'dozen' }}
-                          @if (stack.heightCm !== null) { · {{ stack.measured ? '' : '≈ ' }}{{ stack.heightCm | num: 0 }} cm@if (stack.heightCm > maxPalletHeightCm()) { · te hoog } }</span>
-                        <button class="pallet__remove" type="button" [disabled]="!canEdit()" [attr.aria-label]="'Pallet ' + (pi + 1) + ' verwijderen'" (click)="removePallet(pi)"><span aria-hidden="true">×</span></button>
-                      </header>
-                      <div class="pallet__stack" [title]="stack.heightCm !== null ? (stack.measured ? 'Gemeten hoogte' : 'Geschatte hoogte') + ' ' + stack.heightCm + ' cm van max. ' + maximumManualHeightCm() + ' cm' : 'Hoogte nog niet te schatten'" aria-hidden="true">
-                        <i class="pallet__stack-fill" [class.is-warn]="stack.heightCm !== null && stack.heightCm > maxPalletHeightCm()" [style.width.%]="fillPercent(stack.heightCm)">
-                          @for (item of pallet.items; track item.productId) {
-                            <b [style.background]="productColour(item.productId)" [style.flex]="item.cartons"></b>
-                          }
-                        </i>
+            @if (palletsMode() && (manual() || autoShown())) {
+              <section class="sp-sec" aria-labelledby="sp-pallets">
+                <div class="sp-sec__head"><h4 id="sp-pallets">Pallets</h4>
+                  @if (desk() && manual() && canEdit()) {
+                    <button class="btn btn--sm" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="14" />Pallet</button>
+                  } @else { <span>{{ manual() ? handRows().length : autoCount() }}</span> }
+                </div>
+                @if (manual()) {
+                  <div [class.sp-grid]="desk()" [class.sp-group]="!desk()">
+                    @for (pallet of handRows(); track $index; let i = $index) {
+                      <app-planner-pallet [pallet]="pallet" [look]="desk() ? 'card' : 'row'" [editable]="canEdit()" [count]="handRows().length"
+                                          [lines]="lines()" [placements]="placed()" [chips]="chipsFor() === i"
+                                          [dragging]="draggingIndex() === i" [target]="draggingIndex() !== null && draggingIndex() !== i && dropIndex() === i"
+                                          (act)="run($event)" (open)="sheetIndex.set($event)" (menu)="cardMenu.set($event)" (chipsToggle)="toggleChips($event)"
+                                          (pointerdown)="dragStart($event, i)" (pointermove)="dragMove($event)"
+                                          (pointerup)="dragEnd($event)" (pointercancel)="dragCancel($event)" />
+                    }
+                    @if (!desk() && canEdit()) {
+                      <button class="sp-add" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="20" />Pallet</button>
+                    }
+                  </div>
+                } @else {
+                  <div [class.sp-tiles]="desk()" [class.sp-group]="!desk()">
+                    @for (pallet of autoRows(); track pallet.from) { <app-planner-pallet [pallet]="pallet" look="row" /> }
+                  </div>
+                  @if (canEdit() && mixed(); as mix) {
+                    <div class="sp-offer">
+                      <app-pallet-glyph [blocks]="mix.blocks" />
+                      <span class="sp-offer__text"><b>Gemengd: {{ mix.count }} {{ mix.count === 1 ? 'pallet' : 'pallets' }}</b><small>{{ mix.saving }} minder</small></span>
+                      <button class="btn btn--sm btn--primary" type="button" [disabled]="pricing()"
+                              [attr.aria-label]="'Gemengd indelen op ' + mix.count + (mix.count === 1 ? ' pallet' : ' pallets')" (click)="applyMixed(mix)">Indelen</button>
+                    </div>
+                  }
+                }
+                @if (manual() && canEdit() && profileOffer()) {
+                  <div class="sp-offer">
+                    <span class="sp-offer__text"><b>{{ spec().name }}</b><small>Nieuw pallettype</small></span>
+                    <button class="btn btn--sm btn--primary" type="button" [disabled]="pricing()" (click)="redoLayout()">Indeling opnieuw maken</button>
+                  </div>
+                }
+              </section>
+            }
+
+            @if (cells().length) {
+              <section class="sp-sec" aria-labelledby="sp-products">
+                <div class="sp-sec__head"><h4 id="sp-products">Producten</h4></div>
+                <div class="sp-group sp-prods">
+                  @for (line of cells(); track line.productId) {
+                    @if (!palletsMode()) {
+                      <div class="sp-prod" [style.--sp-colour]="line.colour">
+                        <ng-container [ngTemplateOutlet]="thumb" [ngTemplateOutletContext]="{ $implicit: line }" />
+                        <span class="sp-prod__name">{{ line.name }}</span>
+                        <span class="sp-prod__sub">{{ omdozen(line.cartons) }} · {{ cbm(line.cbm) }}</span>
                       </div>
-                      <div class="pallet__items">
-                        @for (item of pallet.items; track item.productId) {
-                          <div class="pallet__item">
-                            <i class="dot" [style.background]="productColour(item.productId)" aria-hidden="true"></i>
-                            <span class="pallet__item-name">{{ productLabel(item.productId) }}
-                              <small>{{ remainingFor(item.productId) > 0 ? ('nog ' + remainingFor(item.productId) + ' te plaatsen') : (assignedFor(item.productId) > cartonsFor(item.productId) ? 'te veel toegewezen' : 'alles geplaatst') }}</small></span>
-                            <div class="stepper" aria-label="Aantal dozen">
-                              <button type="button" [disabled]="!canEdit()" [attr.aria-label]="'Doos verwijderen bij ' + productLabel(item.productId)"
-                                      (click)="setItemCartons(pi, item.productId, item.cartons - 1)">−</button>
-                              <input type="number" min="0" inputmode="numeric" [value]="item.cartons" [disabled]="!canEdit()"
-                                     [attr.aria-label]="'Dozen ' + productLabel(item.productId)"
-                                     (change)="setItemCartons(pi, item.productId, +$any($event.target).value)" />
-                              <button type="button" [disabled]="!canEdit() || remainingFor(item.productId) <= 0" [attr.aria-label]="'Doos toevoegen bij ' + productLabel(item.productId)"
-                                      (click)="setItemCartons(pi, item.productId, item.cartons + 1)">+</button>
-                            </div>
-                          </div>
-                        } @empty {
-                          <p class="pallet__empty">Lege pallet: zet er een product op, of
-                            <button class="pallet__empty-remove" type="button" [disabled]="!canEdit()" (click)="removePallet(pi)">verwijder ze</button>.</p>
-                        }
-                        @if (canEdit() && assignable(pi).length) {
-                          <div class="pallet__add" aria-label="Product op deze pallet zetten">
-                            @for (line of assignable(pi); track line.productId) {
-                              <button class="chip chip--add" type="button" (click)="addItem(pi, line.productId)">
-                                <i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>＋ {{ line.description }} <b>{{ line.remaining }}</b>
-                              </button>
-                            }
-                          </div>
-                        }
-                      </div>
-                      <details class="pallet__more">
-                        <summary>{{ displayPalletType(pallet.type) }}@if (pallet.heightCm) { · gemeten {{ pallet.heightCm | num: 0 }} cm } @else { · hoogte automatisch }</summary>
-                        <div class="pallet__more-body">
-                          <div class="field-row">
-                            <label [for]="'pallet-type-' + pi">Pallettype</label>
-                            <select class="select" [id]="'pallet-type-' + pi" [value]="displayPalletType(pallet.type)" [disabled]="!canEdit()"
-                                    (change)="setPalletType(pi, $any($event.target).value)">
-                              <option value="Europallet">Europallet · 120 × 80</option>
-                              <option value="Blokpallet 120×100">Blokpallet · 120 × 100</option>
-                              <option value="Halve pallet 80×60">Halve pallet · 80 × 60</option>
-                            </select>
-                          </div>
-                          <div class="field-row">
-                            <label [for]="'pallet-height-' + pi">Gemeten hoogte <small>leeg gebruikt de schatting</small></label>
-                            <div class="unit-input">
-                              <input class="input num" [id]="'pallet-height-' + pi" type="number" [attr.min]="minimumManualHeightCm()" [attr.max]="maximumManualHeightCm()"
-                                     inputmode="numeric" [value]="pallet.heightCm ?? ''" [disabled]="!canEdit()" placeholder="auto"
-                                     (change)="setPalletHeight(pi, $any($event.target).value)" />
-                              <span>cm</span>
-                            </div>
-                          </div>
-                          <div class="pallet__order">
-                            <button type="button" aria-label="Pallet omhoog" [disabled]="!canEdit() || pi === 0" (click)="movePallet(pi, -1)">↑</button>
-                            <button type="button" aria-label="Pallet omlaag" [disabled]="!canEdit() || pi === view().order.pallets.length - 1" (click)="movePallet(pi, 1)">↓</button>
-                            <span>Volgorde</span>
-                          </div>
+                    } @else if (manual()) {
+                      @let place = placed().get(line.productId);
+                      @if (canEdit() && place && place.remaining > 0) {
+                        <button class="sp-prod" type="button" aria-haspopup="menu" [style.--sp-colour]="line.colour" (click)="openPlace($event, line)">
+                          <ng-container [ngTemplateOutlet]="handCell" [ngTemplateOutletContext]="{ $implicit: line }" />
+                        </button>
+                      } @else {
+                        <div class="sp-prod" [style.--sp-colour]="line.colour">
+                          <ng-container [ngTemplateOutlet]="handCell" [ngTemplateOutletContext]="{ $implicit: line }" />
                         </div>
-                      </details>
-                    </article>
+                      }
+                    } @else {
+                      <button class="sp-prod" type="button" [style.--sp-colour]="line.colour" [attr.aria-expanded]="detailFor() === line.productId"
+                              (click)="detailFor.set(detailFor() === line.productId ? null : line.productId)">
+                        <ng-container [ngTemplateOutlet]="thumb" [ngTemplateOutletContext]="{ $implicit: line }" />
+                        <span class="sp-prod__name">{{ line.name }}</span>
+                        @let onPallets = palletsOf().get(line.productId) ?? line.pallets;
+                        @let room = roomOf().get(line.productId) ?? 0;
+                        <span class="sp-prod__sub">{{ detailFor() === line.productId ? stacking(line) : omdozen(line.cartons) + ' · ' + onPallets + (onPallets === 1 ? ' pallet' : ' pallets') }}</span>
+                        @if (room > 0) {
+                          <span class="sp-prod__trail"><span class="sp-room" [attr.aria-label]="'Nog ' + room + ' omdozen passen zonder extra pallet'">+{{ room }} past</span></span>
+                        }
+                      </button>
+                    }
                   }
                 </div>
-              }
-            } @else {
-              <dl class="tiles">
-                <div><dt>Dozen</dt><dd>{{ view().priced.totals.cartons | num }}</dd></div>
-                <div><dt>Volume</dt><dd>{{ view().priced.totals.cbm | cbm }}</dd></div>
-                <div><dt>Gewicht</dt><dd>{{ view().priced.totals.weightKg | num: 0 }} <small>kg</small></dd></div>
-              </dl>
-              @if (missingCartonDimensions().length) {
-                <div class="warning" role="alert"><strong>Buitenmaten ontbreken</strong><span>{{ missingCartonDimensions().join(', ') }}. Het volume is daardoor nog niet compleet.</span></div>
-              }
-              <ul class="stack-list" aria-label="Volume per product">
-                @for (line of activeLines(); track line.productId) {
-                  <li>
-                    <i class="dot" [style.background]="productColour(line.productId)" aria-hidden="true"></i>
-                    <span class="stack-list__name">{{ line.description }}</span>
-                    <span class="stack-list__facts">{{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} · {{ line.cbm | cbm }}</span>
-                  </li>
-                }
-              </ul>
-              <p class="note">Per product: buitenmaat omdoos (B × D × H) × aantal volle dozen. Palletmaten en pallethoogte tellen hier niet mee.</p>
+              </section>
             }
           </div>
-        </section>
 
-        <!-- ============================ what the freight costs -->
-        <section class="plan-section plan-section--freight" [class.plan-section--open]="openSection() === 'freight'">
-          <button class="plan-section__toggle" type="button" (click)="toggleSection('freight')"
-                  [attr.aria-expanded]="openSection() === 'freight'">
-            <span><small class="eyebrow">Vrachtprijs</small><strong>{{ strategyLabel(pricingStrategy()) }}</strong></span>
-            <i aria-hidden="true">⌄</i>
-          </button>
-          <div class="plan-section__body">
-            <div class="price-choices" role="radiogroup" aria-label="Berekening vrachtprijs">
-              @if (loadMode() === 'PALLETS') {
-                <button type="button" role="radio" [disabled]="!canEdit()" [class.price-choice--active]="pricingStrategy() === 'COUNTRY_PALLET'"
-                        [attr.aria-checked]="pricingStrategy() === 'COUNTRY_PALLET'" (click)="choosePricing('COUNTRY_PALLET')">
-                  <strong>Landentarief</strong><small>Per pallet, met het minimum van het land</small>
-                </button>
-              }
-              @if (loadMode() === 'PALLETS' && carriers().length) {
-                <button type="button" role="radio" [disabled]="!canEdit()" [class.price-choice--active]="pricingStrategy() === 'CARRIER'"
-                        [attr.aria-checked]="pricingStrategy() === 'CARRIER'" (click)="choosePricing('CARRIER')">
-                  <strong>Verzendorganisatie</strong><small>Staffel: zone per postcode, trap per pallet</small>
-                </button>
-              }
-              <button type="button" role="radio" [disabled]="!canEdit()" [class.price-choice--active]="pricingStrategy() === 'PER_CBM'"
-                      [attr.aria-checked]="pricingStrategy() === 'PER_CBM'" (click)="choosePricing('PER_CBM')">
-                <strong>Per m³</strong><small>Eigen tarief op het omdoosvolume</small>
-              </button>
-              <button type="button" role="radio" [disabled]="!canEdit()" [class.price-choice--active]="pricingStrategy() === 'FIXED'"
-                      [attr.aria-checked]="pricingStrategy() === 'FIXED'" (click)="choosePricing('FIXED')">
-                <strong>Vast bedrag</strong><small>Eén totaalprijs voor dit document</small>
-              </button>
-              <button type="button" role="radio" [disabled]="!canEdit()" [class.price-choice--active]="pricingStrategy() === 'PICKUP'"
-                      [attr.aria-checked]="pricingStrategy() === 'PICKUP'" (click)="choosePricing('PICKUP')">
-                <strong>Afhalen</strong><small>De klant haalt op in het magazijn, geen vracht</small>
-              </button>
+          <aside class="sp-aside">
+            @if (desk() && canEdit() && lines().length) {
+              <section class="sp-panel" aria-labelledby="sp-load"><h4 id="sp-load">Lading</h4><ng-container [ngTemplateOutlet]="load" /></section>
+            }
+            <div class="sp-panel">
+              <app-planner-freight id="sp-freight" [view]="view()" [canEdit]="canEdit()" [carriers]="carriers()" [desk]="desk()"
+                                   [customerPostcode]="customerPostcode()" [countryName]="countryName()" [splitFreight]="splitFreight()"
+                                   (patch)="patch.emit($event)" />
             </div>
-
-            @if (pricingStrategy() === 'CARRIER') {
-              <div class="freight-detail">
-                <div class="field-row">
-                  <label for="freight-carrier">Verzendorganisatie</label>
-                  <select class="select" id="freight-carrier" [disabled]="!canEdit()" [value]="order().freightCarrierId ?? ''" (change)="setCarrier($any($event.target).value)">
-                    @for (carrier of carriers(); track carrier.id) { <option [value]="carrier.id">{{ carrier.name }}</option> }
-                  </select>
-                </div>
-                <div class="field-row">
-                  <label for="freight-carrier-extra">Transporttoeslag Enrosed <small>telt mee voor de klant, alleen wij zien hem apart</small></label>
-                  <div class="unit-input unit-input--money">
-                    <span>€</span>
-                    <input id="freight-carrier-extra" class="input num" type="number" min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
-                           [value]="order().freightCarrierExtraEur ?? ''" (change)="setCarrierExtra($any($event.target).value)" />
-                  </div>
-                </div>
-                @if (carrierBreakdown(); as b) {
-                  <dl class="breakdown">
-                    <div><dt>Zone</dt><dd>{{ b.zoneName }} · {{ countryName() || view().order.countryCode }}@if (!b.postcodeMatched) { <small>· dichtstbijzijnde bij {{ customerPostcode() || '—' }}</small> }</dd></div>
-                    <div><dt>Staffeltrap</dt><dd>{{ b.tierLabel }}</dd></div>
-                    <div><dt>Basis</dt><dd>{{ b.baseEur | eur: 2 }}</dd></div>
-                    @if (b.dieselEur) { <div><dt>Dieseltoeslag {{ b.dieselPct | pct: 0 }}</dt><dd>+ {{ b.dieselEur | eur: 2 }}</dd></div> }
-                    @if (b.surchargePctEur) { <div><dt>Toeslag {{ b.surchargePct | pct: 0 }}</dt><dd>+ {{ b.surchargePctEur | eur: 2 }}</dd></div> }
-                    @if (b.surchargeFixedEur) { <div><dt>Vaste toeslag</dt><dd>+ {{ b.surchargeFixedEur | eur: 2 }}</dd></div> }
-                    @if (order().freightCarrierExtraEur; as extra) {
-                      <div><dt>Transporttoeslag Enrosed <small>(intern)</small></dt><dd>+ {{ extra | eur: 2 }}</dd></div>
-                      <div class="breakdown__total"><dt>Vracht voor de klant</dt><dd>{{ b.totalEur + extra | eur: 2 }}</dd></div>
-                    } @else {
-                      <div class="breakdown__total"><dt>Vracht</dt><dd>{{ b.totalEur | eur: 2 }}</dd></div>
-                    }
-                  </dl>
-                  @if (b.surchargeNote) { <p class="note">{{ b.surchargeNote }}</p> }
-                } @else if (!customerPostcode()) {
-                  <p class="note note--warn">Vul de postcode bij de klant in: die bepaalt de zone. Zonder postcode kan de staffel geen prijs kiezen.</p>
-                } @else if (carrierQuoteMissing()) {
-                  <p class="note note--warn">Deze zending past niet in de staffel. Vraag een prijs op en kies dan een vast bedrag.</p>
-                }
-              </div>
-            } @else if (pricingStrategy() === 'PER_CBM') {
-              <div class="freight-detail">
-                <div class="field-row">
-                  <label for="freight-rate-cbm">Tarief per m³</label>
-                  <div class="unit-input unit-input--money">
-                    <span>€</span>
-                    <input id="freight-rate-cbm" class="input num" type="number" min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
-                           [value]="order().freightRatePerCbmEur ?? ''" (change)="setCbmRate($any($event.target).value)" />
-                  </div>
-                  <small class="hint">{{ view().priced.totals.cbm | cbm }} × tarief@if (!freightPending()) { = {{ view().priced.totals.freight | eur }} }</small>
-                </div>
-              </div>
-            } @else if (pricingStrategy() === 'FIXED') {
-              <div class="freight-detail">
-                <div class="field-row">
-                  <label for="freight-fixed">Vast vrachtbedrag</label>
-                  <div class="unit-input unit-input--money">
-                    <span>€</span>
-                    <input id="freight-fixed" class="input num" type="number" min="0" step="0.01" inputmode="decimal" [disabled]="!canEdit()"
-                           [value]="view().order.manualFreightEur ?? ''" (change)="setFixedFreight($any($event.target).value)" />
-                  </div>
-                  <small class="hint">Vervangt de automatische berekening.</small>
-                </div>
-              </div>
-            }
-            <label class="pending-toggle" [class.pending-toggle--on]="freightPending()">
-              <input type="checkbox" [checked]="freightPending()" [disabled]="!canEdit()" (change)="setPending($any($event.target).checked)" />
-              <span><strong>Vracht later bepalen</strong><small>{{ freightPending() ? 'De klant ziet nu nog geen vrachtbedrag.' : 'De gekozen berekening telt meteen mee.' }}</small></span>
-            </label>
-            @if (!freightPending() && view().priced.validation.freightPricingIssue) {
-              <p class="note note--warn" role="status">{{ view().priced.validation.freightPricingIssue }}</p>
-            }
-          </div>
-        </section>
+          </aside>
+        </div>
       </div>
+      <p class="sr-only" aria-live="polite">{{ announcement() }}</p>
     </div>
+
+    <ng-template #modeSwitch>
+      <div class="sp-mode">
+        <app-segmented label="Indeling" [variant]="desk() ? 'desk' : 'ios'" [options]="modeOptions()" [value]="manual() ? 'manual' : 'auto'"
+                       (changed)="setMode($event)" />
+        <button class="sp-info" type="button" aria-label="Uitleg indeling" aria-controls="sp-caption" [attr.aria-expanded]="infoOpen()"
+                (click)="infoOpen.set(!infoOpen())"><app-icon name="info" [size]="desk() ? 16 : 18" /></button>
+      </div>
+    </ng-template>
+    <ng-template #thumb let-line>
+      @if (line.photoUrl) { <img class="sp-thumb" [appAuthSrc]="line.photoUrl" appAuthLazy alt="" /> }
+      @else { <span class="sp-thumb"><app-icon name="products" [size]="18" /></span> }
+    </ng-template>
+    <ng-template #handCell let-line>
+      @let place = placed().get(line.productId);
+      <ng-container [ngTemplateOutlet]="thumb" [ngTemplateOutletContext]="{ $implicit: line }" />
+      <span class="sp-prod__name">{{ line.name }}</span>
+      <span class="sp-prod__sub">{{ (place?.placed ?? 0).toLocaleString('nl-BE') }} van {{ line.cartons.toLocaleString('nl-BE') }} geplaatst</span>
+      <span class="sp-prod__trail">
+        @if (place?.over) { <span class="badge badge--danger">{{ place!.over }} te veel</span> }
+        @else if (place?.remaining) { <span class="badge badge--warn">{{ place!.remaining }} los</span> }
+        @else { <app-icon name="tick" [size]="18" /> }
+      </span>
+    </ng-template>
+    <ng-template #load>
+      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [maxCm]="heightLimit()" [overridden]="heightOverridden()" [fieldKey]="heightField()"
+                        [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
+                        (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)" />
+    </ng-template>
+
+    @if (sheetPallet(); as pallet) {
+      <app-pallet-sheet [pallet]="pallet" [lines]="lines()" [placements]="placed()" [spec]="spec()" [count]="handRows().length" [canEdit]="canEdit()"
+                        (act)="run($event)" (move)="moveFromSheet($event)" (remove)="removePallet($event)" (closed)="sheetIndex.set(null)" />
+    }
+    @if (loadOpen()) {
+      <app-sheet title="Lading" variant="ios" (closed)="loadOpen.set(false)">
+        <div body class="sp-loadsheet"><ng-container [ngTemplateOutlet]="load" /></div>
+        <div foot style="display:contents"><button class="btn btn--primary" type="button" (click)="loadOpen.set(false)">Klaar</button></div>
+      </app-sheet>
+    }
+    @if (placeFor(); as place) {
+      <app-context-menu title="Op welke pallet?" variant="ios" [items]="placeItems()" [anchor]="place.point"
+                        (pick)="placeOn($event)" (closed)="placeFor.set(null)" />
+    }
+    @if (cardMenu(); as menu) {
+      <app-context-menu [title]="handRows()[menu.index]?.label ?? 'Pallet'" variant="ios" [items]="cardMenuItems()" [anchor]="menu.point"
+                        (pick)="cardPick($event)" (closed)="cardMenu.set(null)" />
+    }
   `,
   styles: [`
-    :host{display:block}
-    .planner{display:grid;gap:12px;color:var(--ink)}
-    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-    .eyebrow{display:block;color:var(--muted);font-size:9px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
-    .dot{display:inline-block;width:9px;height:9px;flex:none;border-radius:50%;border:1px solid rgb(0 0 0/.12)}
-    .note{margin:8px 1px 0;color:var(--muted);font-size:10.5px;line-height:1.45}.note--warn{color:var(--warn);font-weight:600}
-    .hint{display:block;margin-top:4px;color:var(--muted);font-size:10.5px}
-    .pill{flex:none;max-width:150px;overflow:hidden;padding:3px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-style:normal;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
-    .pill--ok{background:var(--ok-soft);color:var(--ok)}.pill--warn{background:var(--warn-soft);color:var(--warn)}
-    .warning{margin:8px 0 0;display:grid;gap:2px;padding:9px 11px;border-radius:10px;background:var(--warn-soft);color:var(--warn);font-size:11px;line-height:1.4}.warning strong{font-size:11.5px}
-    /* ---- the strip */
-    .plan-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-    .plan-summary__tile{display:grid;min-width:0;gap:1px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-    .plan-summary__tile small{color:var(--muted);font-size:9px;font-weight:750;letter-spacing:.08em;text-transform:uppercase}
-    .plan-summary__tile strong{overflow:hidden;font-size:13px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
-    .plan-summary__tile span{overflow:hidden;color:var(--muted);font-size:10px;text-overflow:ellipsis;white-space:nowrap}
-    .plan-summary__tile.is-ok strong{color:var(--ok)}.plan-summary__tile.is-warn strong{color:var(--warn)}
-    .plan-summary__tile.is-open{border-color:var(--rose-line);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose-line)}
-    /* ---- sections: an accordion on a phone, columns on a desk */
-    .plan-columns{display:grid;gap:10px}
-    .plan-section{min-width:0;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
-    .plan-section__toggle{display:flex;width:100%;align-items:center;gap:10px;min-height:52px;padding:9px 12px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-    .plan-section__toggle>span{display:grid;flex:1;min-width:0;gap:1px}.plan-section__toggle strong{overflow:hidden;font-size:13.5px;text-overflow:ellipsis;white-space:nowrap}
-    .plan-section__toggle i{color:var(--muted);font-style:normal;font-size:16px;transition:transform .18s}.plan-section--open .plan-section__toggle i{transform:rotate(180deg)}
-    .plan-section__body{display:none;padding:0 12px 12px;border-top:1px solid var(--line)}.plan-section--open .plan-section__body{display:block}
-    .plan-section__body>*:first-child{margin-top:10px}
-    /* ---- verzendwijze */
-    .choice-grid{display:grid;gap:8px}
-    .choice-card{width:100%;min-height:64px;padding:10px;display:grid;grid-template-columns:36px minmax(0,1fr) 20px;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-    .choice-card:disabled,.price-choices button:disabled,.plan-summary__tile:disabled{cursor:default}
-    .choice-card__icon{width:36px;height:36px;display:grid;place-items:center;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:17px}
-    .choice-card__copy{min-width:0;display:flex;flex-direction:column;gap:1px}.choice-card__copy strong{font-size:12.5px}.choice-card__copy small{color:var(--muted);font-size:10.5px;line-height:1.35}
-    .choice-card__check{width:20px;height:20px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:transparent;font-size:11px}
-    .choice-card--active{border-color:var(--rose-line);background:var(--rose-soft);box-shadow:0 0 0 1px var(--rose-line)}
-    .choice-card--active .choice-card__icon{background:var(--surface);color:var(--rose-dark)}.choice-card--active .choice-card__check{border-color:var(--rose-dark);background:var(--rose-dark);color:#fff}
-    .settings{display:grid;gap:10px;margin-top:12px;padding-top:10px;border-top:1px dashed var(--line)}
-    .field-row{display:grid;gap:4px}.field-row label{font-size:11px;font-weight:680}.field-row label small{display:block;color:var(--muted);font-size:9.5px;font-weight:520}
-    .unit-input{display:flex}.unit-input input{min-width:0;flex:1;border-radius:9px 0 0 9px}
-    .unit-input>span{min-width:38px;display:grid;place-items:center;border:1px solid var(--line-strong);border-left:0;border-radius:0 9px 9px 0;background:var(--surface-2);color:var(--muted);font-size:10.5px}
-    .unit-input--money>span{order:-1;border-left:1px solid var(--line-strong);border-right:0;border-radius:9px 0 0 9px}.unit-input--money input{border-radius:0 9px 9px 0}
-    .text-action{justify-self:start;min-height:34px;padding:4px 0;border:0;background:transparent;color:var(--rose-dark);font:inherit;font-size:10.5px;font-weight:680;cursor:pointer}
-    /* ---- the calculator's proposal, and the loose volume */
-    .tiles{margin:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-    .tiles>div{min-width:0;padding:8px 6px;border-radius:10px;background:var(--surface-2);text-align:center}
-    .tiles dt{overflow:hidden;color:var(--muted);font-size:8.5px;font-weight:680;text-overflow:ellipsis;white-space:nowrap}
-    .tiles dd{margin:2px 0 0;overflow:hidden;font-size:13px;font-weight:750;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}.tiles dd small{color:var(--muted);font-size:9px;font-weight:560}
-    .stack-list{margin:10px 0 0;padding:0;list-style:none;border-top:1px solid var(--line)}
-    .stack-list li{display:grid;grid-template-columns:9px minmax(0,1fr) auto;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px}
-    .stack-list__name{min-width:0;overflow:hidden;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
-    .stack-list__facts{display:grid;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.stack-list__facts small{color:var(--muted);font-size:9.5px}
-    .btn--block{width:100%;margin-top:10px}
-    /* ---- the tray: what still has to go on a pallet */
-    .tray{display:grid;gap:8px;padding:10px;border:1px solid #eddcb9;border-radius:12px;background:var(--warn-soft)}.tray--ok{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,var(--surface))}
-    .tray__progress{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:11.5px}.tray__progress em{color:var(--warn);font-size:10.5px;font-style:normal;font-weight:700}.tray--ok .tray__progress em{color:var(--ok)}
-    .tray__bar{height:6px;border-radius:99px;background:rgb(0 0 0/.08);overflow:hidden}.tray__bar i{display:block;height:100%;border-radius:99px;background:var(--ok)}.tray__bar i.is-warn{background:var(--danger)}
-    .tray__chips{display:flex;flex-wrap:wrap;gap:6px}
-    .chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:11px;line-height:1.2}
-    .chip b{padding:0 6px;border-radius:999px;background:var(--surface-2);font-size:10.5px}.chip--add{cursor:pointer;color:var(--rose-dark);font:inherit;font-size:11px;font-weight:650}.chip--add:hover{border-color:var(--rose-line);background:var(--rose-soft)}
-    .tray__actions{display:flex;flex-wrap:wrap;gap:6px}.tray__actions .btn{min-height:36px}.btn--quiet{border-color:transparent;background:transparent;color:var(--rose-dark)}
-    /* ---- the pallets */
-    .pallet-grid{display:grid;gap:8px;margin-top:10px}
-    .pallet{position:relative;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:transform .16s ease,opacity .16s ease,box-shadow .16s ease}
-    .pallet--empty{border-style:dashed}.pallet--dragging{z-index:2;opacity:.56;transform:scale(.985)}.pallet--target{box-shadow:0 0 0 2px var(--rose-dark),0 8px 18px rgb(31 25 22/.12)}
-    .pallet__head{display:grid;grid-template-columns:34px 26px minmax(0,1fr) auto 34px;align-items:center;gap:6px;padding:6px 6px 6px 4px}
-    .pallet__drag,.pallet__remove{width:34px;height:38px;display:grid;place-items:center;padding:0;border:0;border-radius:9px;background:transparent;font:inherit;cursor:pointer}
-    .pallet__drag{color:var(--muted);font-size:18px;touch-action:none;cursor:grab}.pallet__drag:active{cursor:grabbing;background:var(--rose-soft);color:var(--rose-dark)}
-    .pallet__remove{color:var(--danger);font-size:22px}.pallet__remove:hover,.pallet__remove:focus-visible{background:var(--danger-soft)}.pallet__drag:disabled,.pallet__remove:disabled{cursor:default;opacity:.45}
-    .pallet__number{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:var(--rose-soft);color:var(--rose-dark);font-size:11px;font-weight:760}
-    .pallet__name{min-width:0;height:34px;padding:0 6px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:700}.pallet__name:hover:not(:disabled),.pallet__name:focus{border-color:var(--line-strong);background:var(--surface-2);outline:none}
-    .pallet__facts{color:var(--muted);font-size:10.5px;white-space:nowrap;font-variant-numeric:tabular-nums}.pallet__facts.is-warn{color:var(--danger);font-weight:700}
-    .pallet__empty-remove{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-decoration:underline;cursor:pointer}
-    .pallet__stack{margin:0 10px;height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden}
-    .pallet__stack-fill{display:flex;height:100%;max-width:100%;border-radius:99px;overflow:hidden;transition:width .2s ease}.pallet__stack-fill b{display:block;min-width:3px;height:100%}.pallet__stack-fill.is-warn{outline:2px solid var(--danger);outline-offset:-2px}
-    .pallet__items{padding:6px 10px 8px}
-    .pallet__item{display:grid;grid-template-columns:9px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:48px;border-bottom:1px solid var(--line)}
-    .pallet__item-name{display:grid;min-width:0;font-size:11.5px;line-height:1.3}.pallet__item-name small{color:var(--muted);font-size:9.5px}
-    .pallet__empty{margin:6px 0;color:var(--muted);font-size:11px}
-    .stepper{height:36px;display:flex;border:1px solid var(--line-strong);border-radius:9px;overflow:hidden;background:var(--surface)}
-    .stepper button{width:36px;border:0;background:transparent;color:var(--ink);font:inherit;font-size:16px;cursor:pointer}.stepper button:disabled{color:var(--line-strong);cursor:default}
-    .stepper input{width:44px;border:0;border-inline:1px solid var(--line);font:inherit;font-size:12px;font-weight:700;text-align:center;-moz-appearance:textfield}
-    .stepper input::-webkit-inner-spin-button,.stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
-    .pallet__add{display:flex;flex-wrap:wrap;gap:6px;padding-top:8px}
-    .pallet__more{border-top:1px solid var(--line)}.pallet__more summary{list-style:none;padding:8px 10px;color:var(--muted);font-size:10.5px;cursor:pointer}.pallet__more summary::-webkit-details-marker{display:none}.pallet__more summary::before{content:'⚙ ';color:var(--muted)}
-    .pallet__more-body{display:grid;gap:10px;padding:0 10px 10px}
-    .pallet__order{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:10.5px}.pallet__order button{width:36px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--rose-dark);font:inherit;cursor:pointer}.pallet__order button:disabled{opacity:.4;cursor:default}
-    /* ---- freight */
-    .price-choices{display:grid;gap:6px}
-    .price-choices button{min-height:52px;padding:8px 10px;display:flex;flex-direction:column;justify-content:center;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-    .price-choices strong{font-size:11.5px}.price-choices small{margin-top:1px;color:var(--muted);font-size:9.5px;line-height:1.3}
-    .price-choice--active{border-color:var(--rose-line)!important;background:var(--rose-soft)!important;box-shadow:0 0 0 1px var(--rose-line)}
-    .freight-detail{display:grid;gap:10px;margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
-    .breakdown{margin:0;display:grid;gap:4px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
-    .breakdown div{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:11.5px}.breakdown dt{color:var(--muted)}.breakdown dd{margin:0;font-weight:650;font-variant-numeric:tabular-nums}.breakdown dd small{color:var(--muted);font-weight:550}
-    .breakdown__total{margin-top:2px;padding-top:6px;border-top:1px dashed var(--line);font-weight:760}.breakdown__total dt{color:var(--ink)}
-    .pending-toggle{display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer}
-    .pending-toggle--on{border-color:#eddcb9;background:var(--warn-soft)}.pending-toggle input{width:20px;height:20px;flex:none;accent-color:var(--rose)}
-    .pending-toggle span{display:grid;gap:1px;min-width:0}.pending-toggle strong{font-size:12px}.pending-toggle small{color:var(--muted);font-size:10.5px;line-height:1.3}
-    /* ---- a desk: everything open, the pallets take the room */
-    @media(min-width:800px){
-      .plan-columns{grid-template-columns:minmax(270px,320px) minmax(0,1fr);grid-template-rows:auto 1fr;grid-template-areas:'mode layout' 'freight layout';align-items:start}
-      .plan-section--mode{grid-area:mode}.plan-section--layout{grid-area:layout}.plan-section--freight{grid-area:freight}
-      .plan-section__body{display:block}.plan-section__toggle{cursor:default}.plan-section__toggle i{display:none}
-      .pallet-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-      .plan-summary__tile.is-open{border-color:var(--line);background:var(--surface-2);box-shadow:none}
-      .price-choices button{min-height:46px}
-      .plan-summary__tile strong{font-size:15px}
+    :host{display:block;color:var(--ink)}
+    .sp{display:grid;gap:18px;min-width:0}
+    .sp-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"spec spec" "title freight" "facts facts";align-items:center;gap:2px 12px;padding:12px 16px 14px;border-radius:var(--ios-radius,22px);background:var(--surface)}
+    .sp-hero__answer{display:contents}
+    .sp-hero__spec{grid-area:spec;display:flex;align-items:center;gap:4px;max-width:100%;min-height:44px;margin:-10px 0 -6px;padding:0;border:0;background:none;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;text-align:left;text-transform:uppercase;cursor:pointer}
+    p.sp-hero__spec{min-height:0;margin:0 0 4px;cursor:default}
+    .sp-hero__spec span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sp-hero__title{grid-area:title;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0;font-size:23px;line-height:1.15;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+    .sp-hero__title small{font-size:15px;font-weight:600;letter-spacing:0;color:var(--muted)}
+    .sp-hero__title .badge{align-self:center;letter-spacing:0}
+    .sp-hero__facts{grid-area:facts;margin-top:3px;overflow:hidden;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+    .sp-hero__freight{grid-area:freight;display:grid;justify-items:end;gap:1px;min-height:44px;padding:0;border:0;background:none;color:var(--ink);text-align:right;cursor:pointer}
+    .sp-hero__freight b{font-size:19px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .sp-hero__freight small{color:var(--muted);font-size:12px;white-space:nowrap}
+    .is-warn{color:var(--warn)}.is-danger{color:var(--danger)}
+    .sp-mode{display:flex;align-items:center;gap:8px;min-width:0}
+    .sp-mode app-segmented{flex:1;min-width:0}
+    .sp-info{flex:none;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:none;color:var(--muted);cursor:pointer}
+    .sp-info[aria-expanded=true]{color:var(--rose)}
+    .sp-caption{margin:-8px 4px 0;color:var(--muted);font-size:12.5px;line-height:1.4}
+    .sp-empty{padding:0 16px;color:var(--muted);font-size:14px}
+    .sp-layout{container:sp/inline-size;min-width:0}
+    .sp-cols{display:grid;gap:18px;align-items:start}
+    .sp-main,.sp-aside{display:grid;gap:18px;min-width:0}
+    @container sp (min-width: 720px){.sp-cols{grid-template-columns:minmax(0,1fr) 300px;gap:14px}}
+    .sp-sec{display:grid;gap:7px;min-width:0}
+    .sp-sec__head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:20px;padding:0 16px;color:var(--muted);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+    .sp-sec__head h4{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+    .sp-group{overflow:hidden;border-radius:var(--ios-radius,22px);background:var(--surface)}
+    .sp-group>*+*{border-top:.5px solid var(--ios-sep)}
+    .sp-add{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 16px;border:0;background:var(--surface);color:var(--rose);font-size:16px;font-weight:500;cursor:pointer}
+    .sp-offer{display:flex;align-items:center;gap:12px;padding:10px 12px 10px 16px;border-radius:var(--ios-radius,22px);background:color-mix(in srgb,var(--rose) 9%,var(--surface))}
+    .sp-offer__text{flex:1;min-width:0}
+    .sp-offer b,.sp-offer small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .sp-offer b{font-size:15px}.sp-offer small{color:var(--muted);font-size:13px}
+    .sp-offer .btn{flex:none}
+    .sp-prod{display:grid;grid-template-columns:40px minmax(0,1fr) auto;grid-template-areas:"thumb name name" "thumb sub trail";align-items:center;column-gap:12px;row-gap:1px;width:100%;min-height:60px;padding:8px 16px;border:0;background:var(--surface);color:var(--ink);text-align:left;box-shadow:inset 4px 0 var(--sp-colour,var(--muted-2))}
+    button.sp-prod{cursor:pointer;-webkit-tap-highlight-color:transparent}button.sp-prod:active{background:var(--surface-2)}
+    .sp-thumb{grid-area:thumb;display:grid;place-items:center;width:40px;height:40px;border-radius:10px;background:var(--surface-2);color:var(--muted);object-fit:cover}
+    .sp-prod__name{grid-area:name;min-width:0;overflow:hidden;font-size:15px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+    .sp-prod__sub{grid-area:sub;min-width:0;overflow:hidden;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
+    .sp-prod__trail{grid-area:trail;display:flex;align-items:center;color:var(--ok)}
+    .sp-room{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:12px;font-weight:700;white-space:nowrap}
+    .sp-link{color:var(--rose);font-size:15px;font-weight:600;text-decoration:none}
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){.sp,.sp-loadsheet{padding-inline:var(--ios-inset,16px)}}
+    @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
+      .sp{gap:14px}
+      .sp-hero{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+      .sp-hero__answer{display:block;flex:1 1 260px;min-width:0}
+      .sp-hero__title{font-size:26px}
+      .sp-mode{flex:none}.sp-info{width:32px;height:32px}
+      .sp-caption{margin:-6px 2px 0}
+      .sp-empty{padding:0 2px}
+      .sp-main,.sp-aside{gap:14px}
+      .sp-aside{position:sticky;top:0}
+      .sp-sec__head{padding:0 2px}
+      .sp-sec__head h4,.sp-panel h4{color:var(--rose);font-size:10px;font-weight:760;letter-spacing:.1em;text-transform:uppercase}
+      .sp-group{border:1px solid var(--line);border-radius:14px}
+      .sp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+      .sp-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+      .sp-tiles app-planner-pallet{overflow:hidden;border:1px solid var(--line);border-radius:12px}
+      .sp-prods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;overflow:visible;border:0;border-radius:0;background:none}
+      .sp-prods>*+*{border-top:0}
+      .sp-prods .sp-prod{grid-template-columns:32px minmax(0,1fr) auto;min-height:48px;padding:6px 12px;border:1px solid var(--line);border-radius:12px}
+      .sp-prods .sp-thumb{width:32px;height:32px;border-radius:8px}
+      .sp-prod__name{font-size:13px}.sp-prod__sub{font-size:12px}.sp-link{font-size:13px}
+      .sp-offer{border-radius:14px}
+      .sp-panel{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     }
-    @media(max-width:359px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.plan-summary{grid-template-columns:1fr}.plan-summary__tile{grid-template-columns:auto 1fr;align-items:center}}
-    @media(prefers-reduced-motion:reduce){.pallet{transition:none}}
   `],
 })
 export class ShippingPlanner {
@@ -559,540 +362,460 @@ export class ShippingPlanner {
   readonly carriers = input<Carrier[]>([]);
   readonly customerPostcode = input<string | null>(null);
   readonly countryName = input<string | null>(null);
-
-  private readonly sales = inject(SalesApi);
-  readonly carrierBreakdown = signal<CarrierShipQuote | null>(null);
-  readonly carrierQuoteMissing = signal(false);
-
-  /** Which part unfolds on a phone; a desk shows all three. */
-  readonly openSection = signal<PlannerSection>('layout');
-
-  constructor() {
-    /* The breakdown mirrors what the backend already priced: same zone
-       resolution, same rungs - fetched purely to show the why. */
-    effect(() => {
-      const data = this.view();
-      const carrierId = data.order.freightCarrierId;
-      const postcode = this.customerPostcode();
-      if (this.pricingStrategy() !== 'CARRIER' || !carrierId || !data.order.countryCode) {
-        this.carrierBreakdown.set(null);
-        this.carrierQuoteMissing.set(false);
-        return;
-      }
-      const totals = data.priced.totals;
-      const pallets = totals.palletsManual || totals.palletsStrict;
-      void this.sales.carrierQuote(carrierId, {
-        country: data.order.countryCode,
-        postcode,
-        pallets,
-        palletType: data.order.palletProfile === 'BLOCK_120X100' ? 'BLOCK'
-          : data.order.palletProfile === 'HALF_80X60' ? 'HALF' : 'EURO',
-        weightKg: totals.weightKg ?? null,
-      }).then((quote) => {
-        this.carrierBreakdown.set(quote);
-        this.carrierQuoteMissing.set(quote === null && pallets > 0);
-      }).catch(() => {
-        this.carrierBreakdown.set(null);
-        this.carrierQuoteMissing.set(false);
-      });
-    });
-  }
-
-  toggleSection(section: PlannerSection): void {
-    this.openSection.set(section);
-  }
-
-  setCarrierExtra(raw: string): void {
-    if (!this.canEdit()) return;
-    const value = raw.trim() === '' ? null : Math.max(0, Number(raw) || 0);
-    this.patch.emit({ freightCarrierExtraEur: value, freightPricingStrategy: 'CARRIER' });
-  }
-
-  setCarrier(raw: string): void {
-    const id = Number(raw);
-    if (!this.canEdit() || !Number.isInteger(id) || id <= 0) return;
-    this.patch.emit({ freightCarrierId: id, freightPricingStrategy: 'CARRIER' });
-  }
+  /** A financially locked split part: only its own transport amount stays editable. */
+  readonly splitFreight = input(false);
+  /** The figures are being worked out again: no layout may be cut from the ones on screen. */
+  readonly pricing = input(false);
+  /** An invoice that was issued before (or whose history is not known yet): only its history tells once it is back on concept. */
+  readonly issued = input(false);
   readonly patch = output<ShippingOrderPatch>();
   readonly action = output<ShippingPalletAction>();
 
-  readonly draggingIndex = signal<number | null>(null);
-  readonly dropTargetIndex = signal<number | null>(null);
-  readonly reorderAnnouncement = signal('');
-  private dragPointerId: number | null = null;
-  private dragSourceIndex: number | null = null;
-  private dragStartX = 0;
-  private dragStartY = 0;
-  private dragScrollHost: HTMLElement | null = null;
+  private readonly ui = inject(Ui);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  readonly desk = inject(DesktopViewport).active;
 
   readonly order = computed(() => this.view().order);
-  readonly activeLines = computed(() => this.view().priced.lines.filter(line => line.quantity > 0
-    && !salesLineUnavailable(line) && !salesLineUnavailable(this.order().lines.find(item => item.productId === line.productId))));
   readonly loadMode = computed<LoadMode>(() => this.order().loadMode ?? 'PALLETS');
-  readonly palletProfile = computed<PalletProfile>(
-    () => this.order().palletProfile ?? 'EURO_120X80');
-  readonly maxPalletHeightCm = computed(() =>
-    this.view().priced.totals.palletMaxHeightCm ?? this.order().maxPalletHeightCm ?? 260);
-  readonly palletBaseHeightCm = computed(() =>
-    this.view().priced.totals.palletBaseHeightCm ?? 14.4);
-  readonly palletCount = computed(() => {
+  readonly palletsMode = computed(() => this.loadMode() === 'PALLETS');
+  readonly manual = computed(() => this.palletsMode() && this.order().pallets.length > 0);
+  readonly spec = computed(() => plannerSpec(this.view()));
+  readonly lines = computed(() => plannerLines(this.view(), this.spec()));
+  readonly problems = computed(() => this.lines().filter((line) => line.problem));
+  /** How Automatisch counts; an older server knows only every product on pallets of its own. */
+  readonly rule = computed<PalletRule>(() => this.view().priced.totals.palletRule ?? 'STRICT');
+  readonly autoCount = computed(() => automaticPallets(this.view().priced.totals));
+  /** The server's automatic pallets; an older server's strict count is laid out here. */
+  readonly autoRows = computed(() => serverPallets(this.view(), this.lines(), this.spec()) ?? autoPallets(this.lines(), this.spec()));
+  /** The rows only when they add up to the server's count: never two different counts on one screen. */
+  readonly autoShown = computed(() => this.autoRows().length > 0 && palletCount(this.autoRows()) === this.autoCount());
+  readonly handRows = computed(() => handPallets(this.view(), this.lines(), this.spec()));
+  readonly placed = computed(() => placements(this.order(), this.lines()));
+  /**
+   * Palletberekening's mix one tap away, only where Automatisch does not mix already and only on a
+   * concept: a document that left concept keeps the count and freight it was sent with.
+   */
+  readonly mixed = computed<MixedLayout | null>(() => (this.palletsMode() && !this.manual() && this.autoShown()
+    && this.rule() === 'STRICT' && this.view().order.status === 'CONCEPT'
+    ? mixedLayout(this.lines(), this.spec(), this.autoCount()) : null));
+  /** Per product, the automatic pallets it stands on. */
+  readonly palletsOf = computed(() => {
+    const counts = new Map<number, number>();
+    for (const row of this.autoShown() ? this.autoRows() : []) {
+      for (const part of row.parts) counts.set(part.productId, (counts.get(part.productId) ?? 0) + row.to - row.from + 1);
+    }
+    return counts;
+  });
+  /** "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same pallets. */
+  readonly roomOf = computed(() => (this.rule() === 'MIXED'
+    ? mixedRoom(this.lines(), this.spec(), this.autoCount())
+    : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]))));
+  readonly cells = computed(() => (this.palletsMode() && !this.manual() ? this.lines().filter((line) => !line.problem) : this.lines()));
+  readonly heightCm = computed(() => this.order().maxPalletHeightCm ?? Math.round(this.spec().maxHeightCm));
+  /** The highest height that can be picked: 260 cm for a europallet, 300 for the other types. */
+  readonly heightLimit = computed(() => palletHeightLimit(this.spec().profile));
+  /**
+   * "Standaard" (and an emptied field meaning it) while the document carries a height other than the
+   * standard. A document from before 2026-11-07 has none, reads 260 and gets no button. The 220 cm of
+   * 7-10 November was the standard of those days: what was sent, issued, invoiced, advanced, split or
+   * ordered on it never moves by one tap, so it offers "Standaard" only on a concept nothing has come
+   * from (the server's own line for its one-time move, as far as this screen knows it). An invoice
+   * issued without mail and put back on concept has no sent date: its history says it (issued).
+   * Stepping or typing another height stays possible everywhere.
+   */
+  readonly heightOverridden = computed(() => {
+    const view = this.view();
+    const order = view.order;
+    const own = order.maxPalletHeightCm;
+    if (own == null || own === PALLET_MAX_HEIGHT_CM) return false;
+    if (own !== PALLET_FORMER_STANDARD_CM) return true;
+    return order.status === 'CONCEPT' && !order.sentAt && !this.issued() && !order.sourceQuoteId && !view.webOrder
+      && !view.invoicedAsId && !view.advanceInvoices?.length && !view.advanceBilling && !view.fulfillment;
+  });
+  /** Raised when a height from the field was not taken (the question below answered with Annuleren). */
+  readonly heightField = signal(0);
+  readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
+  readonly modeOptions = computed<SegmentOption[]>(() => [
+    { id: 'auto', label: 'Automatisch' },
+    { id: 'manual', label: 'Zelf indelen', disabled: this.pricing() && !this.manual() },
+  ]);
+
+  readonly pending = computed(() => this.order().freight === 'TE_BEPALEN');
+  readonly freightIssue = computed(() => !!this.view().priced.validation.freightPricingIssue);
+  readonly strategyText = computed(() => strategyLabel(freightStrategy(this.order()), this.carriers(), this.order().freightCarrierId));
+
+  readonly specText = computed(() => {
+    if (!this.palletsMode()) return 'Losse dozen';
+    const text = `${this.spec().name} · max ${this.heightCm()} cm`;
+    if (this.canEdit() || !this.lines().length) return text;
+    return `${text} · ${this.manual() ? 'zelf ingedeeld' : 'automatisch'}`;
+  });
+  readonly heroTitle = computed(() => {
+    if (!this.lines().length) return 'Nog geen producten';
+    if (!this.palletsMode()) return omdozen(this.view().priced.totals.cartons);
+    const count = this.manual() ? this.order().pallets.length : this.autoCount();
+    if (!count && this.problems().length) return 'Past niet';
+    return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'pallet' : 'pallets'}`;
+  });
+  readonly fill = computed(() => {
+    if (!this.palletsMode()) return '';
+    return fillWords(this.manual() ? this.handRows() : this.autoShown() ? this.autoRows() : []);
+  });
+  readonly heroPill = computed<{ text: string; tone: string } | null>(() => {
+    if (!this.palletsMode() || !this.lines().length) return null;
+    if (this.manual()) return layoutPill(checkLayout(this.view()));
+    const misfits = this.problems().length;
+    return misfits && this.autoCount() > 0 ? { text: `${misfits} past niet`, tone: 'warn' } : null;
+  });
+  readonly factsText = computed(() => {
     const totals = this.view().priced.totals;
-    return totals.palletsManual || totals.palletsStrict;
+    /* Loose cartons carry the count in the title already. */
+    const facts = this.palletsMode() ? [omdozen(totals.cartons), `${CBM.format(totals.cbm)} m³`] : [`${CBM.format(totals.cbm)} m³`];
+    if (totals.weightKg > 0) facts.push(`${Math.round(totals.weightKg).toLocaleString('nl-BE')} kg`);
+    return facts.join(' · ');
   });
-  readonly pricingStrategy = computed<FreightPricingStrategy>(() => {
-    const order = this.order();
-    if (order.freightPricingStrategy) return order.freightPricingStrategy;
-    if (order.manualFreightEur != null) return 'FIXED';
-    return this.loadMode() === 'LOOSE_CARTONS' ? 'PER_CBM' : 'COUNTRY_PALLET';
+  /** In loose mode with a hand layout: whether it comes back with the pallets. */
+  readonly layoutNote = computed(() => {
+    if (this.palletsMode() || !this.order().pallets.length) return null;
+    return this.preservedLayoutMatches() ? 'Eigen indeling bewaard' : 'Eigen indeling vervalt';
   });
-  readonly freightPending = computed(() => this.order().freight === 'TE_BEPALEN');
-  readonly missingCartonDimensions = computed(() =>
-    this.view().priced.validation.productsWithoutCartonDimensions ?? []);
-  readonly invalidPalletLines = computed(() => this.activeLines()
-    .filter((line) => line.cartons > 0 && line.cartonsPerPallet <= 0));
   readonly preservedLayoutMatches = computed(() => {
     const data = this.view();
+    const spec = this.spec();
     if (!data.order.pallets.length) return true;
-    if (data.order.pallets.some((pallet) => !pallet.items.length
-        || pallet.items.some((item) => item.cartons <= 0))) return false;
+    if (data.order.pallets.some((pallet) => !pallet.items.length || pallet.items.some((item) => item.cartons <= 0))) return false;
     if (data.order.pallets.some((pallet) => pallet.heightCm != null
-        && (pallet.heightCm < this.palletBaseHeightCm()
-          || pallet.heightCm > this.maxPalletHeightCm()))) return false;
+        && (pallet.heightCm < spec.baseHeightCm || pallet.heightCm > spec.maxHeightCm))) return false;
     const lineIds = new Set(data.priced.lines.map((line) => line.productId));
-    if (data.order.pallets.some((pallet) =>
-        pallet.items.some((item) => !lineIds.has(item.productId)))) return false;
-    return data.priced.lines.every((line) =>
-      data.order.pallets.flatMap((pallet) => pallet.items)
-        .filter((item) => item.productId === line.productId)
-        .reduce((sum, item) => sum + item.cartons, 0) === line.cartons);
+    if (data.order.pallets.some((pallet) => pallet.items.some((item) => !lineIds.has(item.productId)))) return false;
+    return data.priced.lines.every((line) => data.order.pallets.flatMap((pallet) => pallet.items)
+      .filter((item) => item.productId === line.productId)
+      .reduce((sum, item) => sum + item.cartons, 0) === line.cartons);
   });
 
-  /* ---- the strip and the section headers ---- */
-  loadSummary(): string {
-    const totals = this.view().priced.totals;
-    if (this.loadMode() === 'LOOSE_CARTONS') {
-      return `${this.formatNumber(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}`;
-    }
-    const count = this.palletCount();
-    return `${this.formatNumber(count)} ${count === 1 ? 'pallet' : 'pallets'}`;
+  /* ---- what is open */
+  readonly infoOpen = signal(false);
+  readonly loadOpen = signal(false);
+  readonly sheetIndex = signal<number | null>(null);
+  readonly sheetPallet = computed(() => {
+    const index = this.sheetIndex();
+    return index === null || !this.manual() ? null : this.handRows()[index] ?? null;
+  });
+  readonly placeFor = signal<{ productId: number; point: MenuPoint } | null>(null);
+  readonly cardMenu = signal<{ index: number; point: MenuPoint } | null>(null);
+  readonly chipsFor = signal<number | null>(null);
+  readonly detailFor = signal<number | null>(null);
+  /** After a pallet type change on a hand layout: offer to lay it out again. */
+  readonly profileOffer = signal(false);
+  readonly announcement = signal('');
+
+  readonly placeItems = computed<ContextMenuItem[]>(() => {
+    if (!this.placeFor()) return [];
+    const rows = this.handRows();
+    return [
+      ...rows.map((row) => ({ id: String(row.index), label: row.label,
+        hint: row.parts.length ? `${omdozen(row.cartons)} · ${Math.round(row.fill * 100)} %` : 'leeg' })),
+      { id: 'new', label: 'Nieuwe pallet', iconName: 'plus', divider: rows.length > 0 },
+    ];
+  });
+  readonly cardMenuItems = computed<ContextMenuItem[]>(() => {
+    const menu = this.cardMenu();
+    if (!menu) return [];
+    return [
+      { id: 'edit', label: 'Soort en hoogte…', iconName: 'pallet' },
+      { id: 'up', label: 'Naar voren', iconName: 'chevron-up', disabled: menu.index === 0 },
+      { id: 'down', label: 'Naar achteren', iconName: 'chevron-down', disabled: menu.index >= this.handRows().length - 1 },
+      { id: 'remove', label: 'Pallet verwijderen', iconName: 'trash', danger: true, divider: true },
+    ];
+  });
+
+  /* The undo toasts work through this planner: they go when it goes. */
+  private readonly toasts: number[] = [];
+  /** What freight a switch to loose cartons replaced, so switching straight back restores it. */
+  private looseSwitch: { strategy: FreightPricingStrategy; prefill: number | null } | null = null;
+  private drag: { id: number; from: number; x: number; y: number; scroller: HTMLElement | null } | null = null;
+  readonly draggingIndex = signal<number | null>(null);
+  readonly dropIndex = signal<number | null>(null);
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => { for (const id of this.toasts) this.ui.dismissToast(id); });
   }
 
-  loadDetail(): string {
-    const totals = this.view().priced.totals;
-    if (this.loadMode() === 'LOOSE_CARTONS') return `losse dozen · ${this.formatCbm(totals.cbm)}`;
-    return `${this.formatNumber(totals.cartons)} dozen · ${this.formatCbm(totals.cbm)}`;
+  omdozen(count: number): string {
+    return omdozen(count);
   }
 
-  layoutSummary(): string {
-    if (this.loadMode() === 'LOOSE_CARTONS') return this.formatCbm(this.view().priced.totals.cbm);
-    if (!this.view().order.pallets.length) return 'Automatisch voorstel';
-    return 'Zelf ingedeeld';
+  cbm(value: number): string {
+    return `${CBM.format(value)} m³`;
   }
 
-  layoutDetail(): string {
-    if (this.loadMode() === 'LOOSE_CARTONS') {
-      return this.missingCartonDimensions().length ? 'buitenmaten ontbreken' : 'uit de omdoosmaten';
-    }
-    if (!this.view().order.pallets.length) {
-      return this.invalidPalletLines().length ? 'stapeling niet mogelijk' : `max. ${this.formatNumber(this.maxPalletHeightCm())} cm`;
-    }
-    return this.layoutOk() ? 'compleet' : this.layoutStatus();
+  /** "4 per laag × 7 lagen · 259 cm · gewicht bepaalt". */
+  stacking(line: PlannerLine): string {
+    const parts = [`${line.perLayer} per laag × ${line.fullLayers} ${line.fullLayers === 1 ? 'laag' : 'lagen'}`];
+    if (line.cartonHeightCm !== null) parts.push(`${Math.round(this.spec().baseHeightCm + line.cartonHeightCm * line.fullLayers)} cm`);
+    if (line.weightLimited) parts.push('gewicht bepaalt');
+    return parts.join(' · ');
   }
 
-  layoutState(): 'ok' | 'warn' | 'plain' {
-    if (this.loadMode() === 'LOOSE_CARTONS') return this.missingCartonDimensions().length ? 'warn' : 'plain';
-    if (!this.view().order.pallets.length) return this.invalidPalletLines().length ? 'warn' : 'plain';
-    return this.layoutOk() ? 'ok' : 'warn';
+  toFreight(): void {
+    this.host.nativeElement.querySelector('#sp-freight')?.scrollIntoView({ block: 'start', behavior: scrollBehavior() });
   }
 
-  strategyLabel(strategy: FreightPricingStrategy): string {
-    switch (strategy) {
-      case 'COUNTRY_PALLET': return 'Landentarief';
-      case 'CARRIER': return this.carriers().find((carrier) => carrier.id === this.order().freightCarrierId)?.name
-        ?? 'Verzendorganisatie';
-      case 'PER_CBM': return 'Per m³';
-      case 'FIXED': return 'Vast bedrag';
-      case 'PICKUP': return 'Afhalen';
-      default: return strategy;
-    }
+  private undoable(text: string, run: () => void): void {
+    this.toasts.push(this.ui.toast(text, 'ok', { label: 'Ongedaan maken', run: () => {
+      /* The list changes under them: nothing stays open on a pallet that may no longer be there. */
+      this.sheetIndex.set(null);
+      this.cardMenu.set(null);
+      this.placeFor.set(null);
+      this.chipsFor.set(null);
+      run();
+    } }));
   }
 
-  private formatNumber(value: number): string {
-    return new Intl.NumberFormat('nl-BE', { maximumFractionDigits: 0 }).format(value);
+  private announce(text: string): void {
+    this.announcement.set(text);
   }
 
-  private formatCbm(value: number): string {
-    return `${new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(value)} m³`;
-  }
+  /* ---- Automatisch | Zelf indelen */
 
-  /* ---- the pallets as they stack up ---- */
-  productColour(productId: number): string {
-    const index = this.view().priced.lines.findIndex((line) => line.productId === productId);
-    return PALLET_PRODUCT_COLOURS[(index < 0 ? 0 : index) % PALLET_PRODUCT_COLOURS.length];
-  }
-
-  stackOf(pallet: OrderPallet): { heightCm: number | null; measured: boolean } {
-    return estimatePalletHeightCm(pallet, this.view().priced.lines, this.palletBaseHeightCm());
-  }
-
-  /** Where the stack stands against the loading height; never past the bar. */
-  fillPercent(heightCm: number | null): number {
-    if (heightCm === null) return 0;
-    const max = this.maxPalletHeightCm() || 1;
-    return Math.max(4, Math.min(100, (heightCm / max) * 100));
-  }
-
-  cartonsFor(productId: number): number {
-    return this.view().priced.lines.find((line) => line.productId === productId)?.cartons ?? 0;
-  }
-
-  assignedCartons(): number {
-    return this.view().order.pallets.flatMap((pallet) => pallet.items)
-      .reduce((sum, item) => sum + item.cartons, 0);
-  }
-
-  assignedPercent(): number {
-    const total = this.view().priced.totals.cartons;
-    return total > 0 ? Math.min(100, (this.assignedCartons() / total) * 100) : 0;
-  }
-
-  overassignedAny(): boolean {
-    return this.overassigned();
-  }
-
-  unassignedLines(): { productId: number; description: string; remaining: number }[] {
-    return this.activeLines()
-      .map((line) => ({ productId: line.productId, description: line.description,
-        remaining: this.remainingFor(line.productId) }))
-      .filter((line) => line.remaining > 0);
-  }
-
-  /** Rebuilds the layout from the calculator's stacking, dropping the hand-made one. */
-  redoLayout(): void {
+  setMode(mode: string): void {
     if (!this.canEdit()) return;
-    const confirmed = window.confirm(
-      'Je eigen indeling wordt vervangen door een nieuwe automatische indeling. Doorgaan?',
-    );
-    if (confirmed) this.action.emit({ type: 'auto-layout' });
+    if (mode === 'manual' && !this.manual()) {
+      if (!this.pricing()) this.action.emit({ type: 'auto-layout' });
+      return;
+    }
+    if (mode === 'auto' && this.manual()) {
+      const snapshot = structuredClone(this.order().pallets);
+      this.profileOffer.set(false);
+      this.chipsFor.set(null);
+      this.action.emit({ type: 'clear-layout' });
+      this.undoable('Eigen indeling gewist', () => this.patch.emit({ pallets: snapshot }));
+    }
   }
+
+  applyMixed(mix: MixedLayout): void {
+    if (!this.canEdit() || this.pricing()) return;
+    this.patch.emit({ pallets: structuredClone(mix.pallets) });
+    this.undoable('Gemengd ingedeeld', () => this.action.emit({ type: 'clear-layout' }));
+  }
+
+  /** The type changed under a hand layout: the same automatic start, now on the new pallet. */
+  redoLayout(): void {
+    if (!this.canEdit() || this.pricing()) return;
+    const snapshot = structuredClone(this.order().pallets);
+    this.profileOffer.set(false);
+    this.action.emit({ type: 'auto-layout' });
+    this.undoable('Indeling opnieuw gemaakt', () => this.patch.emit({ pallets: snapshot }));
+  }
+
+  /* ---- the hand-built pallets */
+
+  /** Every pallet action passes here: typed omdozen are capped at what is still free, a product already on the pallet grows. */
+  run(action: ShippingPalletAction): void {
+    if (!this.canEdit()) return;
+    if (action.type === 'set-item-cartons' || action.type === 'add-item') {
+      const { palletIndex, productId } = action;
+      const item = this.order().pallets[palletIndex]?.items.find((candidate) => candidate.productId === productId);
+      const free = this.placed().get(productId)?.remaining ?? 0;
+      if (action.type === 'add-item' && item) {
+        action = { type: 'set-item-cartons', palletIndex, productId, cartons: item.cartons + free };
+      } else if (action.type === 'set-item-cartons') {
+        action = { ...action, cartons: Math.min((item?.cartons ?? 0) + free, Math.max(0, Math.floor(action.cartons || 0))) };
+      }
+    }
+    if (action.type === 'reorder-pallet') this.announce(`Pallet ${action.fromIndex + 1} verplaatst naar positie ${action.toIndex + 1}.`);
+    this.action.emit(action);
+  }
+
+  addPallet(): void {
+    if (!this.canEdit()) return;
+    const index = this.order().pallets.length;
+    this.action.emit({ type: 'add-pallet' });
+    if (this.desk()) this.chipsFor.set(index);
+    else this.sheetIndex.set(index);
+  }
+
+  toggleChips(index: number): void {
+    this.chipsFor.set(this.chipsFor() === index ? null : index);
+  }
+
+  removePallet(index: number): void {
+    const pallet = this.order().pallets[index];
+    if (!this.canEdit() || !pallet) return;
+    const label = this.handRows()[index]?.label ?? `Pallet ${index + 1}`;
+    const snapshot = structuredClone(this.order().pallets);
+    this.sheetIndex.set(null);
+    this.chipsFor.set(null);
+    this.action.emit({ type: 'remove-pallet', index });
+    this.announce(`${label} verwijderd.`);
+    if (pallet.items.length) this.undoable(`${label} verwijderd`, () => this.patch.emit({ pallets: snapshot }));
+  }
+
+  /** Naar voren / naar achteren in the sheet: the sheet follows its pallet. */
+  moveFromSheet(direction: -1 | 1): void {
+    const index = this.sheetIndex();
+    if (index === null) return;
+    if (this.move(index, direction)) this.sheetIndex.set(index + direction);
+  }
+
+  private move(index: number, direction: -1 | 1): boolean {
+    const target = index + direction;
+    if (!this.canEdit() || target < 0 || target >= this.order().pallets.length) return false;
+    this.action.emit({ type: 'move-pallet', index, direction });
+    this.announce(`Pallet ${index + 1} verplaatst naar positie ${target + 1}.`);
+    return true;
+  }
+
+  cardPick(item: ContextMenuItem): void {
+    const menu = this.cardMenu();
+    this.cardMenu.set(null);
+    if (!menu) return;
+    if (item.id === 'edit') this.sheetIndex.set(menu.index);
+    else if (item.id === 'up') this.move(menu.index, -1);
+    else if (item.id === 'down') this.move(menu.index, 1);
+    else if (item.id === 'remove') this.removePallet(menu.index);
+  }
+
+  openPlace(event: MouseEvent, line: PlannerLine): void {
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    this.placeFor.set({ productId: line.productId, point: { x: rect.left + 16, y: rect.bottom - 4 } });
+  }
+
+  /** All of the product's loose omdozen onto the chosen pallet, or onto a new one. */
+  placeOn(item: ContextMenuItem): void {
+    const place = this.placeFor();
+    this.placeFor.set(null);
+    if (!place || !this.canEdit()) return;
+    if (item.id === 'new') {
+      const palletIndex = this.order().pallets.length;
+      this.action.emit({ type: 'add-pallet' });
+      this.action.emit({ type: 'add-item', palletIndex, productId: place.productId });
+      return;
+    }
+    this.run({ type: 'add-item', palletIndex: Number(item.id), productId: place.productId });
+  }
+
+  /* ---- Lading */
 
   chooseLoadMode(mode: LoadMode): void {
     if (!this.canEdit() || mode === this.loadMode()) return;
-    const current = this.pricingStrategy();
-    const strategy = mode === 'LOOSE_CARTONS'
-        && (current === 'COUNTRY_PALLET' || current === 'CARRIER')
-      ? 'FIXED' : current;
-    const changes: ShippingOrderPatch = {
-      loadMode: mode,
-      freightPricingStrategy: strategy,
-      freightRatePerCbmEur: strategy === 'PER_CBM'
-        ? this.order().freightRatePerCbmEur : null,
-      manualFreightEur: strategy === 'FIXED' ? this.order().manualFreightEur : null,
-    };
+    const order = this.order();
+    const current = freightStrategy(order);
+    const changes: ShippingOrderPatch = { loadMode: mode };
+    const switchBack = this.looseSwitch;
+    if (mode === 'LOOSE_CARTONS' && (current === 'COUNTRY_PALLET' || current === 'CARRIER')) {
+      /* Pallet freight cannot price loose cartons: today's amount becomes the fixed one instead of € 0. */
+      const freight = this.view().priced.totals.freight;
+      const prefill = order.manualFreightEur ?? (this.pending() || !(freight > 0) ? null : freight);
+      this.looseSwitch = { strategy: current, prefill };
+      Object.assign(changes, { freightPricingStrategy: 'FIXED', freightRatePerCbmEur: null, manualFreightEur: prefill });
+    } else if (mode === 'PALLETS' && switchBack && current === 'FIXED' && order.manualFreightEur === switchBack.prefill) {
+      /* Straight back, nothing touched in between: the pallet freight returns. */
+      this.looseSwitch = null;
+      Object.assign(changes, { freightPricingStrategy: switchBack.strategy, freightRatePerCbmEur: null, manualFreightEur: null });
+    } else {
+      Object.assign(changes, {
+        freightPricingStrategy: current,
+        freightRatePerCbmEur: current === 'PER_CBM' ? order.freightRatePerCbmEur : null,
+        manualFreightEur: current === 'FIXED' ? order.manualFreightEur : null,
+      });
+    }
     if (mode === 'PALLETS' && !this.preservedLayoutMatches()) changes.pallets = [];
     this.patch.emit(changes);
   }
 
+  /** Pallets of the old type take the new one; the layout itself may no longer fit, so laying it out again is offered. */
   setPalletProfile(profile: PalletProfile): void {
-    if (this.canEdit()) this.patch.emit({ palletProfile: profile });
+    if (!this.canEdit() || profile === this.spec().profile) return;
+    /* A height the new type does not allow comes down with it (a europallet stops at 260 cm): the server
+       would refuse the switch otherwise. */
+    const changes: ShippingOrderPatch = { palletProfile: profile };
+    const limit = palletHeightLimit(profile);
+    if (this.heightCm() <= limit) { this.switchProfile(changes); return; }
+    this.askBeforeLowering(limit, limit, () => this.switchProfile({ ...changes, maxPalletHeightCm: limit }));
   }
 
-  setMaxHeight(raw: string): void {
+  private switchProfile(changes: ShippingOrderPatch): void {
+    const pallets = this.order().pallets;
+    if (!pallets.length) { this.patch.emit(changes); return; }
+    const from = palletTypeLabel(this.spec().profile);
+    const to = palletTypeLabel(changes.palletProfile!);
+    this.patch.emit({ ...changes,
+      pallets: pallets.map((pallet) => (normalizeManualPalletType(pallet.type) === from ? { ...pallet, type: to } : pallet)) });
+    this.profileOffer.set(true);
+  }
+
+  /**
+   * ±10 cm or typed, within the bounds of the pallet type; "Standaard" or an emptied field (only offered
+   * while heightOverridden) sends the standard's number: the server keeps a document's own height when
+   * none is sent.
+   */
+  setMaxHeight(value: number | null): void {
     if (!this.canEdit()) return;
-    const height = Math.max(50, Math.min(300, Math.round(Number(raw) || 260)));
-    this.patch.emit({ maxPalletHeightCm: height });
+    const height = value === null ? PALLET_MAX_HEIGHT_CM : clampPalletHeight(value, this.spec().profile);
+    const limit = this.heightLimit();
+    if (this.heightCm() <= limit) { this.patch.emit({ maxPalletHeightCm: height }); return; }
+    this.askBeforeLowering(height, limit, () => this.patch.emit({ maxPalletHeightCm: height }));
   }
 
-  palletProfileLabel(): string {
-    return {
-      EURO_120X80: 'Euro · B × D · 120 × 80',
-      BLOCK_120X100: 'Blok · B × D · 120 × 100',
-      HALF_80X60: 'Half · B × D · 80 × 60',
-    }[this.palletProfile()];
+  /**
+   * A height above what the pallet type allows was picked before the limit (a europallet stops at 260 cm
+   * since 2026-11-10) and stays as it is. Once it comes down the server takes no height above the limit
+   * again, so that one step cannot be undone and is asked first: a stray tap on "−", "Standaard" or the
+   * pallet type must not change what an old document counts with. Annuleren leaves everything as it was,
+   * the field included (heightField).
+   */
+  private askBeforeLowering(height: number, limit: number, lower: () => void): void {
+    this.ui.confirm({
+      title: `Max. hoogte naar ${height} cm?`,
+      message: `Nu ${this.heightCm()} cm. Hoger dan ${limit} cm kan daarna niet meer.`,
+      confirmLabel: 'Verlagen',
+    }, lower, undefined, () => this.heightField.update((key) => key + 1));
   }
 
-  invalidPalletLineNames(): string {
-    return this.invalidPalletLines().map((line) => line.description).join(', ');
-  }
+  /* ---- desk: drag a card by its glyph */
 
-  choosePricing(strategy: FreightPricingStrategy): void {
-    if (!this.canEdit()) return;
-    const fixed = strategy === 'FIXED'
-      ? this.order().manualFreightEur
-        ?? (this.freightPending() ? null : this.view().priced.totals.freight)
-      : null;
-    this.patch.emit({
-      freight: this.freightPending() ? 'TE_BEPALEN' : 'BEREKEND',
-      freightPricingStrategy: strategy,
-      freightRatePerCbmEur: strategy === 'PER_CBM'
-        ? this.order().freightRatePerCbmEur : null,
-      manualFreightEur: fixed,
-      freightCarrierId: strategy === 'CARRIER'
-        ? this.order().freightCarrierId
-          ?? this.carriers().find((carrier) => carrier.active)?.id ?? this.carriers()[0]?.id
-        : this.order().freightCarrierId,
-    });
-  }
-
-  setPending(pending: boolean): void {
-    if (this.canEdit()) this.patch.emit({ freight: pending ? 'TE_BEPALEN' : 'BEREKEND' });
-  }
-
-  setCbmRate(raw: string): void {
-    if (!this.canEdit()) return;
-    const value = raw.trim() === '' ? null : Math.max(0, Number(raw) || 0);
-    this.patch.emit({ freight: this.freightPending() ? 'TE_BEPALEN' : 'BEREKEND',
-      freightPricingStrategy: 'PER_CBM',
-      freightRatePerCbmEur: value, manualFreightEur: null });
-  }
-
-  setFixedFreight(raw: string): void {
-    if (!this.canEdit()) return;
-    const value = raw.trim() === '' ? null : Math.max(0, Number(raw) || 0);
-    this.patch.emit({ freight: this.freightPending() ? 'TE_BEPALEN' : 'BEREKEND',
-      freightPricingStrategy: 'FIXED',
-      freightRatePerCbmEur: null, manualFreightEur: value });
-  }
-
-  palletCartons(pallet: OrderPallet): number {
-    return pallet.items.reduce((sum, item) => sum + item.cartons, 0);
-  }
-
-  productLabel(productId: number): string {
-    return this.view().priced.lines.find((line) => line.productId === productId)?.description
-      ?? `Product #${productId}`;
-  }
-
-  assignedFor(productId: number): number {
-    return this.view().order.pallets
-      .flatMap((pallet) => pallet.items)
-      .filter((item) => item.productId === productId)
-      .reduce((sum, item) => sum + item.cartons, 0);
-  }
-
-  remainingFor(productId: number): number {
-    const line = this.view().priced.lines.find((item) => item.productId === productId);
-    return line ? Math.max(0, line.cartons - this.assignedFor(productId)) : 0;
-  }
-
-  assignable(palletIndex: number): { productId: number; description: string; remaining: number }[] {
-    const onPallet = new Set(
-      this.view().order.pallets[palletIndex]?.items.map((item) => item.productId) ?? []);
-    return this.activeLines()
-      .filter((line) => !onPallet.has(line.productId))
-      .map((line) => ({ productId: line.productId, description: line.description,
-        remaining: this.remainingFor(line.productId) }))
-      .filter((line) => line.remaining > 0);
-  }
-
-  layoutOk(): boolean {
-    const pallets = this.view().order.pallets;
-    const lineIds = new Set(this.view().priced.lines.map((line) => line.productId));
-    return pallets.every((pallet) => pallet.items.length > 0
-        && pallet.items.every((item) => item.cartons > 0 && lineIds.has(item.productId))
-        && (pallet.heightCm == null
-          || (pallet.heightCm >= this.palletBaseHeightCm()
-            && pallet.heightCm <= this.maxPalletHeightCm())))
-      && this.view().priced.totals.unassignedCartons === 0
-      && !this.overassigned();
-  }
-
-  layoutStatus(): string {
-    if (this.view().order.pallets.some((pallet) => !pallet.items.length)) {
-      return 'lege pallet verwijderen';
-    }
-    if (this.view().order.pallets.some((pallet) =>
-        pallet.items.some((item) => item.cartons <= 0))) {
-      return 'ongeldig aantal dozen';
-    }
-    const lineIds = new Set(this.view().priced.lines.map((line) => line.productId));
-    if (this.view().order.pallets.some((pallet) =>
-        pallet.items.some((item) => !lineIds.has(item.productId)))) {
-      return 'verwijderd product aanwezig';
-    }
-    if (this.view().order.pallets.some((pallet) => pallet.heightCm != null
-        && (pallet.heightCm < this.palletBaseHeightCm()
-          || pallet.heightCm > this.maxPalletHeightCm()))) {
-      return 'pallethoogte buiten laadhoogte';
-    }
-    if (this.overassigned()) return 'te veel dozen toegewezen';
-    const loose = this.view().priced.totals.unassignedCartons;
-    if (loose > 0) {
-      return loose === 1 ? '1 doos niet toegewezen' : `${this.formatNumber(loose)} dozen niet toegewezen`;
-    }
-    return 'compleet';
-  }
-
-  private overassigned(): boolean {
-    return this.view().priced.lines.some((line) => this.assignedFor(line.productId) > line.cartons);
-  }
-
-  renamePallet(index: number, label: string): void {
-    if (this.canEdit()) this.action.emit({ type: 'rename-pallet', index, label: label.trim() });
-  }
-
-  displayPalletType(value: string): string {
-    return normalizeManualPalletType(value);
-  }
-
-  setPalletType(index: number, palletType: string): void {
-    if (this.canEdit()) {
-      this.action.emit({
-        type: 'set-pallet-type',
-        index,
-        palletType: normalizeManualPalletType(palletType),
-      });
-    }
-  }
-
-  setPalletHeight(index: number, raw: string): void {
-    if (!this.canEdit()) return;
-    const rounded = Math.round(Number(raw));
-    const heightCm = raw.trim() === '' || !Number.isFinite(rounded) || rounded <= 0
-      ? null
-      : Math.max(this.minimumManualHeightCm(), Math.min(this.maximumManualHeightCm(), rounded));
-    this.action.emit({ type: 'set-pallet-height', index, heightCm });
-  }
-
-  minimumManualHeightCm(): number {
-    return Math.ceil(this.palletBaseHeightCm());
-  }
-
-  maximumManualHeightCm(): number {
-    return Math.floor(this.maxPalletHeightCm());
-  }
-
-  addItem(palletIndex: number, productId: number): void {
-    if (this.canEdit() && productId) this.action.emit({ type: 'add-item', palletIndex, productId });
-  }
-
-  setItemCartons(palletIndex: number, productId: number, cartons: number): void {
-    if (!this.canEdit()) return;
-    this.action.emit({ type: 'set-item-cartons', palletIndex, productId,
-      cartons: Math.max(0, Math.floor(cartons || 0)) });
-  }
-
-  movePallet(index: number, direction: -1 | 1): void {
-    if (!this.canEdit()) return;
-    const target = index + direction;
-    if (target < 0 || target >= this.view().order.pallets.length) return;
-    this.action.emit({ type: 'move-pallet', index, direction });
-    this.reorderAnnouncement.set(
-      `Pallet ${index + 1} verplaatst naar positie ${target + 1}.`,
-    );
-  }
-
-  removePallet(index: number): void {
-    if (!this.canEdit()) return;
-    this.action.emit({ type: 'remove-pallet', index });
-    this.reorderAnnouncement.set(`Pallet ${index + 1} verwijderd.`);
-  }
-
-  startPalletDrag(event: PointerEvent, index: number): void {
-    if (!this.canEdit() || event.button !== 0) return;
+  dragStart(event: PointerEvent, index: number): void {
+    const handle = (event.target as Element | null)?.closest?.('[data-drag-handle]');
+    if (!this.canEdit() || event.button !== 0 || !handle) return;
     event.preventDefault();
-    event.stopPropagation();
-    this.dragPointerId = event.pointerId;
-    this.dragSourceIndex = index;
-    this.dragStartX = event.clientX;
-    this.dragStartY = event.clientY;
-    this.dragScrollHost = (event.currentTarget as HTMLElement)
-      .closest<HTMLElement>('.sheet__body');
-    const handle = event.currentTarget as HTMLElement;
-    try {
-      handle.setPointerCapture(event.pointerId);
-    } catch {
-      /* Losing capture merely cancels the drag; it must never save anything. */
-    }
+    const host = event.currentTarget as HTMLElement;
+    this.drag = { id: event.pointerId, from: index, x: event.clientX, y: event.clientY, scroller: host.closest<HTMLElement>('.sheet__body') };
+    try { host.setPointerCapture(event.pointerId); } catch { /* losing capture merely cancels the drag */ }
   }
 
-  movePalletDrag(event: PointerEvent): void {
-    if (event.pointerId !== this.dragPointerId || this.dragSourceIndex === null) return;
-    const moved = Math.hypot(
-      event.clientX - this.dragStartX,
-      event.clientY - this.dragStartY,
-    );
-    if (moved < 7 && this.draggingIndex() === null) return;
+  dragMove(event: PointerEvent): void {
+    const drag = this.drag;
+    if (!drag || event.pointerId !== drag.id) return;
+    if (this.draggingIndex() === null && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 7) return;
     event.preventDefault();
-    if (this.draggingIndex() === null) {
-      this.draggingIndex.set(this.dragSourceIndex);
-      this.dropTargetIndex.set(this.dragSourceIndex);
-    }
-    const shell = document.elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLElement>('[data-pallet-index]');
-    const rawIndex = shell?.dataset['palletIndex'];
-    const target = rawIndex == null ? Number.NaN : Number(rawIndex);
-    if (Number.isInteger(target) && target >= 0
-        && target < this.view().order.pallets.length) {
-      this.dropTargetIndex.set(target);
-    }
-    this.scrollWhileDragging(event.clientY);
-  }
-
-  finishPalletDrag(event: PointerEvent): void {
-    if (event.pointerId !== this.dragPointerId) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const source = this.draggingIndex();
-    const target = this.dropTargetIndex();
-    this.releasePointer(event);
-    this.resetPalletDrag();
-    if (source === null || target === null || source === target) return;
-    this.action.emit({ type: 'reorder-pallet', fromIndex: source, toIndex: target });
-    this.reorderAnnouncement.set(
-      `Pallet ${source + 1} verplaatst naar positie ${target + 1}.`,
-    );
-  }
-
-  cancelPalletDrag(event: PointerEvent): void {
-    if (event.pointerId !== this.dragPointerId) return;
-    this.releasePointer(event);
-    this.resetPalletDrag();
-  }
-
-  movePalletWithKeyboard(event: KeyboardEvent, index: number): void {
-    if (!this.canEdit() || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
-    const toIndex = index + (event.key === 'ArrowUp' ? -1 : 1);
-    if (toIndex < 0 || toIndex >= this.view().order.pallets.length) return;
-    event.preventDefault();
-    event.stopPropagation();
-    this.action.emit({ type: 'reorder-pallet', fromIndex: index, toIndex });
-    this.reorderAnnouncement.set(
-      `Pallet ${index + 1} verplaatst naar positie ${toIndex + 1}.`,
-    );
-  }
-
-  private scrollWhileDragging(pointerY: number): void {
-    const host = this.dragScrollHost;
-    if (!host) return;
-    const rect = host.getBoundingClientRect();
-    const edge = Math.min(72, rect.height / 4);
-    if (pointerY < rect.top + edge) host.scrollTop -= 14;
-    else if (pointerY > rect.bottom - edge) host.scrollTop += 14;
-  }
-
-  private releasePointer(event: PointerEvent): void {
-    const handle = event.currentTarget as HTMLElement;
-    try {
-      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
-    } catch {
-      /* The browser may already have released capture on cancellation. */
+    if (this.draggingIndex() === null) { this.draggingIndex.set(drag.from); this.dropIndex.set(drag.from); }
+    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-pallet-index]');
+    const target = Number(over?.dataset['palletIndex']);
+    if (Number.isInteger(target) && target >= 0 && target < this.order().pallets.length) this.dropIndex.set(target);
+    const scroller = drag.scroller;
+    if (scroller) {
+      const rect = scroller.getBoundingClientRect();
+      const edge = Math.min(72, rect.height / 4);
+      if (event.clientY < rect.top + edge) scroller.scrollTop -= 14;
+      else if (event.clientY > rect.bottom - edge) scroller.scrollTop += 14;
     }
   }
 
-  private resetPalletDrag(): void {
-    this.dragPointerId = null;
-    this.dragSourceIndex = null;
-    this.dragScrollHost = null;
+  dragEnd(event: PointerEvent): void {
+    if (!this.drag || event.pointerId !== this.drag.id) return;
+    const from = this.draggingIndex();
+    const to = this.dropIndex();
+    this.dragCancel(event);
+    if (from !== null && to !== null && from !== to) this.run({ type: 'reorder-pallet', fromIndex: from, toIndex: to });
+  }
+
+  dragCancel(event: PointerEvent): void {
+    if (!this.drag || event.pointerId !== this.drag.id) return;
+    const host = event.currentTarget as HTMLElement;
+    try { if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+    this.drag = null;
     this.draggingIndex.set(null);
-    this.dropTargetIndex.set(null);
-  }
-
-  returnToAutomatic(): void {
-    if (!this.canEdit()) return;
-    const confirmed = window.confirm(
-      'Je eigen palletindeling wordt verwijderd. Terug naar het automatische voorstel?',
-    );
-    if (confirmed) this.action.emit({ type: 'clear-layout' });
+    this.dropIndex.set(null);
   }
 }

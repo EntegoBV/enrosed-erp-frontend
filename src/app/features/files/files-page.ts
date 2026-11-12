@@ -26,7 +26,10 @@ import { FilesUploadTray } from './files-upload-tray';
  */
 @Component({
   selector: 'app-files-page',
-  host: { class: 'files-workspace', id: 'files-workspace', '(dragover)': 'guardDrop($event)', '(drop)': 'guardDrop($event)' },
+  host: {
+    class: 'files-workspace', id: 'files-workspace', '(dragover)': 'guardDrop($event)', '(drop)': 'guardDrop($event)',
+    '[attr.data-unsaved]': "c.trayHoldsWork() ? '' : null",
+  },
   changeDetection: ChangeDetectionStrategy.OnPush,
   providers: [FilesController],
   imports: [

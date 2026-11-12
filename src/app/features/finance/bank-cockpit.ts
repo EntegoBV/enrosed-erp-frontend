@@ -287,7 +287,7 @@ const signed = (value: number): string => (Math.round(value * 100) === 0 ? euro.
       </section>
       <div class="ios-group fin-ios-single">
         <button class="ios-cell" type="button" (click)="state.openAnalysis()">
-          <span class="ios-cell__body"><span class="ios-cell__title">Rapportage</span><span class="ios-cell__sub">Per categorie, per maand, de btw-aangifte</span></span>
+          <span class="ios-cell__body"><span class="ios-cell__title">Rapportage</span><span class="ios-cell__sub ios-cell__sub--2">Per categorie, per maand, de btw-aangifte</span></span>
           <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
         </button>
       </div>

@@ -7,8 +7,12 @@ export interface InvoiceJourneyStep {
   kind: 'danger' | 'gold' | 'muted' | undefined;
 }
 
-/** Delivery and receipt are independent facts; paying first never invents a shipment. */
-export function invoiceJourney(order: Pick<SalesOrder, 'status' | 'sentAt' | 'goodsShippedAt'>, paymentStatus?: SalesPaymentSummary['status'] | null): InvoiceJourneyStep[] {
+/**
+ * Delivery and receipt are independent facts; paying first never invents a shipment. An invoice made from the
+ * partner's meldingen (viaReports) ships nothing: its third step reads "Voorraad afgeboekt" (the meldingen did it).
+ */
+export function invoiceJourney(order: Pick<SalesOrder, 'status' | 'sentAt' | 'goodsShippedAt'>, paymentStatus?: SalesPaymentSummary['status'] | null,
+    viaReports = false): InvoiceJourneyStep[] {
   if (!['CONCEPT', 'UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(order.status)) {
     return advanceInvoiceJourney(order, paymentStatus);
   }
@@ -20,7 +24,7 @@ export function invoiceJourney(order: Pick<SalesOrder, 'status' | 'sentAt' | 'go
   const completed = [true, issued, shipped, paid];
   const issuedLabel = order.status === 'VERZONDEN' || order.status === 'BEKEKEN'
     ? 'Uitgereikt · verstuurd' : 'Uitgereikt';
-  return ['Concept', issuedLabel, 'Bestelling verzonden', partial ? 'Deels ontvangen' : 'Betaald'].map((label, index) => ({
+  return ['Concept', issuedLabel, viaReports ? 'Voorraad afgeboekt' : 'Bestelling verzonden', partial ? 'Deels ontvangen' : 'Betaald'].map((label, index) => ({
     label, mark: index < current && completed[index] ? '✓' : `${index + 1}`,
     state: index === current ? 'now' : index < current && completed[index] ? 'done' : 'todo', kind: undefined,
   }));

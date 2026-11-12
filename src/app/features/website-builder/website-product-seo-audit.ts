@@ -100,7 +100,7 @@ export function productSeoRows(families: readonly ProductFamily[]): ProductSeoRo
               @if (row.productId) { <app-icon class="ios-cell__chev" name="chevron-right" [size]="18" /> }
             </a>
           } @empty {
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub">Geen reeksen voor deze zoekopdracht of filter.</span></span></div>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__sub ios-cell__sub--2">Geen reeksen voor deze zoekopdracht of filter.</span></span></div>
           }
         </div>
       </section>

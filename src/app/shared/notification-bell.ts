@@ -39,7 +39,7 @@ import { notificationTarget } from './notification-target';
         <div body class="bell-sheet" [class.bell--ios]="!desk()">
           <!-- Who waits and for how long, with Vernieuwen beside it (no foot: × and Esc close). -->
           <p class="bell-sum">
-            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'container nadert' : 'containers naderen' }}</b>} @else {Niemand wacht op ons}</span>
+            <span>@if (summary(); as line) {<b>{{ line.lead }}</b>{{ line.rest }}} @else if (arrivalRows().length) {<b>{{ arrivalRows().length }} {{ arrivalRows().length === 1 ? 'containermelding' : 'containermeldingen' }}</b>} @else if (partnerOpen()) {<b>{{ partnerOpen() }} {{ partnerOpen() === 1 ? 'veilingverkoop' : 'veilingverkopen' }}</b> nog te factureren} @else {Niemand wacht op ons}</span>
             <button class="wk-link" type="button" [disabled]="loading()" (click)="refresh()">{{ loading() ? 'Vernieuwen…' : 'Vernieuwen' }}</button>
           </p>
           @if (error()) {
@@ -58,10 +58,10 @@ import { notificationTarget } from './notification-target';
             }
           }
           @if (arrivalRows().length) {
-            <h3 class="bell-sec">Containers bijna aangekomen</h3>
+            <h3 class="bell-sec">Containers</h3>
             <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
               @for (row of arrivalRows(); track $index) {
-                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: 'tone-warn', tile: 'tone-warn', aria: row.when }" />
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: row.tone, tile: row.tone, aria: row.when }" />
               }
             </ul>
           }
@@ -75,6 +75,15 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
+          @if (partnerRows().length) {
+            <h3 class="bell-sec">Veilingverkopen</h3>
+            <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
+              @for (row of partnerRows(); track $index) {
+                <ng-container [ngTemplateOutlet]="rowTpl" [ngTemplateOutletContext]="{ $implicit: row.item, pill: row.when, pillTone: row.open ? 'tone-warn' : '',
+                  tile: row.open ? 'tone-warn' : 'tone-grey', aria: row.open ? row.when + ', nog te factureren' : row.when }" />
+              }
+            </ul>
+          }
           @if (newsRows().length) {
             <h3 class="bell-sec">Van de klant</h3>
             <ul class="bell-list" [class.ios-group]="!desk()" [class.ios-group--icons]="!desk()">
@@ -83,7 +92,7 @@ import { notificationTarget } from './notification-target';
               }
             </ul>
           }
-          @if (!actionRows().length && !newsRows().length && !arrivalRows().length) {
+          @if (!actionRows().length && !newsRows().length && !arrivalRows().length && !partnerRows().length) {
             @if (desk()) {
               <div class="wk-empty"><span class="wk-empty__icon" aria-hidden="true"><app-icon name="bell" [size]="20" /></span>
                 <p class="wk-empty__title">Niets openstaand</p><p class="wk-empty__text">Geen klanten die op ons wachten.</p></div>
@@ -213,8 +222,9 @@ import { notificationTarget } from './notification-target';
     .bell--ios .bell-row__tile { width: 30px; height: 30px; }
     .bell--ios .bell-row__title { font-size: 16px; font-weight: 600; }
     .bell--ios :is(.bell-row__meta, .bell-row__detail) { font-size: 13px; }
-    /* The customer's own words: two lines on the phone (no hover title on touch), one with the title on the desk. */
-    .bell--ios .bell-row__detail { display: -webkit-box; white-space: normal; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    /* Whole on the phone, the customer's own words too (no hover title on touch): texts wrap, a label never ends in an ellipsis. One line with the title on the desk. */
+    .bell--ios .bell-row__sub { flex-wrap: wrap; }
+    .bell--ios :is(.bell-row__title, .bell-row__meta, .bell-row__detail) { white-space: normal; overflow-wrap: anywhere; }
     .bell--ios .bell-row__x { width: 44px; height: 44px; }
   `,
 })
@@ -231,7 +241,8 @@ export class NotificationBell {
     void this.work.refresh();
   }
 
-  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length);
+  /** What we must do, the arrivals, and the partner's meldingen not invoiced yet (each counted the way arrivals are). */
+  readonly count = computed(() => this.work.actionCount() + this.work.arrivals().length + this.partnerOpen());
   readonly actions = this.work.actions;
   readonly news = this.work.news;
   readonly loading = this.work.loading;
@@ -248,7 +259,19 @@ export class NotificationBell {
     const now = this.nowMs();
     return this.news().map((item) => ({ item, when: whenLabel(item.at, now) }));
   });
-  readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({ item, when: whenLabel(item.at, this.nowMs()) })));
+  /** Containers: a nearing arrival, or an arrival tracking moved ("Aankomst 15/11/2026 · 3 dagen later"; an earlier one reads green). */
+  readonly arrivalRows = computed(() => this.work.arrivals().map(item => ({
+    item, when: whenLabel(item.at, this.nowMs()), tone: !item.actionNeeded && item.title.endsWith(' eerder') ? 'tone-ok' : 'tone-warn',
+  })));
+  /** The partner's meldingen of the last 14 days, newest first as the feed sends them; open = not invoiced yet. */
+  readonly partnerRows = computed(() => this.work.partnerSaleItems()
+    .map(item => ({ item, when: whenLabel(item.at, this.nowMs()), open: item.open === true })));
+  readonly partnerOpen = computed(() => {
+    /* Nothing to invoice (only a buyback waits for the next sale): the badge does not ask. Unknown summary: the items count. */
+    const summary = this.work.partnerSales();
+    if (summary && !this.work.partnerSalesInvoiceable()) return 0;
+    return this.work.partnerSaleItems().filter((item) => item.open === true).length;
+  });
   /** The oldest wait ("27 werkdagen"), for the summary line; null when no item has an instant. */
   readonly oldest = computed(() => this.actionRows().find((row) => row.wait)?.wait?.label ?? null);
   /** "6 meldingen van 4 klanten · de oudste 3 werkdagen": the items (the badge's number) and the customers they come from. */
@@ -288,6 +311,7 @@ export class NotificationBell {
       case 'AFGEWEZEN': return 'close';
       case 'BEKEKEN': return 'eye';
       case 'CONTAINER_AANKOMST': return 'purchase';
+      case 'PARTNER_VERKOOP': return 'arrow-in';
       default: return 'bell';
     }
   }

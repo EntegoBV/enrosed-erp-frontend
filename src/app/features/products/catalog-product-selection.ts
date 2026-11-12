@@ -32,11 +32,16 @@ import {
 } from './catalog-studio';
 import { CataloguePhotoSelectionChange, CataloguePhotoSelectionEditor } from './catalogue-photo-selection';
 import {
+  catalogCategorySearchName,
+  catalogSearchMatch,
+  catalogSearchText,
+  catalogSearchWords,
   deselectProductIds,
   groupProductsByCategory,
   productIdsBetween,
   selectProductIds,
 } from './catalog-product-selection-state';
+import { productSalesUnit } from './product-sales-unit';
 
 /** What the open menu is about: one product row, or one category chip. */
 type MenuSubject =
@@ -207,7 +212,8 @@ function storeStudioView(view: CatalogueStudioView): void {
                             <b>{{ variantLabel(product) }}</b><small>{{ product.sku || 'Zonder SKU' }}</small>
                             @if (product.carton.piecesPerCarton; as carton) { <small>{{ carton }} stuks per omdoos</small> }
                             @if (showReferencePrices()) {
-                              <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / stuk</i> }</span>
+                              <!-- The price is per sales unit: per display for a product sold per display, per bowl for bowls. -->
+                              <span class="product-choice__price" [class.product-choice__price--missing]="!hasReferencePrice(product)"><b>{{ referencePrice(product) }}</b>@if (hasReferencePrice(product)) { <i> / {{ unitWord(product) }}</i> }</span>
                             }
                           </label>
                           <!-- One tap to this colour's catalogue picker in the product editor; back returns to this card. -->
@@ -463,21 +469,22 @@ export class CatalogProductSelection {
   readonly visibleProducts = computed(() => {
     const category = this.categoryFilter();
     const selected = this.selected();
-    const needle = this.normalize(this.query());
+    const words = catalogSearchWords(this.query());
+    const texts = this.searchTexts();
     return this.products().filter((product) => {
       if (category !== null && product.categoryId !== category) return false;
       if (this.selectedOnly() && (product.id === null || !selected.has(product.id))) return false;
-      if (!needle) return true;
-      return this.normalize([
-        product.name,
-        product.sku,
-        product.canonicalBarcode,
-        product.colour,
-        product.variantSize,
-        product.barcodeInner,
-        product.barcodeOuter,
-      ].filter(Boolean).join(' ')).includes(needle);
+      return !words.length || catalogSearchMatch(texts.get(product) ?? '', words);
     });
+  });
+
+  /** What each product is found by; the price sheet finds by the same words (12x25 is 12*25). */
+  private readonly searchTexts = computed(() => {
+    const families = new Map(this.families().flatMap((family) => family.id === null ? [] : [[family.id, family.name] as const]));
+    const categories = new Map(this.categories().flatMap((category) => category.id === null ? [] : [[category.id, catalogCategorySearchName(category)] as const]));
+    return new Map(this.products().map((product) => [product, catalogSearchText(product,
+      product.familyId === null ? null : families.get(product.familyId),
+      product.categoryId === null ? null : categories.get(product.categoryId))]));
   });
 
   readonly groups = computed(() => groupProductsByCategory(this.visibleProducts(), this.categories()));
@@ -697,6 +704,11 @@ export class CatalogProductSelection {
     return this.referencePriceFormat.format(product.computedSalesPriceEur);
   }
 
+  /** "display", "bowl", "stuk": what the catalogue price is for (productSalesUnit). */
+  unitWord(product: Product): string {
+    return productSalesUnit(product).singular;
+  }
+
   private categoryProducts(categoryId: number | null): Product[] {
     return this.products().filter((product) => product.categoryId === categoryId);
   }
@@ -711,7 +723,4 @@ export class CatalogProductSelection {
     return `B×D×H ${values.map((value) => value ?? '—').join('×')} cm`;
   }
 
-  private normalize(value: string): string {
-    return value.trim().toLocaleLowerCase('nl-BE');
-  }
 }

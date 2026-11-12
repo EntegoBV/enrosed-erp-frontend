@@ -10,7 +10,9 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
 
   if (
     path.startsWith('/sales')
+    || path === '/palletberekening'
     || path === '/tica'
+    || path === '/veilingverkopen'
     || path.startsWith('/revisions')
     || path.startsWith('/customers')
     || path.startsWith('/klantlogins')
@@ -42,16 +44,18 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
   if (path.startsWith('/analyses')) return 'analyses';
 
   /* The company group: Logboek, Bedrijfsgegevens, Voorwaarden & privacy,
-     Verwijderde items, and the settings overview itself. The settings of
+     Verwijderde items, Voorraadradar, and the settings overview itself. The settings of
      this device (notifications, appearance) belong to no group. */
   if (
     path.startsWith('/activity')
+    || path.startsWith('/voorraadradar')
     || path.startsWith('/voorwaarden')
     || path === '/settings/deleted-items'
     || (path === '/settings' && !section)
     || section === 'company'
     /* The settings tab strip stays inside Bedrijf: legal, website and this device's view. */
-    || (path === '/settings' && (section === 'legal' || section === 'website' || section === 'appearance' || section === 'device'))
+    || (path === '/settings' && (section === 'legal' || section === 'website' || section === 'appearance' || section === 'device'
+      || section === 'partner-portal'))
   ) return 'bedrijf';
 
   return null;

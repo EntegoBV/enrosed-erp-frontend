@@ -297,6 +297,15 @@ export const STEP_BUTTON: Readonly<Record<PhoneStep, string>> = {
   KOSTPRIJZEN: 'Kostprijzen toepassen',
 };
 
+/** The step's SF Symbol in the native host's bar (enrosed-erp-ios), where the step is an icon in the Duo's strip. */
+export const STEP_SYMBOL: Readonly<Record<PhoneStep, string>> = {
+  BESTELLEN: 'cart',
+  VERTROKKEN: 'ferry',
+  ONTVANGEN: 'shippingbox.and.arrow.backward',
+  BIJBOEKEN: 'plus.square.on.square',
+  KOSTPRIJZEN: 'eurosign.circle',
+};
+
 /** The status a status step leads to; null for the steps that keep the status. */
 export function stepTarget(step: PhoneStep): PurchaseOrder['status'] | null {
   return step === 'BESTELLEN' ? 'BESTELD' : step === 'VERTROKKEN' ? 'ONDERWEG' : step === 'ONTVANGEN' ? 'ONTVANGEN' : null;

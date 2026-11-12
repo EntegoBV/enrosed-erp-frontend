@@ -1,11 +1,14 @@
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, type ParamMap } from '@angular/router';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { filter } from 'rxjs';
 import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseOrderView, Supplier } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { PageHeader } from '../../shared/page-header';
 import {
   CONTAINER_TYPES, DEFAULT_PURCHASE_CONTAINER_TYPE, PURCHASE_CONTAINER_TYPES, PurchaseContainerType, containerLabel,
@@ -64,7 +67,7 @@ const PURCHASE_STATUS_LABEL: Record<string, string> = {
             EurPipe, NumPipe, CbmPipe, DateNlPipe],
   template: `
     <app-purchase-list-styles />
-    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
+    <app-page-header title="Inkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()" [host]="hostPage" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
         <app-segmented class="pl-tabs" label="Werklijst of archief" semantics="tabs" [options]="tabOptions()"
                        [value]="archiveTab() ? 'archive' : 'active'" (changed)="showArchive($event === 'archive')" />
@@ -605,6 +608,18 @@ export class PurchaseList {
   readonly smallPhone = signal(false);
 
   constructor() {
+    this.readSearch(this.route.snapshot.queryParamMap);
+    /* A query-only navigation reuses this list. The native host's open of /purchasing?q=… onto it (a search hand-off;
+       host-bridge-impl marks it nav 'replace') reads the address again, on the working list with every status. */
+    this.route.queryParamMap.pipe(
+      filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
+      takeUntilDestroyed(),
+    ).subscribe((params) => {
+      this.statusFilter.set('ALL');
+      this.showArchive(false);
+      this.openRow.set(null);
+      this.readSearch(params);
+    });
     if (typeof matchMedia === 'function') {
       const destroyRef = inject(DestroyRef);
       for (const [query, target] of [['(max-width: 1100px)', this.compactBar], ['(max-width: 374px)', this.smallPhone]] as const) {
@@ -619,6 +634,12 @@ export class PurchaseList {
     /* Fill each untouched field as soon as the daily reference arrives. */
     effect(() => this.applyAutomaticRates(this.automaticRates()));
     if (!this.fx.series()) void this.fx.load();
+  }
+
+  /** ?q=: read once, then it leaves the address, so Terug from a container never brings back a search cleared since. */
+  private readSearch(params: ParamMap): void {
+    this.query.set(params.get('q')?.slice(0, 200) ?? '');
+    if (params.has('q')) void this.router.navigate([], { relativeTo: this.route, queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   reload(): void { void this.load(); }
@@ -944,6 +965,13 @@ export class PurchaseList {
           this.deletingOrderId.set(null);
         }
       });
+  }
+
+  /** The native host's chrome: the '+' Calculatie and the section's title menu. */
+  readonly hostPage: HostPageInput = { accessory: { id: 'startNew', label: 'Calculatie', icon: 'plus', prominent: true }, titleMenu: 'auto' };
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'startNew') this.startNew();
   }
 
   startNew(): void {

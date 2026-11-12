@@ -79,6 +79,7 @@ import { Ui } from '../../shared/ui';
       z-index: 210;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
+      padding-inline: var(--safe-l) var(--safe-r);
       background: rgb(20 14 12/0.96);
       backdrop-filter: blur(10px);
       animation: agreement-viewer-in 0.16s ease-out;
@@ -92,7 +93,7 @@ import { Ui } from '../../shared/ui';
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+      padding: calc(10px + var(--safe-t)) 12px 10px;
       color: #fff;
     }
     .spacer {
@@ -129,6 +130,8 @@ import { Ui } from '../../shared/ui';
     .stage {
       position: relative;
       display: grid;
+      /* The room that is left, in definite tracks: in an auto row the photo's max-height had nothing to go by and ran over the caption. */
+      grid-template: minmax(0, 1fr) / minmax(0, 1fr);
       min-height: 0;
       place-items: center;
       padding: 8px;
@@ -174,12 +177,6 @@ import { Ui } from '../../shared/ui';
       font-size: 11px;
     }
     @media (max-width: 560px) {
-      .private-mark {
-        max-width: 145px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
       .count {
         display: none;
       }

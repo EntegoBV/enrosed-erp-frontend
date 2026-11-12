@@ -112,6 +112,8 @@ export interface TicaAnalyticsDay {
   revenueExcl: number;
   goodsCostEur: number;
   missingCostLines: number;
+  /** The Enrosed kost inside goodsCostEur, which Resultaat counts as revenue (2026-11-06); absent on an older backend. */
+  enrosedCostEur?: number;
 }
 export interface TicaSettlementWrite {
   reference: string;

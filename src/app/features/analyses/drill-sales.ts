@@ -28,9 +28,18 @@ export interface TicaMonthRow {
   transactions: number;
   revenueExclEur: number;
   goodsCostEur: number;
+  /** The Enrosed kost inside goodsCostEur: Resultaat counts it as revenue (withEnrosedTica). */
+  enrosedCostEur: number;
   missingCostLines: number;
   /** Revenue minus the current product cost; null while a line has no cost. */
   marginEur: number | null;
+}
+
+/** A TICA month as Resultaat reads it: the Enrosed kost moves from its cost into its margin (Emre, 2026-11-06). */
+export function withEnrosedTica(row: TicaMonthRow): TicaMonthRow {
+  if (!row.enrosedCostEur) return row;
+  return { ...row, goodsCostEur: money(row.goodsCostEur - row.enrosedCostEur),
+    marginEur: row.marginEur === null ? null : money(row.marginEur + row.enrosedCostEur) };
 }
 
 const MONTHS = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'] as const;
@@ -57,10 +66,11 @@ export function ticaMonthRows(days: readonly TicaAnalyticsDay[], from: string | 
     if ((from && day.date < from) || (to && day.date > to)) continue;
     const month = day.date.slice(0, 7);
     const row = months.get(month) ?? { month, from: from && from > `${month}-01` ? from : `${month}-01`, to: to && to < lastDayOf(month) ? to : lastDayOf(month),
-      transactions: 0, revenueExclEur: 0, goodsCostEur: 0, missingCostLines: 0, marginEur: null };
+      transactions: 0, revenueExclEur: 0, goodsCostEur: 0, enrosedCostEur: 0, missingCostLines: 0, marginEur: null };
     row.transactions += day.transactionCount;
     row.revenueExclEur = money(row.revenueExclEur + day.revenueExcl);
     row.goodsCostEur = money(row.goodsCostEur + day.goodsCostEur);
+    row.enrosedCostEur = money(row.enrosedCostEur + (Number.isFinite(day.enrosedCostEur) ? day.enrosedCostEur! : 0));
     row.missingCostLines += day.missingCostLines;
     months.set(month, row);
   }
@@ -197,6 +207,8 @@ export interface MarginFigure {
   marginEur: number;
   marginPct: number | null;
   missingCostLines: number;
+  /** Words after the percentage: Resultaat's "waarvan Enrosed-kost € 66". */
+  extra?: string | null;
 }
 
 /**
@@ -210,7 +222,8 @@ export function marginViews(docs: readonly SalesDocumentRow[], tica: readonly Ti
   const total = { value: figure.marginEur, format: 'eur', of: 'sum' } as const;
   const pct = figure.marginPct === null ? null : `${figure.marginPct.toLocaleString('nl-BE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} % op goederen`;
   const summary = figure.missingCostLines
-    ? `Onvolledig: ${figure.missingCostLines} ${figure.missingCostLines === 1 ? 'regel' : 'regels'} zonder kost` : pct;
+    ? `Onvolledig: ${figure.missingCostLines} ${figure.missingCostLines === 1 ? 'regel' : 'regels'} zonder kost`
+    : [pct, figure.extra].filter(Boolean).join(' · ') || null;
   const gapLabel = marginGap(revenue, tica);
   /* With lines without a cost the tile shows "—": the rows stand without a total, as Resultaat's month and channel views. */
   const perDocument: DrillView = {

@@ -14,8 +14,10 @@ import { Skeleton } from './skeleton';
   imports: [EurPipe, Skeleton],
   template: `
     <section class="bank-picker" aria-label="Bestaande banktransactie">
-      <header><div><b>{{ heading() }}</b><small>{{ heading() === 'Banktransactie koppelen' ? 'Kies een bestaande transactie; bedrag en datum volgen de transactie.' : 'Kies een uitgaande beweging van de bank; de betaling volgt haar datum en bedrag.' }}</small></div>
-        <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : heading() === 'Banktransactie koppelen' ? 'Transactie kiezen' : 'Kiezen' }}</button>
+      <header><div><b>{{ heading() }}</b><small>{{ note() ?? (heading() === 'Banktransactie koppelen' ? 'Kies een bestaande transactie; bedrag en datum volgen de transactie.' : 'Kies een uitgaande beweging van de bank; de betaling volgt haar datum en bedrag.') }}</small></div>
+        @if (!fixed()) {
+          <button type="button" class="btn btn--sm" [disabled]="disabled()" [attr.aria-expanded]="expanded()" (click)="toggle()">{{ expanded() ? 'Sluiten' : selected() ? 'Andere kiezen' : heading() === 'Banktransactie koppelen' ? 'Transactie kiezen' : 'Kiezen' }}</button>
+        }
       </header>
       @if (selected(); as row) {
         <div class="bank-picker__selected" role="status"><div><b>{{ row.amountEur | eur }}</b><span>{{ day(row) }} · {{ row.counterparty || row.reference ? text(row).title : 'Geen tegenpartij' }}</span><small>{{ text(row).sub || 'Geen mededeling' }}</small><small>{{ accountLabel(row.account) }} · {{ row.source === 'ODOO' ? 'Odoo' : 'Handmatig' }}</small>@if (difference(row) !== null && difference(row) !== 0) { <small>Verschil bank − geboekt: {{ difference(row)! | eur }}. Maximaal € 0,02 bij koppelen aan een bestaande betaling.</small> }</div>
@@ -64,6 +66,10 @@ export class BankTransactionPicker implements OnInit {
   readonly exclude = input<readonly number[]>([]);
   /** Open the list at once (the sheet's 'Koppelen' already asked for it). */
   readonly startOpen = input(false);
+  /** The list is all there is (Inkoop's 'Transactie koppelen'): always open, no toggle. */
+  readonly fixed = input(false);
+  /** The line under the heading, when the host says it better. */
+  readonly note = input<string | null>(null);
   readonly selectedChange = output<BankStatementLine | null>();
   readonly expanded = signal(false);
   readonly rows = signal<BankStatementLine[]>([]);
@@ -79,14 +85,14 @@ export class BankTransactionPicker implements OnInit {
     const excluded = new Set(this.exclude());
     return bankTransactionOptions(reconcilableBankTransactions(this.rows(), this.accounts()).filter(row => !excluded.has(row.id)), this.direction() === 'ANY' ? this.filterDirection() : this.direction(), this.query(), this.amount(), this.exact());
   });
-  ngOnInit(): void { if (this.startOpen()) { this.expanded.set(true); void this.load(); } }
+  ngOnInit(): void { if (this.startOpen() || this.fixed()) { this.expanded.set(true); void this.load(); } }
   readonly allocated = bankTransactionAllocated;
   /** The clean words Kosten & bank shows for a line (bankTextOf), never the bank's raw Odoo text. */
   text(row: BankStatementLine): BankText { return bankTextOf(row); }
   difference(row: BankStatementLine): number | null { const amount = this.amount(); return amount != null && amount > 0 ? bankAmountDifference(row.amountEur, Math.sign(row.amountEur) * amount) : null; }
   day(row: BankStatementLine): string { return bankTransactionDay(row).split('-').reverse().join('/'); }
   toggle(): void { this.expanded.update(open => !open); if (this.expanded()) void this.load(); }
-  choose(row: BankStatementLine): void { if (this.disabled() || this.allocated(row)) return; this.selectedChange.emit(row); this.expanded.set(false); }
+  choose(row: BankStatementLine): void { if (this.disabled() || this.allocated(row)) return; this.selectedChange.emit(row); if (!this.fixed()) this.expanded.set(false); }
   accountLabel(key: string): string { return this.labels().get(accountKey(key)) ?? key; }
   async load(): Promise<void> {
     if (this.loading()) return;

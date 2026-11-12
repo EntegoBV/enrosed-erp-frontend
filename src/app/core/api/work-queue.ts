@@ -1,5 +1,11 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
 import { SalesApi } from './sales-api';
+import { Auth } from './auth';
+import { api } from './api.config';
+/* Type only: the rest of the partner sales client stays in the lazy screens, out of the first load. */
+import type { PartnerSalesSummary } from './partner-sales-api';
 import { AppNotification } from './models';
 import { messageOf } from './errors';
 import { QUEUE_INTERVAL_MS, reusesQueueRefresh, shouldRefreshQueue } from './work-queue-refresh';
@@ -22,6 +28,8 @@ const DISMISSED_KEY = 'enrosed.dismissedNotifications';
 @Injectable({ providedIn: 'root' })
 export class WorkQueue {
   private readonly sales = inject(SalesApi);
+  private readonly auth = inject(Auth);
+  private readonly http = inject(HttpClient);
 
   readonly items = signal<AppNotification[]>([]);
   readonly loading = signal(false);
@@ -30,6 +38,18 @@ export class WorkQueue {
   readonly loginRequestCount = signal(0);
   readonly loginIntakeFull = signal(false);
   readonly loginIntakeFullSources = signal<string[]>([]);
+  /**
+   * Veilingverkopen: the partner's meldingen not invoiced yet (GET /api/partner-sales/summary). null while unknown or
+   * on a backend without the portal. The nav count, the home card and the Te doen task all read this one signal.
+   */
+  readonly partnerSales = signal<PartnerSalesSummary | null>(null);
+  /**
+   * Something of the open meldingen can be invoiced: a sale is open. A buyback alone (its sale invoiced before) is
+   * open too, but Factureren can only net it against the next sale of that product, so it asks nobody to act.
+   */
+  readonly partnerSalesInvoiceable = computed(() => (this.partnerSales()?.openSaleQuantity ?? 0) > 0);
+  /** Open meldingen while something can be invoiced: the count on Veilingverkopen in the nav (a NavCountKey). */
+  readonly partnerSalesOpen = computed(() => (this.partnerSalesInvoiceable() ? this.partnerSales()!.openReports : 0));
   private readonly dismissed = signal<Set<string>>(this.restore());
   private refreshVersion = 0;
   private refreshPromise: Promise<void> | null = null;
@@ -48,10 +68,12 @@ export class WorkQueue {
   readonly revisionCount = computed(() =>
     this.items().filter((item) => item.kind === 'VOORSTEL' && item.actionNeeded).length);
 
-  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
-  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded && item.kind !== 'CONTAINER_AANKOMST'));
+  readonly actions = computed(() => this.visible().filter((item) => item.actionNeeded && !ownBucket(item)));
+  readonly news = computed(() => this.visible().filter((item) => !item.actionNeeded && !ownBucket(item)));
   /** Purchase alerts must never become customer work or a sales-order link. */
   readonly arrivals = computed(() => this.visible().filter((item) => item.kind === 'CONTAINER_AANKOMST'));
+  /** The partner's meldingen of the last 14 days: their own bell section, never customer work or a sales-order link. */
+  readonly partnerSaleItems = computed(() => this.visible().filter((item) => item.kind === 'PARTNER_VERKOOP'));
 
   /**
    * Fetches the queue. Not forced, it shares a fetch that is under way, and
@@ -61,6 +83,9 @@ export class WorkQueue {
    * callers force it.
    */
   refresh(force = false): Promise<void> {
+    /* A partner (Verhoeven) has no staff queue: this one choke point keeps the auto refresh, the bell, the push
+       listener and the native host from calling staff endpoints for a partner session. */
+    if (this.auth.isPartner()) return Promise.resolve();
     if (!force && this.refreshPromise) return this.refreshPromise;
     if (!force && !this.error() && reusesQueueRefresh(this.lastRefreshAt, Date.now())) return Promise.resolve();
     this.lastRefreshAt = Date.now();
@@ -76,6 +101,10 @@ export class WorkQueue {
     const version = ++this.refreshVersion;
     this.loading.set(true);
     this.error.set(null);
+    /* Asked beside the feed, never after it: the summary is cheap and must not wait for the feed's answer. */
+    const partnerSales = firstValueFrom(this.http.get<PartnerSalesSummary>(api('/api/partner-sales/summary'))).then(
+      (summary) => ({ summary, failure: null as unknown }),
+      (failure: unknown) => ({ summary: null, failure }));
     try {
       const feed = await this.sales.notifications();
       if (version !== this.refreshVersion) return;
@@ -100,6 +129,11 @@ export class WorkQueue {
         this.loginIntakeFullSources.set(Array.isArray(summary.intakeFullSources) ? summary.intakeFullSources : []);
       }
     } catch { /* older backend, missing stub method or network: keep the last values */ }
+    const answer = await partnerSales;
+    if (version !== this.refreshVersion) return;
+    /* A backend without the portal answers 404: nothing to count. A network failure keeps the last values. */
+    if (answer.summary) this.partnerSales.set(answer.summary);
+    else if ((answer.failure as { status?: number } | null)?.status === 404) this.partnerSales.set(null);
   }
 
   /**
@@ -166,7 +200,12 @@ export class WorkQueue {
  * whoever dismissed the first does want to see the second.
  */
 function key(item: AppNotification): string {
-  if (item.kind === 'CONTAINER_AANKOMST' && item.notificationId)
+  if ((item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP') && item.notificationId)
     return `${item.kind}|${item.notificationId}|${item.detail ?? ''}`;
   return `${item.kind}|${item.orderNumber}|${item.detail ?? ''}`;
+}
+
+/** Kinds with a bell section of their own: never in "Wij zijn aan zet" or "Van de klant". */
+function ownBucket(item: AppNotification): boolean {
+  return item.kind === 'CONTAINER_AANKOMST' || item.kind === 'PARTNER_VERKOOP';
 }

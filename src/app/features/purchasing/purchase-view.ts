@@ -1,6 +1,7 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { purchaseTrackedOrder } from './purchase-tracking-model';
+import { trackingMove } from './container-tracking-model';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -15,6 +16,7 @@ import { PurchasePartnerSheet } from './purchase-partner-sheet';
 import { PurchasePartnerPanel } from './purchase-partner-panel';
 import { PurchasePartnerPayments } from './purchase-partner-payments';
 import { PurchasePaymentOverview } from './purchase-payment-overview';
+import { orderTransactions } from './purchase-bank-transactions';
 import { PurchaseNacalcFooter } from './purchase-nacalc-footer';
 import { PurchaseNacalcOverview } from './purchase-nacalc-overview';
 import { PurchasePayeeSheet } from './purchase-payee-sheet';
@@ -28,7 +30,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { CbmPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import {
-  Category, OtherCost, PartnerFinancing, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
+  Category, OtherCost, PartnerFinancing, Payee, Product, ProductFamily, PurchaseOrder, PurchaseOrderLine, PurchaseOrderView, ReceiptVarianceTotals, Supplier, StockLocation, PurchasePayment, PurchasePaymentRow, PurchaseDocument, SalesOrderView, Customer, PAYMENT_TERMS,
 } from '../../core/api/models';
 import {
   COLOUR_SWATCHES, containerCountForFill, containerLabel,
@@ -60,6 +62,9 @@ import { IosNav } from '../../shared/ios-nav';
 import { Icon } from '../../shared/icon';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction } from '../../core/platform/host';
+import { menuRows } from '../../shared/host-page';
 import { PurchaseNacalcGlance } from './purchase-nacalc-glance';
 import { PurchaseStepConfirmSheet } from './purchase-step-confirm-sheet';
 import { PurchaseStepHandoff } from './purchase-step-handoff';
@@ -71,7 +76,7 @@ import { batchPending, batchStale, mergeStale, purchaseBatchRows } from './purch
 import { PurchaseBatchesCard } from './purchase-batches-card';
 import { lineVersionText } from './purchase-supplier-version';
 import {
-  costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
+  STEP_SYMBOL, costsAppliedFor, costsSupersededCount, countWords, landedTile, lineCount, nextStepCard, parseTab, paymentTile, paymentsDot, productsDot, progressSteps, readNextStep, stepLabel,
   replaceTabInUrl, rootSectionOf, statusTone, stepConfirm, tabOfSection, tabParam, tabSegments, type AskedStep, type PhoneStep, type PhoneTab,
 } from './purchase-phone-model';
 import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTabsStuck, scrollPhoneTabsTop, tappedSelectedTab } from './purchase-phone-scroll';
@@ -95,7 +100,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
-        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()">
+        <app-ios-nav [title]="containerName(data.order)" [customLarge]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <button class="ios-circle" type="button" aria-label="PDF downloaden" (click)="pdfOpen.set(true)"><app-icon name="pdf" [size]="19" /></button>
             <button class="ios-circle" type="button" aria-label="Meer acties" aria-haspopup="dialog" [attr.aria-expanded]="moreMenu()" (click)="moreMenu.set(true)"><app-icon name="more" [size]="20" /></button>
@@ -119,9 +125,9 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="mpo-progress__bar" aria-hidden="true"></span>
                   @if (data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
-                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
+                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
                       <span class="mpo-progress__label">{{ step.label }}</span>
-                      <span class="mpo-progress__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                      <span class="mpo-progress__date" [class.mpo-moved--later]="arrivalMove()?.news && arrivalMove()?.later" [class.mpo-moved--earlier]="arrivalMove()?.news && arrivalMove()?.later === false">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
                     </button>
                   } @else {
                     <span class="mpo-progress__label">{{ step.label }}</span>
@@ -271,7 +277,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <span class="ios-cell__sub mpo-wrap">{{ planLabel() }}</span></span></div>
                 @if (data.order.trackingReference) {
                   <button class="ios-cell" type="button" (click)="trackingPanel()?.showDetails()">
-                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span></span>
+                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span>
+                      @if (arrivalMove(); as move) { <span class="ios-cell__sub mpo-wrap mpo-moved" [class.mpo-moved--later]="move.news && move.later" [class.mpo-moved--earlier]="move.news && !move.later">Aankomst was {{ move.from | dateNl }} · {{ move.text }}</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                 }
@@ -544,7 +551,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
               <app-purchase-payment-overview mode="read" [ledger]="paymentLedger()" [state]="paymentState()" [error]="paymentsError()"
                 [planLabel]="planLabel()" [supplierName]="supplierName()" [nacalc]="nacalcSummary()" [bankLineLabel]="bankLineLabel"
                 (add)="recordPayment($event)" (download)="downloadDocument($event)" (invoiceFile)="openDocumentFile($event)" (refresh)="reloadPayments()" (openEditor)="editPayments()"
-                (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')" />
+                (openCosts)="scrollToCard('purchase-result-section', 'purchase-costs-section')"
+                [transactions]="orderTransactions()" (linkBank)="linkTransaction()" (openTransaction)="openBankLine($event)" />
             </section>
             <!-- Money in: a partner who co-finances the container. -->
             @if (data.order.partnerCustomerId != null) {
@@ -785,7 +793,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
       }
     } @else {
       <div class="mpo-phone mpo-phone--view">
-        <app-ios-nav title="Inkoop" [largeTitle]="false" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
+        <app-ios-nav title="Inkoop" [largeTitle]="false" [heroLoading]="!loadError()" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
         @if (loadError(); as error) {
           <div class="mpo-loading"><app-load-error [message]="error" [busy]="loadRetrying()" (retry)="retryLoad()" /></div>
         } @else {
@@ -804,6 +812,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
     .mpo-progress__tracking{display:grid;gap:3px;padding:0;min-height:44px;align-content:start;text-align:left}
     .mpo-progress__tracking .mpo-progress__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
     .mpo-track-link:focus-visible,.mpo-progress__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
+    .mpo-progress__tracking .mpo-progress__date.mpo-moved--later,.ios-cell__sub.mpo-moved--later{color:var(--warn);font-weight:650}
+    .mpo-progress__tracking .mpo-progress__date.mpo-moved--earlier,.ios-cell__sub.mpo-moved--earlier{color:var(--ok);font-weight:650}
     .mpo-stale{margin:0 16px 14px}.mpo-stale__link{color:inherit;font-weight:700;white-space:nowrap}
   `,
 })
@@ -812,6 +822,8 @@ export class PurchaseView {
   readonly containerName = containerName;
   readonly pdfOpen = signal(false);
   readonly trackingPanel = viewChild(PurchaseTracking);
+  /** Tracking moved the expected arrival: the date that stood and the difference. */
+  readonly arrivalMove = computed(() => trackingMove(this.trackingPanel()?.row() ?? null));
   readonly quoteOpen = signal(false);
   readonly quoteLinesOf = quoteLinesOf;
   /** The section the screen shows: a tab's root, or a deep link's card (the screen sets it for ?section=). */
@@ -1148,6 +1160,20 @@ export class PurchaseView {
     return order ? paymentPlanLabel(order, PAYMENT_TERMS) : '';
   });
 
+  /** 'Op de bank': the transactions that paid this container, with who got what (the other containers once the editor loads them). */
+  readonly orderTransactions = computed(() => {
+    const data = this.view();
+    const rows = this.paymentRows();
+    return data ? orderTransactions(data.order.id, this.payments() ?? [], this.bankLines(), rows?.orderId === data.order.id ? rows.rows : null) : [];
+  });
+  /** 'Transactie koppelen…' happens in the editor (?section=link), which returns here once the sheet closes. */
+  linkTransaction(): void {
+    const id = this.view()?.order.id;
+    if (id != null) void this.routerNav.navigate(['/purchasing', id, 'edit'], { queryParams: { section: 'link' }, replaceUrl: true });
+  }
+  /** The transaction in Kosten & bank. */
+  openBankLine(lineId: number): void { void this.routerNav.navigate(['/costs'], { queryParams: { line: lineId } }); }
+
   /** Recording happens in the editor: it opens on the payment sheet and returns here once it closes. */
   recordPayment(action: PurchasePaymentAction): void {
     const id = this.view()?.order.id;
@@ -1202,9 +1228,19 @@ export class PurchaseView {
     try {
       const list = await this.sourcing.payments(id);
       if (Number(this.id()) === id) this.payments.set(list);
+      if (list.some(payment => payment.bankStatementLineId != null)) void this.loadPaymentRows(id);
     } catch (failure: unknown) {
       if (Number(this.id()) === id) this.paymentsError.set(messageOf(failure, 'De betalingen konden niet worden geladen.'));
     }
+  }
+
+  /** Op de bank names the other containers a transaction paid: every payment as GET /purchase-payments lists it (a hint only). */
+  private readonly paymentRows = signal<{ orderId: number; rows: PurchasePaymentRow[] } | null>(null);
+  private async loadPaymentRows(id: number): Promise<void> {
+    try {
+      const rows = await this.sourcing.purchasePayments();
+      if (Number(this.id()) === id) this.paymentRows.set({ orderId: id, rows });
+    } catch { /* without them a transaction shows this container's parts and what went elsewhere */ }
   }
 
   async downloadDocument(doc: PurchaseDocument): Promise<void> {
@@ -1530,6 +1566,41 @@ export class PurchaseView {
     else if (item.id === 'files') void this.routerNav.navigate(['/files'], { queryParams: { view: 'purchase', doel: id } });
     else if (item.id === 'invoices') void this.routerNav.navigate(['/costs'], { queryParams: { view: 'invoices', po: id } });
     else if (item.id === 'analysis') void this.routerNav.navigate(['/analyses/purchasing'], { queryParams: { orderId: id } });
+  }
+
+  /**
+   * The native host's chrome (the web dock is hidden there): the next step as the primary (Bestellen, Container
+   * vertrokken…), Bewerken and PDF as items, the '…' rows as the menu; the ERP tab bar stays.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const step = this.readStep();
+    const edit: HostAction = { id: 'edit', label: 'Bewerken', icon: 'pencil' };
+    return {
+      subtitle: data.order.alias ? `${data.order.number} · ${this.supplierName()}` : this.supplierName(),
+      primary: step ? { id: 'step', label: stepLabel(step, this.costsApplied(), false), symbol: STEP_SYMBOL[step] } : edit,
+      actions: [...(step ? [edit] : []), { id: 'pdf', label: 'PDF', icon: 'pdf' }],
+      menu: menuRows(this.moreItems()),
+      tabBar: 'erp',
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    if (!data) return;
+    const step = this.readStep();
+    switch (event.id) {
+      case 'edit':
+        void this.routerNav.navigate(['/purchasing', data.order.id, 'edit'], { queryParams: step ? { tab: tabParam(this.activeTab()) } : this.editQuery() });
+        break;
+      case 'pdf': this.pdfOpen.set(true); break;
+      case 'step': if (step) this.openStep(step); break;
+      default: {
+        const item = this.moreItems().find((candidate) => candidate.id === event.id);
+        if (item) this.pickMore(item);
+      }
+    }
   }
 
   /* ---- the next step: asked here, run by the editor --------------------- */

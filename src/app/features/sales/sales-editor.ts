@@ -1,5 +1,7 @@
-import { otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
+import { euroText, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
+import { partCartonNote, perPieceOptions, salesLineWithPerPiece } from './sales-per-piece';
+import { Segmented } from '../../shared/segmented';
 import { canReopenSalesDocument } from './sales-reopen';
 import { QUANTITY_FIELD_SELECTOR, showServerQuantities } from './sales-quantity-fields';
 import { canCreateCreditNote, creditNoteNextStep, creditNoteSettlement, creditReasonLabel, euro, isCreditNote, isDeadCreditNote } from './sales-credit-note';
@@ -10,7 +12,9 @@ import { salesLineUnavailable, salesUnavailableLineCount, salesLineRequestedQuan
 import { SalesSplitSheet } from './sales-split-sheet';
 import { SalesFulfillmentCard } from './sales-fulfillment-card';
 import { salesSplitBlockReason } from './sales-split-state';
-import type { CreditNoteProposal, SalesSplitResult } from '../../core/api/models';
+import type { CreditNoteProposal, ExpectedStock, SalesSplitResult } from '../../core/api/models';
+import { IncomingPill } from '../../shared/incoming-pill';
+import { brusselsToday, incomingMap, type Incoming } from '../../shared/product-incoming';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceContentsFor, advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -22,7 +26,9 @@ import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, HostListener } from '@angular/core';
+import { LinePriceSource, linePriceState, type LinePriceChoice, type LinePriceState } from './line-price-source';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, HostListener } from '@angular/core';
+import { CustomerPriceApi } from '../../core/api/customer-price-api';
 import { Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CatalogApi } from '../../core/api/catalog-api';
@@ -30,15 +36,19 @@ import { SourcingApi } from '../../core/api/sourcing-api';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './partner-settlement';
+import { REPORT_BACKED_LABEL, REPORT_LOCK_NOTE, isReportBacked, shipsViaReports } from './report-backed';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
-import { mergeOrderAfterSave, shippingSnapshot, withoutShipping } from '../../core/api/sales-shipping';
+import { mergeOrderAfterSave, shippingFields, shippingSnapshot, withoutShipping } from '../../core/api/sales-shipping';
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesOrder, SalesOrderView, PurchaseOrderView,
+  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesLinePriceSource, SalesOrder, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { HostStickyBand } from '../../shared/host-page';
+import type { HostAction, HostMenuItem } from '../../core/platform/host';
 import { PageHeader } from '../../shared/page-header';
 import { ProductPicker } from '../../shared/product-picker';
 import { DateField } from '../../shared/date-field';
@@ -56,6 +66,11 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
+import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
+import { PALLET_LEGACY_MAX_HEIGHT_CM } from './pallet-calculator-model';
+import {
+  automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
+} from './pallet-stack';
 import {
   isLocallyDeletableSalesDocument, salesDocumentLabel,
 } from './sales-list-swipe';
@@ -73,6 +88,12 @@ import type { SalesStockCost } from '../../core/api/stock-batch-models';
 import { batchFormat } from '../../core/api/stock-batch-units';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 
+/** What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. */
+function layoutKey(order: SalesOrder): string {
+  return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
+    order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line), line.perPiece === true])]);
+}
+
 /**
  * Sales order and quote.
  *
@@ -83,15 +104,16 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
-            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink],
+            EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
     @if (view(); as data) {
       <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                        [showBack]="true" [showBell]="false"
                        [titleEditable]="mobileCommercialEditable()"
-                       (titleChange)="patch({ number: $event })">
+                       (titleChange)="patch({ number: $event })"
+                       [host]="hostPage()" (hostAction)="hostAction($event)">
         <div class="quote-header-actions">
           <!-- 'In verwerking nemen' needs the room on a phone; the hero below carries the same total. -->
           @if (!advanceAgreement() && !webOrderOpen()) {
@@ -206,10 +228,9 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                   {{ data.priced.totals.cartons === 1 ? 'losse doos' : 'losse dozen' }}
                 </span>
               } @else {
-                <strong>{{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}</strong>
+                <strong>{{ palletFigure(data) }}</strong>
                 <span>
-                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1
-                      ? 'pallet' : 'pallets' }}
+                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
                 </span>
               }
             </div>
@@ -226,7 +247,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             </div>
           </div>
 
-          @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
+          @if (!isPartnerDocument(data.order) && !reportLocked() && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0) {
             <!-- The country's minimum rides with the totals, in view the
                  whole time you build; green the moment it is met. -->
             <div class="hero-min" [class.hero-min--ok]="data.priced.validation.meetsMinimum" role="status">
@@ -417,7 +438,14 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
               </div>
             </div>
             <button class="btn btn--sm" type="button" [disabled]="busy()"
-                    (click)="duplicate()">{{ isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie' }}</button>
+                    (click)="duplicate()">{{ copyActionLabel(data) }}</button>
+          </div>
+        }
+        @if (reportLocked() && canEdit()) {
+          <div class="alert alert--info quote-lock">
+            <span class="alert__icon">✓</span>
+            <div class="grow"><b>{{ reportBackedLabel }}</b><div class="small">{{ reportLockNote }}</div></div>
+            <a class="btn btn--sm" routerLink="/veilingverkopen">Veilingverkopen</a>
           </div>
         }
 
@@ -465,7 +493,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
         }
 
         <div class="workflow-layout erp-workspace__layout">
-        <nav class="workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van de offerte">
+        <nav class="workflow-nav erp-workspace__section-nav" hostStickyBand aria-label="Onderdelen van de offerte">
           @for (item of workflowSections; track item.id; let number = $index) {
             <!-- On the phone, Status lives inside the Controle step; an
                  invoice has no send step at all. -->
@@ -519,7 +547,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             <div class="form-grid">
               <div class="field span-2">
                 <label class="req" for="so-customer">Klant</label>
-                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.customerId"
+                <select class="select" id="so-customer" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked() || reportLocked()" [ngModel]="data.order.customerId"
                         (ngModelChange)="setCustomer(+$event)">
                   @for (customer of customers(); track customer.id) {
                     <option [ngValue]="customer.id">{{ customer.company }}</option>
@@ -530,7 +558,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
-                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked()" [ngModel]="data.order.countryCode"
+                  <select class="select" id="so-country" [disabled]="mobileFinanciallyLocked() || isCreditNoteDoc() || advanceLocked() || reportLocked()" [ngModel]="data.order.countryCode"
                           (ngModelChange)="patch({ countryCode: $event })">
                     @for (country of countries(); track country.code) {
                       <option [ngValue]="country.code">{{ country.name }}</option>
@@ -712,9 +740,9 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                     <span class="order-line__index">Regel {{ salesLineNumber(line.productId) }} · {{ line.sku }}</span>
                     <h3 [id]="'line-title-' + line.productId">{{ line.description }}</h3>
                     @if (!lineUnavailable(line.productId)) { <span>
-                      {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }} ·
+                      {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}@if (linePartCarton(line); as part) {, {{ part }}} ·
                       @if (!isLooseCartons(data) && !data.order.pallets.length) {
-                        {{ line.pallets }} {{ line.pallets === 1 ? 'pallet' : 'pallets' }} ·
+                        {{ linePallets(data, line) }} {{ linePallets(data, line) === 1 ? 'pallet' : 'pallets' }} ·
                       }
                       {{ line.cbm | cbm }}
                     </span> }
@@ -742,23 +770,43 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                 <div class="line-fields">
                   <div class="field">
                     <label [attr.for]="'q-' + line.productId">Aantal {{ lineUnit(line.productId).plural }}</label>
-                    <input class="input num" [id]="'q-' + line.productId" type="number"
+                    <!-- A line that counts per piece tints its number (a state on the figure, not a glyph) and shows its switch. -->
+                    <input class="input num" [class.input--per-piece]="perPieceOn(line.productId)" [id]="'q-' + line.productId" type="number"
                            min="0" step="1" inputmode="numeric" [disabled]="!mobileCommercialEditable()"
                            [attr.data-quantity-line]="line.productId" [ngModel]="line.quantity"
                            (ngModelChange)="setLineQuantity(line.productId, $event)"
                            (blur)="flushPreview()" (keydown.enter)="flushPreview()" />
+                    @if (perPieceSwitch(line.productId)) {
+                      <app-segmented class="line-per" label="Aantal per" variant="ios" [options]="perPieceOptions(line.productId)"
+                                     [attr.data-per-piece-line]="line.productId"
+                                     [value]="linePerPiece(line.productId) ? 'piece' : 'step'"
+                                     (changed)="setLinePerPiece(line.productId, $event === 'piece')" />
+                    }
                     @if (linePending()[line.productId]; as to) {
                       <span class="hint warn-text" role="status">{{ lineStepNotice(line.productId) }}: wordt <b>{{ to | num }} {{ lineUnit(line.productId).short }}</b></span>
+                      @if (canKeepPieces(line.productId)) {
+                        <button class="line-keep" type="button" [attr.data-per-piece-line]="line.productId" (click)="setLinePerPiece(line.productId, true)">{{ currentQuantity(line.productId) | num }} houden</button>
+                      }
                     }
                     @if (creditLineHint(line.productId, line.quantity); as hint) { <span class="credit-line-hint">{{ hint }}</span> }
                   </div>
                   <div class="field">
-                    <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
-                    <div class="input-affix">
+                    <!-- A customer price wears a K beside the label (the marker brings the label along); a line on it
+                         also tints its price field, since a glyph alone is small on a phone. -->
+                    @let priceState = linePriceState(line);
+                    @if (priceState) {
+                      <app-line-price-source [state]="priceState" [editable]="mobileCommercialEditable()" [heading]="line.description"
+                                             [labelText]="lineUnit(line.productId).priceLabel" [labelFor]="'p-' + line.productId"
+                                             [customerId]="view()?.order.customerId ?? null" [productId]="line.productId" [excludeDocumentId]="view()?.order.id ?? null"
+                                             (use)="useLinePrice(line.productId, $event)" />
+                    } @else {
+                      <label [attr.for]="'p-' + line.productId">{{ lineUnit(line.productId).priceLabel }}</label>
+                    }
+                    <div class="input-affix" [class.input-affix--agreed]="priceState?.source === 'CUSTOMER'">
                       <input class="input num" [id]="'p-' + line.productId" type="number"
                              min="0" step="0.01" inputmode="decimal" [disabled]="!mobileCommercialEditable()"
                              [ngModel]="line.unitPrice"
-                             (ngModelChange)="setLine(line.productId, { unitPriceEur: +$event })"
+                             (ngModelChange)="setLinePrice(line, $event)"
                              (blur)="creditPriceBlur(line.productId, $event)" />
                       <!-- The discount hides behind its own vertical tab: two
                            calm fields until you actually want a third. -->
@@ -831,8 +879,16 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                         <b class="danger-text">Levertermijn nodig</b>
                         <span>{{ line.shortfall ?? 0 | num }} {{ lineUnit(line.productId).plural }} niet op voorraad</span>
                       }
+                      <!-- Not covered by stock, on a document that still delivers: what is coming, and when, answers
+                           the delivery term. A load that failed says so instead of reading as "nothing is coming". -->
+                      @if (!line.inventoryKnown || !line.inStock) {
+                        @if (lineComing(line.productId); as inc) { <app-incoming-pill variant="inline" [value]="inc" /> }
+                        @else if (incomingMissing()) {
+                          <button class="coming-retry" type="button" [disabled]="incomingState() === 'loading'" (click)="retryIncoming()">{{ incomingState() === 'loading' ? 'Onderweg laden…' : 'Onderweg niet geladen · opnieuw' }}</button>
+                        }
+                      }
                     </span>
-                    <button class="delivery-edit" type="button" [disabled]="!canEditTerms()"
+                    <button class="delivery-edit" type="button" [disabled]="!canEditTerms() || reportLocked()"
                             [attr.aria-label]="editingDelivery() === line.productId
                               ? 'Leverweek sluiten voor ' + line.description
                               : (!line.inStock && !line.deliveryWeek
@@ -1003,8 +1059,8 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                   {{ data.priced.totals.cartons | num }} losse {{ data.priced.totals.cartons === 1 ? 'doos' : 'dozen' }}
                   <small>{{ data.priced.totals.cbm | cbm }} · {{ data.priced.totals.weightKg | num: 0 }} kg</small>
                 } @else {
-                  {{ data.priced.totals.palletsManual || data.priced.totals.palletsStrict }}
-                  {{ (data.priced.totals.palletsManual || data.priced.totals.palletsStrict) === 1 ? 'pallet' : 'pallets' }}
+                  {{ palletFigure(data) }}
+                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
                   <small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.cbm | cbm }}</small>
                 }
               </dd></div>
@@ -1027,9 +1083,12 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                 </dd></div>
               }
             </dl>
-            @if (!isLooseCartons(data) && data.priced.totals.unassignedCartons > 0) {
-              <div class="logistics-option__warning">
-                {{ data.priced.totals.unassignedCartons | num }} dozen zijn nog niet aan een pallet toegewezen.
+            @if (!isLooseCartons(data) && data.order.pallets.length && (layoutCheck()?.loose ?? 0) > 0) {
+              <div class="logistics-option__warning row wrap">
+                <b class="grow">{{ layoutCheck()!.loose | num }} los</b>
+                @if (canEditShipping() && layoutCheck()!.looseFitting) {
+                  <button class="btn btn--sm" type="button" [disabled]="pricingStale()" (click)="refreshLayout()">Indeling bijwerken</button>
+                }
               </div>
             }
             <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditShipping()"
@@ -1038,6 +1097,13 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             </button>
             @if (canEditShipping()) {
               <p class="hint" role="status">{{ transportSaveStatus() }}</p>
+              @if (transportRefused()) {
+                <p class="hint hint--warn">{{ saveError() }}</p>
+                <div class="row wrap">
+                  <button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
+                  <button class="btn btn--sm btn--quiet" type="button" [disabled]="transportSaving()" (click)="discardTransport()">Wijzigingen weggooien</button>
+                </div>
+              }
               @if (data.order.sentAt) {
                 <p class="hint">Wijzigingen staan na opslaan in de online offerte en een nieuwe PDF. De eerdere e-mailbijlage blijft gelijk; gebruik ‘Opnieuw versturen’ als je de klant wilt verwittigen.</p>
               }
@@ -1063,7 +1129,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             <app-sales-advance-deductions [view]="data" />
             <app-sales-receipts [view]="data" [dirty]="dirty()" [openRequest]="receiptOpenRequest()" (changed)="paymentReceived($event)" (applyRequested)="openOffset($event)" />
             <app-sales-invoice-declaration [view]="data" [dirty]="dirty() || saving()" />
-            @if (isClaimDoc() && !data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+            @if (isClaimDoc() && (data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
               <button class="btn btn--sm" type="button" [disabled]="sending() || dirty()" (click)="openSend()">{{ isCreditNoteDoc() ? 'Creditnota e-mailen…' : 'Factuur e-mailen…' }}</button>
             }
             @if (data.order.sourcePurchaseOrderId && !data.order.partnerPurchaseOrderId && !isCreditNoteDoc()) { <p class="tiny muted">Reguliere verkoop uit <a [routerLink]="['/purchasing', data.order.sourcePurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() || 'deze container' }}</a>.</p> }
@@ -1082,14 +1148,14 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
                   <div class="desk-partner__actions">
                     <button class="btn btn--primary btn--sm" type="button" (click)="settlementOpen.set(true)">Veilingafrekening maken</button>
-                    <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
+                    <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked() || reportLocked()" (click)="partnerLinkOpen.set(true)">Koppeling wijzigen</button>
                     <button class="linklike" type="button" [disabled]="busy()" (click)="unlinkPartner(data)">Ontkoppelen</button>
                   </div>
                 }
               </section>
             } @else if (!isWebOrder()) {
               <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
-                <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
+                <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked() || reportLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
             }
             <!-- What is actually in the box, before any figure: the check
                  starts with the order as the customer will read it. -->
@@ -1146,7 +1212,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
                 <span>Goederen</span>
                 <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
-              @if (!isPartnerDocument(data.order) && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
+              @if (!isPartnerDocument(data.order) && !reportLocked() && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
                 <!-- The minimum is a goods matter, so its line lives here. -->
                 <div class="receipt-min receipt-min--goods">
                   <div class="receipt-min__row">
@@ -1180,7 +1246,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
               }
               <!-- The one commercial lever at check time: an order discount
                    for a fair or a deal, as a percentage or an amount. -->
-              @if (canEdit() && !isCreditNoteDoc() && !advanceLocked()) {
+              @if (canEdit() && !isCreditNoteDoc() && !advanceLocked() && !reportLocked()) {
                 @if (!orderDiscountOpen()) {
                   <button class="receipt-korting__add" type="button"
                           (click)="orderDiscountOpen.set(true)">
@@ -1371,7 +1437,7 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
             <button class="btn btn--primary sales-mobile-dock__save" type="button" [disabled]="saving() || saveConflict()" (click)="save()">
               {{ saving() ? 'Opslaan…' : 'Opslaan' }}
             </button>
-          } @else if (shippingDirty() || transportSaving()) {
+          } @else if (transportQueued() || transportSaving()) {
             <span class="tiny muted" role="status">{{ saveError() ? 'Niet opgeslagen' : 'Opslaan…' }}</span>
           }
           @if (phoneStep() < 3) {
@@ -1475,18 +1541,18 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
       }
 
       @if (palletSheet()) {
-        <app-sheet title="Transport &amp; levering" [wide]="true" (closed)="closeShipping()">
+        <app-sheet title="Transport &amp; levering" [wide]="true" variant="ios" (closed)="closeShipping()">
           <div body>
-            @if (mobileFinanciallyLocked() && canEdit()) {
-              <div class="field"><label for="mobile-split-manual-freight">Transport voor dit deel, excl. btw</label><div class="input-affix"><input class="input" id="mobile-split-manual-freight" type="number" inputmode="decimal" min="0" step="0.01" [ngModel]="data.order.manualFreightEur" (ngModelChange)="applyShippingPatch({ manualFreightEur: $event })" /><span class="input-affix__suffix">€</span></div><span class="hint">Vast transportbedrag. De toegewezen handling blijft behouden.</span></div>
-            }
             @if (view(); as data) {
               <app-shipping-planner
                 [view]="data"
                 [canEdit]="canEditShipping() && !mobileFinanciallyLocked()"
+                [splitFreight]="mobileFinanciallyLocked() && canEdit()"
+                [pricing]="pricingStale()"
                 [carriers]="carriers()"
                 [customerPostcode]="customerPostcode()"
                 [countryName]="orderCountryName()"
+                [issued]="issuedBefore()"
                 (patch)="applyShippingPatch($event)"
                 (action)="handlePalletAction($event)"
               />
@@ -1494,11 +1560,11 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
           </div>
           <div foot style="display:contents">
             <div role="status" class="small grow">{{ transportSaveStatus() }}
-              @if (shippingDirty() && saveError()) {
-                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" (click)="flushTransport()">Opnieuw proberen</button>
+              @if (transportRefused()) {
+                <p>{{ saveError() }}</p><button class="btn btn--sm" type="button" [disabled]="transportSaving()" (click)="flushTransport()">Opnieuw</button>
               }
             </div>
-            <button class="btn btn--primary" type="button" [disabled]="transportSaving()" (click)="closeShipping()">Klaar</button>
+            <button class="btn btn--primary" type="button" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
       }
@@ -1528,6 +1594,11 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
           [groupByFamily]="true"
           [preserveSourceOrder]="true"
           [priceOf]="priceOf"
+          [priceMarkOf]="priceMarkOf"
+          [incoming]="incomingItems()"
+          [incomingState]="incomingState()"
+          (incomingRetry)="retryIncoming()"
+          [perPieceOnLine]="perPieceOnLines()"
           mode="multi"
           (picked)="addLine($event)"
           (pickedMany)="addLines($event)"
@@ -1823,6 +1894,8 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
     .delivery-row__copy { min-width:0;flex:1;display:flex;flex-direction:column;font-size:11.5px }
     .delivery-row__copy b { font-size:12px }
     .delivery-row__copy span { overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap }
+    .coming-retry { align-self:flex-start;min-height:44px;padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;text-align:left;cursor:pointer }
+    .coming-retry:disabled { color:var(--muted);cursor:default }
     .delivery-edit,.remove-line,.delete-draft { min-height:44px;padding:7px 9px;border:0;border-radius:10px;background:transparent;color:var(--rose-dark);font-size:11.5px;font-weight:680;cursor:pointer }
     .delivery-week { margin-top:10px;padding-top:10px;border-top:1px solid var(--line) }
     .delivery-week .field { margin:0 }
@@ -2288,7 +2361,7 @@ export class SalesEditor {
   readonly mobileSplitBusy = signal(false);
   readonly mobileSplitBlockReason = salesSplitBlockReason;
   readonly mobileFinanciallyLocked = computed(() => !!this.view()?.fulfillment?.financialsLocked);
-  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked() && !this.advanceLocked());
+  readonly mobileCommercialEditable = computed(() => this.canEdit() && !this.mobileFinanciallyLocked() && !this.advanceLocked() && !this.reportLocked());
   readonly mobileCustomerAuthoredMessage = customerMessageIsReadOnly;
   readonly mobileCustomerNote = originalCustomerMessage;
 
@@ -2346,6 +2419,7 @@ export class SalesEditor {
   protected readonly catalog = inject(CatalogApi);
   private readonly stockBatches = inject(StockBatchApi);
   private readonly sourcing = inject(SourcingApi);
+  private readonly customerPriceApi = inject(CustomerPriceApi);
   protected readonly router = inject(Router);
   protected readonly ui = inject(Ui);
   private readonly work = inject(WorkQueue);
@@ -2394,6 +2468,17 @@ export class SalesEditor {
    * advance back). To change it, delete the concept and make a new advance.
    */
   readonly advanceLocked = computed(() => isAdvanceBillingInvoice(this.view()));
+  /** Made from the partner's meldingen (Veilingverkopen): lines, extras and customer follow them and stay as invoiced. */
+  readonly reportLocked = computed(() => isReportBacked(this.view()));
+  readonly reportLockNote = REPORT_LOCK_NOTE;
+  readonly reportBackedLabel = REPORT_BACKED_LABEL;
+  readonly reportBacked = isReportBacked;
+  /** Its stock left with the meldingen: no shipment to offer (the server stamps it at issue). */
+  readonly shipsViaReports = shipsViaReports;
+  /** The way on from a frozen document: a copy, the container's partner invoices, or the meldingen behind it. */
+  copyActionLabel(data: SalesOrderView): string {
+    return isReportBacked(data) ? 'Veilingverkopen' : isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie';
+  }
   readonly advanceLockNote = 'Het bedrag van een voorschotfactuur staat vast; verwijder dit concept en maak een nieuw voorschot vanuit de offerte om het te wijzigen.';
 
   /** A slotfactuur's 'Voorschotfactuur F-… van …' line and every line of a voorschotfactuur are the server's: never edited or removed here. */
@@ -2671,9 +2756,7 @@ export class SalesEditor {
     }
     if (id === 'quote-logistics') {
       if (isAdvanceInvoice(data)) return advancePlanningHint(data) !== 'Nog te bevestigen';
-      return !data.priced.validation.freightPricingIssue
-        && (data.priced.totals.unassignedCartons ?? 0) <= 0
-        && !this.overassigned();
+      return !data.priced.validation.freightPricingIssue && !this.layoutAttention(data);
     }
     if (id === 'quote-check') {
       /* An invoice or a credit note is issued, not sent: the quote's send checklist does not apply. */
@@ -2713,7 +2796,7 @@ export class SalesEditor {
       if (data.order.docType === 'CREDITNOTA') return 'Geen levering · creditnota';
       if (isAdvanceInvoice(data)) return advancePlanningHint(data);
       if (data.priced.validation.freightPricingIssue) return 'Vracht nakijken';
-      if (data.priced.totals.unassignedCartons > 0 || this.overassigned()) return 'Indeling nakijken';
+      if (this.layoutAttention(data)) return 'Indeling nakijken';
       return data.order.freight === 'TE_BEPALEN' ? 'Vracht later' : 'Volledig';
     }
     if (id === 'quote-check') {
@@ -2730,6 +2813,67 @@ export class SalesEditor {
   readonly desktop = inject(DesktopViewport);
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Gegevens', 'Producten', 'Levering', 'Controle'] as const;
+
+  /**
+   * The native host's chrome: Opslaan while something is unsaved, else the dock's step primary (the same chain as
+   * the phone dock, whose buttons the host hides), PDF, Annuleren in the menu; a dirty editor guards the back swipe.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const dirty = this.dirty();
+    let primary: HostAction | null = null;
+    if (this.canEdit() && this.documentDirty() && !this.transportSaving()) {
+      primary = { id: 'save', label: 'Opslaan', symbol: 'checkmark', disabled: this.saving() || this.saveConflict() };
+    } else if (this.webOrderOpen()) {
+      primary = { id: 'openTake', label: 'In verwerking nemen', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (this.webOrderCancelled()) {
+      primary = { id: 'pdfView', label: 'PDF bekijken', icon: 'pdf' };
+    } else if (!dirty && this.pendingRevision()) {
+      primary = { id: 'focusPendingRevision', label: 'Wijziging beoordelen' };
+    } else if (!dirty && data.order.status === 'GEACCEPTEERD' && this.invoiceBlockedByOrder(data)) {
+      primary = { id: 'duplicate', label: 'Nieuwe kopie', icon: 'copy', disabled: this.busy() };
+    } else if (!dirty && !this.isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
+      primary = { id: 'makeInvoice', label: this.advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken'),
+        symbol: 'doc.badge.plus', disabled: this.invoiceConversionBusy() || this.saving() };
+    } else if (!dirty && !this.isInvoiceDoc() && this.canReopen(data)) {
+      primary = { id: 'reopen', label: 'Heropenen', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (!dirty && this.invoiceFirst(data)) {
+      primary = { id: 'makeInvoice', label: 'Factuur maken', disabled: this.invoiceConversionBusy() || this.saving() || this.sending() };
+    } else if (!dirty && !this.isClaimDoc() && !this.sendIssues().length) {
+      primary = { id: 'openSend', label: this.sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen', disabled: this.sending() };
+    } else if (!dirty && !this.isClaimDoc() && this.sendIssues().length) {
+      const count = this.sendIssues().length;
+      primary = { id: 'fixIssue', label: `${count} open ${count === 1 ? 'punt' : 'punten'}` };
+    } else if (!dirty && this.isCreditNoteDoc() && data.order.status === 'CONCEPT') {
+      primary = { id: 'issueCreditNote', label: 'Uitreiken', disabled: this.busy() || this.documentMutationBusy() };
+    } else if (!dirty && this.isClaimDoc()) {
+      primary = { id: 'pdfView', label: 'PDF bekijken', icon: 'pdf' };
+    }
+    const menu: HostMenuItem[] = [];
+    if (this.canCancel()) menu.push({ id: 'openCancel', label: this.cancelLabel(data, 'Annuleren'), icon: 'close', destructive: true, disabled: this.busy() });
+    return {
+      subtitle: dirty ? 'Niet opgeslagen' : this.customerName(),
+      primary, actions: [{ id: 'openPdfSheet', label: 'PDF', icon: 'pdf' }], menu, guardsBack: dirty,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    switch (event.id) {
+      case 'save': void this.save(); break;
+      case 'openTake': this.openTake(); break;
+      case 'pdfView': case 'openPdfSheet': this.openPdfSheet(); break;
+      case 'focusPendingRevision': this.focusPendingRevision(); break;
+      case 'duplicate': void this.duplicate(); break;
+      case 'makeInvoice': if (data) this.makeInvoiceFromEditor(data); break;
+      case 'reopen': this.reopen(); break;
+      case 'openSend': this.openSend(); break;
+      case 'fixIssue': { const issue = this.sendIssues()[0]; if (issue) this.fixIssue(issue); break; }
+      case 'issueCreditNote': this.issueCreditNote(true); break;
+      case 'openCancel': this.openCancel(); break;
+    }
+  }
 
   stepOfId(id: (typeof this.workflowSections)[number]['id']): number {
     return this.stepOf(id);
@@ -2837,7 +2981,7 @@ export class SalesEditor {
     const data = this.view();
     if (!data || !this.isCreditNoteDoc() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
     return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
-      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt && !isReportBacked(this.creditOriginal());
   });
   readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; pieces: number; number: string } | null>(null);
   /** Every adopted view refetches its context: the open amount changes with each offset or receipt. */
@@ -3049,6 +3193,18 @@ export class SalesEditor {
     return this.customers().find((c) => c.id === id)?.language ?? 'NL';
   });
   readonly history = signal<QuoteEvent[]>([]);
+  /** The document the history on screen was read for; null while none could be read. */
+  private readonly historyOf = signal<number | null>(null);
+  /**
+   * An invoice that was issued before. "Uitgeven zonder e-mail" leaves no sent date, and putting the
+   * invoice back on concept leaves only the step in its history; while that history is not in, the
+   * invoice counts as issued. The planner's one-tap return of a 220 cm height asks this.
+   */
+  readonly issuedBefore = computed(() => {
+    const order = this.view()?.order;
+    if (!order || order.docType !== 'FACTUUR') return false;
+    return this.historyOf() !== order.id || this.history().some((step) => step.type === 'UITGEREIKT');
+  });
 
   /** The pick-lists and the catalogue, loaded once; an order waits for them before it shows. */
   private referenceLoad: Promise<void> = Promise.resolve();
@@ -3192,10 +3348,11 @@ export class SalesEditor {
     return status === 'CONCEPT' || status === 'VERZONDEN' || status === 'BEKEKEN';
   });
 
+  /** Transport & levering may change: never on a document made from Veilingverkopen (it ships nothing; the server freezes its freight). */
   readonly canEditShipping = computed(() => {
     const data = this.view();
     return !!data && this.canEditTerms() && !data.invoicedAsId && !data.order.paidAt
-      && !data.order.signedByName && !data.order.goodsShippedAt && !isAdvanceBillingInvoice(data)
+      && !data.order.signedByName && !data.order.goodsShippedAt && !isAdvanceBillingInvoice(data) && !isReportBacked(data)
       && (data.order.docType !== 'FACTUUR' || data.order.status === 'CONCEPT');
   });
 
@@ -3250,11 +3407,14 @@ export class SalesEditor {
         issues.push('Vernieuw de palletindeling: er staat een verwijderd product op');
       }
       const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
-      const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
+      const palletMax = data.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM;
       if (data.order.pallets.some((pallet) => pallet.heightCm != null
           && (pallet.heightCm < palletBase || pallet.heightCm > palletMax))) {
         issues.push('Controleer de gemeten hoogte van de handmatige pallets');
       }
+      const check = this.layoutCheck();
+      if (check?.tooHigh) issues.push('Een pallet is hoger dan de maximale laadhoogte');
+      if (check?.tooHeavy) issues.push('Een pallet weegt meer dan 700 kg');
     }
     if (data.priced.validation.freightPricingIssue) {
       issues.push(data.priced.validation.freightPricingIssue);
@@ -3275,7 +3435,7 @@ export class SalesEditor {
         && data.order.validUntil < data.order.orderDate) {
       issues.push('Geldig-totdatum ligt vóór de offertedatum');
     }
-    if (!isPartnerDocument(data.order) && !data.priced.validation.meetsMinimum) {
+    if (!isPartnerDocument(data.order) && !isReportBacked(data) && !data.priced.validation.meetsMinimum) {
       issues.push('De minimum orderwaarde is nog niet bereikt');
     }
     return issues;
@@ -3327,6 +3487,72 @@ export class SalesEditor {
     return (line.discountPct || line.tierPercent || line.manualPercent || 0) > 0;
   }
 
+  /** Customer prices are pinned on regular quotes and invoices only: not on partner deals, container-cost pricing or credit notes. */
+  private readonly customerPricesApply = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !isCreditNote(order) && !isPartnerDocument(order) && order.markupMode !== 'CONTAINER_COST';
+  });
+
+  /**
+   * Whether a product added here takes the customer's agreed price on save, as the server's
+   * pinsCustomerPrices decides: a regular quote or invoice of a customer, never a credit note, a
+   * partner document, container-cost pricing, an advance invoice or a split part.
+   */
+  private readonly pinsAgreedPrices = computed(() => {
+    const data = this.view();
+    const order = data?.order;
+    return !!data && order?.customerId != null && this.customerPricesApply()
+      && data.advanceBilling?.stage !== 'ADVANCE' && !data.fulfillment;
+  });
+  /** The customer whose agreed prices the picker needs: the draft's, while products can be added; null otherwise. */
+  private readonly agreedPricesCustomer = computed(() =>
+    this.pinsAgreedPrices() && this.canEdit() ? this.view()?.order.customerId ?? null : null);
+  /** The active agreed prices of one customer by product, for the picker. */
+  private readonly agreedPrices = signal<{ customerId: number; byProduct: ReadonlyMap<number, number> } | null>(null);
+  private agreedPricesAsk = 0;
+  private agreedPricesShown = 0;
+  /* Loaded as soon as the customer is known, so the picker shows the agreed price the moment it opens. */
+  private readonly agreedPricesLoader = effect(() => {
+    if (this.agreedPricesCustomer() !== null) untracked(() => this.loadAgreedPrices());
+  });
+
+  /** The quiet marker beside a line's price (round 3b); null when the customer has no price for it and the line is not on one. */
+  linePriceState(line: PricedLine): LinePriceState | null {
+    if (!this.customerPricesApply()) return null;
+    let draft = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    /* A customer price that is neither today's nor the one pinned on the saved line was typed over:
+       the server stores it as the line's own price, so the marker says so before Opslaan too. */
+    if (draft?.priceSource === 'CUSTOMER' && !this.customerChanged() && (draft.unitPriceEur ?? 0) > 0
+        && !this.agreedAmount(line, draft.unitPriceEur!)) draft = { ...draft, priceSource: 'MANUAL' };
+    return linePriceState(draft, line, this.lineUnit(line.productId).singular, this.customerChanged());
+  }
+
+  /** "Standaardprijs gebruiken" or the customer's price from the marker: into the draft like a typed price, saved with Opslaan. */
+  useLinePrice(productId: number, choice: LinePriceChoice): void {
+    this.setLine(productId, { unitPriceEur: choice.unitPriceEur, priceSource: choice.source });
+  }
+
+  /**
+   * A typed price is the line's own (MANUAL), except the customer's price of
+   * today or the price pinned on the saved line typed again: that stays the
+   * customer's price, as the server keeps it, and follows a later change of
+   * customer.
+   */
+  setLinePrice(line: PricedLine, typed: number | null): void {
+    const price = +(typed ?? 0);
+    this.setLine(line.productId, { unitPriceEur: price, priceSource: this.agreedAmount(line, price) ? 'CUSTOMER' : 'MANUAL' });
+  }
+
+  private agreedAmount(line: PricedLine, price: number): boolean {
+    if (!this.customerPricesApply() || !(price > 0)) return false;
+    const same = (value: number | null | undefined): boolean => value != null && value > 0 && Math.abs(value - price) < 0.00005;
+    if (same(line.customerUnitPriceEur)) return true;
+    /* The old customer's pin is not this customer's price. */
+    if (this.customerChanged()) return false;
+    const saved = this.savedDocument()?.lines.find((item) => item.productId === line.productId);
+    return saved?.priceSource === 'CUSTOMER' && same(saved.unitPriceEur);
+  }
+
   quantityLabel(lines: readonly PricedLine[]): string {
     return salesQuantityLabel(lines.map((line) => this.products().find((product) => product.id === line.productId)));
   }
@@ -3356,6 +3582,16 @@ export class SalesEditor {
   /* Commercial edits remain a draft. Transport saves automatically through
      the same serial writer, with a narrow endpoint for already-sent quotes. */
   private readonly savedOrder = signal<string>('');
+  /** The saved document, read once per save instead of once per line and render. */
+  private readonly savedDocument = computed<SalesOrder | null>(() => {
+    try { return JSON.parse(this.savedOrder()) as SalesOrder; } catch { return null; }
+  });
+  /** The draft has another customer than the saved document: a save pins its customer prices again (contract decision 2). */
+  private readonly customerChanged = computed(() => {
+    const order = this.view()?.order;
+    const saved = this.savedDocument();
+    return !!order && !!saved && order.customerId !== saved.customerId;
+  });
   readonly saving = signal(false);
   readonly dirty = computed(() => {
     const data = this.view();
@@ -3372,9 +3608,34 @@ export class SalesEditor {
       && JSON.stringify(shippingSnapshot(order)) !== JSON.stringify(shippingSnapshot(JSON.parse(this.savedOrder())));
   });
   readonly transportSaving = signal(false);
-  readonly transportSaveStatus = computed(() => this.shippingDirty() && this.saveError()
-    ? 'Transport niet opgeslagen'
-    : this.shippingDirty() || this.transportSaving() ? 'Transport wordt opgeslagen…' : 'Transport automatisch opgeslagen');
+  /**
+   * A transport change of its own that no save has taken along yet. A hand
+   * layout that only followed the lines (a removed product, a lowered
+   * quantity) belongs to that edit of the lines: it waits for Opslaan and
+   * the leave question, and no autosave, Klaar or leaving sends it.
+   */
+  readonly transportQueued = signal(false);
+  /** A sent document's freight basis that cannot price yet (no rate, no amount): its save waits instead of being refused. */
+  readonly transportHold = computed(() => {
+    const order = this.view()?.order;
+    return order && this.shippingDirty() && !this.canEdit() ? freightGap(order) : null;
+  });
+  readonly transportRefused = computed(() => this.transportQueued() && this.shippingDirty() && !!this.saveError());
+  readonly transportSaveStatus = computed(() => {
+    const hold = this.transportHold();
+    if (this.transportRefused()) return 'Transport niet opgeslagen';
+    if (hold) return `Nog niet opgeslagen · ${hold.charAt(0).toLowerCase()}${hold.slice(1)}`;
+    if (this.transportQueued() || this.transportSaving()) return 'Transport wordt opgeslagen…';
+    /* Shipping-dirty with nothing queued: a hand layout that followed the lines, which no autosave sends. */
+    return this.shippingDirty() ? 'Indeling gaat mee met Opslaan' : 'Transport automatisch opgeslagen';
+  });
+  /** The draft the figures on screen were priced for (layoutKey). */
+  private readonly pricedFor = signal('');
+  /** The figures are being worked out again: a pallet layout cut from them now would be cut from an older draft. */
+  readonly pricingStale = computed(() => {
+    const order = this.view()?.order;
+    return !!order && (this.figuresWaiting() || layoutKey(order) !== this.pricedFor());
+  });
   private shippingTimer: ReturnType<typeof setTimeout> | null = null;
   private saveOperation: Promise<boolean> | null = null;
   private transportOperation: Promise<boolean> | null = null;
@@ -3397,9 +3658,16 @@ export class SalesEditor {
     }
     this.view.set(view);
     this.savedOrder.set(JSON.stringify(view.order));
+    this.pricedFor.set(layoutKey(view.order));
+    /* What the server holds is on screen now; only an autosave still under way keeps its change queued. */
+    if (!this.transportOperation && this.shippingTimer === null) this.transportQueued.set(false);
     this.saveError.set(null);
     this.previewError.set(null);
     this.figuresWaiting.set(false);
+    this.typedLine.set(null);
+    /* The server's view replaces the draft: nothing typed is waiting any more. What it still rounds is said again. */
+    this.linePending.set({});
+    this.announceRounding(view.priced.lines, view.order);
     this.loadCreditContext(view);
   }
 
@@ -3462,6 +3730,7 @@ export class SalesEditor {
   }
 
   private async preview(): Promise<void> {
+    this.layoutFollowsLines();
     const data = this.view();
     if (!data) return;
     const version = ++this.previewVersion;
@@ -3470,12 +3739,16 @@ export class SalesEditor {
       const current = this.view();
       if (version !== this.previewVersion || !current) return;
       this.view.set({ ...fresh, order: current.order });
+      this.pricedFor.set(layoutKey(data.order));
       this.previewError.set(null);
       this.figuresWaiting.set(false);
+      this.typedLine.set(null);
+      this.announceRounding(fresh.priced.lines, current.order);
       this.syncQuantityFields();
     } catch (failure: unknown) {
       if (version !== this.previewVersion) return;
       this.figuresWaiting.set(false);
+      this.typedLine.set(null);
       this.previewError.set(messageOf(
         failure,
         'Controleer de verbinding voordat je de offerte opslaat of verstuurt.',
@@ -3516,6 +3789,7 @@ export class SalesEditor {
   }
 
   private async persistOrder(): Promise<boolean> {
+    this.layoutFollowsLines();
     const current = this.view();
     if (!current) return false;
     if (!this.dirty()) return true;
@@ -3537,15 +3811,26 @@ export class SalesEditor {
         : 'Deze documentversie staat vast. Je lokale wijzigingen blijven in dit scherm staan; ze kunnen niet over de uitgegeven versie worden opgeslagen.');
       return false;
     }
+    /* A sent document's freight must be able to price: the server refuses the basis otherwise, so it is not sent. */
+    const gap = fullDraft ? null : freightGap(current.order);
+    if (gap) { this.saveError.set(gap); return false; }
     const data = { ...current, order: structuredClone(current.order) };
     if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
     this.saving.set(true);
     this.saveError.set(null);
     const sentQuantities = new Map(data.order.lines.map((line) => [line.productId, line.quantity]));
+    /* The pallet height goes along only when it was changed here, and then with the mark that says so:
+       without a height the server keeps the document's own. A screen opened before the server put a
+       concept quote back on the standard (2026-11-10, 220 to 260 cm) would otherwise write its old 220
+       back with any other save; the answer brings the server's height onto the screen
+       (mergeOrderAfterSave compares with data.order). */
+    const sent: SalesOrder = (data.order.maxPalletHeightCm ?? null) === (this.savedDocument()?.maxPalletHeightCm ?? null)
+      ? { ...data.order, maxPalletHeightCm: null } : data.order;
+    const heightPicked = sent.maxPalletHeightCm != null;
     try {
       const saved = fullDraft
-        ? await this.sales.updateOrder(data.order.id, data.order, webOrderRevision(current))
-        : await this.sales.updateShipping(data.order.id, shippingSnapshot(data.order), webOrderRevision(current));
+        ? await this.sales.updateOrder(data.order.id, sent, webOrderRevision(current), heightPicked)
+        : await this.sales.updateShipping(data.order.id, shippingSnapshot(sent), webOrderRevision(current), heightPicked);
       const latest = this.view();
       if (!latest || latest.order.id !== data.order.id) return true;
       const merged = mergeOrderAfterSave(saved.order, data.order, latest.order);
@@ -3592,11 +3877,16 @@ export class SalesEditor {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
-    if (this.transportSaving() || this.shippingDirty()) {
-      return this.flushTransport().then(saved => saved ? this.canDeactivate() : false);
+    if (this.transportSaving() || this.transportQueued()) {
+      /* A refused transport save keeps nobody in: the leave question offers 'Niet opslaan'. */
+      return this.flushTransport().then(saved => saved ? this.canDeactivate() : this.askToLeave());
     }
     if (this.saving() || this.mobileSplitBusy()) return false;
     if (!this.dirty()) return true;
+    return this.askToLeave();
+  }
+
+  private askToLeave(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       this.ui.confirm(
         {
@@ -3607,6 +3897,8 @@ export class SalesEditor {
         },
         async () => { await this.save(); resolve(!this.dirty()); },
         () => resolve(true),
+        /* Annuleren keeps the editor; the guard answers, so the router cancels and the native bar hears of it. */
+        () => resolve(false),
       );
     });
   }
@@ -3668,6 +3960,8 @@ export class SalesEditor {
 
   /** Announced order-step correction per line: the server rounds on save. */
   readonly linePending = signal<Record<number, number>>({});
+  /** The line whose number is being typed, until the figures of the draft come back (figuresWaiting goes off). */
+  private readonly typedLine = signal<number | null>(null);
 
   /**
    * The quantity lands in the draft at once. A figure off the order step is
@@ -3698,6 +3992,7 @@ export class SalesEditor {
       else delete next[productId];
       return next;
     });
+    this.typedLine.set(productId);
     this.setLine(productId, { quantity: wanted }, true);
   }
 
@@ -3720,10 +4015,152 @@ export class SalesEditor {
    * step; an older server sends none and rounds to full cartons.
    */
   private unitsPerStep(productId: number): number {
-    const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
+    const line = this.view()?.priced.lines.find((candidate) => candidate.productId === productId);
+    /* Where the line can be switched the draft decides at once: for a moment after a press the answer on screen still
+       says the other side. */
+    if (line?.perPieceChoice === true) return this.linePerPiece(productId) ? 1 : this.stepWhenRounded(productId);
+    const priced = line?.unitsPerOrderStep;
     const product = this.products().find((candidate) => candidate.id === productId);
     const server = priced != null && Number.isSafeInteger(priced) && priced >= 1 ? priced : null;
     return server !== null && (server === 1 || !product) ? server : unitsPerOrderStep(product);
+  }
+
+  /** The step a line rounds to when it does not count per piece: the product's of today, else the priced line's own. */
+  private stepWhenRounded(productId: number): number {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    if (product) return unitsPerOrderStep(product);
+    const priced = this.view()?.priced.lines.find((line) => line.productId === productId)?.unitsPerOrderStep;
+    return priced != null && Number.isSafeInteger(priced) && priced > 1 ? priced : 1;
+  }
+
+  /* ---- per piece on one line (2026-11-10) --------------------------- */
+
+  /** The server offers the choice on this line: the document rounds and the product's order step is above 1. */
+  perPieceChoice(productId: number): boolean {
+    return this.view()?.priced.lines.find((line) => line.productId === productId)?.perPieceChoice === true;
+  }
+
+  /** The draft's choice: what the screen shows at once, before the answer. */
+  linePerPiece(productId: number): boolean {
+    return this.view()?.order.lines.find((line) => line.productId === productId)?.perPiece === true;
+  }
+
+  /** The quantity field wears the state: a line that can be switched and counts per piece. */
+  perPieceOn(productId: number): boolean {
+    return this.perPieceChoice(productId) && this.linePerPiece(productId);
+  }
+
+  /**
+   * The switch is drawn on a line that counts per piece, and on one just switched back until it is saved. Every
+   * other line stays as it was (all products are per omdoos: it would sit on every line, for a rare choice). The
+   * way in is the notice with its "houden", which a number off the step always brings. A line at whole cartons
+   * has no direct way in, though per piece still changes something there (the customer's quote link takes any
+   * number, his documents count the line in pieces): type a number off the step, "houden", then the number wanted.
+   */
+  perPieceSwitch(productId: number): boolean {
+    if (!this.mobileCommercialEditable() || !this.perPieceChoice(productId)) return false;
+    return this.view()?.order.lines.find((line) => line.productId === productId)?.perPiece != null;
+  }
+
+  /**
+   * The way out under a rounding notice: keep the typed number, per piece. Not beside the switch (a saved choice
+   * just switched back): there the switch is the way back, one control at a time. Not while its own number is
+   * still being typed either: the notice may come and go per digit, a 44 px button with it would move the card.
+   */
+  canKeepPieces(productId: number): boolean {
+    return this.mobileCommercialEditable() && this.perPieceChoice(productId) && !this.linePerPiece(productId)
+      && !this.perPieceSwitch(productId) && !(this.figuresWaiting() && this.typedLine() === productId);
+  }
+
+  /** "Stolp | Omdoos": the unit, then the product's order step, in the words of the notice beside it. */
+  perPieceOptions(productId: number) {
+    return perPieceOptions(this.lineOrderStep(productId), this.lineUnit(productId).singular);
+  }
+
+  /** The desk's hover text on the switch, which has no caption of its own: "Aantal per stolp of per omdoos". */
+  perPieceTitle(productId: number): string {
+    return `Aantal per ${this.lineUnit(productId).singular} of per ${this.lineOrderStep(productId) === 'PACKAGE' ? 'display' : 'omdoos'}`;
+  }
+
+  /** The cartons of a per-piece line whose last one is not full: "niet vol" / "laatste niet vol". */
+  linePartCarton(line: PricedLine): string | null {
+    return partCartonNote(line.perPiece === true, line.quantity, line.cartons,
+      this.products().find((product) => product.id === line.productId)?.carton?.piecesPerCarton);
+  }
+
+  /** Per piece keeps the number as typed; back to the step announces what the server makes of it, as a typed number does. */
+  setLinePerPiece(productId: number, on: boolean): void {
+    if (!this.mobileCommercialEditable() || !this.perPieceChoice(productId) || this.lineUnavailable(productId)) return;
+    if (this.linePerPiece(productId) === on) return;
+    const stored = this.savedDocument()?.lines.some((line) => line.productId === productId && line.perPiece === true) ?? false;
+    this.enqueue((order) => ({ ...order,
+      lines: order.lines.map((line) => line.productId === productId ? salesLineWithPerPiece(line, on, stored) : line) }));
+    if (this.linePerPiece(productId) !== on) return;
+    const quantity = this.currentQuantity(productId);
+    const snapped = on ? quantity : roundToOrderStep(quantity, this.stepWhenRounded(productId));
+    this.linePending.update((map) => {
+      const next = { ...map };
+      if (snapped !== quantity && quantity > 0) next[productId] = snapped;
+      else delete next[productId];
+      return next;
+    });
+    this.keepPerPieceFocus(productId);
+  }
+
+  /**
+   * The pressed control can go with the change: "houden" once the line counts per piece, the switch of a choice
+   * taken back before it was saved. Focus then lands on the control that took its place (the switch's chosen side,
+   * or "houden" again), so a keyboard or VoiceOver user goes on from this line and hears its state. The quantity
+   * field is the last resort, and only for focus that sat on the control: a tap on the phone leaves none there,
+   * and a field focused by script would raise the keyboard.
+   */
+  private keepPerPieceFocus(productId: number): void {
+    const doc = this.host.nativeElement.ownerDocument;
+    const scope = `[data-per-piece-line="${productId}"]`;
+    const held = doc.activeElement instanceof Element && doc.activeElement.closest(scope) !== null;
+    afterNextRender(() => {
+      const active = doc.activeElement;
+      if (active && active !== doc.body && active.isConnected) return;
+      const host = this.host.nativeElement;
+      const place = host.querySelector<HTMLElement>(`${scope} [aria-checked="true"]`)
+        ?? host.querySelector<HTMLElement>(`button${scope}`)
+        ?? (held ? host.querySelector<HTMLElement>(`[data-quantity-line="${productId}"]`) : null);
+      place?.focus({ preventScroll: true });
+    }, { injector: this.injector });
+  }
+
+  /**
+   * The picker may end its hint with "Per stuk kies je daarna op de regel": the server offers that choice on this
+   * document (a line carries perPieceChoice, so it rounds and the server knows the choice) and the draft did not
+   * just turn to exact pieces. An empty document, an exempt one or an older server: the hint does not promise it.
+   */
+  readonly perPieceOnLines = computed(() => {
+    const data = this.view();
+    return !!data && !isPartnerDocument(data.order) && data.order.markupMode !== 'CONTAINER_COST'
+      && data.priced.lines.some((line) => line.perPieceChoice === true);
+  });
+
+  /**
+   * After an answer: a quantity the server rounds up that nothing announced yet (a line added through the picker,
+   * a container's exact pieces) gets the notice a typed one gets, and a line it does not round loses it. Only on
+   * lines the server offers the choice on (an older server: none, so nothing changes) and only while the lines
+   * can be edited: a fixed version is never rounded, whatever a preview of today's step says.
+   */
+  private announceRounding(priced: readonly PricedLine[], order: SalesOrder): void {
+    if (!this.mobileCommercialEditable()) return;
+    const pending = this.linePending();
+    let next: Record<number, number> | null = null;
+    for (const line of order.lines) {
+      const answer = priced.find((candidate) => candidate.productId === line.productId);
+      if (answer?.perPieceChoice !== true) continue;
+      const to = !salesLineUnavailable(line) && line.perPiece !== true && line.quantity > 0 && answer.quantity > line.quantity
+        ? answer.quantity : undefined;
+      if (pending[line.productId] === to) continue;
+      next ??= { ...pending };
+      if (to === undefined) delete next[line.productId];
+      else next[line.productId] = to;
+    }
+    if (next) this.linePending.set(next);
   }
 
   /** The product's "Verkocht per", for wording: the priced line's, else the catalogue's. */
@@ -3743,9 +4180,9 @@ export class SalesEditor {
   }
 
   setLine(productId: number,
-          changes: { quantity?: number; unitPriceEur?: number; manualDiscountPct?: number;
-                     deliveryWeek?: string }, typing = false): void {
-    if (changes.unitPriceEur !== undefined) {
+          changes: { quantity?: number; unitPriceEur?: number | null; priceSource?: SalesLinePriceSource | null;
+                     manualDiscountPct?: number; deliveryWeek?: string }, typing = false): void {
+    if (changes.unitPriceEur !== undefined && changes.unitPriceEur !== null) {
       const cap = this.creditLineCap(productId);
       if (cap) {
         const typed = changes.unitPriceEur;
@@ -3817,6 +4254,8 @@ export class SalesEditor {
     this.enqueue((order) => ({
       ...order,
       lines: order.lines.filter((line) => line.productId !== productId),
+      /* Its omdozen leave the hand layout in the same change: a save never sends pallets with a product the order lost. */
+      pallets: trimPallets(order.pallets, new Map([[productId, 0]])),
     }));
   }
 
@@ -3851,18 +4290,114 @@ export class SalesEditor {
 
   openPicker(): void {
     if (!this.mobileCommercialEditable() || this.isCreditNoteDoc()) return;
+    /* Prices changed on the customer sheet in the meantime show too; until the answer the loaded ones stand. */
+    this.loadAgreedPrices();
+    /* What is coming, fresh for this pick; the last answer stands until the new one is in. */
+    this.loadIncoming();
     this.picking.set(true);
   }
 
-  /** Price the picker shows: what THIS order would charge for that product. */
-  readonly priceOf = (product: Product): number => {
+  /* ---- what is coming (purchase orders): the picker's status and a short line's ---- */
+  /** Per product id, as GET expected-stock?arrived=true answers; empty until the first answer is in. */
+  readonly incomingItems = signal<ReadonlyMap<number, ExpectedStock>>(new Map());
+  /**
+   * 'failed': no answer is in hand and the last load failed, so the picker and a short line say so with a retry
+   * instead of reading as "nothing is coming". 'loading': that retry runs. A refresh that fails while an answer
+   * is on screen keeps that answer and stays 'ready'.
+   */
+  readonly incomingState = signal<'ready' | 'loading' | 'failed'>('ready');
+  private readonly incomingToday = brusselsToday();
+  private readonly incomingByProduct = computed(() => incomingMap([...this.incomingItems().values()], this.incomingToday));
+  private incomingAsk = 0;
+  /** The request whose answer is on screen; 0 while there is none. */
+  private incomingShown = 0;
+  /**
+   * This document still has goods to deliver: not a credit note, not shipped, not a voorschot without a delivery,
+   * not refused or cancelled. Only then a short line has a delivery term for what is coming to answer.
+   */
+  private readonly stillDelivers = computed(() => {
+    const data = this.view();
+    return !!data && !this.isCreditNoteDoc() && !data.order.goodsShippedAt && !skipsShipping(data)
+      && data.order.status !== 'AFGEWEZEN' && data.order.status !== 'GEANNULEERD';
+  });
+  /** A line that is not covered by stock: its status needs the answer before the picker was ever opened. */
+  private readonly incomingWanted = computed(() => this.stillDelivers() && !!this.view()?.priced.lines.some((line) => !line.inStock));
+  private readonly incomingLoader = effect(() => {
+    if (this.incomingWanted()) untracked(() => this.loadIncoming());
+  });
+  /** A short line cannot say what is coming because the load failed (or its retry runs). */
+  readonly incomingMissing = computed(() => this.stillDelivers() && this.incomingState() !== 'ready');
+
+  private loadIncoming(): void {
+    const ask = ++this.incomingAsk;
+    this.sourcing.incomingStock().then((items) => {
+      /* An older answer never replaces a newer one; a newer load that fails leaves the last answer standing. */
+      if (ask < this.incomingShown) return;
+      this.incomingShown = ask;
+      this.incomingItems.set(new Map(items.map((item) => [item.productId, item])));
+      this.incomingState.set('ready');
+    }, () => {
+      /* Said only with no answer in hand, and only by the newest request: an older one may still answer. */
+      if (this.incomingShown === 0 && ask === this.incomingAsk) this.incomingState.set('failed');
+    });
+  }
+
+  retryIncoming(): void {
+    if (this.incomingState() !== 'failed') return;
+    this.incomingState.set('loading');
+    this.loadIncoming();
+  }
+
+  /** What is coming for the product of a line that stock does not cover (short, or not confirmed); null when nothing is, and on a document that delivers nothing any more. */
+  lineComing(productId: number | null): Incoming | null {
+    return productId === null || !this.stillDelivers() ? null : this.incomingByProduct().get(productId) ?? null;
+  }
+
+  /** Price the picker shows: what a new line of THIS order gets for that product, the customer's agreed price first. */
+  readonly priceOf = (product: Product): number => this.agreedPrice(product) ?? this.standardPriceOf(product);
+
+  /** The picker's quiet K on an agreed price: hovering (desk) or a long press (phone) names the standard price beside it. */
+  readonly priceMarkOf = (product: Product): string | null => {
+    if (this.agreedPrice(product) === null) return null;
+    const standard = this.standardPriceOf(product);
+    return standard > 0 ? `Klantprijs · standaard ${euroText(standard)}` : 'Klantprijs · geen standaardprijs';
+  };
+
+  /**
+   * What THIS order charges for the product without an agreed price, as the server's
+   * unitPriceFor: a fixed catalogue price holds under an order markup too.
+   */
+  private standardPriceOf(product: Product): number {
     const order = this.view()?.order;
     if (order?.markupMode === 'CONTAINER_COST') return product.landedCostEur ?? 0;
     if (order?.markupMode !== 'ORDER') return product.computedSalesPriceEur;
+    if ((product.fixedSalesPriceEur ?? 0) > 0) return product.fixedSalesPriceEur!;
     const cost = product.landedCostEur ?? 0;
     const markup = order.orderMarkupPct ?? 0;
     return Math.round(cost * (1 + markup / 100) * 100) / 100;
-  };
+  }
+
+  /** The customer's agreed price a new line of this document takes on save; null where none applies or none is loaded. */
+  private agreedPrice(product: Product): number | null {
+    const known = this.agreedPrices();
+    if (!known || product.id == null || !this.pinsAgreedPrices() || known.customerId !== this.view()?.order.customerId) return null;
+    return known.byProduct.get(product.id) ?? null;
+  }
+
+  /** Quietly (re)loads the active agreed prices of the draft's customer; without them the picker shows the catalogue price. */
+  private loadAgreedPrices(): void {
+    const customerId = untracked(() => this.agreedPricesCustomer());
+    if (customerId === null) return;
+    const ask = ++this.agreedPricesAsk;
+    this.customerPriceApi.list(customerId).then((rows) => {
+      /* An older answer never replaces a newer one; a newer load that fails leaves the last answer standing. */
+      if (ask < this.agreedPricesShown) return;
+      this.agreedPricesShown = ask;
+      const byProduct = new Map<number, number>();
+      for (const row of rows) if (row.status === 'ACTIVE' && row.priceExclVat > 0) byProduct.set(row.productId, row.priceExclVat);
+      this.agreedPrices.set({ customerId, byProduct });
+    }, () => undefined);
+  }
 
   vatLabel(treatment: string): string {
     switch (treatment) {
@@ -4002,6 +4537,8 @@ export class SalesEditor {
   async duplicate(): Promise<void> {
     const data = this.view();
     if (!data || this.busy()) return;
+    /* An invoice from the meldingen is never copied (the server refuses): its way on is Veilingverkopen. */
+    if (isReportBacked(data)) { await this.router.navigate(['/veilingverkopen']); return; }
     const purchaseId = this.advanceAgreement()?.purchaseOrderId ?? data.order.partnerPurchaseOrderId;
     if (this.advanceAgreement() || isPartnerDocument(data.order)) {
       if (purchaseId) await this.router.navigate(['/purchasing', purchaseId], { queryParams: { section: 'payments' } });
@@ -4036,8 +4573,10 @@ export class SalesEditor {
   protected async loadHistory(orderId: number): Promise<void> {
     try {
       this.history.set(await this.sales.history(orderId));
+      this.historyOf.set(orderId);
     } catch {
       this.history.set([]);
+      this.historyOf.set(null);
     }
   }
 
@@ -4275,7 +4814,7 @@ export class SalesEditor {
         + `${new CbmPipe().transform(totals.cbm)} · los geladen`;
     }
     if (!totals.palletsManual) {
-      return `automatisch · ${this.countLabel(totals.palletsStrict, 'pallet', 'pallets')}`;
+      return `automatisch · ${this.countLabel(automaticPallets(totals), 'pallet', 'pallets')}`;
     }
     const rest = totals.unassignedCartons > 0
         ? ` · ${this.countLabel(totals.unassignedCartons, 'doos', 'dozen')} los` : '';
@@ -4294,35 +4833,67 @@ export class SalesEditor {
     const next = make(data.order);
     if (!next || !this.mobileAcceptsDraft(data, next)) return;
     this.view.set({ ...data, order: next });
+    this.transportQueued.set(true);
     this.saveError.set(null);
     this.schedulePreview();
-    if (this.shippingTimer !== null) clearTimeout(this.shippingTimer);
+    if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
+    /* A sent document's freight is saved once its basis can price: a rate still to be typed is not a refusal. */
+    if (this.transportHold()) return;
     this.shippingTimer = setTimeout(() => { this.shippingTimer = null; void this.flushTransport(); }, 300);
   }
 
   flushTransport(): Promise<boolean> {
     if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
     if (this.transportOperation) return this.transportOperation;
+    /* Nothing of its own to save: a layout that followed the lines goes with the document's Opslaan. */
+    if (!this.transportQueued()) return Promise.resolve(true);
+    const hold = this.transportHold();
+    if (hold) { this.saveError.set(hold); return Promise.resolve(false); }
     const operation = (async () => {
       this.transportSaving.set(true);
       try {
-        while (this.shippingDirty()) {
-          if (!(await this.save())) return false;
+        /* Each save takes the queued change along; one made while it is under way queues again. */
+        while (this.transportQueued() && this.shippingDirty()) {
+          this.transportQueued.set(false);
+          if (!(await this.save())) { this.transportQueued.set(true); return false; }
         }
         return true;
-      } finally { this.transportSaving.set(false); }
+      } finally {
+        this.transportSaving.set(false);
+        if (!this.shippingDirty()) this.transportQueued.set(false);
+      }
     })();
     this.transportOperation = operation;
     return operation.finally(() => { if (this.transportOperation === operation) this.transportOperation = null; });
   }
 
-  async closeShipping(): Promise<void> {
-    if (await this.flushTransport()) this.palletSheet.set(false);
+  /**
+   * Klaar, ×, Escape, the backdrop: the sheet always closes. A refused save
+   * stays in the Levering card, with Opnieuw and Wijzigingen weggooien.
+   */
+  closeShipping(): void {
+    this.palletSheet.set(false);
+    /* A save the server just refused is not sent again on its own; Opnieuw does that. */
+    if (this.transportQueued() && !this.transportRefused()) void this.flushTransport();
+  }
+
+  /** "Wijzigingen weggooien": the transport as last saved; the rest of the draft stays. */
+  discardTransport(): void {
+    const data = this.view();
+    if (!data || !this.savedOrder() || this.transportSaving()) return;
+    if (this.shippingTimer !== null) { clearTimeout(this.shippingTimer); this.shippingTimer = null; }
+    const saved = JSON.parse(this.savedOrder()) as SalesOrder;
+    const order: Record<string, unknown> = { ...data.order };
+    for (const field of shippingFields) order[field] = saved[field];
+    this.view.set({ ...data, order: order as unknown as SalesOrder });
+    this.transportQueued.set(false);
+    this.saveError.set(null);
+    this.schedulePreview();
   }
 
   handlePalletAction(event: ShippingPalletAction): void {
     switch (event.type) {
-      case 'auto-layout': this.autoLayout(); break;
+      case 'auto-layout': void this.autoLayout(); break;
       case 'add-pallet': this.addPallet(); break;
       case 'clear-layout': this.clearPallets(); break;
       case 'move-pallet': this.movePallet(event.index, event.direction); break;
@@ -4369,7 +4940,7 @@ export class SalesEditor {
     const totals = data.priced.totals;
     return totals.palletsManual > 0
       ? `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig`
-      : this.countLabel(totals.palletsStrict, 'pallet', 'pallets');
+      : this.countLabel(automaticPallets(totals), 'pallet', 'pallets');
   }
 
   private countLabel(count: number, singular: string, plural: string): string {
@@ -4384,19 +4955,38 @@ export class SalesEditor {
         .reduce((sum, item) => sum + item.cartons, 0);
   }
 
-  /** Does the manual layout still match the order's cartons exactly? */
-  layoutOk(): boolean {
+  /** A hand layout as it stands: empty pallets, products gone, too high (estimated too), too heavy, too many or loose omdozen. */
+  readonly layoutCheck = computed(() => {
     const data = this.view();
-    if (!data) return true;
-    const lineIds = new Set(data.priced.lines.map((line) => line.productId));
-    const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
-    const palletMax = data.priced.totals.palletMaxHeightCm ?? 260;
-    return data.order.pallets.every((pallet) => pallet.items.length > 0
-        && pallet.items.every((item) => item.cartons > 0 && lineIds.has(item.productId))
-        && (pallet.heightCm == null
-          || (pallet.heightCm >= palletBase && pallet.heightCm <= palletMax)))
-      && data.priced.totals.unassignedCartons === 0
-      && !this.overassigned();
+    return data && !this.isLooseCartons(data) && data.order.pallets.length ? checkLayout(data) : null;
+  });
+
+  /** Does the manual layout still match the order's cartons, the height and the weight? */
+  layoutOk(): boolean {
+    const check = this.layoutCheck();
+    return !check || layoutComplete(check);
+  }
+
+  /** The pallets need a look: a product that fits no pallet, or a hand layout that is not complete. */
+  layoutAttention(data: SalesOrderView): boolean {
+    if (this.isLooseCartons(data)) return false;
+    return !!data.priced.validation.productsWithoutPalletFit?.length || !this.layoutOk();
+  }
+
+  /** The pallets the order ships on: the hand layout, else the automatic count. */
+  palletTotal(data: SalesOrderView): number {
+    return shippedPallets(data.priced.totals);
+  }
+
+  /** The hero's pallet count: '–' rather than 0 when products fit no pallet. */
+  palletFigure(data: SalesOrderView): string {
+    const count = this.palletTotal(data);
+    return !count && data.priced.validation.productsWithoutPalletFit?.length ? '–' : String(count);
+  }
+
+  /** The automatic pallets one line stands on, products sharing a pallet each counting it. */
+  linePallets(data: SalesOrderView, line: PricedLine): number {
+    return automaticLinePallets(data.priced.totals, line);
   }
 
   private overassigned(): boolean {
@@ -4409,7 +4999,7 @@ export class SalesEditor {
   setPalletHeight(index: number, raw: string | number | null): void {
     const rounded = Math.round(Number(raw));
     const minimum = Math.ceil(this.view()?.priced.totals.palletBaseHeightCm ?? 14.4);
-    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? 260);
+    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM);
     const value = raw === '' || raw === null || !Number.isFinite(rounded) || rounded <= 0
       ? null
       : Math.max(minimum, Math.min(maximum, rounded));
@@ -4448,49 +5038,103 @@ export class SalesEditor {
     }));
   }
 
-  /** Starts from the calculator's strict stacking, ready to rearrange. */
-  autoLayout(): void {
+  /**
+   * "Zelf indelen" starts from the automatic pallets, one to one: the
+   * server's layout under its rule (products stacked together on a new or
+   * concept document), or on an older server every product on pallets of
+   * its own. A product that fits no pallet stays loose (the planner lists it
+   * under Nakijken); when nothing fits, the layout starts from one empty
+   * pallet, since an empty list is Automatisch itself. The figures are
+   * brought up to date first, so the pallets are never cut from an older
+   * pallet type, height or quantity.
+   */
+  async autoLayout(): Promise<void> {
+    if (!this.canEditShipping() || !(await this.pricingSettled())) return;
     this.enqueueShipping((order) => {
-      const lines = this.view()?.priced.lines ?? [];
-      const invalid = lines.find((line) =>
-        line.cartons > 0 && line.cartonsPerPallet <= 0);
-      if (invalid) {
-        this.ui.toast(
-          `Palletindeling niet mogelijk voor ${invalid.description}. `
-            + 'Controleer omdoosafmetingen, gewicht en laadhoogte.',
-          'err',
-        );
-        return null;
-      }
+      const type = palletTypeLabel(order.palletProfile);
+      const priced = this.view()?.priced;
       const pallets: OrderPallet[] = [];
-      const type = this.palletTypeForProfile(order.palletProfile);
-      for (const line of lines) {
-        const per = line.cartonsPerPallet;
-        let left = line.cartons;
-        while (left > 0) {
-          const take = Math.min(per, left);
-          pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
-              heightCm: null, items: [{ productId: line.productId, cartons: take }] });
-          left -= take;
+      const add = (items: OrderPallet['items']) =>
+        pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null, items });
+      const automatic = priced?.totals.autoPallets;
+      if (priced && automatic && automatic.length === automaticPallets(priced.totals)) {
+        for (const pallet of automatic) add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })));
+      } else {
+        for (const line of priced?.lines ?? []) {
+          const per = line.cartonsPerPallet;
+          if (per <= 0 || salesLineUnavailable(line)) continue;
+          for (let left = line.cartons; left > 0; left -= per) add([{ productId: line.productId, cartons: Math.min(per, left) }]);
         }
       }
+      if (!pallets.length) add([]);
       return { ...order, pallets };
     });
   }
 
+  /** "Indeling bijwerken" (Levering): the hand layout made again for the order as it is now, with a way back. */
+  async refreshLayout(): Promise<void> {
+    const before = this.view()?.order.pallets;
+    if (!before?.length) return;
+    const snapshot = structuredClone(before);
+    await this.autoLayout();
+    if (this.view()?.order.pallets === before) return;
+    this.ui.toast('Indeling bijgewerkt', 'ok', { label: 'Ongedaan maken', run: () => this.applyShippingPatch({ pallets: snapshot }) });
+  }
+
+  /** Waits until the figures belong to the draft on screen; says so when they cannot be brought up to date. */
+  private async pricingSettled(): Promise<boolean> {
+    for (let attempt = 0; attempt < 3 && this.pricingStale(); attempt++) {
+      if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+      await this.preview();
+    }
+    if (!this.pricingStale()) return true;
+    this.ui.toast(this.previewError() ?? 'De cijfers worden nog bijgewerkt; probeer het zo opnieuw.', 'err');
+    return false;
+  }
+
+  /**
+   * A lowered quantity takes its omdozen off the hand layout, the last
+   * pallets first, once the quantity counts (it is priced or saved) and
+   * never between two typed digits; a pallet left empty goes.
+   */
+  private layoutFollowsLines(): void {
+    const data = this.view();
+    if (!data || !this.canEdit() || !data.order.pallets.length) return;
+    const limits = new Map<number, number>();
+    for (const item of data.order.pallets.flatMap((pallet) => pallet.items)) {
+      if (limits.has(item.productId)) continue;
+      const line = data.order.lines.find((candidate) => candidate.productId === item.productId);
+      const cartons = line ? this.draftCartons(line) : 0;
+      if (cartons !== null) limits.set(item.productId, cartons);
+    }
+    const pallets = trimPallets(data.order.pallets, limits);
+    if (pallets !== data.order.pallets) this.view.set({ ...data, order: { ...data.order, pallets } });
+  }
+
+  /** The whole omdozen the server will count for a draft line; null when this screen cannot tell. */
+  private draftCartons(line: SalesOrder['lines'][number]): number | null {
+    if (salesLineUnavailable(line)) return 0;
+    const quantity = roundToOrderStep(Math.max(0, Number(line.quantity) || 0), this.unitsPerStep(line.productId));
+    if (quantity <= 0) return 0;
+    const priced = this.view()?.priced.lines.find((candidate) => candidate.productId === line.productId);
+    if (priced && priced.quantity === quantity) return priced.cartons;
+    const perCarton = this.products().find((product) => product.id === line.productId)?.carton?.piecesPerCarton;
+    return perCarton && perCarton > 0 ? Math.ceil(quantity / perCarton) : null;
+  }
+
   addPallet(): void {
     this.mutatePallets((pallets) => {
-      const type = this.palletTypeForProfile(this.view()?.order.palletProfile);
-      pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type,
-          heightCm: null, items: [] });
+      pallets.push({ id: null, label: nextPalletLabel(pallets), type: palletTypeLabel(this.view()?.order.palletProfile),
+        heightCm: null, items: [] });
       return pallets;
     });
   }
 
+  /* Removing or moving renumbers the pallets still called "Pallet n", so the pakbon never lists a number twice. */
   removePallet(index: number): void {
     this.mutatePallets((pallets) => {
       pallets.splice(index, 1);
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4500,7 +5144,7 @@ export class SalesEditor {
     if (index < 0 || index >= count || target < 0 || target >= count) return;
     this.mutatePallets((pallets) => {
       [pallets[index], pallets[target]] = [pallets[target], pallets[index]];
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4512,7 +5156,7 @@ export class SalesEditor {
     this.mutatePallets((pallets) => {
       const [moved] = pallets.splice(fromIndex, 1);
       pallets.splice(toIndex, 0, moved);
-      return pallets;
+      return relabelPallets(pallets);
     });
   }
 
@@ -4523,7 +5167,7 @@ export class SalesEditor {
     });
   }
 
-  /** New product on a pallet starts with everything that is still loose. */
+  /** A product put on a pallet takes everything that is still loose; already on it, it grows by that. */
   addItem(palletIndex: number, productId: number): void {
     if (!productId) return;
     this.mutatePallets((pallets) => {
@@ -4532,37 +5176,34 @@ export class SalesEditor {
           .filter((item) => item.productId === productId)
           .reduce((sum, item) => sum + item.cartons, 0);
       const remaining = line ? line.cartons - assigned : 0;
-      if (remaining > 0 && pallets[palletIndex]) {
-        pallets[palletIndex].items.push({ productId, cartons: remaining });
+      const pallet = pallets[palletIndex];
+      if (remaining > 0 && pallet) {
+        const item = pallet.items.find((candidate) => candidate.productId === productId);
+        if (item) item.cartons += remaining;
+        else pallet.items.push({ productId, cartons: remaining });
       }
       return pallets;
     });
   }
 
+  /** Never more than the line holds: what the other pallets carry is taken already; 0 takes the product off. */
   setItemCartons(palletIndex: number, productId: number, cartons: number): void {
     this.mutatePallets((pallets) => {
       const items = pallets[palletIndex]?.items ?? [];
       const index = items.findIndex((item) => item.productId === productId);
       if (index < 0) return pallets;
-      if (!cartons || cartons <= 0) {
-        items.splice(index, 1);
-      } else {
-        items[index] = { ...items[index], cartons: Math.floor(cartons) };
-      }
+      const line = this.view()?.priced.lines.find((candidate) => candidate.productId === productId);
+      const elsewhere = pallets.reduce((sum, pallet, at) => at === palletIndex ? sum
+        : sum + pallet.items.filter((item) => item.productId === productId).reduce((total, item) => total + item.cartons, 0), 0);
+      const count = Math.min(Math.max(0, (line?.cartons ?? 0) - elsewhere), Math.max(0, Math.floor(cartons || 0)));
+      if (count <= 0) items.splice(index, 1);
+      else items[index] = { ...items[index], cartons: count };
       return pallets;
     });
   }
 
   clearPallets(): void {
     this.applyShippingPatch({ pallets: [] });
-  }
-
-  private palletTypeForProfile(profile: SalesOrder['palletProfile']): string {
-    switch (profile) {
-      case 'BLOCK_120X100': return 'Blokpallet 120×100';
-      case 'HALF_80X60': return 'Halve pallet 80×60';
-      default: return 'Europallet';
-    }
   }
 
 }

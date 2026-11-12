@@ -33,6 +33,22 @@ export interface CatalogBrochureOptions {
   coverSubtitle?: string;
 }
 
+/** The sales unit a price is on: per display only for a display priced per display (Packaging.salesUnit()). */
+export type CatalogPriceBasis = 'PIECE' | 'DISPLAY';
+
+/** One product's price in this PDF only; it is never stored on the product or the customer. */
+export interface CatalogPriceOverride {
+  productId: number;
+  /** EUR excl. VAT on the product's own sales unit, at most 2 decimals; null only with onRequest. */
+  priceEur: number | null;
+  /** Print "Prijs op aanvraag" for this product. */
+  onRequest?: boolean;
+  /** The product's sales unit the price was typed against. */
+  basis: CatalogPriceBasis;
+  /** Pieces per display at typing time; null for PIECE. */
+  piecesPerUnit: number | null;
+}
+
 export interface CatalogExportRequest {
   productIds: number[];
   /** Follow the supplied family/variant order instead of automatic category sorting. */
@@ -47,11 +63,53 @@ export interface CatalogExportRequest {
   layout: CatalogLayout;
   photosPerProduct?: number;
   brochure?: CatalogBrochureOptions;
+  /** The customer the PDF is made for: their stored prices apply and the export is journalled for them. */
+  customerId?: number | null;
+  /** A recipient without a customer record (a fair lead); only without customerId, trimmed, at most 120 characters. */
+  recipientName?: string | null;
+  /** ISO date printed as "Geldig tot …"; only with includePrices. */
+  pricesValidUntil?: string | null;
+  /** Only with includePrices; a product at most once, and only a selected one. */
+  priceOverrides?: CatalogPriceOverride[];
+}
+
+export type CatalogPriceSource = 'CATALOGUE' | 'CUSTOMER' | 'ONE_OFF' | 'ON_REQUEST';
+
+/** The price one product gets in the PDF, as the server resolved it. */
+export interface CatalogResolvedPrice {
+  productId: number;
+  basis: CatalogPriceBasis;
+  piecesPerUnit: number | null;
+  unitKey: string | null;
+  catalogueEur: number | null;
+  customerEur: number | null;
+  /** null prints "Prijs op aanvraag". */
+  printedEur: number | null;
+  source: CatalogPriceSource;
+}
+
+/** A refused override (409 CATALOG_PRICES_INVALID) or a warning that does not stop the PDF. */
+export interface CatalogPriceIssue {
+  productId: number;
+  code: string;
+  message: string;
+}
+
+/** The 409 body when an override cannot go into the PDF. */
+export interface CatalogPricesInvalid {
+  code: 'CATALOG_PRICES_INVALID';
+  message: string;
+  priceIssues: CatalogPriceIssue[];
 }
 
 export interface CatalogPreflightResult {
+  /** Translations complete; a price problem never makes this false. */
   ready: boolean;
   missingPaths: string[];
+  /** There whenever includePrices is on; a server without it does not know prices for a customer yet. */
+  prices?: CatalogResolvedPrice[];
+  priceWarnings?: CatalogPriceIssue[];
+  recipient?: { customerId: number | null; name: string } | null;
 }
 
 export interface WebsiteVisibilityResult {
@@ -629,10 +687,13 @@ export class CatalogApi {
       this.http.post<CatalogPreflightResult>(api('/api/catalog/preflight'), request));
   }
 
-  /** The catalogue as a PDF, after the lightweight translation preflight succeeds. */
-  exportCatalog(request: CatalogExportRequest): Promise<Blob> {
+  /**
+   * The catalogue as a PDF, after the lightweight translation preflight succeeds. {@code compress}
+   * ("PDF verkleinen", on by default) lets the server bring the photos down to about 10 MB in all.
+   */
+  exportCatalog(request: CatalogExportRequest, compress = true): Promise<Blob> {
     return firstValueFrom(
-      this.http.post(api('/api/catalog/export'), request, { responseType: 'blob' }));
+      this.http.post(api(compress ? '/api/catalog/export' : '/api/catalog/export?compress=false'), request, { responseType: 'blob' }));
   }
 
   /* --------------------------------------------------- categorieen / HS */

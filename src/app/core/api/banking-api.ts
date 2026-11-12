@@ -70,6 +70,29 @@ export interface BankPurchaseShareOutcome {
 }
 /** The line as described now, the payment on the line per part (request order) and what happened per part. */
 export interface BankPurchaseShareResult { line: BankStatementLine; payments: PurchasePayment[]; parts: BankPurchaseShareOutcome[]; }
+/**
+ * What "Transactie losmaken" does to one thing the line carries (2026-11-04):
+ * it stays without the line, a part of a payment in parts goes back into the
+ * payment's open part or leaves the payment, or Transactiekosten and a
+ * difference cost go.
+ */
+export type BankUnlinkAction = 'STAYS' | 'MERGED' | 'REMOVED' | 'DELETED';
+/**
+ * PURCHASE: payment `id` of `orderId`; its payment as a whole is `transfers`
+ * rows worth `paymentEur` now and `paymentAfterEur` after. COST: cost payment
+ * `id` (or the cost) of `costId`; `label` is the cost's description.
+ */
+export interface BankUnlinkRow {
+  kind: 'PURCHASE' | 'COST'; id: number; orderId: number | null; orderNumber: string | null; orderAlias: string | null;
+  payee: Payee | null; label: string | null; amountEur: number; amount: number | null; currency: 'EUR' | 'USD' | 'CNY' | null;
+  action: BankUnlinkAction; transfers: number; paymentEur: number | null; paymentAfterEur: number | null; intoPaymentId: number | null;
+  costId: number | null; fee: boolean; difference: boolean;
+}
+/** `partsKeepable`: a part would leave its payment and keepParts keeps it there, open. `expected` goes back with the unlink. */
+export interface BankUnlinkPlan {
+  lineId: number; amountEur: number; day: string; counterparty: string | null; reference: string | null;
+  rows: BankUnlinkRow[]; keepParts: boolean; partsKeepable: boolean; expected: string | null; done: boolean;
+}
 export type BankAccountWrite = Pick<BankAccount, 'label' | 'source' | 'aliases' | 'odooJournalId'>;
 export interface BankStatementLine {
   id: number; account: string; fingerprint: string; amountEur: number; bookedAt: string; timeZone: string;
@@ -110,6 +133,14 @@ export class BankingApi {
   sharePurchasePayment(id: number, parts: BankPurchaseSharePart[]): Promise<BankPurchaseShareResult> { return firstValueFrom(this.http.post<BankPurchaseShareResult>(api(`/api/bank-statements/${id}/purchase-share`), { parts })); }
   addCostPayment(id: number, companyCostId: number, confirmNewPayment = false): Promise<BankStatementLine> { return firstValueFrom(this.http.post<BankStatementLine>(api(`/api/bank-statements/${id}/cost-payment`), { companyCostId, ...(confirmNewPayment ? { confirmNewPayment } : {}) })); }
   unlinkPayments(id: number): Promise<void> { return firstValueFrom(this.http.delete<void>(api(`/api/bank-statements/${id}/links`))); }
+  /** What unlinking the line does, before it does it (a server before 2026-11-04 answers 404). */
+  unlinkPlan(id: number, keepParts = false): Promise<BankUnlinkPlan> {
+    return firstValueFrom(this.http.get<BankUnlinkPlan>(api(`/api/bank-statements/${id}/unlink-plan`), { params: keepParts ? { keepParts: true } : {} }));
+  }
+  /** The plan, done in one go; refused when what the line carries changed since `expected` was read. */
+  unlinkLine(id: number, keepParts: boolean, expected: string | null): Promise<BankUnlinkPlan> {
+    return firstValueFrom(this.http.post<BankUnlinkPlan>(api(`/api/bank-statements/${id}/unlink`), { keepParts, expected }));
+  }
   receivedOdooInvoices(id: number, afterId = 0): Promise<ReceivedOdooInvoicePage> { return firstValueFrom(this.http.get<ReceivedOdooInvoicePage>(api(`/api/bank-statements/${id}/odoo-purchase-invoices`), { params: { afterId, limit: 50 } })); }
   previewReceivedOdooInvoice(id: number, invoiceId: number, existingCompanyCostId?: number): Promise<ReceivedOdooInvoicePreview> { return firstValueFrom(this.http.get<ReceivedOdooInvoicePreview>(api(`/api/bank-statements/${id}/odoo-purchase-invoices/${invoiceId}/preview`), { params: existingCompanyCostId ? { existingCompanyCostId } : {} })); }
   linkReceivedOdooInvoice(id: number, body: { odooInvoiceId: number; snapshotHash: string; existingCompanyCostId?: number; category?: string }): Promise<ReceivedOdooInvoiceResult> { return firstValueFrom(this.http.post<ReceivedOdooInvoiceResult>(api(`/api/bank-statements/${id}/odoo-purchase-invoice`), body)); }

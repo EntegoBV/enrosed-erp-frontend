@@ -66,9 +66,13 @@ export interface AuctionSheetLine {
         }
         @if (purchaseOrderId()) {
           <div class="per-toggle" role="group" aria-label="Omvang afrekening"><button type="button" [class.on]="!finalBatch()" (click)="setFinal(false)">Deelveiling</button><button type="button" [class.on]="finalBatch()" (click)="setFinal(true)">Alles wat resteert</button></div>
-          <p class="hint">{{ finalBatch() ? 'Deze factuur sluit alle resterende stuks af.' : 'Vul alleen de aantallen en netto-opbrengsten van deze veiling in. Andere producten blijven op 0.' }} Voer 0 opbrengst in voor verkochte of afgeboekte stuks zonder opbrengst.</p>
+          <p class="hint">{{ finalBatch() ? (openReported() ? 'Factureer eerst de stuks in Veilingverkopen; daarna sluit deze factuur de rest van de container af.' : 'Deze factuur sluit alle resterende stuks af.') : 'Vul alleen de aantallen en netto-opbrengsten van deze veiling in. Andere producten blijven op 0.' }} Voer 0 opbrengst in voor verkochte of afgeboekte stuks zonder opbrengst.</p>
           @if (availability(); as available) {
             <p class="hint">{{ remainingBefore() | num }} stuks beschikbaar · {{ available.remainingAdvanceEur | eur }} voorschot nog te verrekenen. Conceptafrekeningen reserveren hun aantallen en voorschot al.</p>
+            @if (openReported()) {
+              <p class="hint as__reported">{{ openReported() | num }} {{ openReported() === 1 ? 'stuk staat' : 'stuks staan' }} al in Veilingverkopen: die factureer je daar.
+                <a routerLink="/veilingverkopen" (click)="closed.emit()">Veilingverkopen ›</a></p>
+            }
             @if (available.settlements.length) { <details><summary>Eerdere afrekeningen · {{ available.settlements.length }}</summary><div class="as__history">@for (previous of available.settlements; track previous.invoiceId) { <a [routerLink]="['/sales', previous.invoiceId]"><b>{{ previous.number }} · {{ previous.finalSettlement ? 'slot' : 'deelveiling' }}</b><span>{{ previous.quantity | num }} stuks · {{ previous.invoiceTotalEur | eur }} excl. btw · {{ previous.status === 'CONCEPT' ? 'concept / gereserveerd' : 'uitgereikt' }}</span></a> }</div></details> }
           }
         }
@@ -77,7 +81,7 @@ export interface AuctionSheetLine {
           <p class="hint is-bad">@if (pendingCreditNote(); as note) { Reik conceptcreditnota <a [routerLink]="['/sales', note.id]" (click)="closed.emit()">{{ note.number }}</a> eerst uit of verwijder ze. } Rond eerst de voorschotten af: maak en geef de geplande facturen uit, of verwijder ongebruikte termijnen en concepten. Daarna kan de eerste veilingafrekening worden gemaakt. <a [routerLink]="['/purchasing', purchaseOrderId()]" [queryParams]="{ section: 'payments' }" (click)="funding.emit(); closed.emit()">Factuurtermijnen openen ›</a></p>
         }
         @if (financing(); as finance) { @if (!finance.costFinalized) { <p class="hint is-bad">De externe containerkost is nog voorlopig. Deze conceptafrekening gebruikt de huidige verwachte kost.</p> } }
-        @if (availability() && !remainingBefore()) { <p class="hint">Alle bruikbare stuks zijn al afgerekend of gereserveerd in een conceptafrekening. Open de bestaande facturen hierboven.</p> }
+        @if (availability() && !remainingBefore()) { <p class="hint">{{ openReported() ? 'De resterende stuks staan in Veilingverkopen; factureer ze daar.' : 'Alle bruikbare stuks zijn al afgerekend of gereserveerd in een conceptafrekening. Open de bestaande facturen hierboven.' }}</p> }
         <div class="as__table-wrap">
           <table class="as__table">
             <thead><tr><th>Product</th><th class="num">Verkocht</th><th class="num">Netto opbrengst</th><th class="num">Kost</th><th class="num">Winst</th><th class="num">Ons deel</th></tr></thead>
@@ -111,7 +115,7 @@ export interface AuctionSheetLine {
         <dl class="as__sums">
           <div><dt>Externe kost in de verkoopwaarde</dt><dd>{{ allProceedsEntered() ? (totals().costPart | eur) : '—' }}</dd></div>
           <div><dt>Winstdeling · {{ profitShare() }} %</dt><dd>{{ allProceedsEntered() ? (totals().profitPart | eur) : '—' }}</dd></div>
-          @if (purchaseOrderId()) { <div><dt>Voorschot voor deze veiling verrekenen</dt><dd>− {{ advanceDeduction() | eur }}</dd></div><div><dt>Na deze afrekening nog te verkopen</dt><dd>{{ preview()?.remainingQuantity ?? remainingBefore() | num }} stuks</dd></div> }
+          @if (purchaseOrderId()) { <div><dt>Voorschot voor deze veiling verrekenen</dt><dd>− {{ advanceDeduction() | eur }}</dd></div><div><dt>Na deze afrekening nog te verkopen</dt><dd>{{ afterQuantity() | num }} stuks</dd></div> }
           <div class="as__sums-ours"><dt>{{ finalAmount() < 0 ? 'Credit voor de partner, excl. btw' : preview()?.finalSettlement ? 'Op de slotfactuur, excl. btw' : 'Op de deelfactuur, excl. btw' }}</dt><dd>{{ allProceedsEntered() ? (finalAmount() | eur) : '—' }}</dd></div>
         </dl>
         <div class="field">
@@ -165,6 +169,7 @@ export interface AuctionSheetLine {
     .as__sums-ours { background: var(--rose-soft); }
     .as__sums-ours dt { color: var(--rose-dark); font-weight: 650; }
     .as__sums-ours dd { color: var(--rose-dark); font-size: 15px; font-weight: 800; }
+    .as__reported { color: var(--warn); }
     .as__history{display:grid;gap:10px;padding:10px 0}.as__history a{display:grid;gap:3px;color:var(--rose-dark);font-size:12px}.as__history span{color:var(--muted);font-size:11px}
   `,
 })
@@ -207,11 +212,22 @@ export class AuctionSettlementSheet {
   private readonly proceeds = signal<Record<number, number>>({});
   private readonly sold = signal<Record<number, number>>({});
 
-  readonly availableLines = computed<AuctionSheetLine[]>(() => this.purchaseOrderId() ? (this.availability()?.lines ?? []).filter((line) => line.remainingQuantity > 0).map((line) => ({ productId: line.productId, name: line.productName, quantity: line.remainingQuantity, landedUnitEur: line.remainingCostEur / line.remainingQuantity })) : this.lines());
+  /**
+   * Per line what this sheet may settle: the ledger's remaining minus what the partner already reported and nobody
+   * invoiced (Veilingverkopen, openReportedQuantity; the server refuses more). The unit cost stays the ledger's.
+   */
+  readonly availableLines = computed<AuctionSheetLine[]>(() => this.purchaseOrderId() ? (this.availability()?.lines ?? [])
+    .map((line) => ({ line, quantity: Math.max(0, line.remainingQuantity - Math.max(0, line.openReportedQuantity ?? 0)) }))
+    .filter(({ line, quantity }) => quantity > 0 && line.remainingQuantity > 0)
+    .map(({ line, quantity }) => ({ productId: line.productId, name: line.productName, quantity, landedUnitEur: line.remainingCostEur / line.remainingQuantity })) : this.lines());
+  /** Reported pieces of this container still open in Veilingverkopen (0 on an older backend). */
+  readonly openReported = computed(() => (this.availability()?.lines ?? []).reduce((sum, line) => sum + Math.max(0, line.openReportedQuantity ?? 0), 0));
   readonly remainingBefore = computed(() => this.availableLines().reduce((sum, line) => sum + line.quantity, 0));
   readonly preview = computed(() => this.availability() ? partialSettlementPreview(this.availability()!, Object.fromEntries(this.availableLines().map((line) => [line.productId, this.soldOf(line)])), this.proceeds(), this.profitShare()) : null);
   readonly totals = computed(() => auctionTotals(this.availableLines().map((line) => this.splitOf(line))));
   readonly soldTotal = computed(() => this.availableLines().reduce((sum, line) => sum + this.soldOf(line), 0));
+  /** Left to sell after this settlement, without the pieces already in Veilingverkopen (they are sold). */
+  readonly afterQuantity = computed(() => Math.max(0, (this.preview()?.remainingQuantity ?? this.remainingBefore()) - this.openReported()));
   readonly allProceedsEntered = computed(() => this.soldTotal() > 0 && this.availableLines().filter((line) => this.soldOf(line) > 0).every((line) => this.proceedsEntered(line.productId)));
   readonly advanceDeduction = computed(() => this.preview()?.advanceEur ?? 0);
   readonly finalAmount = computed(() => this.preview()?.netEur ?? this.totals().ours);

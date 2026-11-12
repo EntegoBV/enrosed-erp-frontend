@@ -38,6 +38,7 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
   'open-credits': { icon: 'arrow-out', tone: 'grey' },
   regimes: { icon: 'info', tone: 'grey' },
   catalog: { icon: 'globe', tone: 'grey' },
+  'partner-sales': { icon: 'arrow-in', tone: 'grey' },
 };
 
 /**

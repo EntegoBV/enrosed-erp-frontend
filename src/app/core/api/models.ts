@@ -14,6 +14,8 @@ export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
+/** How the automatic pallets count: products stacked together, or every product on pallets of its own. */
+export type PalletRule = 'STRICT' | 'MIXED';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
 /** A quote proposes, an invoice claims, a credit note reduces an invoice's claim (positive lines, the sign in the type). */
 export type DocumentType = 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA';
@@ -99,7 +101,9 @@ export interface StockMovement {
   at: string;
   delta: number;
   quantityAfter: number;
-  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'DEMO' | 'SHORTAGE';
+  /** PARTNER_SALE / PARTNER_BUYBACK: a partner portal melding (Veilingverkopen), reference "Veilingverkoop VV-12", never deletable. */
+  kind: 'PURCHASE_RECEIPT' | 'MANUAL_CORRECTION' | 'TRANSFER_OUT' | 'TRANSFER_IN' | 'STOCKTAKE' | 'SALE' | 'SALE_RETURN' | 'DAMAGED' | 'DEMO' | 'SHORTAGE'
+    | 'PARTNER_SALE' | 'PARTNER_BUYBACK';
   kindLabel: string;
   reference: string | null;
   actor: string | null;
@@ -1036,6 +1040,16 @@ export const LANGUAGES: { code: LanguageCode; label: string }[] = [
   { code: 'EL', label: 'Grieks' },
 ];
 
+/** Where a customer stands in the follow-up: new lead, talking, buying, gone quiet, lost. */
+export type CrmStatus = 'NIEUW' | 'IN_GESPREK' | 'ACTIEF' | 'SLAPEND' | 'VERLOREN';
+
+/** One tick of the follow-up checklist (mailed, called, catalogue sent, ...): the server stamps when and by whom. */
+export interface CustomerTouchpoint {
+  kind: string;
+  at: string;
+  by: string | null;
+}
+
 export interface Customer {
   id: number | null;
   company: string;
@@ -1063,6 +1077,10 @@ export interface Customer {
   fiscalRepresentative?: boolean;
   /** A sentence of our own on every quote and invoice for this customer. */
   invoiceNote?: string | null;
+  /** Follow-up status; null from a client keeps the stored one, a new customer starts as NIEUW. */
+  crmStatus?: CrmStatus | null;
+  /** The ticked follow-up steps; null from a client keeps the stored list, [] clears it. */
+  touchpoints?: CustomerTouchpoint[];
 }
 
 export interface Country {
@@ -1556,13 +1574,34 @@ export interface Payable {
   supplierFreightEur?: number;
 }
 
+/** One purchase order behind a product's coming pieces; ONTVANGEN = received, stock not booked yet. */
+export interface ExpectedStockOrder {
+  orderId: number;
+  orderNumber: string;
+  /** The container as sales names it (Herkenbare naam, else the number). */
+  name?: string | null;
+  status: 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
+  quantity: number;
+  expectedArrival: string | null;
+  /** The day the container sailed; null until then. */
+  shippedOn: string | null;
+  receivedOn?: string | null;
+  /** A partner container: its pieces are booked into the same stock. */
+  partner?: boolean;
+}
+
 /** Pieces on the water for one product. */
 export interface ExpectedStock {
   productId: number;
+  /** Ordered and departed containers only, as always. */
   quantity: number;
   expectedArrival: string | null;
   orderNumbers: string[];
   orderIds: number[];
+  /** Usable pieces of received containers that wait for their stock booking; absent from a backend before 2026-11-10. */
+  arrivedQuantity?: number;
+  /** Every order behind the figure; absent from a backend before 2026-11-10. */
+  orders?: ExpectedStockOrder[];
 }
 
 /** One named cost booked apart from the piece price, next to the inspection. */
@@ -1891,6 +1930,13 @@ export interface PricedExtraLine {
   total: number;
 }
 
+/**
+ * Where a line's unit price comes from (round 3b): CUSTOMER is the
+ * customer's own price, pinned when the line was added; STANDARD follows the
+ * catalogue and is never pinned again; MANUAL was typed. null: an older line.
+ */
+export type SalesLinePriceSource = 'CUSTOMER' | 'STANDARD' | 'MANUAL';
+
 export interface SalesOrderLine {
   id: number | null;
   productId: number;
@@ -1898,6 +1944,8 @@ export interface SalesOrderLine {
   unavailable?: boolean | null;
   requestedQuantity?: number | null;
   unitPriceEur: number | null;
+  /** Absent from older servers; set with the price ("Standaardprijs gebruiken" sends null and STANDARD). */
+  priceSource?: SalesLinePriceSource | null;
   manualDiscountPct: number | null;
   /** Zelf ingevulde leverweek, bv. "2026-W34". Optioneel. */
   deliveryWeek: string | null;
@@ -1910,6 +1958,11 @@ export interface SalesOrderLine {
   readonly unitsPerOrderStep?: number | null;
   /** Server stamp: what the pieces cost that left stock at shipment, by batch. Absent before shipment and on older servers. */
   readonly stockCostEur?: number | null;
+  /**
+   * This line counts per piece: its quantity is never rounded up to the product's order step. Absent = not chosen.
+   * In a write an absent or null value keeps what is stored on the line, true or false sets it.
+   */
+  perPiece?: boolean | null;
 }
 
 /** A hand-built pallet: label plus product/carton assignments. */
@@ -1921,6 +1974,15 @@ export interface OrderPallet {
   /** Stacked height in cm; the transporter asks for it on every booking. */
   heightCm: number | null;
   items: { productId: number; cartons: number }[];
+}
+
+/** One pallet of the server's automatic layout: bottom to top, each product in whole layers of its own. */
+export interface AutoPallet {
+  items: { productId: number; cartons: number; layers: number }[];
+  /** Loaded height, the wood included. */
+  heightCm: number;
+  /** 0 when a weight is unknown. */
+  weightKg: number;
 }
 
 export type SalesPurpose = 'STANDARD' | 'PARTNER_ADVANCE' | 'PARTNER_SETTLEMENT';
@@ -2058,6 +2120,24 @@ export interface PricedLine {
   expectedUnitCost?: number | null;
   /** What the pieces cost that left stock, by batch; margins use it after shipment. */
   stockUnitCost?: number | null;
+  /*
+   * Round 3b, staff only (never on a customer document); absent from older
+   * servers. The figures are unit prices on the line's own basis, before
+   * discounts, as of today.
+   */
+  /** The source the server priced this line with, a preview's pinning included. */
+  priceSource?: SalesLinePriceSource | null;
+  /** What the line would cost on the catalogue price. */
+  standardUnitPriceEur?: number | null;
+  /** The customer's active price for the product; null when there is none. */
+  customerUnitPriceEur?: number | null;
+  /** The line counts per piece (SalesOrderLine.perPiece); true or absent. */
+  perPiece?: boolean | null;
+  /**
+   * True where the line may be switched between its product's order step and per piece: the document rounds and
+   * the product's step is above 1. Absent elsewhere and from an older server, where nothing is offered.
+   */
+  perPieceChoice?: boolean | null;
 }
 
 export interface PricedOrder {
@@ -2066,6 +2146,13 @@ export interface PricedOrder {
     pieces: number; cartons: number; palletsStrict: number; palletsOptimised: number;
     /** Hand-built pallets (0 = calculated stacking) and cartons on no pallet. */
     palletsManual: number; unassignedCartons: number;
+    /**
+     * The automatic count and its pallets, what the freight, the PDF and the portal follow without a
+     * hand layout: MIXED stacks products together (new and concept documents), STRICT keeps every
+     * product on pallets of its own (documents past concept keep the count they were sent with).
+     * Absent from older servers, which count palletsStrict.
+     */
+    palletRule?: PalletRule; palletsAutomatic?: number; autoPallets?: AutoPallet[];
     /** Effective server settings used for this calculation. */
     palletBaseHeightCm?: number; palletMaxHeightCm?: number;
     cbm: number; weightKg: number;
@@ -2096,6 +2183,11 @@ export interface SalesAccounting {
   recognizedCostEur: number;
   recognizedProfitEur: number;
   recognizedQuantity: number;
+  /**
+   * The Enrosed kost inside recognizedCostEur, signed like it: Enrosed pays it to nobody, so Resultaat counts it as
+   * revenue (2026-11-06). Absent on an older backend answer.
+   */
+  recognizedEnrosedEur?: number;
 }
 
 export interface SalesPayment {
@@ -2218,6 +2310,11 @@ export interface PartnerSettlementAvailability {
   lines: {
     productId: number; productName: string; totalQuantity: number; settledQuantity: number;
     remainingQuantity: number; totalCostEur: number; settledCostEur: number; remainingCostEur: number;
+    /**
+     * Veilingverkopen: pieces of this line the partner reported (sale minus buyback) that are not invoiced yet, and
+     * their net; a manual settlement can only take remainingQuantity minus these. Absent on an older backend (= 0).
+     */
+    openReportedQuantity?: number | null; openReportedNetEur?: number | null;
   }[];
   settlements: {
     invoiceId: number; number: string; status: QuoteStatus; finalSettlement: boolean;
@@ -2263,6 +2360,8 @@ export interface PartnerFinancing {
   payments: IncomingPaymentRow[];
   /** Σ issued live credit notes on this container's documents (positive); invoicedAdvanceEur and settlementEur are already net of them. */
   creditNotesEur?: number;
+  /** Veilingverkopen: reported pieces of this container not invoiced yet (sale minus buyback); absent on an older backend. */
+  openReportedQuantity?: number | null;
 }
 
 /** Frozen, price-free container contents on an advance invoice. Never participates in its monetary claim. */
@@ -2326,6 +2425,13 @@ export interface SalesOrderView {
    * always null on the list, absent on an older backend.
    */
   invoiceCustomer?: SalesInvoiceCustomer | null;
+  /**
+   * Made from the partner's meldingen (Veilingverkopen › Factureren): its stock already left with the meldingen, so
+   * it is never shipped again and its lines stay as invoiced. Absent on an older backend (= false).
+   */
+  reportBacked?: boolean;
+  /** Per product id: the quantity the meldingen already booked out of stock; null when not report-backed. */
+  reportBookedQuantities?: Readonly<Record<string, number>> | null;
 }
 
 export type SalesInvoiceCustomerField = 'ADDRESS' | 'POSTAL_CODE' | 'CITY';
@@ -2714,7 +2820,7 @@ export interface ProductPhotoExportResult {
 /** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'OPNIEUW_VERSTUREN'
-    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST';
+    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST' | 'PARTNER_VERKOOP';
   orderId: number | null;
   orderNumber: string;
   customer: string | null;
@@ -2727,6 +2833,8 @@ export interface AppNotification {
   url?: string | null;
   /** Stable identity distinguishes ten-day and three-day arrival reminders. */
   notificationId?: string | null;
+  /** PARTNER_VERKOOP: the melding is not invoiced yet (it counts on the bell). */
+  open?: boolean | null;
 }
 
 export interface NotificationFeed {

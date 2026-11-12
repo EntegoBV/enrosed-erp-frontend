@@ -26,6 +26,9 @@ import { documentTitle } from '../core/platform/document-title';
 import { parentOf } from '../core/platform/page-parent';
 import { isPhoneTabRoot, phoneTabRootFor } from '../core/platform/phone-tabs';
 import { capsuleLabel, screenLabel } from '../core/platform/return-label';
+import { HostBridge } from '../core/platform/host-bridge';
+import type { HostActionEvent, HostPageInput } from '../core/platform/host-bridge';
+import { observeMirror } from './host-page';
 
 /**
  * Whether a single-line text is cut. Measured unrounded: a Range over the
@@ -94,6 +97,14 @@ export interface PageHeaderParent {
  * The host stays inline (no :host display): the sticky .appbar must be
  * constrained by the page host, not by this element. Its rules live in
  * styles/shell.scss.
+ *
+ * Inside the native host (enrosed-erp-ios, core/platform/host-bridge.ts)
+ * the bar is a spacer and the shell draws the chrome from a descriptor
+ * this header publishes: its title, subtitle, back control, large title
+ * state and the bell, plus either the page's explicit `[host]` items
+ * (ids are the page's method names, delivered through `(hostAction)`) or,
+ * without `[host]`, a mirror of the projected buttons (a native action
+ * clicks the button). Nothing of this runs in a browser.
  */
 @Component({
   selector: 'app-page-header',
@@ -180,6 +191,7 @@ export interface PageHeaderParent {
 })
 export class PageHeader {
   readonly desktop = inject(DesktopViewport);
+  private readonly hosted = inject(HostBridge).present;
   private readonly history = inject(NavHistory);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -217,6 +229,11 @@ export class PageHeader {
   readonly titleEditable = input(false);
   /** Fires with the new title once committed; never with an empty value. */
   readonly titleChange = output<string>();
+  /** The native host's items for this page; undefined mirrors the projected buttons instead. */
+  readonly host = input<HostPageInput | null | undefined>(undefined);
+  /** A native action by id (the page's method name, or `refresh`). */
+  readonly hostAction = output<HostActionEvent>();
+  private readonly bellRef = viewChild(NotificationBell);
 
   readonly editingTitle = signal(false);
   private readonly titleField = viewChild<ElementRef<HTMLInputElement>>('titleField');
@@ -297,6 +314,34 @@ export class PageHeader {
   });
 
   constructor() {
+    const bridge = inject(HostBridge);
+    if (bridge.present) {
+      const element = inject<ElementRef<HTMLElement>>(ElementRef);
+      const mirror = observeMirror(element, inject(DestroyRef), {
+        scopes: () => Array.from(element.nativeElement.querySelectorAll('.appbar__actions')),
+        pageRoot: () => element.nativeElement.parentElement,
+      });
+      bridge.bind({
+        title: () => this.title(),
+        subtitle: () => this.subtitle(),
+        back: () => {
+          const control = this.backControl();
+          return control ? { label: control.aria.replace(/^Terug naar /, '') || 'Terug', url: control.fallback } : null;
+        },
+        largeTitle: () => this.largeShown(),
+        condensed: () => this.condensed(),
+        titleEditable: () => this.titleEditable(),
+        input: () => this.host(),
+        mirror: () => mirror(),
+        bell: () => {
+          const bell = this.bellRef();
+          return bell && this.showBell() ? { count: bell.count(), open: () => bell.open() } : null;
+        },
+        onAction: (event) => this.hostAction.emit(event),
+        onBack: () => this.back(),
+        onTitle: (value) => { if (value && value !== this.title()) this.titleChange.emit(value); },
+      });
+    }
     effect(() => {
       this.ownTitle = documentTitle(this.title());
       this.documentTitle.setTitle(this.ownTitle);
@@ -363,7 +408,8 @@ export class PageHeader {
   /** Folds the chrome one step while the title text is cut; it unfolds only when the room grows. */
   private fit(): void {
     const fold = this.fold();
-    if (fold === 'none') return;
+    /* Inside the host the web bar is a box of no size (styles/host.scss): nothing to fit, and everything in it reads as cut. */
+    if (fold === 'none' || this.hosted) return;
     const text = this.titleText()?.nativeElement;
     if (!text || !textCut(text)) return;
     if (this.crumb()) {

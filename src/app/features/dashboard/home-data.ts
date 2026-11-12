@@ -26,7 +26,9 @@ import { buildCashForecast } from '../finance/cash-forecast';
 import type { CashForecast, ForecastVatQuarter } from '../finance/cash-forecast';
 import { cashForecastInput, forecastStartEur, vooruitblikOf } from '../finance/cash-forecast-input';
 import { weekdayDayMonth } from '../finance/cash-format';
+import { cashTotalOf, openOf } from '../finance/finance-metrics';
 import { receivableTotals } from '../finance/incoming-money';
+import { containerPayables, payableTotals, payablesFor } from '../finance/payables';
 import { agendaModel } from './agenda-entries';
 import { localPlannerDate, purchasePlannerMilestones } from './dashboard-today-state';
 import { SCHEDULES_WAIT_MS, TASKS_REVEAL_CAP_MS, cashHeadline, forecastGate, outlookFigures, tasksReveal } from './home-cash';
@@ -238,6 +240,22 @@ export class HomeData {
   });
 
   /**
+   * The Vandaag widget's "Nu te betalen" (Emre, 2026-11-07): what is due now, the headline of Kosten & bank's Te betalen,
+   * the page the widget opens (FinanceState.payableTotals().nowEur): open costs dated today or earlier plus the container
+   * terms due now. The same open costs, container rows and buckets as FinanceState, from the same two calls (purchase
+   * figures always show there); recurring costs are never 'now' and the Kaslijn dates only rows that are not, so neither
+   * is needed. Null until both calls answered and while either failed, never a sum without its part. The desk Kas card
+   * keeps the Vooruitblik's figure (outlookFigures).
+   */
+  readonly payNowEur = computed(() => {
+    const states = this.states();
+    if (states.kosten !== 'ready' || states.inkoop !== 'ready') return null;
+    const openCosts = this.costs().filter((cost) => openOf(cost) !== 0)
+      .map((cost) => ({ ...cost, openEur: openOf(cost), cashTotalEur: cashTotalOf(cost) }));
+    return payableTotals(payablesFor({ openCosts, upcoming30: [], containerRows: containerPayables(this.purchases()), today: this.today() })).nowEur;
+  });
+
+  /**
    * "Prognose onvolledig: …": CashData's words, then the home's own failed forecast sources. Without partner
    * financing the advance schedules cannot load, so that failure reads as CashData's own word for them, 'partners'.
    */
@@ -319,7 +337,7 @@ export class HomeData {
       today: this.today(), nowMs: 0, planner: this.planner.items(), actions: this.work.actions(), loginRequests: this.work.loginRequestCount(),
       purchases: this.purchases(), financing: this.financing(), sales, customers: this.customers(), costs, attention,
       cash: this.homeCash(), forecast: this.forecast(), vatQuarters: this.forecastVat(), headline: this.cash(), milestones: this.milestones(),
-      catalog: this.catalogAttention(),
+      catalog: this.catalogAttention(), partnerSales: this.work.partnerSales(),
       later: {}, sources: this.coverage(),
     });
   });

@@ -60,6 +60,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
     .lightbox {
       position: fixed; inset: 0; z-index: 200;
       display: flex; flex-direction: column;
+      padding-inline: var(--safe-l) var(--safe-r);
       background: rgb(20 14 12 / 94%);
       backdrop-filter: blur(10px);
       animation: lightbox-in 0.18s ease-out;
@@ -67,7 +68,7 @@ import { fileTypeLabel, formatBytes } from './format-bytes';
     @keyframes lightbox-in { from { opacity: 0; } }
     .lightbox__bar {
       display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-      padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+      padding: calc(10px + var(--safe-t)) 14px 10px;
     }
     .lightbox__count { color: #cfc4bf; font-size: 13px; font-variant-numeric: tabular-nums; flex: none; }
     .lightbox__meta {

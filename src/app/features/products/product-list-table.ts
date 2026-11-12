@@ -2,13 +2,15 @@ import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, input
 import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { AuthImage } from '../../core/api/auth-image';
-import type { ExpectedStock, Product } from '../../core/api/models';
+import type { Product } from '../../core/api/models';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import type { MenuPoint } from '../../shared/context-menu-position';
 import { Icon } from '../../shared/icon';
 import { keyContext } from '../../shared/key-context';
-import { DateNlPipe, EurPipe, NumPipe } from '../../shared/pipes';
-import { onderwegOrdersLabel, productMargin, type Margin, type Onderweg } from './product-figures';
+import { EurPipe } from '../../shared/pipes';
+import { IncomingPill } from '../../shared/incoming-pill';
+import type { Incoming } from '../../shared/product-incoming';
+import { productMargin, type Margin } from './product-figures';
 import { headerAriaSort, nextHeaderSort, rovingRow, type ListSort, type SortColumn } from './product-list-query';
 import type { productSalesUnit } from './product-sales-unit';
 
@@ -50,7 +52,7 @@ export interface ProductListTableHost {
   groupAllDemo(group: ListGroup): boolean;
   groupAttention(group: ListGroup): string | null;
   groupTooltip(group: ListGroup): string;
-  groupOnderweg(group: ListGroup): Onderweg | null;
+  groupIncoming(group: ListGroup): Incoming | null;
   otherLocationsLine(products: readonly Product[]): string | null;
   colourHex(product: Product): string | null;
   variantLabel(product: Product): string | null;
@@ -59,7 +61,7 @@ export interface ProductListTableHost {
   stockLabel(quantity: number | null): string;
   stockBreakdown(product: Product): string | null;
   groupBreakdown(group: ListGroup): string | null;
-  expectedFor(product: Product): ExpectedStock | null;
+  incomingFor(product: Product): Incoming | null;
   purchasePrice(product: Product): number | null;
   salesPrice(product: Product): number | null;
   salesUnit: typeof productSalesUnit;
@@ -87,7 +89,7 @@ interface Channels { website: boolean; app: boolean; title: string }
 @Component({
   selector: 'app-product-list-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, RouterLink, AuthImage, Icon, ContextMenu, EurPipe, NumPipe, DateNlPipe],
+  imports: [NgTemplateOutlet, RouterLink, AuthImage, Icon, ContextMenu, EurPipe, IncomingPill],
   template: `
     @let list = host();
     <div class="wk-table pl-table" role="table" aria-label="Producten" (keydown)="onKeydown($event)" (focusin)="onFocusIn($event)">
@@ -143,7 +145,7 @@ interface Channels { website: boolean; app: boolean; title: string }
         <ng-container *ngTemplateOutlet="productRow; context: { $implicit: group.products[0], nested: false }" />
       } @else {
         @let open = list.isOpen(group);
-        @let onway = list.groupOnderweg(group);
+        @let onway = list.groupIncoming(group);
         @let margin = marginOf(group.lead);
         @let rowKey = 'h:' + group.key;
         <!-- The whole series head folds (B10); the lead opens through ⋯ › Openen or a variant. -->
@@ -173,10 +175,10 @@ interface Channels { website: boolean; app: boolean; title: string }
           <span class="wk-td wk-td--num pl-cell" role="cell" [attr.title]="list.groupBreakdown(group)">
             <span class="pl-num" [class.pl-num--zero]="!group.stock">{{ list.stockLabel(group.stock) }}</span>
             @if (list.otherLocationsLine(group.products); as other) { <span class="pl-cell__sub">{{ other }}</span> }
-            @if (onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: onway }" /> }
+            @if (onway) { <span class="pl-under"><app-incoming-pill [value]="onway" [strong]="!group.stock" [link]="true" /></span> }
           </span>
           <span class="wk-td wk-td--num pl-cell pl-col--onderweg" role="cell">
-            <ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: onway }" />
+            @if (onway) { <app-incoming-pill [value]="onway" [strong]="!group.stock" [link]="true" /> } @else { <span class="pl-num pl-num--zero">—</span> }
           </span>
           <span class="wk-td wk-td--num pl-cell" role="cell">
             @if (list.purchasePrice(group.lead); as cost) {
@@ -216,8 +218,7 @@ interface Channels { website: boolean; app: boolean; title: string }
     </ng-template>
 
     <ng-template #productRow let-product let-nested="nested" let-head="head">
-      @let exp = list.expectedFor(product);
-      @let onway = exp ? { quantity: exp.quantity, earliest: exp.expectedArrival, orderNumbers: exp.orderNumbers, orderIds: exp.orderIds } : null;
+      @let onway = list.incomingFor(product);
       @let margin = marginOf(product);
       @let rowKey = 'p:' + product.id;
       <div class="wk-tr wk-tr--link pl-tr" role="row" [class.wk-tr--sub]="nested" [class.pl-tr--variant]="nested"
@@ -250,10 +251,10 @@ interface Channels { website: boolean; app: boolean; title: string }
         <span class="wk-td wk-td--num pl-cell" role="cell" [attr.title]="list.stockBreakdown(product)">
           <span class="pl-num" [class.pl-num--zero]="!list.stockOf(product)">{{ list.stockLabel(list.stockOf(product)) }}</span>
           @if (list.otherLocationsLine([product]); as other) { <span class="pl-cell__sub">{{ other }}</span> }
-          @if (onway) { <ng-container *ngTemplateOutlet="under; context: { $implicit: onway }" /> }
+          @if (onway) { <span class="pl-under"><app-incoming-pill [value]="onway" [strong]="!list.stockOf(product)" [link]="true" /></span> }
         </span>
         <span class="wk-td wk-td--num pl-cell pl-col--onderweg" role="cell">
-          <ng-container *ngTemplateOutlet="onwayCell; context: { $implicit: onway }" />
+          @if (onway) { <app-incoming-pill [value]="onway" [strong]="!list.stockOf(product)" [link]="true" /> } @else { <span class="pl-num pl-num--zero">—</span> }
         </span>
         <span class="wk-td wk-td--num pl-cell" role="cell">
           @if (list.purchasePrice(product); as cost) { <span class="pl-num">{{ cost | eur }}</span> }
@@ -282,21 +283,6 @@ interface Channels { website: boolean; app: boolean; title: string }
                   (click)="openMenu($event, product, false)"><app-icon name="more" [size]="16" /></button>
         </span>
       </div>
-    </ng-template>
-
-    <!-- Below 1360 Onderweg has no column: it reads under Voorraad, the date on its own line under it (B2). -->
-    <ng-template #under let-onway>
-      <span class="pl-under" [attr.title]="'Op ' + onway.orderNumbers.join(', ')">
-        <span class="pl-exp">+{{ onway.quantity | num }} verwacht</span>
-        @if (onway.earliest) { <span class="pl-under__date">{{ onway.earliest | dateNl }}</span> }
-      </span>
-    </ng-template>
-
-    <ng-template #onwayCell let-onway>
-      @if (onway) {
-        <span class="pl-num pl-exp" [attr.title]="'Op ' + onway.orderNumbers.join(', ')">+{{ onway.quantity | num }}</span>
-        <span class="pl-cell__sub">{{ onway.earliest ? (onway.earliest | dateNl) : ordersLabel(onway.orderNumbers) }}</span>
-      } @else { <span class="pl-num pl-num--zero">—</span> }
     </ng-template>
 
     <ng-template #marginCell let-margin let-product="product">
@@ -365,8 +351,6 @@ export class ProductListTable {
   sort(column: SortColumn): void {
     this.host().setSort(nextHeaderSort(column, this.host().sortKey()));
   }
-
-  readonly ordersLabel = onderwegOrdersLabel;
 
   /** "7 producten · 2 reeksen"; reeksen only when the section has any. */
   sectionCount(section: ListSection): string {

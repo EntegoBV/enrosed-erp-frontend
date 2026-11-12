@@ -1,0 +1,322 @@
+/* ==========================================================================
+   The native host (enrosed-erp-ios, 2026-10-29; core/platform/host.ts marks <html data-host="ios">). Inside the
+   SwiftUI shell the native chrome draws the tab bar, the navigation bar, the back button and every toolbar item (on
+   an iPhone Duo in the side strip), from the descriptor the web publishes (host-bridge.ts). The web keeps its content
+   and drops its own chrome:
+   - the ERP tab bar stays in the DOM, invisible: the bridge reads its computed display, so every existing hide rule
+     (editors, catalogue studio, the PO dock, workspace pages) keeps deciding when the native tab bar hides;
+   - the bars of app-page-header, app-ios-nav and the product editor's phone header become transparent spacers as
+     high as the top inset (--safe-t: status bar + native bar), so observeLargeTitle keeps its line and the large
+     titles stay web content; [below] sub-bars and the other sticky bands of the phone pages stick flush under the
+     native bar (--host-stick-t) as glass in the page colour;
+   - the '+' buttons, the kit's tab bars, the hero bar of the sales view, the PO dock and the PO editor's save bar,
+     the product editor's dock, the save buttons of the sales editor's dock and the Duo status paint go: the host has
+     them as items; the room the pages kept for them at their end goes with them.
+   Loaded last (styles.scss); every selector starts with :root[data-host], so nothing here reaches the PWA.
+   ========================================================================== */
+/* A band at rest is the page's own colour ($rest), opaque, with nothing to see on the plain page: in a fast scroll the rows
+   reach it before the page's script says stuck, and a band that only faded in then let them run through the search field
+   and the tabs for a moment (Emre: "wanneer ik te snel scrol flikkert ook alles"; seen frame by frame in a screen recording).
+   Stuck it turns to the glass with its hairline. */
+$host-band-transition: border-color .2s var(--ease-out, ease), backdrop-filter .2s var(--ease-out, ease), -webkit-backdrop-filter .2s var(--ease-out, ease), background-color .2s var(--ease-out, ease);
+@mixin host-band($rest) {
+  border-bottom: .5px solid transparent;
+  background: $rest;
+  pointer-events: none;
+  backdrop-filter: blur(0px) saturate(1);
+  -webkit-backdrop-filter: blur(0px) saturate(1);
+  transition: $host-band-transition;
+}
+@mixin host-band-stuck {
+  border-bottom-color: var(--ios-sep);
+  background: var(--host-band);
+  pointer-events: auto;
+  backdrop-filter: var(--ios-glass-filter);
+  -webkit-backdrop-filter: var(--ios-glass-filter);
+}
+
+@media screen {
+  :root[data-host] {
+    --tabbar-h: 0px;
+    --host-band: color-mix(in srgb, rgb(251 248 245) 85%, transparent);
+    /* Where a sticky band stands: flush under the native bar. --appbar-h feeds every sticky rule of the partials. */
+    --host-stick-t: var(--safe-t);
+    --appbar-h: var(--host-stick-t);
+  }
+  /* The iPhone Duo's strip poses (folded upright, folded sideways, unfolded sideways; data-host-strip from the window's
+     insets, data-host-bar from the published page, core/platform/host-bridge-impl.ts). The native bar there is 24 pt
+     without a title and 82 pt with one (with or without a subtitle; both measured on the iPhone Duo simulator, iOS 27.1,
+     2026-10-30), and the web view's env(safe-area-inset-top) follows it. The title comes and goes with the large title,
+     so env() moved the whole page 58 px at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So on a strip
+     pose the page no longer reads env(): --safe-t is the constant of the page's kind, 24 px beside a large title (the bar's
+     title comes when it has gone), 82 px when the bar's title is always on, and a band always sticks at 82 px, under where
+     the title is or will be. The flip then changes no layout at all. Without chrome (the login page) and in the bars
+     poses (every iPhone, the Duo unfolded upright: a constant inset, title or no title) env() stays. --ios-nav-h is the
+     step from the spacer to that line, so the partials' "--safe-t + --ios-nav-h" (minimum heights, scroll padding) end
+     on it too; in the bars poses they keep today's value. */
+  :root[data-host][data-host-strip][data-host-bar] {
+    --host-stick-t: 82px;
+    --ios-nav-h: calc(var(--host-stick-t) - var(--safe-t));
+  }
+  :root[data-host][data-host-strip][data-host-bar='large'] { --safe-t: 24px; }
+  :root[data-host][data-host-strip][data-host-bar='inline'] { --safe-t: 82px; }
+  /* A fixed full-screen viewer publishes no overlay (only a sheet does), so the native bar and its title stay above it and
+     its header has to clear the bar as it is at that moment: on the constant 24 px Downloaden, Sluiten and the file name lay
+     under the title's glass. It keeps env() and the kit's 44 px step (the inherited --ios-nav-h is already the computed
+     step, it does not follow --safe-t). Standing over the page, it moves nothing there. */
+  :root[data-host][data-host-strip] :is(.files-ql, .agreement-viewer, .lightbox) { --safe-t: env(safe-area-inset-top, 0px); --ios-nav-h: 44px; }
+  /* A large title without a caption ends above that line (24 + 50 px). A sub-bar under it (Documenten & media) would stand
+     stuck from the first frame, pushed 8 px over the first rows, its band over the title: the title's block reaches past
+     the line, as one with a caption does. */
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large:has(~ .ios-subbar) { min-height: calc(var(--host-stick-t) - var(--safe-t) + 4px); }
+  /* The kit's --ios-glass-filter is none then (workspace-kit.scss): the band's tone without the blur. */
+  @media (prefers-reduced-transparency: reduce) { :root[data-host] { --host-band: rgb(251 248 245); } }
+  /* The kit's bar height feeds --tabbar-h while an .ios-tabbar stands (workspace-kit.scss); the native bar replaces it.
+     A bottom toolbar (Documenten's selection) still stands at the bottom and keeps its room. */
+  :root[data-host] body:not(:has(.ios-toolbar)) { --tabbar-h: 0px; }
+
+  /* Hidden, not removed: the bridge's probe reads the ERP bar's display, the mirror reads the '+' and the kit's tab bar. */
+  :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) { visibility: hidden !important; pointer-events: none !important; }
+  :root[data-host] :is(.tabbar-menu, .tabbar-menu__backdrop, .safe-paint) { display: none !important; }
+  /* The web chrome that can hold a sheet or a menu is a box of no size that paints nothing, never display: none: with that
+     the bell's sheet in .appbar__actions had no box at all while overlay open:true went to the shell, so its bars and tab bar
+     went and nothing stood on screen, with no way out. The mirror's clicks still reach the controls in the box. What opens
+     inside gets out of it: position: fixed ignores the box's clip and size (none of these ever has a transform, a filter or a
+     contain: the trap rule) and it turns visible again below. No z-index of its own, so a sheet stays in .main's stacking context. */
+  :root[data-host] :is(.shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .appbar > .appbar__back, .appbar > .appbar__lead, .appbar > .appbar__actions, .ios-nav > .ios-nav__lead, .ios-nav > .ios-nav__title, .ios-nav > .ios-nav__trail) {
+    position: absolute !important;
+    inset: auto !important;
+    z-index: auto !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: clip !important;
+    visibility: hidden !important;
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    contain: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+  :root[data-host] :is(.shero-bar, .mpo-dock, .mpo-savebar, .product-editor-dock, .appbar__back, .appbar__lead, .appbar__actions, .ios-nav__lead, .ios-nav__title, .ios-nav__trail, .product-mobile-header, .tabbar, .fab, .ios-tabbar, .ios-accessory) :is(.overlay, .cm, .cm__backdrop) { visibility: visible; }
+  :root[data-host] :is(.tabbar, .fab, .ios-tabbar, .ios-accessory) :is(app-sheet:not(.mo-leaving) > .overlay, .cm, .cm__backdrop) { pointer-events: auto; }
+  /* A bar with a sheet in it stands above what the page raises (the kit's nav is only 30: .ios-large and the like came over it). */
+  :root[data-host] :is(.appbar, .ios-nav):has(.overlay) { z-index: 100; }
+
+  /* The legacy header: the sticky bar is a spacer; the large title below it is content. */
+  :root[data-host] .appbar { height: var(--safe-t); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; }
+  :root[data-host] .appbar::before { display: none; }
+
+  /* The kit's nav: the same spacer; [hero] blocks and [below] sub-bars stay. */
+  :root[data-host] .ios-nav { display: block; height: var(--safe-t); padding: 0; }
+  :root[data-host] .ios-nav::before { display: none; }
+
+  /* The sticky bands flow into the native band (Emre, 2026-10-30: "die boven header is mooi en dan die sticky is grijs
+     ... gelijk een T"). The band under the native bar is the web scroll view's top edge effect: clear at the top, glass
+     as soon as content runs under it, reading rgb(251 248 245) over the page colour (measured on the simulators). Every
+     band sticks flush under it (--host-stick-t). At rest its ::before is plain, just the page; once stuck it is a glass
+     in the native band's tone (--host-band) that fades in with a .5 px hairline at its bottom, and it runs across the
+     whole window: under the side strip and beyond the 760 px page column of a wide phone, so the header reads as one
+     piece and no T is left. The -100vw needs the clip on .shell, which spans the window: clip, not hidden, because a
+     clip is no scroll container, so the bands keep sticking to the page, and no containing block for the fixed sheets.
+     The blur stays on the ::before (trap rule). The hit area of the plain ::before goes with it.
+     IosNav says stuck from the sentinel right above the sub-bar and the sub-bar's own top. A sub-bar under an inline bar
+     has no sentinel: it stands on its line from the start. */
+  :root[data-host] .shell { overflow-x: clip; }
+  :root[data-host] .ios-subbar { top: var(--host-stick-t); }
+  :root[data-host] .ios-subbar::before { inset: 0 -100vw; @include host-band(var(--ios-bg)); }
+  :root[data-host] :is(.ios-nav--stuck, .ios-nav:not(.ios-nav--large)) ~ .ios-subbar::before,
+  :root[data-host] .home-agenda__fold.is-folded .ios-subbar::before { @include host-band-stuck; }
+  /* A strip pose beside a large title (a plain one: a [hero] condenses long before its sub-bar comes). The sub-bar stands on
+     its line long before the title has gone, and the bar has no title and so no band yet. So the band reaches up to the top
+     of the screen, in the plain page colour, under the title, which stands above it: the title slides away sharp, the rows
+     that go under the sub-bar never show above it, however fast the scroll, and the sub-bar has no glass beside the plain
+     page. When the title has gone the band turns to glass and lets go of the top a moment later, as late as the native band
+     comes (the shell shows the flip 150 ms later, TabModel.requestCondensed, and fades it in), and at once when it comes back. */
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large { position: relative; z-index: 30; }
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-large ~ .ios-subbar::before { transition: $host-band-transition, background-color .2s var(--ease-out, ease) .15s, top 0s linear .45s; }
+  :root[data-host][data-host-strip][data-host-bar='large'] .ios-nav:not(.ios-nav--condensed) ~ .ios-large ~ .ios-subbar::before {
+    top: calc(-1 * var(--host-stick-t));
+    background: var(--ios-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    transition: $host-band-transition;
+  }
+  /* The Agenda's folded week: the same zero-height slot, flush under the bar. */
+  :root[data-host] .home-agenda__fold { top: var(--host-stick-t); }
+  /* The sales document's steps, the view's and the editor's (styles.scss stands them at --safe-t and 8 px under the bar):
+     narrower than the band above them they were the T again, with the rows running by beside them. At rest they are
+     main's pill; once stuck (HostStickyBand) the pill dissolves in the same band as above, so they read as one piece with
+     the bar, as the purchase order's tabs do. Its own blur goes with it: it would make the pill the backdrop root of the
+     ::before, and the band would blur nothing. The partial's phone query: a desk-sized web view keeps the desk's rail. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav {
+      top: var(--host-stick-t);
+      transition: background-color .2s var(--ease-out, ease), border-color .2s var(--ease-out, ease), box-shadow .2s var(--ease-out, ease);
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav::before {
+      content: '';
+      position: absolute;
+      inset: -1px -100vw;
+      z-index: -1;
+      @include host-band(transparent);
+      /* Not the mixin's blur(0): inside the pill's own backdrop root even that composites the pill's paint a second time,
+         across the whole band (the tray whiter, its shadow doubled and ending on hard edges). */
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck {
+      border-color: transparent;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+    :root[data-host] :is(app-sales-view, app-sales-editor) .workflow-nav.is-stuck::before { @include host-band-stuck; }
+    /* HostStickyBand's sentinel stands right above them and the rest position stays main's: in the view it stands between
+       margins that no longer collapse, in the editor it takes a row of the grid and with it a 14 px gap. */
+    :root[data-host] app-sales-view .ios-large__sentinel + .workflow-nav { margin-top: 0; }
+    :root[data-host] app-sales-editor .workflow-layout > .ios-large__sentinel { position: relative; top: 12px; }
+    :root[data-host] app-sales-editor .workflow-layout > .ios-large__sentinel + .workflow-nav { margin-top: -2px; }
+  }
+
+  /* The product editor (product-editor-workspace.scss, phone rules under #product-editor-workspace). Its own header
+     carried the top inset and the tabs stuck under it: hidden, it left the identity row under the native bar on a
+     Pro Max and the tabs 44 px below the bar, with the form scrolling past in that gap and beside the pill (Emre,
+     2026-10-30: "bij product bewerken is het zelfs erger"). Here --product-header-h is the top inset alone and the
+     header is the same spacer as .appbar and .ios-nav (its back control, title and Acties are the host's), so the
+     identity row and the form start under the native bar, the tabs stick flush under it through the partial's own
+     top and the scroll margins follow. The tabs' band is the same band as above (HostStickyBand says .is-stuck); the
+     pill itself stays opaque, as in the PWA. The 116 px the page kept at its end for the hidden dock are the kit page's
+     28 px. The partial's phone query, so a desk-sized web view keeps the editor's toolbar, which pads the inset itself. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] #product-editor-workspace { --product-header-h: var(--host-stick-t); }
+    :root[data-host] #product-editor-workspace .product-mobile-header {
+      position: static;
+      display: block;
+      height: var(--safe-t);
+      min-height: 0;
+      padding: 0;
+      overflow: hidden;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    :root[data-host] #product-editor-workspace .product-mobile-header::before { display: none; }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav { isolation: isolate; }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav::before {
+      content: '';
+      position: absolute;
+      inset: 0 -100vw;
+      z-index: -1;
+      @include host-band(color-mix(in srgb, var(--bg) 65%, var(--surface)));
+    }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck::before { @include host-band-stuck; }
+    /* Its grey tray on that band was the "opeens grijs" that was left: stuck it goes, as the purchase order's tabs have none. */
+    :root[data-host] #product-editor-workspace .product-mobile-tabs { transition: background-color .2s var(--ease-out, ease); }
+    :root[data-host] #product-editor-workspace .product-editor-page > .subnav.erp-workspace__nav.is-stuck .product-mobile-tabs { background: transparent; }
+    :root[data-host] #product-editor-workspace .content.product-editor-page { padding-bottom: calc(var(--safe-b) + 28px); }
+    /* The editor's lighter page colour runs on under the side strip: without it the strip stood beige beside it. */
+    :root[data-host] .shell:has(#product-editor-workspace) { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
+    /* The plain top under a sheet (below) is that colour too: --ios-bg stood a straight seam across the window. */
+    :root[data-host][data-host-bar]:not([data-host-strip]):has(.overlay) .shell:has(#product-editor-workspace) .main::before { background: color-mix(in srgb, var(--bg) 65%, var(--surface)); }
+  }
+  /* The same seam on Website beheren: its shell and main are the desk's lighter tones (styles.scss), its phone pages the kit's. */
+  :root[data-host] .shell--website:has(.ios-page), :root[data-host] .shell--website:has(.ios-page) > .main { background: var(--ios-bg); }
+
+  /* The purchase pages (purchase-phone.scss): the read view's dock and the editor's save bar are the host's items
+     (Bewerken and the step's button, Opslaan; the save bar's state text and its fill hairline go with it, the summary
+     card's Lading tile has the fill), so the 108 and 112 px both pages kept at their end above the inset are the kit
+     page's 28 px, and the focus scroll padding at the bottom follows. */
+  :root[data-host] :is(.mpo-phone--view, .mpo-phone--edit) { padding-bottom: calc(var(--safe-b) + 28px); }
+  :root[data-host]:has(app-purchase-view .mpo-phone, app-purchase-editor .mpo-phone) { scroll-padding-bottom: calc(var(--safe-b) + 28px); }
+  /* Folded sideways the page column is 594 px in a 678 px window, so the wide phone's three-up figures leave the fill cell
+     too little room: "15,180 m³ vrij" ran out of the card. There the text goes under the meter when it does not fit. */
+  :root[data-host][data-host-strip] .mpo-fillrow__line { flex-wrap: wrap; gap: 4px 10px; }
+  :root[data-host][data-host-strip] .mpo-fillrow__meter { flex-basis: 40px; }
+  /* The sales document view: its hero bar is the host's and a phone has no dock on it, so the 128 px styles.scss keeps
+     at its end for the tab bar and a dock are the kit page's 28 px. The sales editor keeps its dock (the step and its
+     arrows; the host has Opslaan and the step's button) and so its room. */
+  :root[data-host] app-sales-view .content.erp-workspace { padding-bottom: calc(var(--safe-b) + 28px); }
+  /* Its hero: on a phone it runs edge to edge under the status bar in the PWA, which in the host put the black status
+     text and the native title on near-black. Here it is the card the wide phone already has (sales-phone.scss, only
+     from 600 px): it starts under the bar, on the page colour, 22 px corners all round. */
+  @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+    :root[data-host] app-sales-view .sales-hero.sales-hero { --hero-pad-x: 16px; --hero-pad-t: 16px; --hero-pad-b: 15px; margin: var(--safe-t) 0 4px; border-radius: 22px; padding: var(--hero-pad-t) var(--hero-pad-x) var(--hero-pad-b); }
+    /* Scrolled, the near-black card ran under the native band, whose glass read grey over it (rgb(210 207 201) against 251 248
+       245, the whole bar for as long as the card passes), in the view and in the editor. The page colour covers the part of
+       the card under the bar, so the band keeps its tone: a sticky block that starts right above the card, stays on the bar's
+       area and is clipped to the card. A float, so it takes no room in the card; the negative end margin lets it stay until the
+       card has gone. The clip instead of main's hidden: a hidden box is the sticky's own scroller. */
+    :root[data-host] :is(app-sales-view .sales-hero.sales-hero, app-sales-editor .quote-hero) { overflow: clip; }
+    :root[data-host] :is(app-sales-view .sales-hero.sales-hero, app-sales-editor .quote-hero)::before {
+      content: '';
+      float: left;
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      width: calc(100% + 2 * var(--hero-pad-x, 0px));
+      height: var(--safe-t);
+      margin: calc(-1 * var(--hero-pad-t, 0px) - var(--safe-t)) calc(-1 * var(--hero-pad-x, 0px)) calc(-1 * var(--hero-pad-t, 0px) - var(--hero-pad-b, 0px) - var(--safe-t));
+      background: var(--ios-bg);
+      pointer-events: none;
+    }
+    /* The card is 24 px narrower than the bleed: the payment term wraps instead of ending in an ellipsis, ... */
+    :root[data-host] app-sales-view .hero-details.hero-details b { overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+  }
+  /* ... and below the wide phone's own layout "verkoopeenheden" keeps inside its cell at 382 px. */
+  @media (max-width: 599.98px) {
+    :root[data-host] app-sales-view .hero-facts.hero-facts { grid-template-columns: .9fr .72fr 1.2fr; }
+  }
+  :root[data-host] .sales-mobile-dock :is(.sales-mobile-dock__save, .sales-mobile-dock__primary) { display: none; }
+
+  /* Sheets on a phone (Emre, 2026-10-30: "de popups dichtgeklapt zijn niet correct alsook niet mooi"): a floating card,
+     as iOS 26 draws them and as the wide phone already does (styles.scss, workspace-kit.scss; 16 and 12 px there): 8 px
+     off the sides of the content area (the strip stays outside it), 8 px above the home indicator, every corner round,
+     its top clear of the bar. The overlay carries the insets, so the card pads nothing and nothing stands under the
+     home indicator. The grab, the head drag and mo-sheet-in stay as they are. */
+  @media (max-width: 599.98px) {
+    :root[data-host] .overlay { padding: 0 calc(var(--safe-r) + 8px) calc(var(--safe-b) + 8px) calc(var(--safe-l) + 8px); }
+    :root[data-host] .sheet { max-height: min(92dvh, calc(100dvh - var(--safe-t) - var(--safe-b) - 16px)); border-radius: var(--r-lg); padding-bottom: 0; }
+    /* The sheet clips nothing (a clip would cut focus rings): the foot's background takes the corners. */
+    :root[data-host] .overlay .sheet__foot { padding-bottom: 12px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
+    :root[data-host] .sheet.sheet--ios { border-radius: 26px; }
+    :root[data-host] .sheet--ios .sheet__foot { padding-bottom: 12px; }
+    :root[data-host] .sheet--ios .sheet__foot, :root[data-host] .sheet--ios .sheet__foot::before { border-radius: 0 0 26px 26px; }
+    /* Without a foot the scrolling body is the card's end: its rows clip on the corners. */
+    :root[data-host] .sheet--ios:has(.sheet__foot:empty) .sheet__body { padding-bottom: 16px; border-radius: 0 0 26px 26px; }
+  }
+
+  /* Scrolled, the native band goes while a sheet is open (WebSession.setSheetOpen: its glass stood out above the dim), so in
+     the bars poses the rows ran on under the status bar, the clock over their text. The top inset stays the plain page, as at
+     the top of a page: one stripe under every dim, so it dims with the page while a sheet is dragged (Sheet.placeSheet lightens
+     the overlay) and under a sheet on a sheet. Its 59 is above the rows and under the header's stacking context (60, it holds the
+     bell's sheet) and the overlay's 100. A strip pose has nothing over the page up there, a page without chrome no bar. */
+  :root[data-host][data-host-bar]:not([data-host-strip]):has(.overlay) .main::before {
+    content: '';
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 59;
+    height: var(--safe-t);
+    background: var(--ios-bg);
+  }
+  /* The location in Voorraad boeken: a select cannot wrap, and without its chevron (the phone's plain rows) it needs no room
+     for one: "Magazijn Lokeren (288 stuks)" was cut on the narrower card. */
+  :root[data-host] app-stock-booking-sheet select.bk-field__control { padding-inline-end: 0; }
+
+  /* A swipe row: the row is a composited layer that snaps to whole device pixels and the group rounds its corners, so in
+     WKWebView the coloured buttons behind it showed at the row's last pixel and in the corners, a blue and an orange line
+     under Documenten's rows (seen in the simulators). They stand behind the row only while it moves or is open, and stay
+     until it has slid shut. A keyboard's focus on one still reveals it. */
+  :root[data-host] .ios-swipe__actions { opacity: 0; transition: opacity 0s linear .25s; }
+  :root[data-host] .ios-swipe:is(.is-dragging, .is-open, :has(.ios-swipe__actions :focus-visible)) .ios-swipe__actions { opacity: 1; transition-delay: 0s; }
+
+  /* No kit bar at the bottom of a workspace page unless its toolbar stands there. */
+  :root[data-host] body:not(:has(.ios-toolbar)) .ios-page { padding-bottom: calc(var(--safe-b) + 28px); }
+  :root[data-host] .home-phone { --ios-tabbar-h: 0px; }
+}

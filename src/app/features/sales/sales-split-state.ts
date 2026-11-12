@@ -7,6 +7,7 @@ export function salesSplitBlockReason(view: SalesOrderView | null | undefined): 
   if (order.docType === 'CREDITNOTA') return 'Een creditnota splits je niet.';
   if (order.purpose && order.purpose !== 'STANDARD' || order.partnerPurchaseOrderId || order.partnerSettlement
     || view.advanceAgreement || view.advanceContents || view.settlement) return 'Partnerfacturen worden via hun container en termijnplan beheerd.';
+  if (view.reportBacked === true) return 'Deze factuur volgt de veilingverkopen; de regels staan vast.';
   if (order.archivedAt) return 'Een gearchiveerd document kan niet worden gesplitst.';
   if (view.fulfillment) return 'Deze order is al verdeeld in twee leveringen.';
   if ((order.docType ?? 'OFFERTE') === 'OFFERTE' && order.status === 'GEACCEPTEERD') return 'Maak eerst een conceptfactuur van de geaccepteerde offerte.';

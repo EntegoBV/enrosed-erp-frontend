@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ContextMenu } from '../../shared/context-menu';
 import type { ContextMenuItem } from '../../shared/context-menu';
@@ -17,11 +17,19 @@ import { othersOf } from './home-priority';
 import type { HomeTask, Tier } from './home-priority';
 import { HomeTaskCells } from './home-task-cells';
 import { PlannerCards } from './planner-cards';
+import { HostBridge } from '../../core/platform/host-bridge';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
+import { homeTargetLink } from './home-sources';
+import type { TodaySources } from './home-today';
+import { containerName } from '../purchasing/container-name';
+import { ticaToday } from '../tica/tica-format';
 import { HomeInkoop } from './widgets/home-inkoop';
 import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
 import { HomeOntvangen } from './widgets/home-ontvangen';
 import { HomePartners } from './widgets/home-partners';
+import { HomePartnerSales } from './widgets/home-partner-sales';
 import { HomeResultaat } from './widgets/home-resultaat';
 import { HomeTica } from './widgets/home-tica';
 import { HomeVerkoop } from './widgets/home-verkoop';
@@ -55,14 +63,14 @@ const MENU: ContextMenuItem[] = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     NgTemplateOutlet, RouterLink, Icon, IosNav, Skeleton, ContextMenu, NotificationBell, PlannerCards, AgendaStrip, DashboardSearchConsole,
-    HomeAddSheet, HomeTaskCells, HomeKas, HomeVerkoop, HomeInkoop, HomeResultaat, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite,
+    HomeAddSheet, HomeTaskCells, HomeKas, HomeVerkoop, HomeInkoop, HomeResultaat, HomeOntvangen, HomeVoorraad, HomePartners, HomePartnerSales, HomeWebsite,
     HomeMarkt, HomeTica,
   ],
   template: `
     @let t = data.tasks();
     @let bellCount = data.work.actionCount();
     <div class="ios-page home-phone">
-      <app-ios-nav title="Vandaag" [subtitle]="subtitle()">
+      <app-ios-nav title="Vandaag" [subtitle]="subtitle()" [host]="hostPage()" (hostAction)="hostAction($event)">
         <span trail class="ios-glass-group">
           <button class="ios-circle home-phone__bell" type="button" [attr.aria-label]="bellLabel()" (click)="bell.open()">
             <app-icon name="bell" [size]="20" />
@@ -78,8 +86,9 @@ const MENU: ContextMenuItem[] = [
         }
       </app-ios-nav>
 
-      <!-- The wide phone (home-phone.scss): from 800 px the body is two columns, Kas + Te doen beside Agenda + Cijfers.
-           The '+' below stays outside this body: a slide on the body (nav-motion) would trap the fixed accessory. -->
+      <!-- The wide phone (home-phone.scss): from 800 px the body is two columns, Kas over Te doen beside the Agenda, then
+           Cijfers (four blocks a row) and Meer cijfers across both. The '+' below stays outside this body: a slide on the
+           body (nav-motion) would trap the fixed accessory. -->
       <div class="home-phone__body">
       <div class="home-phone__col">
       <app-home-kas variant="phone" />
@@ -139,6 +148,7 @@ const MENU: ContextMenuItem[] = [
           <app-home-ontvangen variant="phone" />
           <app-home-voorraad variant="phone" />
           <app-home-partners variant="phone" />
+          <app-home-partner-sales variant="phone" />
           <app-home-website variant="phone" />
         </div>
       </section>
@@ -202,6 +212,56 @@ export class HomePhone {
   readonly menu = signal(false);
   readonly adding = signal(false);
   readonly menuItems = MENU;
+  private readonly bellRef = viewChild(NotificationBell);
+
+  constructor() {
+    /* The native host's Vandaag widget (plan 3.6): the Home's figures as one `today` snapshot, 2 s after they last changed
+       and once Te doen may show. Host mode only; the mapper is a lazy chunk (home-today.ts) and posts only a change. */
+    const host = inject(HostBridge);
+    if (!host.present) return;
+    effect((onCleanup) => {
+      const data = this.data;
+      if (!data.tasksReady()) return;
+      const cash = data.cashData;
+      const sources: TodaySources = {
+        day: data.today(), ticaDay: ticaToday(new Date(data.now())),
+        loadedAt: data.loadedAt(), settled: data.settled(), tasks: data.tasks(), warnings: data.warnings(), cash: data.cash(),
+        days: data.forecast()?.days ?? null, payEur: data.payNowEur(), waiting: data.work.actionCount(),
+        tica: cash.state() === 'ready' && !cash.ticaSalesFailed() && cash.ticaSales().length > 0 ? cash.ticaSales() : null,
+        agenda: data.agenda().restOfToday, milestones: data.milestones(),
+        names: new Map(data.purchases().map((row) => [row.order.id, containerName(row.order)] as const)),
+        link: (target) => {
+          const link = homeTargetLink(target);
+          return link ? this.router.serializeUrl(this.router.createUrlTree(link.commands, { queryParams: link.queryParams })) : null;
+        },
+      };
+      const timer = setTimeout(() => void import('./home-today').then(({ nextToday }) => {
+        const today = nextToday(sources);
+        if (today) host.send(today);
+      }), 2000);
+      onCleanup(() => clearTimeout(timer));
+    });
+  }
+
+  /** The native host's chrome: '+' Toevoegen, the bell with its count, the '…' rows; pull to refresh reloads. */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const count = this.data.work.actionCount();
+    return {
+      accessory: { id: 'add', label: 'Toevoegen', icon: 'plus', prominent: true },
+      actions: [{ id: 'bell', label: this.bellLabel(), icon: 'bell', badge: count || undefined }],
+      menu: menuRows(MENU),
+      refreshable: true,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    switch (event.id) {
+      case 'add': this.adding.set(true); break;
+      case 'bell': this.bellRef()?.open(); break;
+      case 'refresh': event.finish(this.data.load()); break;
+      default: this.menuPick(event.id);
+    }
+  }
 
   /** "Goedemorgen · donderdag 15 oktober". */
   readonly subtitle = computed(() => `${greeting(this.data.hour())} · ${longDate(this.data.today())}`);

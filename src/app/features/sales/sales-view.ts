@@ -14,6 +14,7 @@ import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
+import { REPORT_SHIPPED_LABEL, isReportBacked, reportShipSplits, shipsViaReports } from './report-backed';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
 import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
@@ -27,6 +28,7 @@ import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
+import { linePriceFigures, linePriceHint, linePriceState, linePriceSummary, type LinePriceState } from './line-price-source';
 import { ChangeDetectionStrategy, Component, HostListener, afterRenderEffect, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { documentTitle } from '../../core/platform/document-title';
@@ -41,6 +43,10 @@ import { SalesOrder,
   QuoteEvent, QuoteRevision, QuoteStatus,
   SalesOrderView,
 } from '../../core/api/models';
+import { HostBridge } from '../../core/platform/host-bridge';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostAction, HostMenuItem } from '../../core/platform/host';
+import { HostPage, HostStickyBand } from '../../shared/host-page';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -57,6 +63,7 @@ import { salesDocumentKind } from './partner-settlement';
 import { salesLineSections } from './sales-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { SalesPdfChoice, SalesPdfSheet } from './sales-pdf-sheet';
+import { shippedPallets } from './pallet-stack';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -71,7 +78,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe],
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand],
   template: `
     @if (view(); as data) {
       @if (cancelSheet()) {
@@ -191,7 +198,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </app-page-header>
       }
 
-      <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales">
+      <main class="content sales-view-page anim-rise erp-workspace erp-workspace--detail erp-workspace--sales" [hostPage]="hostPage()" (hostAction)="hostAction($event)">
         <section class="sales-hero erp-workspace__hero" [class.sales-hero--credit]="isCreditNote()" id="sales-overview" aria-labelledby="sales-overview-title">
           <!-- Phone: the app bar folds into the hero - back, PDF and the
                edit action live on the dark surface itself. -->
@@ -233,6 +240,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if (data.advanceBilling?.stage === 'ADVANCE' && billingQuoteId()) {
                   <span aria-hidden="true"> · </span>voorschot op offerte <a class="sales-hero__link" [routerLink]="['/sales', billingQuoteId()]">{{ data.advanceBilling?.quoteNumber || 'bekijken' }}</a>
                 }
+                @if (reportBacked(data)) { <span aria-hidden="true"> · </span><a class="sales-hero__link" routerLink="/veilingverkopen">uit veilingverkopen</a> }
               </p>
             </div>
             <div class="sales-hero__badges">
@@ -388,7 +396,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         <!-- The four-stop rail walks a phone through the document; a desk
              shows every section at once and needs no such bar. -->
         @if (!desktop.active()) {
-        <nav class="sales-section-nav workflow-nav erp-workspace__section-nav" aria-label="Onderdelen van het verkoopdocument">
+        <nav class="sales-section-nav workflow-nav erp-workspace__section-nav" hostStickyBand aria-label="Onderdelen van het verkoopdocument">
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-products'"
                   [class.workflow-nav__active]="activeDetailSection() === 'sales-products'"
@@ -638,6 +646,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     }
 
                     @if (showsMargin() || line.discountPct) {
+                    <!-- On (or beside) a customer price the figure is highlighted with the K; the open panel names both prices. -->
+                    @let priceState = linePriceState(line);
                     <button class="line-breakdown-toggle" type="button"
                             [attr.aria-expanded]="openLine() === line.productId"
                             [attr.aria-controls]="linePanelId(line.productId)"
@@ -646,7 +656,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                         <small>Prijsopbouw</small>
                         <strong>{{ profitMode() === 'UNIT' ? 'Per ' + lineUnit(line.productId).singular + ' bekijken' : 'Hele regel bekijken' }}</strong>
                       </span>
-                      <span class="line-breakdown-toggle__total">
+                      <span class="line-breakdown-toggle__total" [class.line-price-pill]="!!priceState"
+                            [class.line-price-pill--own]="priceState?.source === 'CUSTOMER'" [class.line-price-pill--stale]="priceState?.stale">
+                        @if (priceState) { <i class="line-price-pill__k" aria-hidden="true">K</i><span class="sr-only">{{ priceSummary(priceState) }}</span> }
                         {{ profitMode() === 'UNIT' ? (line.netUnitPrice | eur: 2) : (line.net | eur) }}
                       </span>
                       <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"
@@ -658,6 +670,15 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 
                     @if (openLine() === line.productId) {
                       <div class="line-breakdown" [id]="linePanelId(line.productId)">
+                        @if (priceState) {
+                          <div class="line-breakdown__prices">
+                            @for (figure of priceFigures(priceState); track figure.label) {
+                              <div class="stat-row" [class.line-breakdown__price--current]="figure.current"><span>{{ figure.label }}</span>
+                                <span class="num">{{ figure.value }} <small>per {{ priceState.unit }}</small></span></div>
+                            }
+                            @if (priceHint(priceState); as hint) { <p class="line-breakdown__hint">{{ hint }}</p> }
+                          </div>
+                        }
                         @if (line.discountPct) {
                           <div class="stat-row"><span>Regelkorting {{ line.discountPct | pct: 1 }}</span>
                             <span class="num">− {{ profitDiscount(line) | eur: 2 }}</span></div>
@@ -779,7 +800,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   @if (data.order.status === 'CONCEPT') {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
                             (click)="sendSheetOpen.set(true)">Factuur versturen…</button>
-                  } @else if (!skipsShipping(data) && !data.order.goodsShippedAt) {
+                  } @else if (!skipsShipping(data) && !data.order.goodsShippedAt && !shipsViaReports(data)) {
                     <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="openShipSheet(data)">Bestelling verzonden</button>
                   } @else if (data.order.status !== 'BETAALD') {
@@ -787,8 +808,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                             (click)="markPaid(data)">Betaling registreren</button>
                   } @else {
                     <button class="btn btn--primary btn--block" type="button"
-                            (click)="openPdfSheet(skipsShipping(data) ? 'DOCUMENT' : 'PACKING_SLIP')">
-                      {{ skipsShipping(data) ? 'Factuur instellen' : 'Pakbon instellen' }}
+                            (click)="openPdfSheet(skipsShipping(data) || reportBacked(data) ? 'DOCUMENT' : 'PACKING_SLIP')">
+                      {{ skipsShipping(data) || reportBacked(data) ? 'Factuur instellen' : 'Pakbon instellen' }}
                     </button>
                   }
                 } @else if (data.order.status === 'CONCEPT') {
@@ -836,7 +857,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </a>
                 }
                 @if (isCreditNote()) {
-                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                  @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                     @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote()" (click)="sendSheetOpen.set(true)">Creditnota e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()" (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de creditnota buiten het ERP bezorgde.</p>
@@ -854,21 +875,23 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   <button class="btn btn--block" type="button" (click)="openPdfSheet('DOCUMENT')">PDF instellen</button>
                   @if (data.creditedInvoiceId) { <a class="btn btn--block" [routerLink]="['/sales', data.creditedInvoiceId]">Naar de factuur</a> }
                 } @else if (isInvoice()) {
-                  @if (!data.order.sentAt && ['CONCEPT', 'UITGEREIKT', 'BETAALD'].includes(data.order.status)) {
+                  @if ((data.order.status === 'CONCEPT' || (!data.order.sentAt && ['UITGEREIKT', 'BETAALD'].includes(data.order.status)))) {
                     @if (data.order.status !== 'CONCEPT') { <button class="btn btn--block" type="button" [disabled]="sendingQuote() || allProductsUnavailable()" (click)="sendSheetOpen.set(true)">Factuur e-mailen…</button> }
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || allProductsUnavailable()"
                             (click)="markSent(data)">Markeer als verstuurd</button>
                     <p class="link-explainer">Gebruik dit alleen wanneer je de factuur buiten het ERP bezorgde.</p>
                   }
-                  @if (data.order.status !== 'BETAALD' && !skipsShipping(data) && !data.order.goodsShippedAt) {
+                  @if (data.order.status !== 'BETAALD' && !skipsShipping(data) && !data.order.goodsShippedAt && !shipsViaReports(data)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy()"
                             (click)="markPaid(data)">Betaling registreren</button>
                   }
-                  @if (data.order.goodsShippedAt) {
+                  @if (reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data))) {
+                    <p class="link-explainer">{{ reportShippedLabel }} · <a routerLink="/veilingverkopen">meldingen ›</a></p>
+                  } @else if (data.order.goodsShippedAt) {
                     <p class="link-explainer">Bestelling verzonden op
                       {{ data.order.goodsShippedAt | dateNl }} — voorraad afgepunt.</p>
                   }
-                  @if (!skipsShipping(data) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
+                  @if (!skipsShipping(data) && !reportBacked(data) && !(data.order.status === 'BETAALD' && data.order.goodsShippedAt)) {
                   <button class="btn btn--block" type="button"
                           (click)="openPdfSheet('PACKING_SLIP')">
                     Pakbon instellen
@@ -946,7 +969,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     }
                     <div class="ship-line__copy">
                       <strong>{{ row.name }}</strong>
-                      <span>−{{ row.qty | num }} {{ row.unitLabel }}</span>
+                      <span>@if (row.qty || !row.booked) {−{{ row.qty | num }} {{ row.unitLabel }}}@if (row.booked) {@if (row.qty) { · }{{ row.booked | num }} al afgeboekt}</span>
                     </div>
                     <div class="ship-line__stock"
                          [class.ship-line__stock--negative]="row.after !== null && row.after < 0">
@@ -1072,7 +1095,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .shero-edit { padding:8px 16px;border-radius:999px;background:#fff;color:#1a1614;font-size:12.5px;font-weight:750;text-decoration:none }
     .shero-edit:active { opacity:.8 }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
-      .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + env(safe-area-inset-top, 0px)) 16px 15px }
+      .sales-hero { margin:-14px -12px 0;border-radius:0 0 22px 22px;padding:calc(12px + var(--safe-t)) 16px 15px }
       .sales-hero__top { flex-direction:column;align-items:center;gap:9px;text-align:center }
       .sales-hero__identity { display:flex;flex-direction:column;align-items:center }
       .sales-hero__top .sales-hero__badges { justify-content:center }
@@ -1156,6 +1179,16 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .line-breakdown-toggle small { color:var(--muted);font-size:9px }
     .line-breakdown-toggle strong { font-size:11px }
     .line-breakdown-toggle__total { color:var(--rose);font-size:12px;font-weight:760;font-variant-numeric:tabular-nums }
+    /* A customer price: the figure in a pill with the K (filled on it, outlined beside it, a dot when the price changed since). */
+    .line-price-pill { position:relative;display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:3px 10px 3px 5px;border-radius:999px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--muted) 38%,transparent) }
+    .line-price-pill--own { background:var(--rose-soft);color:var(--rose-dark);box-shadow:none }
+    .line-price-pill__k { position:relative;display:inline-grid;width:18px;height:18px;place-items:center;border-radius:6px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--muted) 42%,transparent);color:var(--muted);font-size:10px;font-style:normal;font-weight:800 }
+    .line-price-pill--own .line-price-pill__k { background:var(--surface);box-shadow:none;color:var(--rose-dark) }
+    .line-price-pill--stale .line-price-pill__k::after { content:'';position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:var(--warn);box-shadow:0 0 0 1.5px var(--surface) }
+    .line-breakdown__prices { margin-bottom:3px;padding-bottom:4px;border-bottom:1px solid var(--line) }
+    .line-breakdown__prices small { color:var(--muted);font-size:10px;font-weight:500 }
+    .line-breakdown__price--current>span { color:var(--rose-dark)!important;font-weight:700 }
+    .line-breakdown__hint { margin:2px 0 3px;color:var(--muted);font-size:11px }
     .line-breakdown-toggle svg { flex:none;color:var(--muted);transition:transform .18s }
     .line-breakdown-toggle svg.chevron-open { transform:rotate(180deg) }
     .line-breakdown { margin-top:7px;padding:5px 10px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);animation:rise .18s ease }
@@ -1290,6 +1323,10 @@ export class SalesView {
   readonly isAdvance = isAdvanceDocument;
   /** A partner advance or a regular voorschotfactuur: no goods, so no shipping step or packing slip. */
   readonly skipsShipping = skipsShipping;
+  /** Made from the partner's meldingen (Veilingverkopen): its stock already left with them, nothing to ship. */
+  readonly reportBacked = isReportBacked;
+  readonly shipsViaReports = shipsViaReports;
+  readonly reportShippedLabel = REPORT_SHIPPED_LABEL;
   readonly isAdvanceInvoice = isAdvanceInvoice;
   readonly advanceSummary = advanceContentsSummary;
   readonly displayedProfit = displayedSalesProfit;
@@ -1323,7 +1360,7 @@ export class SalesView {
     const data = this.view();
     if (!data || !this.isCreditNote() || (data.order.purpose ?? 'STANDARD') !== 'STANDARD') return false;
     return ['UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(data.order.status) && data.priced.lines.some((line) => line.quantity > 0)
-      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt;
+      && !data.order.goodsReturnedAt && !!this.creditOriginal()?.order.goodsShippedAt && !isReportBacked(this.creditOriginal());
   });
   readonly returnSheet = signal<{ rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string; before: number | null; after: number | null }[]; number: string } | null>(null);
   private loadCreditOriginal(view: SalesOrderView | null): void {
@@ -1402,7 +1439,46 @@ export class SalesView {
     if (window.history.length <= 1) { void this.routerNav.navigateByUrl('/sales'); return; }
     this.browserLocation.back();
   }
+
+  /**
+   * The native host's chrome for the phone document (its hero bar is hidden there): Bewerken/Beheren as the
+   * primary (In verwerking nemen while a website order waits), PDF, and Annuleren / Order splitsen in the menu.
+   */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const data = this.view();
+    if (!data) return null;
+    const label = this.actionLabel();
+    const edit: HostAction = { id: 'edit', label, symbol: label === 'Bewerken' ? 'pencil' : 'slider.horizontal.3' };
+    const canEdit = !this.isCreditNote() || data.order.status === 'CONCEPT';
+    const take = this.webOrderOpen();
+    const menu: HostMenuItem[] = [];
+    if (this.canCancel()) menu.push({ id: 'openCancel', label: this.cancelLabel('Annuleren'), icon: 'close', destructive: true, disabled: this.cancelling() });
+    else if (this.canCancelCredit()) menu.push({ id: 'cancelCredit', label: 'Annuleren', icon: 'close', destructive: true, disabled: this.invoiceBusy() });
+    if (!this.isCreditNote() && !this.isWebOrder() && !this.splitBlockReason(data)) {
+      menu.push({ id: 'openSplit', label: 'Order splitsen', disabled: this.invoiceBusy() || this.sendingQuote() });
+    }
+    return {
+      title: data.order.number, subtitle: this.customerName(), back: { label: this.hostBridge.belowLabel() || 'Verkoop', url: '' },
+      primary: take ? { id: 'openTake', label: 'In verwerking nemen', disabled: this.invoiceBusy() } : canEdit ? edit : null,
+      actions: [...(take && canEdit ? [edit] : []), { id: 'downloadPdf', label: 'PDF', icon: 'pdf', disabled: this.downloading() }],
+      menu, tabBar: 'erp',
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const data = this.view();
+    switch (event.id) {
+      case 'edit': if (data) void this.routerNav.navigate(['/sales', data.order.id, 'edit']); break;
+      case 'downloadPdf': this.downloadPdf(); break;
+      case 'openCancel': this.openCancel(); break;
+      case 'cancelCredit': this.cancelCredit(); break;
+      case 'openSplit': this.openSplit(); break;
+      case 'openTake': this.openTake(); break;
+      case 'back': this.goBack(); break;
+    }
+  }
   private readonly routerNav = inject(Router);
+  private readonly hostBridge = inject(HostBridge);
 
   readonly portalLink = signal<CustomerPortalLink | null>(null);
   readonly profitMode = signal<'UNIT' | 'LINE'>('UNIT');
@@ -1470,7 +1546,7 @@ export class SalesView {
     if (this.pendingRevision()) return true;
     if (data.order.docType === 'CREDITNOTA') return !!this.creditStep()?.label;
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
-      return data.order.status === 'CONCEPT' || (!this.skipsShipping(data) && !data.order.goodsShippedAt)
+      return data.order.status === 'CONCEPT' || (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data))
         || data.order.status !== 'BETAALD';
     }
     return data.order.status === 'CONCEPT' || data.order.status === 'GEACCEPTEERD';
@@ -1497,7 +1573,7 @@ export class SalesView {
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Factuur naar de klant';
       if ((data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'Afgerond · gecrediteerd';
-      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bestelling verzenden';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data)) return 'Bestelling verzenden';
       if (data.order.status !== 'BETAALD') return 'Betaling registreren';
       return 'Order afgerond';
     }
@@ -1525,9 +1601,9 @@ export class SalesView {
     if (this.pendingRevision()) return 'De klant wacht op jouw keuze. Open het voorstel en neem de wijzigingen gericht over.';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR') {
       if (data.order.status === 'CONCEPT') return 'Mail de PDF vanuit het ERP, of markeer ze bij de extra acties als je ze zelf bezorgde.';
-      if (!this.skipsShipping(data) && !data.order.goodsShippedAt) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
-      if (data.order.status !== 'BETAALD') return 'Leg de betaling vast zodra het bedrag ontvangen is.';
-      return this.skipsShipping(data) ? 'Factuur en betaling zijn verwerkt.' : 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
+      if (!this.skipsShipping(data) && !data.order.goodsShippedAt && !this.shipsViaReports(data)) return 'Bevestig de verzending en punt de verkochte aantallen één keer uit de voorraad.';
+      if (data.order.status !== 'BETAALD') return this.reportBacked(data) ? 'De voorraad ging al met de meldingen; leg de betaling vast zodra ze binnen is.' : 'Leg de betaling vast zodra het bedrag ontvangen is.';
+      return this.skipsShipping(data) || this.reportBacked(data) ? 'Factuur en betaling zijn verwerkt.' : 'Factuur, verzending en betaling zijn verwerkt. De pakbon blijft beschikbaar.';
     }
     if (data.order.status === 'CONCEPT') return advanceAgreementFor(data)
       ? 'Controleer de afspraken. De voorschotfacturen maak je per termijn bij het betaalplan.'
@@ -1746,7 +1822,7 @@ export class SalesView {
     if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
-    return invoiceJourney(order, this.view()?.paymentSummary?.status);
+    return invoiceJourney(order, this.view()?.paymentSummary?.status, isReportBacked(this.view()));
   }
 
   makeInvoice(data: SalesOrderView): void {
@@ -1811,7 +1887,8 @@ export class SalesView {
   }
 
   readonly shipSheet = signal<{
-    rows: { name: string; photoUrl: string | null; qty: number; unitLabel: string;
+    /** qty = what this sheet books now; booked = what the partner's meldingen already booked ("al afgeboekt"). */
+    rows: { name: string; photoUrl: string | null; qty: number; booked: number; unitLabel: string;
             before: number | null; after: number | null }[];
     pieces: number; number: string;
   } | null>(null);
@@ -1829,10 +1906,14 @@ export class SalesView {
       stockById = new Map(products.filter(product => product.id !== null)
         .map(product => [product.id!, product.stockQuantity ?? 0]));
     } catch { /* stock preview is best-effort; the rows then say "onbekend" */ }
-    const rows = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0).map(line => {
+    const lines = data.priced.lines.filter(line => !salesLineUnavailable(line) && line.quantity > 0);
+    /* A line the meldingen already booked leaves nothing (or only its rest) to book here. */
+    const splits = reportShipSplits(data, lines);
+    const rows = lines.map((line, index) => {
       const before = stockById.has(line.productId) ? stockById.get(line.productId)! : null;
-      return { name: line.description, photoUrl: line.photoUrl, qty: line.quantity, unitLabel: this.lineUnit(line.productId).plural,
-               before, after: before === null ? null : before - line.quantity };
+      const qty = splits[index].rest;
+      return { name: line.description, photoUrl: line.photoUrl, qty, booked: splits[index].booked, unitLabel: this.lineUnit(line.productId).plural,
+               before, after: before === null ? null : before - qty };
     });
     this.shipSheet.set({ rows, pieces: data.priced.totals.pieces, number: data.order.number });
   }
@@ -1981,6 +2062,26 @@ export class SalesView {
     return salesQuantityDetail(this.productFor(line.productId), line.quantity);
   }
 
+  /** Customer prices live on regular quotes and invoices only, as in the editor: no credit notes, partner deals or container-cost pricing. */
+  private readonly customerPricesApply = computed(() => {
+    const order = this.view()?.order;
+    return !!order && !isCreditNote(order) && !isPartnerDocument(order) && order.markupMode !== 'CONTAINER_COST';
+  });
+
+  /** The K on a line's price, read only: the saved line's source beside today's catalogue and customer price. */
+  linePriceState(line: PricedLine): LinePriceState | null {
+    if (!this.customerPricesApply()) return null;
+    const saved = this.view()?.order.lines.find((item) => item.productId === line.productId);
+    return linePriceState(saved, line, this.lineUnit(line.productId).singular);
+  }
+
+  readonly priceSummary = linePriceSummary;
+  readonly priceFigures = linePriceFigures;
+  /** Nothing can be changed here, so an older pin names the customer's price of today. */
+  priceHint(state: LinePriceState): string {
+    return linePriceHint(state, false);
+  }
+
   /** The display side of the line's price, before discount: "= € 35,40 per display van 12". */
   lineOtherPrice(line: PricedLine) {
     return otherBasisPrice(this.productFor(line.productId), line.unitPrice);
@@ -2030,7 +2131,7 @@ export class SalesView {
   }
 
   palletCount(data: SalesOrderView): number {
-    return data.priced.totals.palletsManual || data.priced.totals.palletsStrict;
+    return shippedPallets(data.priced.totals);
   }
 
   isLooseCartons(data: SalesOrderView): boolean {

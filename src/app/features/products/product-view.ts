@@ -2,6 +2,7 @@ import { capitalize, customerReading, otherBasisPrice, productSalesUnit, salesQu
 import { effectiveOrderStep, orderStepSentence } from './product-order-step';
 import { ProductCostHistory } from './product-cost-history';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource } from './stock-movement-source';
 import { looseStockText, stockAmountText, stockMovementDelta } from './stock-quantity';
 import { ProductCostHistorySheet } from './product-cost-history-sheet';
@@ -12,6 +13,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { ProductSupplierAgreementApi, type ProductSupplierAgreement } from '../../core/api/product-supplier-agreement-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
+import { brusselsToday, incomingOf } from '../../shared/product-incoming';
 import { AuthImage } from '../../core/api/auth-image';
 import { PhotoLightbox } from '../../shared/photo-lightbox';
 import { Category, StockLevel, Product, ProductCostHistoryEntry, ProductFamily, ProductPhotoOverview, ProductSupplierAgreementPhoto, PurchaseOrderView, ReceiptIssue, StockMovement, Supplier, ProductStock, ExpectedStock } from '../../core/api/models';
@@ -25,10 +27,13 @@ import { costQuantity, costWords, entryCostBasis, productCostBasis, sameCostBasi
 interface PriceBuild { rows: PriceRow[]; source: string | null; live: CostBuild['live']; drift: CostDriftNotice | null; }
 import { IosNav } from '../../shared/ios-nav';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import { menuRows } from '../../shared/host-page';
 import { NavHistory } from '../../core/platform/nav-history-service';
 import { capsuleLabel } from '../../core/platform/return-label';
 import { colourHexOf } from '../purchasing/purchase-desk-format';
 import { groupPublicationIssues } from './publication-groups';
+import { plainPublicationIssue } from './publication-issues';
 import { Icon } from '../../shared/icon';
 import {
   productCatalogNavigation,
@@ -79,7 +84,7 @@ export type { ReceivedContainer } from './received-containers';
 @Component({
   selector: 'app-product-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
+  imports: [KgPipe, Skeleton, ProductCostHistory, ProductCostHistorySheet, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, RouterLink, NgTemplateOutlet, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard,
     ProductPlacesLine, IosNav, ContextMenu, Icon, Sheet, LoadError, StockBookingSheet, ProductBatchSheet, CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe,
   ],
   template: `
@@ -87,7 +92,8 @@ export type { ReceivedContainer } from './received-containers';
       <!-- The phone product page on the kit's iOS bar, like the phone purchase order: the page root carries
            the bar and every sheet host as direct children (N3), so the shell's push/pop never moves them. -->
       <div class="ios-page pd-phone">
-        <app-ios-nav [title]="product.name" [customLarge]="true" [backLabel]="backText()" [backAriaLabel]="'Terug naar ' + backName()" (back)="goBack()">
+        <app-ios-nav [title]="product.name" [customLarge]="true" [backLabel]="backText()" [backAriaLabel]="'Terug naar ' + backName()" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <!-- Condensed, Bewerken becomes a circle so the small title keeps its room. -->
             @if (barCondensed()) {
@@ -176,11 +182,26 @@ export type { ReceivedContainer } from './received-containers';
           </section>
         </app-ios-nav>
 
-        @if (expected(); as exp) {
-          <a class="pph-onway" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
-            <span>+{{ exp.quantity | num }} {{ unitFor(product, exp.quantity) }} onderweg</span>
-            <small>@for (order of exp.orderNumbers; track order) {@if (!$first) {, }<span class="pph-nw">{{ order }}</span>}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
-          </a>
+        <!-- What is coming: one bar per purchase order, first arrival first, in the tone of its state. -->
+        @if (incoming(); as inc) {
+          @if (inc.detailed) {
+            @for (order of inc.orders; track order.orderId) {
+              <a class="pph-onway" [class.pph-onway--warn]="order.state === 'AANGEKOMEN'" [class.pph-onway--quiet]="order.state === 'BESTELD'"
+                 [routerLink]="['/purchasing', order.orderId]">
+                <span>+{{ order.quantity | num }} {{ unitFor(product, order.quantity ?? 0) }} · {{ order.word }}</span>
+                <small><span class="pph-nw">{{ order.name }}</span> · {{ order.when }} ›</small>
+              </a>
+            }
+          } @else if (inc.orders.length) {
+            <a class="pph-onway" [routerLink]="['/purchasing', inc.orders[0].orderId]" [attr.title]="inc.title">
+              <span>+{{ inc.total | num }} {{ unitFor(product, inc.total) }} · {{ inc.word }}</span>
+              <small>@for (order of inc.orders; track order.orderId) {@if (!$first) {, }<span class="pph-nw">{{ order.name }}</span>} · {{ inc.when }} ›</small>
+            </a>
+          }
+        } @else if (incomingFailed()) {
+          <!-- Stays while its retry runs, so a press is answered and the bar does not come and go. -->
+          <button class="pph-onway pph-onway--quiet" type="button" [disabled]="incomingLoading()" (click)="retryIncoming()">
+            <span>Onderweg niet geladen</span><small>{{ incomingLoading() ? 'laden…' : 'Opnieuw ›' }}</small></button>
         }
 
         <!-- 1 · what customers see for this colour -->
@@ -288,7 +309,7 @@ export type { ReceivedContainer } from './received-containers';
             </button>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Prijsregel</span></span>
               <span class="ios-cell__value">{{ hasFixedSalesPrice(product) ? 'Vaste prijs' : '+ ' + (product.markupPct | num) + ' %' }}</span></div>
-            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Catalogusprijs</span>
+            <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title pph-title-chip">Catalogusprijs<app-product-customer-prices [product]="product" /></span>
                 <span class="ios-cell__sub">per {{ salesUnit(product).singular }} · {{ hasFixedSalesPrice(product) ? 'vaste prijs' : '+ ' + (product.markupPct | num) + ' % op de kostprijs' }}</span></span>
               <span class="ios-cell__value ios-cell__value--strong num">@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Bestellen</span><span class="ios-cell__sub pph-wrap">{{ orderStepSentence(product) }}</span></span></div>
@@ -600,7 +621,7 @@ export type { ReceivedContainer } from './received-containers';
       </div>
     } @else {
       <div class="ios-page pd-phone">
-        <app-ios-nav title="Product" [largeTitle]="false" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
+        <app-ios-nav title="Product" [largeTitle]="false" [heroLoading]="true" backLabel="" backAriaLabel="Terug" (back)="goBack()" />
         <div class="pph-loading" role="status" aria-live="polite" aria-label="Product laden">
           <app-skeleton kind="card" [rows]="1" />
           <app-skeleton kind="group" [rows]="4" />
@@ -818,6 +839,15 @@ export class ProductView {
   /* The stock book, fetched the first time the tile is opened. */
   /** Pieces on the water for this product, from ordered and shipped containers. */
   readonly expected = signal<ExpectedStock | null>(null);
+  /** Today in Belgium: what "Binnenkort" and a passed date are measured against. */
+  private readonly today = brusselsToday();
+  /** The same as one status: state, word, figure, date and every order behind it. */
+  readonly incoming = computed(() => incomingOf(this.expected(), this.today));
+  /** The expected-stock call failed: the page says so with a retry instead of "niets besteld". Stays set while the retry runs. */
+  readonly incomingFailed = signal(false);
+  /** The call is out: "niets besteld" is only said once it answered without an entry for this product. */
+  readonly incomingLoading = signal(false);
+  private incomingAsk = 0;
   readonly stockHistory = signal<StockMovement[] | null>(null);
   readonly stockLevels = signal<ProductStock[] | null>(null);
   readonly stockTotal = computed(() => (this.stockLevels() ?? []).reduce((sum, level) => sum + level.quantity, 0));
@@ -866,6 +896,18 @@ export class ProductView {
     { id: 'build', label: 'Prijsopbouw', iconName: 'list' },
     { id: 'history', label: 'Kostprijshistoriek', iconName: 'recent' },
   ];
+  /** The native host's chrome: Bewerken as the primary, the '…' rows as the menu. */
+  readonly hostPage = computed<HostPageInput | null>(() => {
+    const product = this.product();
+    if (!product) return null;
+    return { primary: { id: `nav:/products/${product.id}/edit`, label: 'Bewerken', icon: 'pencil' }, actions: [], menu: menuRows(this.moreItems) };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    const product = this.product();
+    const item = this.moreItems.find((candidate) => candidate.id === event.id);
+    if (product && item) this.pickMore(item, product);
+  }
   /** The Afspraken disclosure opens itself when the link points at it (#product-agreements). */
   readonly agreementsOpenAtStart = typeof window !== 'undefined' && window.location.hash === '#product-agreements';
   readonly publicationGroups = computed(() => groupPublicationIssues(this.publicationIssues()));
@@ -1209,7 +1251,8 @@ export class ProductView {
   readonly publicationIssues = computed(() => {
     if (this.familyLoading() || this.familyLoadError()) return [];
     const family = this.family();
-    if (family) return family.publicationIssues;
+    /* In the words of the form the "Openen" link leads to (desk) and of the phone's own cells. */
+    if (family) return family.publicationIssues.map(plainPublicationIssue);
     return [];
   });
 
@@ -1288,13 +1331,39 @@ export class ProductView {
     void this.loadProduct(this.loadedId);
   }
 
+  /**
+   * What is coming for this product; the previous product's status never lingers and a late answer is dropped.
+   * While the call is out the page says "laden…", never "niets besteld"; a retry keeps its failed notice until it answers.
+   */
+  private loadIncoming(id: number, version: number, retry = false): void {
+    const ask = ++this.incomingAsk;
+    const current = () => version === this.loadVersion && ask === this.incomingAsk;
+    this.expected.set(null);
+    if (!retry) this.incomingFailed.set(false);
+    this.incomingLoading.set(true);
+    void this.sourcing.incomingStock()
+      .then((items) => {
+        if (!current()) return;
+        this.expected.set(items.find((item) => item.productId === id) ?? null);
+        this.incomingFailed.set(false);
+        this.incomingLoading.set(false);
+      })
+      .catch(() => {
+        if (!current()) return;
+        this.incomingFailed.set(true);
+        this.incomingLoading.set(false);
+      });
+  }
+
+  retryIncoming(): void {
+    if (this.loadedId !== null && !this.incomingLoading()) this.loadIncoming(this.loadedId, this.loadVersion, true);
+  }
+
   private async loadProduct(id: number): Promise<void> {
     void this.loadCatalogueNavigation();
     this.loadStockHistory(id);
-    void this.sourcing.expectedStock()
-      .then((items) => this.expected.set(items.find((item) => item.productId === id) ?? null))
-      .catch(() => this.expected.set(null));
     const version = ++this.loadVersion;
+    this.loadIncoming(id, version);
     this.loadedId = id;
     this.loadError.set(null);
     this.product.set(null);

@@ -30,6 +30,7 @@ import { HomeKas } from './widgets/home-kas';
 import { HomeMarkt } from './widgets/home-markt';
 import { HomeOntvangen } from './widgets/home-ontvangen';
 import { HomePartners } from './widgets/home-partners';
+import { HomePartnerSales } from './widgets/home-partner-sales';
 import { HomeResultaat } from './widgets/home-resultaat';
 import { HomeTica } from './widgets/home-tica';
 import { HomeVerkoop } from './widgets/home-verkoop';
@@ -44,7 +45,7 @@ const LOOK: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
   login: { icon: 'customers', tone: 'teal' }, planner: { icon: 'check', tone: 'grey' }, arrival: { icon: 'truck', tone: 'blue' },
   'purchase-check': { icon: 'purchase', tone: 'grey' }, settlement: { icon: 'exchange', tone: 'grey' }, 'bank-lines': { icon: 'link', tone: 'grey' },
   'recurring-due': { icon: 'repeat', tone: 'grey' }, 'open-credits': { icon: 'restore', tone: 'grey' }, regimes: { icon: 'settings', tone: 'grey' },
-  catalog: { icon: 'globe', tone: 'grey' },
+  catalog: { icon: 'globe', tone: 'grey' }, 'partner-sales': { icon: 'arrow-in', tone: 'grey' },
 };
 
 /** "08:12" of an epoch time, local. */
@@ -84,7 +85,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     NgTemplateOutlet, RouterLink, Icon, Skeleton, Sheet, ContextMenu, NotificationBell, PageHeader, DashboardSearchConsole, HomeDeskAgenda,
-    HomeKas, HomeVerkoop, HomeResultaat, HomeInkoop, HomeOntvangen, HomeVoorraad, HomePartners, HomeWebsite, HomeMarkt,
+    HomeKas, HomeVerkoop, HomeResultaat, HomeInkoop, HomeOntvangen, HomeVoorraad, HomePartners, HomePartnerSales, HomeWebsite, HomeMarkt,
     HomeTica,
   ],
   providers: [HomeWide],
@@ -217,6 +218,7 @@ type RowMenu = { task: HomeTask; point: MenuPoint; inSheet: boolean };
         <app-home-ontvangen variant="desk" />
         <app-home-voorraad variant="desk" />
         <app-home-partners variant="desk" />
+        <app-home-partner-sales variant="desk" />
         <app-home-website variant="desk" />
         @defer (on viewport) {
           <app-dashboard-search-console />

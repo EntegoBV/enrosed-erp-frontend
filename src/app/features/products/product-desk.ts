@@ -19,6 +19,7 @@ import { LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { StockBookingSheet } from './stock-booking-sheet';
 import { ProductChannelPrice } from './product-channel-price';
+import { ProductCustomerPrices } from './product-customer-prices';
 import { StockMovementSource } from './stock-movement-source';
 import { ProductBatchSheet } from './product-batch-sheet';
 import type { PriceRow } from './product-price-build';
@@ -55,7 +56,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(document:keydown)': 'onDocumentKey($event)' },
   imports: [Icon, ProductCostHistory, ProductCostHistorySheet, NgTemplateOutlet, RouterLink, AuthImage, PhotoLightbox, ProductSupplierAgreementPhotoViewer, ProductMediaCard, ProductPlacesLine, PageHeader, LoadError, Skeleton, StockBookingSheet,
-    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, StockMovementSource, ProductBatchSheet,
+    CbmPipe, CurPipe, DateNlPipe, DateTimeNlPipe, EurPipe, KgPipe, NumPipe, ProductChannelPrice, ProductCustomerPrices, StockMovementSource, ProductBatchSheet,
   ],
   template: `
     @if (product(); as product) {
@@ -147,12 +148,24 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
                 <span>nog niet bevestigd</span>
               }
             </button>
-            @if (expected(); as exp) {
-              <a class="pdk-kpi pdk-kpi--accent" [routerLink]="['/purchasing', exp.orderIds[0]]" [attr.title]="'Open ' + exp.orderNumbers.join(', ')">
-                <small>Onderweg</small>
-                <strong>+{{ exp.quantity | num }}</strong>
-                <span>@for (order of exp.orderNumbers; track order) {@if (!$first) {, }<span class="pdk-nw">{{ order }}</span>} · {{ exp.expectedArrival ? 'verwacht ' + (exp.expectedArrival | dateNl) : 'datum nog open' }}</span>
-              </a>
+            <!-- What is coming: the state word is the label, the figure is the first arrival; the stock card lists every order. -->
+            @if (incoming(); as inc) {
+              @if (inc.orders.length) {
+                <a class="pdk-kpi" [class.pdk-kpi--accent]="inc.state === 'ONDERWEG' || inc.state === 'BINNENKORT'" [class.pdk-kpi--warn]="inc.state === 'AANGEKOMEN'"
+                   [routerLink]="['/purchasing', inc.orders[0].orderId]" [attr.title]="inc.title">
+                  <small>{{ inc.word }}</small>
+                  <strong>+{{ inc.quantity | num }}</strong>
+                  <span>{{ inc.when }}@if (inc.later) { · <span class="pdk-nw">+{{ inc.later | num }} {{ inc.laterNote }}</span> }</span>
+                </a>
+              } @else {
+                <div class="pdk-kpi pdk-kpi--static pdk-kpi--accent"><small>{{ inc.word }}</small><strong>+{{ inc.quantity | num }}</strong><span>{{ inc.when }}</span></div>
+              }
+            } @else if (incomingFailed()) {
+              <!-- Stays while its retry runs: "niets besteld" is only said after an answer. -->
+              <button class="pdk-kpi" type="button" [disabled]="incomingLoading()" (click)="retryIncoming()">
+                <small>Onderweg</small><strong>—</strong><span>{{ incomingLoading() ? 'laden…' : 'niet geladen · opnieuw ›' }}</span></button>
+            } @else if (incomingLoading()) {
+              <div class="pdk-kpi pdk-kpi--static"><small>Onderweg</small><strong>—</strong><span>laden…</span></div>
             } @else {
               <div class="pdk-kpi pdk-kpi--static">
                 <small>Onderweg</small>
@@ -280,6 +293,7 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
               <small>Catalogusprijs</small>
               <b>@if (displayPrice(); as price) { {{ price | eur: 2 }} } @else { — }</b>
               <span>per {{ salesUnit(product).singular }}@if (otherPrice(product, displayPrice()); as other) { · {{ other.text }}}</span>
+              <app-product-customer-prices class="pdk-flow__link" [product]="product" />
             </div>
             <i class="pdk-flow__op" aria-hidden="true">=</i>
             <div class="pdk-flow__step pdk-flow__step--margin" [class.is-bad]="(margin()?.eur ?? 0) < 0">
@@ -547,11 +561,21 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
             <button class="wk-btn wk-btn--sm" type="button" (click)="openBooking('DEMO')">Demo</button>
             @if ((stockLevels() ?? []).length > 1) { <button class="wk-btn wk-btn--sm" type="button" (click)="openBooking('TRANSFER')">Verplaatsen</button> }
           </div>
-          @if (expected(); as exp) {
-            <a class="pdk-onway" [routerLink]="['/purchasing', exp.orderIds[0]]">
-              <b>+{{ exp.quantity | num }} {{ unitWord(product, exp.quantity) }} onderweg</b>
-              <small>{{ exp.orderNumbers.join(', ') }}{{ exp.expectedArrival ? ' · verwacht ' + (exp.expectedArrival | dateNl) : '' }} ›</small>
-            </a>
+          @if (incoming(); as inc) {
+            @if (inc.detailed) {
+              @for (order of inc.orders; track order.orderId) {
+                <a class="pdk-onway" [class.pdk-onway--warn]="order.state === 'AANGEKOMEN'" [class.pdk-onway--quiet]="order.state === 'BESTELD'"
+                   [routerLink]="['/purchasing', order.orderId]">
+                  <b>+{{ order.quantity | num }} {{ unitWord(product, order.quantity ?? 0) }} · {{ order.word }}</b>
+                  <small>{{ order.name }} · {{ order.when }} ›</small>
+                </a>
+              }
+            } @else if (inc.orders.length) {
+              <a class="pdk-onway" [routerLink]="['/purchasing', inc.orders[0].orderId]">
+                <b>+{{ inc.total | num }} {{ unitWord(product, inc.total) }} · {{ inc.word }}</b>
+                <small>@for (order of inc.orders; track order.orderId) {@if (!$first) {, }{{ order.name }}} · {{ inc.when }} ›</small>
+              </a>
+            }
           }
           @if (recentMoves(); as moves) {
             @if (moves.length) {

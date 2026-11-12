@@ -163,6 +163,8 @@ const MOVE_LABELS: Record<StockBatchMoveKind, string> = {
   DEMO: 'Demo',
   STOCKTAKE: 'Telling',
   MANUAL_CORRECTION: 'Manueel gezet',
+  PARTNER_SALE: 'Verkocht via partner',
+  PARTNER_BUYBACK: 'Teruggekocht door partner',
 };
 
 /** The move's kind in words, + " · eerder zonder batch" (settles) and " · boeking verwijderd" (movementGone). */

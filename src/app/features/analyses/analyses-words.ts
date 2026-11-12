@@ -117,10 +117,14 @@ export function daysLabel(days: number): string {
 
 /* ---------- Overzicht (design §3.2, critique B2, B5, N6, N7, N17): the digest and Aandacht rows */
 
-/** "betaalresultaat − € 3.621" / "netto extra opbrengst € 412" (the Containerkost card's names), none without eligible containers or at € 0. */
-export function paymentResultLine(netResultEur: number, eligibleCount: number): string | null {
-  if (eligibleCount <= 0 || Math.abs(netResultEur) < 0.5) return null;
-  return netResultEur < 0 ? `betaalresultaat ${eurShort(netResultEur)}` : `netto extra opbrengst ${eurShort(netResultEur)}`;
+/**
+ * "extra opbrengst € 21.104": the Containerkost card's Extra opbrengst, the Enrosed-kost plus the betaalresultaat
+ * (`markupWithResultEur`). Enrosed pays its own Enrosed-kost to nobody, so it counts as revenue next to what was paid
+ * less (Emre, 2026-11-06). None without eligible containers or at € 0.
+ */
+export function extraRevenueLine(extraRevenueEur: number, eligibleCount: number): string | null {
+  if (eligibleCount <= 0 || Math.abs(extraRevenueEur) < 0.5) return null;
+  return `extra opbrengst ${eurShort(extraRevenueEur)}`;
 }
 
 /** "op 3 containers · 2 voorlopig": the containers with something still to pay, and those not yet settled (D-O2). */

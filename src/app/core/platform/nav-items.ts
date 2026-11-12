@@ -21,7 +21,7 @@
 export type NavGroupId = 'verkoop' | 'inkoop' | 'producten' | 'analyses' | 'bedrijf';
 
 /** WorkQueue count signals a navigation item can show. */
-export type NavCountKey = 'actionCount' | 'revisionCount' | 'loginRequestCount';
+export type NavCountKey = 'actionCount' | 'revisionCount' | 'loginRequestCount' | 'partnerSalesOpen';
 
 export type NavTone = 'accent' | 'amber' | 'green' | 'blue' | 'plum' | 'grey';
 
@@ -57,6 +57,8 @@ export interface NavItem {
   tabRoot?: boolean;
   /** The tile tone on Meer. */
   tone?: NavTone;
+  /** A personal screen: listed for this username only. */
+  onlyUser?: string;
 }
 
 export interface NavGroup {
@@ -81,11 +83,15 @@ export const NAV_HOME: NavItem = {
 export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'verkoop', label: 'Verkoop', icon: 'sales', tone: 'accent',
-    hint: 'Wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
+    hint: 'Palletberekening, veilingverkopen, wijzigingen, klanten, aanvragen, prospects, landen & vracht en kortingen',
     items: [
       { id: 'sales', label: 'Verkooporders', short: 'Verkoop', icon: 'sales', link: '/sales', countKey: 'actionCount', railMain: true, tabRoot: true },
+      { id: 'pallet-calculator', label: 'Palletberekening', icon: 'pallet', link: '/palletberekening',
+        hint: 'Wat er op een pallet en in een 20ft of 40ft gaat', newUntil: '2027-01-01' },
       { id: 'tica', label: 'TICA verkopen', short: 'TICA', icon: 'receipt', link: '/tica',
         hint: 'Verkopen per vestiging, automatische import en meldingen' },
+      { id: 'partner-sales', label: 'Veilingverkopen', icon: 'arrow-in', link: '/veilingverkopen', countKey: 'partnerSalesOpen', groupCount: true,
+        hint: 'Meldingen van de partner factureren', newUntil: '2027-01-01' },
       { id: 'revisions', label: 'Wijzigingen', icon: 'pencil', link: '/revisions', countKey: 'revisionCount', groupCount: false,
         hint: 'Wijzigingsvoorstellen van klanten beoordelen' },
       { id: 'customers', label: 'Klanten', icon: 'customers', link: '/customers', hint: 'Contacten, voorwaarden en nieuwe orders' },
@@ -161,6 +167,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { id: 'terms', label: 'Voorwaarden & privacy', icon: 'book', link: '/voorwaarden', wide: true, hint: 'Bekijk wat klanten te zien krijgen' },
       { id: 'deleted-items', label: 'Verwijderde items', icon: 'trash', link: '/settings/deleted-items', wide: true,
         hint: 'Verwijderde offertes, facturen en inkooporders herstellen' },
+      { id: 'stock-radar', label: 'Voorraadradar', short: 'Radar', icon: 'search', link: '/voorraadradar', wide: true, onlyUser: 'emre',
+        hint: 'iPhone Duo wit 256 en 512 GB bij Apple, MediaMarkt, Coolblue en meer' },
     ],
   },
 ];
@@ -231,9 +239,14 @@ export function groupCountKeys(group: NavGroup, surface: 'sidebar' | 'meer'): Na
     .map((item) => item.countKey as NavCountKey);
 }
 
-/** The items Meer lists per group: everything except the phone tab roots. */
-export function meerItems(group: NavGroup): NavItem[] {
-  return group.items.filter((item) => !item.tabRoot);
+/** Whether a person sees the item: personal screens list for their owner only. */
+export function navItemVisible(item: NavItem, username: string | null): boolean {
+  return !item.onlyUser || (username !== null && item.onlyUser.toLowerCase() === username.toLowerCase());
+}
+
+/** The items Meer lists per group: everything except the phone tab roots (and other people's personal screens). */
+export function meerItems(group: NavGroup, username: string | null = null): NavItem[] {
+  return group.items.filter((item) => !item.tabRoot && navItemVisible(item, username));
 }
 
 /** Every navigation target as a full URL, for the "nothing dropped" checks. */

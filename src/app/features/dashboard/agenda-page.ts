@@ -6,6 +6,7 @@ import { ContextMenu } from '../../shared/context-menu';
 import type { ContextMenuItem } from '../../shared/context-menu';
 import { Icon } from '../../shared/icon';
 import { IosNav } from '../../shared/ios-nav';
+import { onHostLineChange } from '../../shared/large-title';
 import { Segmented } from '../../shared/segmented';
 import type { SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
@@ -294,14 +295,21 @@ export class AgendaPage {
     effect((onCleanup) => {
       const sentinel = this.sentinel()?.nativeElement;
       if (!sentinel || typeof IntersectionObserver === 'undefined') return;
-      const nav = this.host.nativeElement.querySelector<HTMLElement>('.ios-nav');
+      const fold = this.host.nativeElement.querySelector<HTMLElement>('.home-agenda__fold');
       const bar = this.host.nativeElement.querySelector<HTMLElement>('.home-agenda__subbar');
-      const height = Math.round((nav?.getBoundingClientRect().height ?? 44) + (bar?.offsetHeight ?? 0));
-      const observer = new IntersectionObserver(([entry]) => {
-        this.folded.set(!entry.isIntersecting && entry.boundingClientRect.top < height);
-      }, { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 });
-      observer.observe(sentinel);
-      onCleanup(() => observer.disconnect());
+      let observer: IntersectionObserver | null = null;
+      const start = (): void => {
+        observer?.disconnect();
+        /* The fold's sticky line, its own top (the nav's height, except on the native host's strip poses). */
+        const height = Math.round((fold ? parseFloat(getComputedStyle(fold).top) || 0 : 44) + (bar?.offsetHeight ?? 0));
+        observer = new IntersectionObserver(([entry]) => {
+          this.folded.set(!entry.isIntersecting && entry.boundingClientRect.top < height);
+        }, { rootMargin: `-${height}px 0px 0px 0px`, threshold: 0 });
+        observer.observe(sentinel);
+      };
+      start();
+      const stopMarks = onHostLineChange(sentinel.ownerDocument, start);
+      onCleanup(() => { observer?.disconnect(); stopMarks(); });
     });
   }
 

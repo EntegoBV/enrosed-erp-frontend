@@ -11,6 +11,11 @@ const CREDENTIAL_KIND_KEY = STORAGE_KEY + '.kind';
 const SESSION_EXPIRY_KEY = STORAGE_KEY + '.expiresAt';
 const SESSION_CREDENTIAL_KIND = 'session-v1';
 
+/** A partner (Verhoeven) login: the role 'partner' without 'admin'. Staff accounts always carry 'admin'. */
+export function isPartnerUser(user: CurrentUser | null | undefined): boolean {
+  return !!user && user.roles.includes('partner') && !user.roles.includes('admin');
+}
+
 /**
  * Login.
  *
@@ -32,6 +37,14 @@ export class Auth {
   readonly username = computed(() => this.user()?.displayName ?? null);
 
   readonly isLoggedIn = computed(() => this.credentials() !== null);
+  /**
+   * Signed in as a partner: the partner portal (/partner) instead of the staff
+   * screens. False while only the credential is known and the identity is not
+   * (the guards ask currentUser() first).
+   */
+  readonly isPartner = computed(() => isPartnerUser(this.user()));
+  /** The one identity check under way, shared by the start, a storage event and the guards. */
+  private resuming: Promise<void> | null = null;
 
   constructor() {
     /* Older builds kept the key in sessionStorage; carry it over once so
@@ -54,26 +67,82 @@ export class Auth {
       if (event.key !== STORAGE_KEY && event.key !== USER_KEY
           && event.key !== CREDENTIAL_KIND_KEY && event.key !== SESSION_EXPIRY_KEY
           && event.key !== null) return;
-      const wasLoggedIn = this.isLoggedIn();
-      this.credentials.set(this.restore(STORAGE_KEY));
-      this.user.set(this.restoreUser());
-      /* Signed out in another tab: this one goes to the login page too,
-         instead of sitting on a screen whose next call would fail. */
-      if (wasLoggedIn && !this.isLoggedIn()) void this.router.navigate(['/login']);
-      if (this.isLoggedIn() && !this.user()) queueMicrotask(() => void this.resumeAuthentication());
+      this.recheckSession();
     };
     window.addEventListener('storage', onStorage);
     inject(DestroyRef).onDestroy(() => window.removeEventListener('storage', onStorage));
 
     /* Older builds persisted username:password. Verify that credential once,
        exchange it for a signed session token, then replace it in-place. */
-    if (this.isLoggedIn()) queueMicrotask(() => void this.resumeAuthentication());
+    if (this.isLoggedIn()) queueMicrotask(() => void this.resume());
+  }
+
+  /**
+   * Re-reads the shared storage: another tab's storage event, or the native
+   * host's `sessionCheck` after one of its web views signed in or out (the
+   * storage event may not cross WKWebViews).
+   */
+  recheckSession(): void {
+    const wasLoggedIn = this.isLoggedIn();
+    const wasPartner = this.isPartner();
+    this.credentials.set(this.restore(STORAGE_KEY));
+    this.user.set(this.restoreUser());
+    /* Signed out in another tab: this one goes to the login page too,
+       instead of sitting on a screen whose next call would fail. */
+    if (wasLoggedIn && !this.isLoggedIn()) { void this.router.navigate(['/login']); return; }
+    if (this.isLoggedIn() && !this.user()) {
+      queueMicrotask(() => void this.resume().then(() => this.followRole(wasPartner)));
+      return;
+    }
+    this.followRole(wasPartner);
+  }
+
+  /**
+   * One browser holds one session: when another tab signed in with the other
+   * kind of account (staff or partner), this tab leaves its screens, whose
+   * every call would now be refused, for that account's home.
+   */
+  private followRole(wasPartner: boolean): void {
+    if (!this.isLoggedIn() || !this.user() || this.isPartner() === wasPartner) return;
+    void this.router.navigateByUrl(this.isPartner() ? '/partner' : '/dashboard', { replaceUrl: true });
+  }
+
+  /**
+   * The signed-in user, asking the server first when only the credential is
+   * stored (the guards never decide on a role that is not known yet). Null
+   * when signed out; also null when the server could not be reached, and the
+   * caller then lets the screen's own calls answer.
+   */
+  async currentUser(): Promise<CurrentUser | null> {
+    if (!this.isLoggedIn()) return null;
+    const known = this.user();
+    if (known) return known;
+    await this.resume();
+    return this.isLoggedIn() ? this.user() : null;
+  }
+
+  private resume(): Promise<void> {
+    if (!this.resuming) {
+      const run = this.resumeAuthentication().finally(() => { if (this.resuming === run) this.resuming = null; });
+      this.resuming = run;
+    }
+    return this.resuming;
   }
 
   /** Value for the Authorization header, or null while nobody is signed in. */
   header(): string | null {
     const value = this.credentials();
     return value === null ? null : 'Basic ' + value;
+  }
+
+  /** The stored credential's kind: 'session-v1' for a signed session token (read only; the native host's `session`). */
+  credentialKind(): string | null {
+    return this.restore(CREDENTIAL_KIND_KEY);
+  }
+
+  /** When the stored session token expires, an ISO instant (read only). */
+  sessionExpiresAt(): string | null {
+    return this.restore(SESSION_EXPIRY_KEY);
   }
 
   /**

@@ -10,7 +10,7 @@
  */
 
 export type SettingsView =
-  | 'overview' | 'company' | 'legal' | 'website' | 'duties' | 'discounts' | 'catalog-data' | 'device';
+  | 'overview' | 'company' | 'legal' | 'website' | 'duties' | 'discounts' | 'partner-portal' | 'catalog-data' | 'device';
 
 export interface SettingsViewInfo {
   id: SettingsView;
@@ -30,6 +30,7 @@ export const SETTINGS_VIEWS: readonly SettingsViewInfo[] = [
   { id: 'website', tab: 'Website', title: 'Prijzen op de website', subtitle: 'Geldt voor alle websitetalen', icon: 'globe', tone: 'blue' },
   { id: 'duties', tab: 'Douane', title: 'Douane', subtitle: 'HS-codes en invoerrechten', icon: 'truck', tone: 'amber' },
   { id: 'discounts', tab: 'Kortingen', title: 'Kortingen', subtitle: 'Staffels per regel en per order', icon: 'tag', tone: 'amber' },
+  { id: 'partner-portal', tab: 'Partnerportaal', title: 'Partnerportaal', subtitle: 'Login, kosten en voorraad van de partner', icon: 'link', tone: 'amber' },
   { id: 'catalog-data', tab: 'Catalogusdata', title: 'Catalogusdata', subtitle: 'Producten in Excel en foto’s als ZIP', icon: 'download', tone: 'green' },
   { id: 'device', tab: 'Dit toestel', title: 'Dit toestel', subtitle: 'Weergave en meldingen op dit toestel', icon: 'bell', tone: 'grey' },
 ];
@@ -42,6 +43,7 @@ const SECTIONS: Readonly<Record<string, SettingsView>> = {
   duties: 'duties',
   discounts: 'discounts',
   'order-discounts': 'discounts',
+  'partner-portal': 'partner-portal',
   'catalog-data': 'catalog-data',
   device: 'device',
   appearance: 'device',

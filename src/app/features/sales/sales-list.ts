@@ -8,16 +8,20 @@ import { invoiceReceivable } from '../finance/incoming-money';
 import { NgTemplateOutlet } from '@angular/common';
 import { groupSalesInvoices, type SalesContainerGroup, type SalesSplitGroup } from './sales-list-groups';
 import { SalesContainerMenu } from './sales-container-menu';
+import { shippedPallets } from './pallet-stack';
 import { SalesMenuTrigger } from './sales-menu-trigger';
 import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
 import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
 import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, signal, viewChild,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink, type ParamMap } from '@angular/router';
+import { filter } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
 import { Country, Customer, LANGUAGES, QuoteStatus, SalesOrder, SalesOrderView } from '../../core/api/models';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { PageHeader } from '../../shared/page-header';
 import { WorkQueue } from '../../core/api/work-queue';
 import { escapeHtml, Sheet, Ui } from '../../shared/ui';
@@ -43,6 +47,7 @@ import { creditNoteSettlement, creditReasonLabel, isCreditNote } from './sales-c
 import { blankCustomer, defaultCustomerCountry, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing } from '../customers/customer-form';
 import { salesDocumentKind } from './partner-settlement';
 import { billingKind, isAdvanceBillingInvoice } from './sales-advance-billing';
+import { shipsViaReports } from './report-backed';
 import {
   ROW_LONG_PRESS_SLOP_PX, RowSwipeSide, clampRowSwipeOffset, restingRowOffset,
   rowSwipeDecision,
@@ -84,7 +89,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, SalesContainerMenu, SalesMenuTrigger, SalesSplitSheet],
   template: `
     <app-sales-list-styles />
-    <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()">
+    <app-page-header title="Verkoop" [subtitle]="desktop.active() ? deskSubtitle() : phoneCaption()" [host]="hostPage()" (hostAction)="hostAction($event)">
       @if (desktop.active()) {
         <app-segmented class="sl-tabs" label="Documenten" semantics="tabs" controls="sales-document-results" [options]="tabOptions()"
                        [value]="docTab()" (changed)="switchTab($any($event))" />
@@ -631,7 +636,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
         <span class="sl-main">{{ row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' }}</span>
       } @else {
         @let loose = row.order.loadMode === 'LOOSE_CARTONS';
-        @let pallets = row.priced.totals.palletsManual || row.priced.totals.palletsStrict;
+        @let pallets = shippedPallets(row.priced.totals);
         <span class="sl-main"><span class="sl-nw">{{ row.priced.totals.pieces | num }} st</span> · <span class="sl-nw">@if (loose) { {{ row.priced.totals.cartons | num }} {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} } @else { {{ pallets }} {{ pallets === 1 ? 'pallet' : 'pallets' }} }</span></span>
         @if (loose || row.priced.totals.marginPct) {
           <span class="sl-sub"><span class="sl-isep"> · </span>@if (loose) { <span class="sl-nw">{{ row.priced.totals.cbm | cbm }}</span> }@if (loose && row.priced.totals.marginPct) { · }@if (row.priced.totals.marginPct) { <span class="sl-nw">marge {{ row.priced.totals.marginPct | pct: 0 }}</span> }</span>
@@ -909,10 +914,24 @@ export class SalesList {
   readonly filter = signal<QuoteStatus | ''>('');
   readonly docTab = signal<SalesTab>('OFFERTE');
   readonly businessScope = signal<SalesScope>('ALL');
+
+  /** The native host's chrome: the '+' (Order, or Container kiezen in the partner scope) and the section's title menu. */
+  readonly hostPage = computed<HostPageInput>(() => ({
+    accessory: this.businessScope() === 'PARTNER'
+      ? { id: 'startNew', label: 'Container kiezen', icon: 'purchase' }
+      : { id: 'startNew', label: 'Order', icon: 'plus', prominent: true },
+    titleMenu: 'auto',
+  }));
+
+  hostAction(event: HostActionEvent): void {
+    if (event.id === 'startNew') this.startNew();
+  }
   readonly outstandingOnly = signal(false);
   /** Facturen tab: everything, invoices only, or credit notes only (query param docs). */
   readonly docsFilter = signal<SalesDocsFilter>('all');
   readonly partner = isPartnerDocument;
+  /** The pallets a row ships on: its hand layout's, else the automatic count. */
+  readonly shippedPallets = shippedPallets;
   readonly creditNoteRow = (row: SalesOrderView): boolean => isCreditNote(row.order);
   readonly creditReason = (row: SalesOrderView): string => creditReasonLabel(row.order.creditReason);
   /** '€ 120,20 verrekend · € 100,00 tegoed' — zero parts left out, 'afgehandeld' when nothing is open. */
@@ -1029,7 +1048,8 @@ export class SalesList {
       return items.length ? items : null;
     }
     const fullyCredited = this.fullyCredited(row);
-    const task = this.todo(row.order, row.awaitingResend, fullyCredited, isAdvanceBillingInvoice(row));
+    /* An invoice from the partner's meldingen ships nothing: its stock left with them (shipsViaReports). */
+    const task = this.todo(row.order, row.awaitingResend, fullyCredited, isAdvanceBillingInvoice(row) || shipsViaReports(row));
     if (task) items.push(task);
     /* An overdue invoice already reads "Betaling opvolgen"; no second label. A fully credited one has nothing left to chase. */
     if (!fullyCredited && this.overdue(row.order) && !items.includes('Betaling opvolgen')) items.push('Vervallen');
@@ -1085,13 +1105,28 @@ export class SalesList {
 
   constructor() {
     const query = this.route.snapshot.queryParamMap;
-    const scope = query.get('scope');
-    if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
-    const tab = query.get('tab');
-    if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
-    if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
-    const docs = query.get('docs');
-    if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
+    this.readAddress(query);
+    /* A query-only navigation reuses this list. The native host's open of /sales?… onto it (a search hand-off, the Vandaag
+       widget's Facturen › Openstaand, the root of 'Nieuwe order'; host-bridge-impl marks it nav 'replace') reads the
+       address again, on a list as a fresh open shows it, before the page goes out again. The web's own query changes
+       (rememberNavigation, the q leaving the address) carry no such marker. */
+    this.route.queryParamMap.pipe(
+      filter((_, index) => index > 0 && (this.router.currentNavigation()?.extras.info as { nav?: string } | undefined)?.nav === 'replace'),
+      takeUntilDestroyed(),
+    ).subscribe((params) => {
+      this.filter.set('');
+      this.attentionOnly.set(false);
+      this.customerFilter.set('');
+      this.websiteOnly.set(false);
+      this.toTakeOnly.set(false);
+      this.outstandingOnly.set(false);
+      this.docsFilter.set('all');
+      this.docTab.set('OFFERTE');
+      this.businessScope.set('ALL');
+      this.openRow.set(null);
+      this.expandedGroups.set(new Set());
+      this.readAddress(params);
+    });
     /* Before the first load answers: the folds of this device (not in load(), which also runs after every change). */
     this.restoreFolds();
     if (typeof matchMedia === 'function') {
@@ -1117,9 +1152,26 @@ export class SalesList {
     void this.load();
     /* The phone home's '+' lands here with ?nieuw=1: open the new-order sheet once and drop the flag so a reload does not reopen it. */
     if (query.get('nieuw') === '1') {
-      void this.router.navigate([], { queryParams: { nieuw: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
+      void this.router.navigate([], { queryParams: { nieuw: null, q: null }, queryParamsHandling: 'merge', replaceUrl: true, relativeTo: this.route });
       this.startNew();
     }
+  }
+
+  /**
+   * The address's search and filters: q, scope, tab, payment=open, docs. A q is read once and then leaves the address
+   * (as ?nieuw=1 does), so Terug from an order, a tab switch's merge or a second hand-off of the same text never brings
+   * back a search that was cleared or retyped since.
+   */
+  private readAddress(query: ParamMap): void {
+    this.query.set(query.get('q')?.slice(0, 200) ?? '');
+    const scope = query.get('scope');
+    if (scope === 'ALL' || scope === 'STANDARD' || scope === 'PARTNER') this.businessScope.set(scope);
+    const tab = query.get('tab');
+    if (tab === 'OFFERTE' || tab === 'FACTUUR' || tab === 'ARCHIEF') this.docTab.set(tab);
+    if (query.get('payment') === 'open') { this.docTab.set('FACTUUR'); this.outstandingOnly.set(true); }
+    const docs = query.get('docs');
+    if (docs === 'f' || docs === 'cn') { this.docTab.set('FACTUUR'); this.docsFilter.set(docs); }
+    if (query.has('q')) void this.router.navigate([], { relativeTo: this.route, queryParams: { q: null }, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   async load(): Promise<void> {
@@ -1964,7 +2016,7 @@ export class SalesList {
     }
     if (this.partner(row.order)) return full ? row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' : '';
     const loose = row.order.loadMode === 'LOOSE_CARTONS';
-    const pallets = totals.palletsManual || totals.palletsStrict;
+    const pallets = shippedPallets(totals);
     const parts = [`${num(totals.pieces)} st`, loose ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${pallets === 1 ? 'pallet' : 'pallets'}`];
     if (full && loose) parts.push(new CbmPipe().transform(totals.cbm));
     if (full && totals.marginPct) parts.push(`marge ${new PctPipe().transform(totals.marginPct, 0)}`);

@@ -27,6 +27,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   ],
   overview: [
     'Eén rij per onderdeel, dit jaar tenzij er een andere periode bij staat. Kasprognose: de laagste stand over de gekozen horizon (standaard 6 maanden), met het scenario.',
+    'Inkoop: nog te betalen aan leverancier, douane & transport en inspectie, zonder Enrosed-kost; extra opbrengst = Enrosed-kost + betaalresultaat.',
     'Aandacht: tik op een rij voor de lijst erachter.',
   ],
   sales: [
@@ -35,17 +36,19 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'Partnervoorschotten blijven financiering tot de afrekening: geen omzet en niet in het aantal facturen bij Omzet. Een gewone voorschotfactuur telt als omzet op haar datum; de slotfactuur trekt ze weer af. Gefactureerd telt elke factuur, voorschotten ook. Een creditnota toont geen marge. Oude documenten kunnen nog actuele productprijzen gebruiken.',
     'TICA telt apart mee als verkoopkanaal, op de verkoopdatum en na korting excl. btw. De afrekening en bankontvangst tellen niet opnieuw als omzet. TICA-marges gebruiken de huidige productkost; bij ontbrekende productkosten is de marge onvolledig.',
     'De TICA-kaart telt niets op: gemiddelden, korting en producten komen uit de TICA-regels van dezelfde periode (hoogstens de laatste 366 dagen).',
+    'Veilingverkopen: wat de partner meldde als verkocht op de veiling of direct, op de verkoopdatum. Bruto min veilingcommissie, transport en extra kost, min de terugkoop op de klok, is netto. Het telt niet in Omzet of Resultaat: dat doet de factuur uit Veilingverkopen, op haar eigen datum. Het gemiddelde is per product (bruto gedeeld door de stuks); ingetrokken meldingen tellen niet.',
   ],
   inventory: [
     'Momentopname uit de productkaart en de open inkooporders, over alle locaties, in de verkoopeenheid van elk product (stuks of displays).',
     'Kostwaarde: tegen kostprijs met Enrosed-kost, excl. btw. Verkoopwaarde: lijstprijs excl. btw, vóór staffelkorting. Voor de boekhouding: Jaarinventaris.',
-    'Het tempo komt van de facturen van de laatste 90 dagen; TICA-verkopen tellen daar nog niet in mee. Raakt op: binnen 8 weken op, met wat onderweg is.',
+    'Het tempo komt van de facturen van de laatste 90 dagen en van de veilingverkopen op hun verkoopdatum (min terugkoop); een factuur uit Veilingverkopen telt daar niet nog eens. TICA-verkopen tellen nog niet mee. Raakt op: binnen 8 weken op, met wat onderweg is.',
     'Onderweg: de externe kost van de bestelde en vertrokken containers, zonder Enrosed-kost; tel die niet zomaar bij de kostwaarde op.',
   ],
   'purchasing-kosten': [
     'Afspraak, betalingen en open bedragen naast elkaar. Meer- en minderbetalingen blijven per leverancier, douane en extra kost zichtbaar.',
     'Minder betaald telt pas als besparing zodra die betaalgroep of leverancierstermijn is afgerekend; open bedragen en voorschotten zijn geen besparing. Een tegoed van de leverancier verlaagt de eindkost.',
-    'Enrosed-kost en productprijzen blijven gelijk; het betaalresultaat zit al in de verwachte containerkost en telt niet nog eens als winst.',
+    'Extra opbrengst = Enrosed-kost + betaalresultaat. De Enrosed-kost betaalt Enrosed aan niemand: die telt als opbrengst en nooit bij Nog te betalen.',
+    'Productprijzen blijven gelijk; het betaalresultaat zit al in de verwachte containerkost en telt niet nog eens als winst.',
   ],
   'purchasing-kwaliteit': [
     'Ontvangen orders in de gekozen periode. Perfect: alles bruikbaar ontvangen zoals besteld; meer ontvangen telt als afwijking. Op tijd: ontvangen op of vóór de laatst opgeslagen ETA.',
@@ -55,6 +58,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'De partner financiert de afgesproken kosten vooraf of samen met ons. Elke termijn krijgt een eigen voorschotfactuur. Het resultaat volgt uit uitgegeven deel- en slotafrekeningen, naar de werkelijk afgerekende hoeveelheden.',
     'Netto ontvangen: ontvangsten min terugbetalingen. Eigen kasinleg: betaalde containerkosten min ontvangen partnergeld. Voorschotten zijn geen winst.',
     'Nog te ontvangen: open uitgegeven facturen, na deelbetalingen. Credit voor partners: op creditnota’s en afrekeningen, te verrekenen of terug te betalen. Kosten partnercontainers: werkelijke kosten en nog open verplichtingen.',
+    'Wat de partner via het partnerportaal meldt, factureer je in Veilingverkopen; een container waarvan alle resterende stuks daar al gemeld zijn, wacht niet meer op een veilingafrekening.',
   ],
   'purchasing-afwijkingen': [
     'Tekorten en schade blijven hier staan, ook nadat de container is afgerond.',
@@ -62,6 +66,7 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
   ],
   result: [
     'De marge op de goederen van de uitgegeven facturen, min de kosten die we zelf maakten.',
+    'De Enrosed-kost in de kostprijs van wat verkocht is betaalt Enrosed aan niemand: die telt hier als opbrengst, dus de marge is die van Verkoop plus die Enrosed-kost. Een kost waarvan de opbouw niet bewaard is, telt helemaal als kost.',
     'Verkoop telt op de factuurdatum, kosten op hun datum; een investering met haar afschrijving van de periode. Omzet excl. btw; kosten zonder de btw die we aftrekken (niet-aftrekbare btw telt als kost).',
     'TICA-verkopen tellen op de verkoopdatum, na korting excl. btw. De huidige productkost bepaalt de TICA-marge. Bevestigde TICA-commissie staat één keer bij de bedrijfskosten; de afrekening en uitbetaling voegen geen tweede omzet toe.',
     'Algemene kosten: kosten zonder verkoopkanaal, zodat de kanalen optellen tot het resultaat.',

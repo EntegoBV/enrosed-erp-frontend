@@ -23,6 +23,8 @@ export function salesAvailabilityBlockReason(view: SalesOrderView | null | undef
   if (!view) return 'Laad eerst de order.';
   const order = view.order, payments = view.paymentSummary;
   if ((order.purpose ?? (order.partnerPurchaseOrderId ? 'PARTNER_ADVANCE' : 'STANDARD')) !== 'STANDARD' || view.advanceAgreement || view.advanceContents || view.settlement) return 'Partnerfacturen worden via hun container beheerd.';
+  /* A document from Veilingverkopen: its lines follow the meldingen and the server refuses any change to them. */
+  if (view.reportBacked === true) return 'De regels volgen de meldingen en staan vast.';
   if (order.archivedAt || order.status !== 'CONCEPT' || order.sentAt || order.viewedAt || (order.viewCount ?? 0) > 0
     || view.invoicedAsId || view.invoicedAs || order.decidedAt || order.goodsShippedAt || order.paidAt
     || payments?.legacyPaidMarker || payments?.payments?.length || (payments?.grossReceivedEur ?? 0) > 0

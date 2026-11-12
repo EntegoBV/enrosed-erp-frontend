@@ -1,4 +1,5 @@
 import type { Category, Product } from '../core/api/models';
+import { matchesWords } from './search-words';
 
 export const UNCATEGORISED_PICKER_CATEGORY = '__uncategorised__' as const;
 export const NO_PICKER_COLOUR = '__no-colour__' as const;
@@ -119,7 +120,8 @@ export function filterProductPicker(
     .filter((product) => filter.colour === null || productColourKey(product) === filter.colour)
     .filter((product) => {
       if (!needle) return true;
-      return normaliseSearch([
+      /* Every typed word, in any order. */
+      return matchesWords(normaliseSearch([
         product.name,
         product.sku,
         product.colour,
@@ -129,7 +131,7 @@ export function filterProductPicker(
         product.barcodeOuter,
         productPickerCategoryName(product, categories),
         filter.searchTextOf?.(product),
-      ].join(' ')).includes(needle);
+      ].join(' ')), needle);
     })
     .slice(0, limit);
 }

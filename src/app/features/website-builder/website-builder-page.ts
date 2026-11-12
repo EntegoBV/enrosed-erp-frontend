@@ -547,7 +547,8 @@ export class WebsiteBuilderPage implements HasUnsavedChanges {
   private readonly blockParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('blok'))), { initialValue: this.route.snapshot.queryParamMap.get('blok') });
 
   readonly busy = computed(() => this.loading() || this.saving() || this.publishing() || this.copyBusy());
-  readonly dirty = computed(() => this.baseline() !== JSON.stringify(this.sections()));
+  /** Nothing to lose before the layout has loaded: the baseline is empty then, the sections are []. */
+  readonly dirty = computed(() => !!this.baseline() && this.baseline() !== JSON.stringify(this.sections()));
   readonly selectedSection = computed(() => this.sections()[this.selectedSectionIndex()] ?? null);
   readonly visibleCount = computed(() => this.sections().filter((section) => section.enabled).length);
   readonly hasUnpublishedChanges = computed(() => {

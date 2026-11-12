@@ -19,6 +19,7 @@ import {
 } from '../../core/api/models';
 import { SalesApi } from '../../core/api/sales-api';
 import { TicaApi, TicaAnalyticsDay } from '../../core/api/tica-api';
+import { PartnerSalesApi, isMissingEndpoint, type PartnerSalesAnalytics } from '../../core/api/partner-sales-api';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { Icon } from '../../shared/icon';
 import { PageHeader } from '../../shared/page-header';
@@ -26,9 +27,11 @@ import { EurPipe, NumPipe, PctPipe } from '../../shared/pipes';
 import { Ui } from '../../shared/ui';
 import {
   inventoryAnalysis, lastSoldOn, missingCostRows, openPipelineQuotes, partnerFinancingAnalysis, receivedContainerRows, resultAnalysis, resultCostRows, salesAnalysis,
-  salesDocumentRows, salesLineRows,
+  salesDocumentRows, salesLineRows, withEnrosedMargin,
 } from './analysis-metrics';
 import { withTicaResult, withTicaSales } from './tica-analysis';
+import { AnPartnerSales, type PartnerSalesUnitFn } from './an-partner-sales';
+import { partnerSalesInPeriod } from './partner-sales-analysis';
 import { ticaBreakdown, ticaLineRange, type TicaBreakdown } from './tica-breakdown';
 import { productSalesUnit, unitCount } from '../products/product-sales-unit';
 import { FinanceApi } from '../../core/api/finance-api';
@@ -50,6 +53,8 @@ import { CashPageData, CashSources } from './cash-sources';
 import { CashState } from './cash-state';
 import { financingsWithSchedule, underBuffer } from './cash-view';
 import { IosNav } from '../../shared/ios-nav';
+import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
+import type { HostMenuItem } from '../../core/platform/host';
 import { NotificationBell } from '../../shared/notification-bell';
 import { Sheet } from '../../shared/ui';
 import { WorkQueue } from '../../core/api/work-queue';
@@ -87,7 +92,7 @@ import { AnDrillHost } from './drill-host';
 import type { DrillView } from './drill-model';
 import {
   acceptedView, channelView, countryView, customerView, funnelView, invoicedView, marginViews, openInvoicesView, openQuotesView, overdueView,
-  productView, revenueViews, ticaMonthRows, ticaUnmatchedView,
+  productView, revenueViews, ticaMonthRows, ticaUnmatchedView, withEnrosedTica,
 } from './drill-sales';
 import type { FunnelStep, SalesDrillContext } from './drill-sales';
 import { incomingView, qualityViews, QUALITY_KEYS, reorderView, stockValueView, zeroNoIncomingView } from './drill-stock';
@@ -99,7 +104,7 @@ import { categoryView, channelView as resultChannelView, costsView, generalCosts
 import type { ResultDrillContext } from './drill-result';
 import type { PeriodChoice } from './analyses-period';
 import {
-  advanceTermsSub, dayMonth, dollarValue, monthLabel, marketLines, openContainersLine, overdueSub, paymentResultLine, plural, rangeLabel, rangeLabelShort, varianceAttention,
+  advanceTermsSub, dayMonth, dollarValue, extraRevenueLine, monthLabel, marketLines, openContainersLine, overdueSub, plural, rangeLabel, rangeLabelShort, varianceAttention,
   weekdayDayMonth, wholeNumber,
 } from './analyses-words';
 
@@ -222,6 +227,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
   styleUrls: ['../../../styles/analyses.scss', '../../../styles/analyses-tabs.scss', '../../../styles/analyses-sources.scss', '../../../styles/analyses-drill.scss'],
   host: { '(document:visibilitychange)': 'visible()', '(document:keydown)': 'deskKey($event)' },
   imports: [Icon, TrendChart, AnDrill, CashDesk, CashPhone, AnHow, AnPeriodPicker, AnPeriodSheet, AnVisitorsRow, ResultMonthBars, LoadError, IosNav, NotificationBell, NgTemplateOutlet, Segmented, Sheet, Skeleton,
+    AnPartnerSales,
     RouterLink,
     PageHeader,
     EurPipe,
@@ -264,7 +270,8 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                       [bellCount]="bellCount()" [bellLabel]="bellLabel()" (back)="goBack()" (bell)="openBell()" (refreshed)="refresh()" />
     } @else {
       <div class="ios-page an an-phone" [attr.aria-busy]="busy() || filtering()">
-        <app-ios-nav [title]="phoneTitle()" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()">
+        <app-ios-nav [title]="phoneTitle()" [subtitle]="phoneCaption()" [backLabel]="backLabel()" [backAriaLabel]="backAria()" (back)="goBack()"
+                     [host]="hostPage()" (hostAction)="hostAction($event)">
           <span trail class="ios-glass-group">
             <button class="ios-circle an-bell" type="button" [attr.aria-label]="bellLabel()" (click)="openBell()">
               <app-icon name="bell" [size]="20" />
@@ -396,7 +403,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
           </div>
         }
         @case ('inventory') {
-          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: facturen van {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span>
+          <div class="an-bar"><span class="an-bar__text">Momentopname {{ todayText() }}@if (loadedAt()) { {{ loadedAt() }} } · tempo: {{ partnerPace() ? 'facturen en veilingverkopen' : 'facturen' }} van {{ inventoryMetrics().velocity.days }} dagen, zonder TICA</span>
             <div class="an-bar__end"><app-an-how [lines]="how.inventory" /><a class="wk-btn" routerLink="/stock/inventaris">Jaarinventaris ›</a></div></div>
         }
         @case ('purchasing') {
@@ -499,7 +506,7 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
                     <span class="an-tile tone-amber"><app-icon name="purchase" [size]="17" /></span>
                     <span class="an-row__body"><span class="an-row__title">Inkoop</span>
                       <span class="an-row__sub">{{ openContainersLine(cd.openCount, cd.totals.provisionalCount) }}</span>
-                      @if (paymentResultLine(cd.payment.netResultEur, cd.payment.eligibleCount); as line) { <span class="an-row__sub">{{ line }}</span> }</span>
+                      @if (extraRevenueLine(cd.payment.markupWithResultEur, cd.payment.eligibleCount); as line) { <span class="an-row__sub">{{ line }}</span> }</span>
                     <span class="an-row__end"><span class="an-row__value">{{ failed('inkoop') ? '—' : whole(cd.totals.remainingEur) }}</span>
                       <span class="an-row__meta">nog te betalen</span></span>
                     <span class="an-row__chev" aria-hidden="true">›</span>
@@ -757,6 +764,10 @@ const SALES_PERIOD_NOTE = 'Geldt voor Verkoop en Resultaat. Facturen tellen op h
               }
             </div>
           </section>
+        }
+        <!-- Veilingverkopen: what the partner reported, by sold day; its own layer, never in Omzet (the invoice from it counts there). -->
+        @if (!loading() && partnerSalesFigures(); as vv) {
+          @if (vv.all.reports) { <app-an-partner-sales [figures]="vv" [scope]="salesScope()" [unitOf]="partnerUnitOf" /> }
         }
       }
 
@@ -1321,6 +1332,7 @@ export class AnalysesPage {
   private readonly catalog = inject(CatalogApi);
   private readonly sales = inject(SalesApi);
   private readonly tica = inject(TicaApi);
+  private readonly partnerSalesApi = inject(PartnerSalesApi);
   private readonly finance = inject(FinanceApi);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -1381,6 +1393,34 @@ export class AnalysesPage {
   readonly backLabel = computed(() => capsuleLabel(this.origin().label));
   readonly backAria = computed(() => this.origin().label ? `Terug naar ${this.origin().label}` : 'Terug');
 
+  /** The native host's chrome: the bell, Vernieuwen, the ⋯ rows as the menu; pull to refresh runs refresh(). */
+  readonly hostPage = computed<HostPageInput>(() => {
+    const menu: HostMenuItem[] = [];
+    if (this.howLines().length) menu.push({ id: 'how', label: 'Hoe gerekend', icon: 'info' });
+    if (this.section() === 'market') menu.push({ id: 'addRate', label: 'Tarief toevoegen', icon: 'plus' });
+    for (const link of this.menuLinks()) {
+      const query = link.query ? new URLSearchParams(Object.entries(link.query).filter((pair): pair is [string, string] => pair[1] !== null)).toString() : '';
+      menu.push({ id: link.external ? `ext:${link.url}` : `nav:${link.url}${query ? '?' + query : ''}`, label: link.label, icon: link.icon });
+    }
+    const count = this.bellCount();
+    return {
+      actions: [
+        { id: 'bell', label: this.bellLabel(), icon: 'bell', badge: count || undefined },
+        { id: 'refresh', label: 'Vernieuwen', icon: 'refresh', disabled: this.busy() },
+      ],
+      menu, refreshable: true,
+    };
+  });
+
+  hostAction(event: HostActionEvent): void {
+    switch (event.id) {
+      case 'bell': this.openBell(); break;
+      case 'refresh': event.finish(this.refresh()); break;
+      case 'how': this.sheet.set('how'); break;
+      case 'addRate': this.addRate(); break;
+    }
+  }
+
   /* The bell as a proxy circle in the phone trail (critique B7, the home's pattern). */
   readonly bellCount = this.work.actionCount;
   readonly bellLabel = computed(() => {
@@ -1431,6 +1471,23 @@ export class AnalysesPage {
   readonly stockProducts = computed(() => { const levels = this.stockLevels(); return levels ? withAllLocations(this.products(), levels) : this.products(); });
   readonly salesOrders = signal<SalesOrderView[]>([]);
   readonly ticaDays = signal<TicaAnalyticsDay[]>([]);
+  /**
+   * Veilingverkopen (GET /api/partner-sales/analytics, every non-voided melding by sold day): Verkoop's card and the
+   * stock pace. null while unknown and on a backend without the portal (404: no card, invoices-only pace).
+   */
+  readonly partnerSalesData = signal<PartnerSalesAnalytics | null>(null);
+  /** The melding x product rows the pace and Nulvoorraad read; null = invoices only. */
+  readonly partnerPace = computed(() => this.partnerSalesData()?.products ?? null);
+  readonly partnerSalesFigures = computed(() => {
+    const data = this.partnerSalesData();
+    return data ? partnerSalesInPeriod(data, this.salesFromDate() || null, this.salesToDate() || null) : null;
+  });
+  /** A product's sales unit words for the card ("stuk"/"stuks", "display"/"displays"). */
+  readonly partnerUnitOf: PartnerSalesUnitFn = (productId) => {
+    const product = this.products().find((candidate) => candidate.id === productId);
+    const unit = product ? productSalesUnit(product) : null;
+    return unit ? { one: unit.singular, other: unit.plural } : { one: 'stuk', other: 'stuks' };
+  };
   /**
    * Verkoop's TICA card: the period's lines (loaded when the tab shows and TICA sold in the period), keyed by their
    * range so a newer period wins; omzet and transacties stay in Omzet per kanaal.
@@ -1525,6 +1582,9 @@ export class AnalysesPage {
     { from: this.salesFromDate() || null, to: this.salesToDate() || null, today: this.today() }));
   readonly allDocs = computed(() => salesDocumentRows(this.salesOrders(), this.customers(), { today: this.today() }));
   readonly ticaMonths = computed(() => ticaMonthRows(this.ticaDays(), this.salesFromDate() || null, this.salesToDate() || null));
+  /** The same rows as Resultaat reads them: the Enrosed kost of what was sold is margin, not cost (Emre, 2026-11-06). */
+  readonly resultDocs = computed(() => this.salesDocs().map(withEnrosedMargin));
+  readonly resultTicaMonths = computed(() => this.ticaMonths().map(withEnrosedTica));
   /** "Dit jaar · 1 jan – 20 okt 2026": the scope line of Verkoop's dialogs. */
   readonly salesScope = computed(() => {
     const label = this.salesPeriodLabel(), range = this.salesRangeText();
@@ -1579,12 +1639,14 @@ export class AnalysesPage {
     const tica = r.ticaTransactions ? plural(r.ticaTransactions, 'TICA-verkoop', 'TICA-verkopen') : '';
     const credits = r.creditNoteCount ? plural(r.creditNoteCount, 'creditnota', 'creditnota’s') : '';
     const cost = `kost ${this.whole(r.goodsCostEur)}`;
+    /* The margin holds the Enrosed kost of what was sold (revenue, never paid out); the foot says how much. */
+    const enrosed = !salesDown && !missing && Math.abs(r.enrosedEur) >= 0.5 ? this.enrosedWords(r.enrosedEur) : '';
     return [
       { key: 'revenue', label: 'Omzet', value: salesDown ? '—' : this.whole(r.revenueEur), tone: null,
         sub: `excl. btw · ${plural(r.revenueInvoiceCount, 'factuur', 'facturen')}`, foot: [tica, credits].filter(Boolean).join(' · '), drill: !salesDown && r.revenueEur !== 0 },
       { key: 'margin', label: 'Marge op goederen', value: salesDown || missing ? '—' : this.whole(r.marginEur), tone: !salesDown && !missing && r.marginEur < 0 ? 'danger' : null,
         sub: missing ? `${plural(missing, 'regel', 'regels')} zonder kost` : r.marginPct === null ? cost : `${pctText(r.marginPct, 1)} · ${cost}`, subWarn: missing > 0,
-        foot: '', drill: !salesDown && (missing > 0 || r.marginEur !== 0) },
+        foot: enrosed, drill: !salesDown && (missing > 0 || r.marginEur !== 0) },
       { key: 'costs', label: 'Eigen kosten', value: costsDown ? '—' : this.whole(r.costsEur), tone: null,
         sub: costsDown ? '' : r.unpaidCostsEur ? `${this.whole(r.unpaidCostsEur)} open incl. btw` : 'alles betaald',
         foot: !costsDown && r.depreciationEur > 0 ? `waarvan ${this.whole(r.depreciationEur)} afschrijvingen` : '', drill: !costsDown && (r.costsEur !== 0 || r.unpaidCostsEur !== 0) },
@@ -1594,6 +1656,10 @@ export class AnalysesPage {
         sub: plural(r.receivedContainers, 'container', 'containers'), foot: 'telt niet in het resultaat', drill: !this.failed('inkoop') && r.receivedContainers > 0 },
     ];
   });
+  /** "waarvan Enrosed-kost € 66": the part of Resultaat's margin that is the Enrosed kost of what was sold (label first, so a phone wraps before the amount). */
+  private enrosedWords(value: number): string {
+    return `waarvan Enrosed-kost ${this.whole(value)}`;
+  }
   /** A month of Per maand or the bars with something in it opens its rows. */
   monthActive(row: { revenueEur: number; marginEur: number; costsEur: number }): boolean {
     return row.revenueEur !== 0 || row.marginEur !== 0 || row.costsEur !== 0;
@@ -1696,10 +1762,11 @@ export class AnalysesPage {
   readonly categoryLabel = categoryLabel;
 
   /** The last invoice day per product: Nulvoorraad's order and the Aandacht list. */
-  readonly lastSold = computed(() => lastSoldOn(this.salesOrders()));
-  /* A failed sales load leaves the pace unknown (D-V4): never "every valued product is slow". */
+  readonly lastSold = computed(() => lastSoldOn(this.salesOrders(), this.partnerPace()));
+  /* A failed sales load leaves the pace unknown (D-V4): never "every valued product is slow". The partner's meldingen
+     count on their sold day (and not again through the invoice made from them) once they loaded. */
   readonly inventoryMetrics = computed(() => inventoryAnalysis(this.stockProducts(), this.expectedStock(),
-    { topLimit: 10, sales: this.failed('verkoop') ? undefined : this.salesOrders(), today: this.today(), lastSold: this.lastSold() }));
+    { topLimit: 10, sales: this.failed('verkoop') ? undefined : this.salesOrders(), partnerSales: this.partnerPace(), today: this.today(), lastSold: this.lastSold() }));
 
   /** Voorraad's four tiles (C.4): "—" for a source that failed (D-O3); Onderweg in euro and containers (D-V3). */
   readonly stockTiles = computed<KpiTile<StockTileKey>[]>(() => {
@@ -1830,7 +1897,8 @@ export class AnalysesPage {
   readonly whole = (value: number | null | undefined): string => eurWhole(value).replace(/ /g, '\u00a0');
   readonly plural = plural;
   readonly openContainersLine = openContainersLine;
-  readonly paymentResultLine = paymentResultLine;
+  /** "extra opbrengst € x" = Enrosed-kost + betaalresultaat, the Containerkost card's figure (Emre, 2026-11-06). */
+  readonly extraRevenueLine = extraRevenueLine;
   /* Read again on every tab switch: a period picked on Markt (same page instance) shows on Overzicht. */
   private readonly marketMonths = computed(() => { this.section(); return storedMarketMonths(); });
   readonly yearStartDay = computed(() => yearStart(this.today()));
@@ -1845,8 +1913,9 @@ export class AnalysesPage {
   readonly allSales = computed(() => salesAnalysis(this.salesOrders(), this.customers(), { today: this.today(), topLimit: 1 }));
   /**
    * The Inkoop digest row: what Containerkost opens on, its default filter "Nog niet volledig afgerekend" (same
-   * helpers, same filter), so the row and the tab it links to show one payment result; "op n" counts those with
-   * something open (D-O2). A settled container's result is on the tab under "Alle containers".
+   * helpers, same filter), so the row and the tab it links to show one Extra opbrengst (Enrosed-kost + betaalresultaat);
+   * "op n" counts those with something open (D-O2); "nog te betalen" never holds the Enrosed-kost (no payee stream). A
+   * settled container's result is on the tab under "Alle containers".
    */
   readonly containerDigest = computed(() => {
     const rows = containerCostRows(this.purchases(), 'open', '').map((row) => ({ ...row, paymentResult: purchasePaymentResult(row.view) }));
@@ -2124,8 +2193,10 @@ export class AnalysesPage {
     const r = this.result(), ctx = this.drillContext(), docs = this.salesDocs(), from = this.salesFromDate() || null, to = this.salesToDate() || null;
     switch (key) {
       case 'revenue': this.drillHost.open(revenueViews(docs, this.ticaMonths(), r.revenueEur, ctx, to)); break;
-      case 'margin': this.drillHost.open(marginViews(docs, this.ticaMonths(), missingCostRows(this.salesOrders(), { from, to }),
-        { marginEur: r.marginEur, marginPct: r.marginPct, missingCostLines: r.missingCostLines }, ctx, to,
+      /* Resultaat's margin holds the Enrosed kost of what was sold: its rows do too, so they add up to the tile. */
+      case 'margin': this.drillHost.open(marginViews(this.resultDocs(), this.resultTicaMonths(), missingCostRows(this.salesOrders(), { from, to }),
+        { marginEur: r.marginEur, marginPct: r.marginPct, missingCostLines: r.missingCostLines,
+          extra: Math.abs(r.enrosedEur) >= 0.5 ? this.enrosedWords(r.enrosedEur) : null }, ctx, to,
         ticaLineRange(this.salesFromDate(), this.salesToDate(), this.ticaDays(), this.today()))); break;
       case 'costs': this.drillHost.open([costsView(this.costRows(), r.byCategory.map((row) => row.category), r.costsEur, this.resultContext())]); break;
       case 'received': this.drillHost.open([receivedView(receivedContainerRows(this.purchases(), { from, to }), r.purchasedEur, this.resultContext(),
@@ -2147,7 +2218,7 @@ export class AnalysesPage {
     const first = `${month}-01`, last = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, '0')}`;
     const from = this.salesFromDate(), to = this.salesToDate();
     const costs = resultCostRows(this.costs(), { from: from && from > first ? from : first, to: to && to < last ? to : last, costCharge: this.costCharge, openEur: openOf });
-    this.drillHost.open([monthView(month, monthLabel(month), this.salesDocs(), this.ticaMonths(), costs, { resultEur: row.resultEur, complete: !r.missingCostLines },
+    this.drillHost.open([monthView(month, monthLabel(month), this.resultDocs(), this.resultTicaMonths(), costs, { resultEur: row.resultEur, complete: !r.missingCostLines },
       this.resultContext())]);
   }
 
@@ -2157,7 +2228,7 @@ export class AnalysesPage {
     if (code === null) { this.drillHost.open([generalCostsView(this.costRows(), r.generalCostsEur, this.resultContext())]); return; }
     const row = r.byChannel.find((candidate) => candidate.channel === code);
     if (!row) return;
-    this.drillHost.open([resultChannelView(code, this.salesDocs(), this.ticaMonths(), this.costRows(),
+    this.drillHost.open([resultChannelView(code, this.resultDocs(), this.resultTicaMonths(), this.costRows(),
       { resultEur: row.resultEur, complete: !row.missingCostLines && !row.ticaMissingCostLines }, this.resultContext())]);
   }
 
@@ -2346,7 +2417,7 @@ export class AnalysesPage {
       this.loadedFilterKey = JSON.stringify(filters);
       const overviewFilters = this.overviewFilters();
       const sameFilters = this.sameFilters(filters, overviewFilters);
-      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels, tica] = await Promise.allSettled([
+      const [report, purchases, suppliers, products, sales, customers, expectedStock, costs, incoming, partners, overview, unfocused, levels, tica, partnerSales] = await Promise.allSettled([
         this.sourcing.receiptVariances(filters),
         this.sourcing.purchaseOrders(),
         this.sourcing.suppliers(),
@@ -2360,6 +2431,7 @@ export class AnalysesPage {
         filters.orderId === null ? Promise.resolve(null) : this.sourcing.receiptVariances({ ...filters, orderId: null }),
         this.catalog.stockLevels(),
         this.tica.analytics(),
+        this.partnerSalesApi.analytics(),
       ] as const);
       const warnings: string[] = [];
       if (round === this.varianceRound) {
@@ -2376,6 +2448,10 @@ export class AnalysesPage {
       if (products.status === 'fulfilled') this.products.set(products.value); else warnings.push('voorraad');
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
       if (tica.status === 'fulfilled') this.ticaDays.set(tica.value); else warnings.push('TICA verkopen');
+      /* A backend without the portal (404) has none: no card, no warning. Another failure keeps the last rows. */
+      if (partnerSales.status === 'fulfilled') this.partnerSalesData.set(partnerSales.value);
+      else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
+      else warnings.push('veilingverkopen');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
       if (costs.status === 'fulfilled') this.costs.set(costs.value); else warnings.push('kosten');

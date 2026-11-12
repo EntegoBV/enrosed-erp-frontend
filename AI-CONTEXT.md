@@ -94,7 +94,10 @@ the workspaces. All CSS lives in one global partial,
   label so five view tabs fit 360px), `app-ios-nav` (large title that
   condenses into a glass bar; [lead] [trail] [caption] [below] slots;
   `customLarge` + [hero] put the screen's own block in place of the large
-  title), `app-ios-tabbar`
+  title and the bar condenses when the block's own h1 has gone under it, not
+  when all of the block has; two states on the bar: `ios-nav--condensed` and
+  `ios-nav--stuck`, the [below] sub-bar on its sticky line; `ios-nav--large`
+  on a large title), `app-ios-tabbar`
   (floating tab bar plus accessory button; tabs use replaceUrl),
   `[appSwipeActions]` (multi-action swipe rows, geometry in row-actions.ts),
   `app-wk-side-foot` (sidebar foot with "Terug naar …" and the account),
@@ -105,7 +108,8 @@ the workspaces. All CSS lives in one global partial,
   `MediaApi.allAssets()` + `collectPages()` (paging past the server's
   200-row cap), `appAuthLazy` on AuthImage, `Ui.toast(text, kind, action)`
   for undo toasts, `variant="ios"` on app-sheet and app-context-menu,
-  `iconName` / `checked` / `cancelLabel` on context menus, and about sixty
+  `iconName` / `checked` / `cancelLabel` on context menus (a `disabled` item
+  is greyed in the phone sheet as in the desk popover), and about sixty
   icons in icon.ts ('more' is the horizontal ellipsis).
 - Tones: `tone-accent`, `-ok`, `-warn`, `-danger`, `-blue`, `-teal`,
   `-amber`, `-green`, `-plum`, `-grey`, `-ink` set `--tone` for tiles,
@@ -153,6 +157,11 @@ load lazily: the phone motion, the '/' and '?' keys and the route progress
 with preloading are install functions imported from their own effects in
 App, and Sneltoetsen is an `@defer` block. Keep new shell code out of the
 first screen the same way; area CSS in global partials counts against it.
+Main stood at 951.05 kB before the native host (2026-10-29); the host adds
+only its facade (`HostBridge`: detection, the transport, the signals) and
+host.scss to the first screen, because `host-bridge-impl.ts` and
+`host-symbols.ts` load through `import()` inside a host, and the production
+initial total was 969.33 kB (188.28 kB transfer, 12 files; 967.77 kB before the refused back and the hidden boxes of 2026-10-30, 967.09 kB before the review's fixes of that day, 963.20 kB before the bands' opaque rest, the sales steps' band and the card covers of 2026-10-30, 960.01 kB before the host's strip offsets, stuck bands, sales card and sheet cards of that day, 959.02 kB before the legacy bar's glass and the home's four-block Cijfers row of 2026-10-30, 958.21 kB before the detail screens' host rules of that day, 956.73 kB before the glass bands, the home rows and the large-title hysteresis; main 951.05 kB in 9) and is 971.61 kB (188.59 kB transfer) since the pallet round of 2026-11-04 (970.8 kB when Palletberekening shipped): the baseline from now on.
 
 **Motion** (`src/styles/motion.scss`, loaded after the kit; `shared/motion.ts`):
 - Tokens: `--dur-1` 120 ms (press, hover, fades), `--dur-2` 200 ms (menus,
@@ -214,7 +223,8 @@ host stays inline):
 - Phone: 44 px bar (`--appbar-h: calc(44px + safe-t)`), large title 34/800
   with the subtitle as caption on root screens (condenses into the glass
   bar, `observeLargeTitle` in `shared/large-title.ts`, shared with
-  app-ios-nav), the glass bar with title over subtitle on detail screens.
+  app-ios-nav), the glass bar with title over subtitle on detail screens
+  (the sales editor's is opaque, over its dark card).
   Back control: none on the five tab roots, else the screen below in the
   history ("‹ Verkoop", history back), without history the parent's label,
   backTo's screen label, or the root of the screen's tab (`phoneTabRootFor`:
@@ -367,7 +377,12 @@ never shows the form again.
   (history back when the parent is below, else its last URL), `back(fallback)`.
   On a pop the restored entry takes the pop's id (Angular rewrites the
   browser entry's navigationId) and must show the same path (after a
-  reload ids restart at 1). "Below" is the first entry that shows another
+  reload ids restart at 1). Every entry also carries `page`, the router's
+  `ɵrouterPageId` (its place in the browser's history): a pop finds its
+  entry by that first (`restoredEntry`), by the restored id only where no
+  page is known. `keepForReload()` / `dropKept()` / `kept`: the stack
+  survives a reload the app starts itself (see "A newer build in an open
+  app"). "Below" is the first entry that shows another
   screen: the sections of `/analyses/:section` count as one
   (`navScreen`, `screenBelow`; back goes there with `historyGo(-n)`);
   `/settings?sectie=…` and other query views stay entries of their own.
@@ -401,6 +416,103 @@ render-blocking stylesheet, no unstyled first frame); vercel.json marks the
 hashed chunk/main/polyfills/styles files immutable and push-sw.js no-cache
 (check the first Vercel deployment of that change once: if it fails on
 vercel.json, drop only the headers block).
+
+## A newer build in an open app (2026-11-10)
+
+Nothing used to make an open session load a new build: the web app only
+reloaded when a lazy chunk was gone, the native shell loads its pages once
+and iOS keeps an app for days. A fix that was live was not on the phone that
+reported the bug. Now the app notices a newer build and reloads itself for
+it, silently, at a moment when nothing can be lost.
+
+- **Files**: `core/platform/fresh-build.ts` (pure: the constants, the build
+  id, `decideBuildReload(situation)`, the rules in its head comment),
+  `fresh-build-service.ts` (lazy chunk: reads the page, asks, reloads),
+  `reload-guard.ts` (main bundle: the per-tab record and the questions both
+  reloads share), `core/api/in-flight.ts` (requests that have not answered),
+  the effect `freshBuild` in `app.ts` (signed in and not `bare()` only).
+- **Build id**: the sorted hashed entry files,
+  `main-D5NXTMQC.js|styles-SZC5YEUP.css`. Not the main script alone: a
+  release that only changes `styles.scss` renames only the stylesheet. A
+  development build (unhashed) has no id and nothing is installed.
+  `buildCode(id)` is the short form on Meer's foot ("Aangemeld als emre ·
+  D5NX-SZC5"): the build of that document. In the native shell every tab is
+  its own web view and loads on its own, so it is the Meer tab's build only;
+  the device log's `build … -> …: reload (…)` names each web view's reload.
+- **Asking**: `fetch('/index.html', {cache: 'no-store'})`, parsed for the
+  entry files. When the page comes back in view (`visibilitychange`,
+  `pageshow`, the host's `lifecycle active`), every 5 minutes in view, on
+  arrival at another screen; never more often than every 3 minutes. A failed
+  check is silent and may be repeated after 20 s. A newer build's files
+  (entry files and modulepreload chunks) are fetched into the HTTP cache
+  first; only then is it "ready", so the reload itself needs one small file.
+- **Young build**: taken only once it has been live 10 minutes (the backend
+  of a release goes live minutes after its frontend). Its age is the longer
+  of two lower bounds: since this device first saw it (`localStorage
+  enrosed.build.seen`, shared by the tabs) and the host's `Age` header on
+  index.html (Vercel's edge sends it). A roll-back to a build seen before is
+  not young.
+- **The API answers** (public `GET /api/auth/ping` within 1.5 s, any status
+  below 500) right before every reload, else "server": a page given up while
+  the backend is down comes back empty, with blank counts.
+- **The two moments**. Arrival: a navigation ended on another path, the
+  screen came to rest (no HttpClient request for 300 ms) within 2.5 s, and
+  nobody touched it since it appeared. Quiet: away (hidden, the app in the
+  background) and untouched for 5 minutes, and within 5 s of coming back,
+  before anyone reads; after those seconds the time away no longer counts.
+  In view: untouched for 30 minutes (someone may read without a touch; the
+  pointer on an embedded frame such as a PDF preview, or the focus in one,
+  counts as a touch). In the native shell also a tab that is not on screen,
+  untouched for 5 minutes, while the app is in front. A search, filter,
+  tick or sort set on this screen makes every quiet time 30 minutes. The
+  shell's `refresh` is not a touch (it also sends one by itself for a stale
+  Home); a pull to refresh is seen through its touches.
+- **Never** over a sheet, popup, menu or toast (`OPEN_SURFACE`), a focused
+  text field (a search field or select does not count), text typed into a
+  field that is still on screen, an open file picker, a save or upload, a
+  native question, unsaved work; never hidden in a browser, never with the
+  native app in the background, never on `/login`, `/offerte`,
+  `/voorwaarden`.
+- **Once per build** per tab (`sessionStorage enrosed.build.reloaded`, shared
+  with the missing-chunk reload); twice when the load never got through. A
+  page that still runs another build after it stays as it is until a
+  different build appears.
+- **Same screen after it**: the address, the browser's history, NavHistory's
+  stack (`enrosed.nav.kept`: the native shell gets the same depth and
+  replaces in place), the window's scroll position and the workspace panes'
+  (`enrosed.build.scroll`). Not kept: a search older than 30 minutes,
+  unfolded groups, selections made by clicks.
+- **Two rules for new screens**: (1) an editor with unsaved state listens to
+  `window:beforeunload` and only calls `preventDefault()` while dirty or
+  busy; that is also the reload's question (`unsavedWork` dispatches a
+  synthetic event, no browser prompt). Work made by clicks without such an
+  editor marks an element with `data-unsaved` while it exists; also work
+  kept only in memory after its field or sheet is gone (Jaarinventaris
+  telling: a typed count a chip or the search hides; Kosten & bank: a
+  bank-cost registration or bank link waiting for its retry; the Documenten
+  tray). A typed field that left the page counts as closed. (2) A popup
+  that is not an `app-sheet`, `.cm`, `.wk-popover` or `[role="dialog"]` gets
+  `data-kit-overlay`.
+- **Try it locally** (development build only; a production build never reads
+  the hook): in the console
+  `sessionStorage.setItem('enrosed.build.debug', JSON.stringify({running:
+  'main-AAAAAAAA.js|styles-AAAAAAAA.css', latest:
+  'main-AAAAAAAA.js|styles-BBBBBBBB.css', checkMs: 2000, quietMs: 15000,
+  viewMs: 30000, watchMs: 2000})); location.reload()`. Every decision is
+  printed as `[build] arrival|quiet reload|none <why>`. Change `latest` to
+  see the next build; remove the key to end. `ageMs` (default 0 with the
+  hook) shows the young hold.
+- Every release reaches open sessions within minutes, 10 minutes after it
+  went live at the earliest: by then its backend is live too. "The new
+  frontend works against the old backend" still holds for the minutes in
+  between (cold starts, a missing-chunk reload).
+- `push-sw.js` takes over at once (`skipWaiting`, `clients.claim`): it keeps
+  no caches and handles no fetch, and windows that reload themselves would
+  otherwise keep an old worker for good. When a sale's sound is refused in
+  a visible window, the page shows the system banner itself. The toast
+  comes every time anyway: a created banner can still stay out of sight
+  (Focus or Do Not Disturb, an app in front on iOS), and a missed sale
+  costs more than a banner plus a silent toast now and then.
 
 ## Wide phone shell (iPhone Duo, 2026-10-29)
 
@@ -451,7 +563,19 @@ or `left + right + max-width + margin-inline: auto`, never a transform
 (trap rule). The long-press menu reads the bar's rect when it opens, so it
 follows on its own; it closes on a resize (a fold) as on a scroll. The
 large title's observer rebuilds when the bar's height changes
-(`observeLargeTitle`, a ResizeObserver on the bar).
+(`observeLargeTitle`, a ResizeObserver on the bar). Since 2026-10-30 the
+flip has hysteresis: two IntersectionObservers, the title condensing the
+moment its sentinel passes under the bar's line and releasing only once
+the sentinel is 24 px below it again, so a sentinel resting on the line (a
+scroll that stops there, a rubber-band, the native shell's bar) no longer
+flickers the bar, the small title or the host's native title (Emre:
+"wanneer ik te snel scrol flikkert alles"). The release is bounded by where
+the sentinel stands at the top of the page, so a small title under a high
+line still comes back at the top. The line is the bar's height unless a
+getter names another (IosNav's `stuck`: the sub-bar's own computed top), and
+in a host it is read again when `data-host-strip` or `data-host-bar` changes,
+two frames later too (`onHostLineChange`: under reduced motion a computed top
+is one frame in flight, motion.scss).
 
 **Sheets and toasts as cards.** Every phone `.overlay > .sheet` keeps clear
 of the side insets; on the wide phone it is a floating card: 16 px off the
@@ -470,11 +594,24 @@ tiles); rows, forms, groups and cells keep the phone's layout; stretched
 segmented controls are capped at 480 px, left at the inset. Two columns only
 where two independent blocks sit side by side and the desk already proves
 the split, from 800 px (`(min-width: 800px) and (max-width: 1023.98px) and
-(hover: none)`): the home (Kas + Te doen beside Agenda + Cijfers, the
-8 px gutter on the hinge; `.home-phone__body` / `__col` wrappers,
-blocks on narrower phones, never `display: contents`, the '+' stays a
-direct child of `.home-phone`) and Analyses (the desk's own `.an-col`
-pair). No list, document, form or sheet goes two-column.
+(hover: none)`): the home (since 2026-10-30, twice that day: Kas with
+Te doen right under it on the left, the Agenda beside them spanning both
+rows, the second row `1fr` so the Agenda's surplus height lands there and
+not half in the Kas row (a spanning item spreads its height over every
+intrinsic row it crosses), the shorter column simply ending earlier; then
+Cijfers across both columns, four blocks a row on five tracks: two
+quarter tracks per column (215 px at 951) around a 20 px gutter track that
+a `::before` keeps free in every row, so with the 10 px gaps beside it the
+blocks keep the other rows' 16 + 8 + 16 px gutter on the hinge (wide
+blocks span 2 there, the rows carry no gap of their own and the blocks a
+10 px bottom margin, since an empty spanned row would still open a gap);
+then Meer cijfers across both on a subgrid with its search card left and
+its rows right; cells top-aligned, nothing on the hinge; the
+`.home-phone__body` / `__col` wrappers are blocks on narrower phones and
+`display: contents` only inside this query, the sections placed by
+`grid-column` / `grid-row`; the '+' stays a direct child of
+`.home-phone`) and Analyses (the desk's own `.an-col` pair). No list,
+document, form or sheet goes two-column.
 
 **Hover gates.** WebKit keeps `:hover` on the last tapped element, so
 `:hover` rules a finger reaches sit in `@media (hover: hover)`; their
@@ -511,14 +648,38 @@ before its first frame; `navRailFor` and `stripSide` are pure):
 - otherwise a touch screen of the phone shell held sideways and at least
   340 px high (`(hover: none) and (max-width: 1023.98px) and (orientation:
   landscape) and (min-height: 340px)`: an unfolded Duo whose strip stays
-  outside the page, the Duo folded sideways, a landscape iPhone):
-  `data-nav-rail="right"`. The rail stands 10 px inside the right safe area
-  and the page keeps clear of it. Lower (a phone browser's landscape tab
-  with its bars, about 300 px) the rail and its '+' (318 px) would run off
-  the top, so the bottom bar stays;
+  outside the page, the Duo folded sideways, a landscape iPhone), or an
+  iPhone Duo folded upright (`data-duo` and `(hover: none) and
+  (orientation: portrait) and (max-width: 383.98px)`; a Split View pane on
+  the unfolded display is 385-475 px and keeps the bottom bar, since the
+  page cannot tell which pane it is in): `data-nav-rail="right"`. (The
+  folded-upright rail was removed again the same day, see "On the Duo
+  itself"; the landscape case stands.) The rail stands 10 px inside the right safe area and the page
+  keeps clear of it (the lane, `--rail-lane`: the rail and 10 px on each
+  side). Lower than 340 px (a phone browser's landscape tab with its bars,
+  about 300 px) the rail and its '+' (318 px) would run off the top, so the
+  bottom bar stays;
 - otherwise the bottom bar. The insets are read from a hidden fixed probe
   padded by `env(safe-area-inset-*)`, again on every resize (twice: iOS
   settles them late) and whenever either media query flips.
+
+**On the Duo itself** (`data-duo`, no strip inset; Emre, 2026-10-29: "rechts
+helemaal tegenaan"): unfolded sideways (the 867 px page; a device
+measurement, github drudge/sable#480, has the strip on the right in both
+turns) the rail stands against the page's right edge (`--rail-x:
+env(safe-area-inset-right)`, 0 there) with an 8 px lane to the content, so
+beside the strip it is as far right as the page goes. Folded sideways
+(594 px) the strip is on the camera's side, left or right, which the page
+cannot tell: the rail keeps its 10 px margin there. Folded upright (382 px)
+and unfolded upright (669 px) keep the bottom bar: a folded rail was tried
+for an afternoon (icon-only, 52 px, leaving 322 px of page) and taken out
+again on his word ("fix zoals vroeger"), because the rows were drawn for
+more. What that sweep taught stays: subtitles that could end in '…' wrap to
+two lines instead (Documenten's collection hints and empty folder card,
+Kosten & bank's Rapportage row, the website overview widget, the SEO
+audit's empty cell). The strip itself is for the native shell
+(enrosed-erp-ios, 2026-10-29 onwards), where the page sees it as an inset
+and the rail stands in it.
 
 **The rail** (`styles/nav-rail.scss`, loaded last, every selector starting
 with `:root[data-...]` so it out-ranks the bottom bar's rules): the ERP tab
@@ -550,14 +711,23 @@ the upright poses (about 124 pt unfolded, 170 pt folded); folded sideways
 the status bar is hidden and native bars start 24 pt from the top, so the
 rail may reach up there. Two columns from 800 px (the home, Analyses)
 assume an 800 px page: with the lane and no strip they wait until 928 px
-(a sideways iPhone at 852 or 896 keeps one column; the Duo at 951 has
-two). On the unfolded Duo held sideways (`(hover: none) and (orientation:
-landscape) and (min-width: 928px) and (max-width: 960px) and
-(min-height: 560px)`) the split stands on the hinge, 475.5 pt from the
-page's left edge, not in the page's middle: the lane or the strip on the
-right made the page narrower than the display and put the second column on
-the fold (Emre, 2026-10-29). The right column takes the smaller share
-(about 384 px at 951). The website text editor's bar steps aside while
+(a sideways iPhone at 852 or 896 keeps one column, the home's Cijfers
+blocks back in the kit's two columns, Meer cijfers' search card with its
+12 px above the rows), except on a Duo. On
+the unfolded Duo held sideways (`data-duo` and `(hover: none) and
+(orientation: landscape) and (min-width: 860px) and (max-width: 960px)
+and (min-height: 560px)`: the 867 px page beside the strip, or 951 with
+the strip as an inset) the split stands on the hinge, 475.5 pt from the
+page's left edge, not in the page's middle: the lane made the page
+narrower than the display and put the second column on the fold (Emre,
+2026-10-29); nav-rail.scss sets the home's left track as `--home-col-1`,
+which the body and the Cijfers quarter tracks read (home-phone.scss),
+and Analyses' columns directly. The right column takes the smaller share
+(311.5 px at 867, cards 279.5; 384 at 951). The same split holds inside the native host
+(`:root[data-host][data-host-device='duo']`, since 2026-10-30: App skips
+the rail and the Duo status bar there, so neither `data-duo` nor
+`data-nav-rail` is set, and the Duo's page spans the 951 pt display with
+the strip as its right inset). The website text editor's bar steps aside while
 typing only at the bottom; the rail stays in its lane. Screens only: a
 printout gets no lane.
 
@@ -575,12 +745,501 @@ home-screen web app does not see the strip as an inset: iOS keeps it out of
 the page, as WebKit says Safari 27.1 keeps web content out of the space
 behind the side controls, and fills it white (the opaque `default` status
 bar; non-updated native apps get a black bar there). A page cannot draw in
-that strip. The only lever is `apple-mobile-web-app-status-bar-style`
-`black-translucent` (read when the app is added to the Home Screen), which
-iOS 26/27 pairs with a progressive blur under the status bar and missing
-top insets in standalone (WebKit 301994); it is not tried. Since iOS 26
-neither `theme-color` nor the manifest colours a home-screen app's status
-bar.
+that strip. With the translucent status bar (below) iOS paints the strip in
+the page's background colour instead, so page and strip read as one beige
+surface with the clock in the strip; the page still ends at the strip
+(867 px unfolded sideways, 382 folded upright; the one-column home at 867
+proved the width), so the rail stands against the page's edge, beside the
+clock column, never under it. Since iOS 26 neither `theme-color` nor the manifest colours a
+home-screen app's status bar.
+
+**The Duo's translucent status bar** (Emre: "Zet op prod", 2026-10-29;
+`core/platform/duo-status-bar.ts`): on a Duo-sized screen (466 x 678 or
+669 x 951 in either orientation; WebKit keeps reporting 466 x 678 after
+unfolding) the shell sets `data-duo` and switches
+`apple-mobile-web-app-status-bar-style` to `black-translucent` at start-up;
+every other device keeps the opaque `default`. iOS reads the meta when the
+app is added to the Home Screen, so it takes effect only after the app is
+removed and added again from Safari. Under a translucent bar the page draws
+under the status bar, which on the Duo is the strip, so the strip may then
+arrive as an inset and the side rail stands in it. iOS 26/27 blur what a
+translucent bar covers unless a solid fixed element runs along that edge
+(at least 6 px deep, 80 % long, within 4 px; not a pseudo-element, checked
+by hit-test): two real, hit-testable `.safe-paint` elements in the page
+colour, sized by the insets (`nav-rail.scss`), along the top (z 65, over
+the sticky bars) and in the strip (z 39, under the rail). Seen on the
+device after re-adding (2026-10-29): the strip turned beige with a dark
+clock, the page did not reach into it (no side inset), so the paint
+elements have no size there; they stay for a future iOS that lets the page
+in. Not seen yet: the unfolded upright pose's top inset.
+
+## Native host (enrosed-erp-ios, 2026-10-29)
+
+Emre wanted a TestFlight app around the ERP with real native chrome ("echte
+native componentjes voor Duo", glass buttons, every page adapting, the
+actions "tot rechts" in the Duo's strip). The web side is **host mode**: the
+ERP runs in a WKWebView of the Swift shell (`/Users/work/Documents/GitHub/
+enrosed-erp-ios`, brief `docs/implementation-brief.md` there), publishes a
+**page descriptor** for the screen on view and the shell draws the tab bar,
+the navigation bar, the back button and the toolbar items from it (on an
+iPhone Duo in the side strip, on a Pro Max as horizontal bars). Host mode
+is invisible without a host: a host-only change keeps the PWA
+pixel-identical (the pixel diff below), so every host style lives under
+`:root[data-host]` and every message behind `HostBridge.present`; a change
+meant for both (the glass bands, the home rows and the legacy bar's glass
+of 2026-10-30, the earlier small title of the purchase order and the product
+view of that day, only once scrolled) may differ on exactly those shots and nowhere else, and the
+desk (1280×800) stays identical. Web changes for it go to production
+`main` only (no test environment for this work).
+
+**Detection and start** (`core/platform/host.ts`, pure): `window.enrosedHost`
+(the shell's document-start script) or the user-agent suffix
+`EnrosedHost/1 (iOS; duo|phone)`. `installHost(document)` marks
+`<html data-host="ios" data-host-device="duo|phone">` and runs FIRST in
+`App`'s constructor; in host mode App then starts `HostBridge` and skips
+`installNavRail`, `installDuoStatusBar`, the lazy `installNavMotion` and
+the tab bar's long press (the shell has title menus for the sections). The
+web is always the phone shell there (a WKWebView reports `hover: none`).
+
+**The contract** is `tools/host-contract.json` (JSON Schema, draft 2020-12;
+the same file lives in the iOS repo; change both or neither). Transport:
+web → native `window.webkit.messageHandlers.enrosed.postMessage(JSON)` (fire
+and forget) and `enrosedAsk.postMessage(JSON)` (a reply is awaited);
+native → web `window.enrosedHost.receive(json)`, the web registering one
+handler per command type with `enrosedHost.on(type, fn)` and then calling
+`enrosedHost.ready()` (commands received before that are queued). Messages
+web → native: `ready`, `auth`, `theme`, `badges`, `nav.willChange`, `page`,
+`scroll`, `overlay`, `haptic`, `file`, `share`, `openExternal`,
+`refreshDone`, `log`, and since round 4 `session`, `today`, `nav` (below); asks: `confirm` (with an optional `secondary`
+button: the leave question's Niet opslaan) and `prompt`. Commands native →
+web: `action {id}`, `back {count}`, `open {url, nav}`, `tabRoot`,
+`lifecycle`, `refresh`, `insets`, `sessionCheck`. Both sides tolerate
+unknown fields. A `nav.willChange` goes out at NavigationStart with the
+requested URL; when the router settles on another URL (a redirect) a
+second one with `replace` and the final URL follows, and when the
+navigation never happens (NavigationCancel other than a redirect or a
+superseding navigation, NavigationError: a guard refused it, a dirty
+editor's leave question answered Annuleren; NavigationSkipped with a
+navigation still pending: one to the URL the router is already on cancels
+the earlier one as superseded and brings no NavigationStart of its own) one
+with `replace` and the current URL follows and the page goes out again, so
+the shell's stale-descriptor guard (a `page` whose `url` differs from the
+latest URL it knows is dropped) never drops a real page. The direction: `pop` on
+popstate, `replace` for replaceUrl (a named `tab` stays `tab`), else
+navDirection's answer with `tab` mapped to `push`, and a same-path query
+step that shows another screen (the agenda's day pick) is a `push` too:
+inside one web view the web's tab rule does not apply, and every
+navigation that grows the stack needs the shell's snapshot first.
+
+**Two halves** of the bridge: `HostBridge` (`core/platform/host-bridge.ts`)
+is a facade the PWA's initial bundle carries (detection, `present`, the
+transport send/ask/confirm/prompt/haptic/overlay, `contribute`, the
+signals); its `bind` and `start` load `host-bridge-impl.ts`
+(`HostBridgeImpl`: compose, publish, the commands, the shell messages)
+through `import()` once inside a host, and that chunk alone imports
+`host-symbols.ts` (the SF Symbol tables, `resolveSymbol`, `workspaceOf`;
+the workspace tab bars import it too, lazily). So the production initial
+total was 956.73 kB against main's 951.05 kB (host.scss and the
+facade) and is 969.33 kB since the glass bands, the home rows (then the
+four-block Cijfers row), the large-title hysteresis, the detail screens'
+host rules, the legacy bar's glass, the strip offsets, stuck bands, sales card
+and sheet cards, the bands' opaque rest, the sales steps' band and the card
+covers and the review's fixes of 2026-10-30 (967.77 kB before the refused back
+and the hidden boxes), well under the 1 MB error budget; 971.61 kB since the
+pallet round of 2026-11-04: the baseline to track.
+
+**Who publishes** (`core/platform/host-bridge-impl.ts`, through the facade):
+- `app-page-header` and `app-ios-nav` bind themselves to the bridge and
+  publish for every page that has one: title, subtitle, the back control
+  (`back {label, url}`; url empty when the web's own back decides, as on a
+  workspace root or a folder level), `largeTitle` and `condensed` (from
+  `observeLargeTitle`, with its 24 px release hysteresis since 2026-10-30,
+  so the `scroll` message no longer flips on a sentinel resting at the
+  line; on a [hero] page from the hero's own h1, so the native title comes
+  when that has gone), `titleEditable`, the stack and either
+  the page's explicit **`[host]`** input (`HostPageInput`: `primary`,
+  `actions`, `menu`, `accessory`, `titleMenu: 'auto'`, `workspaceTabs`,
+  `tabBar`, `guardsBack`, `refreshable`, and `title`/`subtitle`/`back`
+  overrides) with `(hostAction)` delivering the shell's actions by id, or,
+  without `[host]`, a **mirror** of the projected buttons
+  (`shared/host-page.ts` `describeMirror`: every visible button or link of
+  `.appbar__actions` / `[lead]` / `[trail]`, the first `.btn--primary` as
+  the primary, the page's `.fab` / `.ios-accessory` as the accessory, the
+  kit's `.ios-tabbar` as the workspace tabs; label from text or aria-label,
+  icon from `app-icon`'s `data-icon`; a native action clicks the element).
+  A `MutationObserver` keeps the mirror current. `app-page-header` adds its
+  own bell as the `bell` action in both modes. So every one of the ~60
+  header pages has native chrome, and no action appears twice: host.scss
+  hides the web controls on every page.
+- Pages without a header use the **`[hostPage]`** directive
+  (`shared/host-page.ts`): the login page (`chrome: false, tabBar: 'hidden',
+  statusBar: 'light'`), the sales document view (its `.shero-bar` is
+  hidden), the product editor (its `.product-mobile-header` and dock).
+- Long-lived parts **contribute** to every page of a workspace:
+  `WebsiteTabbar` contributes `tabBar: 'website'`, the four tabs and the
+  rows of its "…" sheet as the menu (`bridge.contribute('website', …)`).
+- Without a publisher within 300 ms of a navigation the bridge publishes a
+  bare page (title from `screenLabel`), so the shell never keeps stale
+  chrome.
+- Action ids are the page's method names. Reserved ids: `nav:<url>`
+  (navigates with `info: { nav: 'push' }`), `ext:<url>` (`openExternal`),
+  `workspaceBack` (leaves for `WorkspaceReturn.phoneUrl()` the way the
+  native stack expects, `leaveTo`: history back when that screen lies
+  below, else a replaceUrl navigation, so the depth never grows), `bell`
+  (the header's own bell opens the Meldingen sheet; it is no page id, a
+  page that declares `bell` itself keeps it), `editTitle` (a native
+  `prompt`, then the header's `titleChange`), `refresh` (the pull-to-refresh
+  id: the page's `(hostAction)` gets `{ id: 'refresh', finish(promise) }`
+  when it declared `refreshable`, else `WorkQueue.refresh`; the bridge
+  answers `refreshDone`. A page that declares a `refresh` action or menu
+  row of its own, Kosten & bank's Vernieuwen, receives it like any other
+  id).
+- Descriptors are deduped (JSON) and coalesced to one post per animation
+  frame; the **tab-bar probe** runs at that moment:
+  `getComputedStyle(.tabbar).display === 'none'` → `tabBar: 'hidden'`, so
+  the existing hide rules (the editors, the catalogue studio, the PO view's
+  dock, the workspace pages) keep deciding; `.tabbar` stays in the DOM in
+  host mode with `visibility: hidden`. An explicit `tabBar` in `[host]`
+  overrides it (the PO view keeps `'erp'`, Documenten's selection mode
+  sends `'hidden'`, the workspaces their own kind).
+- The **stack** (`nav-history.ts` `hostStack`): the screens bottom first up
+  to the current one, sections of one screen and replaceUrl entries
+  collapsed; the shell mirrors it as its NavigationStack path. A `/login`
+  entry is a root (`NavEntry.root`, carried over to the screen the sign-in
+  replaces it with): the stack starts over there, so the login page
+  publishes depth 0 and the shell pops to its root on sign-out. `back
+  {count}` → `NavHistory.popScreens`: history back that many screens
+  (never below a root), or, when history has nothing below, `webBack`: a
+  page whose back control names a url leaves through `leaveTo` (no stack
+  growth), otherwise the page's own back control runs (a folder up, a
+  document's section).
+- Shell-level messages: `ready` (build id = the main script's file name,
+  loggedIn, the theme colours read from `--rose` / `--rose-dark` /
+  `--ios-bg`, the URL), `auth` on `Auth.isLoggedIn()` changes, `badges`
+  (`actionCount` → sales and bell, `loginRequestCount` → more; since round
+  4 only once this web view's WorkQueue answered, as `nav`: a prewarmed web
+  view's zero counts blanked the tab badges and the bell's level), `theme`
+  on palette changes. `sessionCheck` → `Auth.recheckSession()` (the storage
+  event may not cross WKWebViews). `insets` (the window's insets, so top 0
+  on a strip pose) sets `--host-safe-t/r/b/l` on `<html>` and toggles
+  `data-host-strip` with `stripSide` (nav-rail.ts, the thresholds of the
+  shell's BarLayout: top <= 16, one side >= 72, the other <= 16). Publishing a
+  page sets `data-host-bar`: `large` with chrome and a large title, `inline`
+  with chrome and without one, nothing without chrome (the login page).
+- `Ui.confirm` asks the host (plain-text message, destructive flag, the
+  secondary button) and falls back to the web sheet when the host has no
+  ask handler; `Ui.toast` sends a `haptic` (success/error); every `app-sheet`
+  sends `overlay {open}` (the shell hides its tab bar under a sheet's dim)
+  and a light haptic. `saveBlob` posts `file {name, mime, base64}` for blobs
+  up to 20 MB (`postHostFile`); bigger ones keep the anchor download.
+  `PushSetup.hosted` is true in host mode (no Push API in a WKWebView):
+  Instellingen › Dit toestel says notifications come from the home-screen
+  app.
+- Round 4 (2026-11-07, for the app's widgets, Siri, search and sidebar;
+  additive, `hostVersion` stays 1, an older shell ignores them): three more
+  messages, all host-only and in lazy chunks.
+  - `session` (host-bridge-impl `sendSession`): the stored credential as it
+    is (`enrosed.auth`, base64(username:token)), username, displayName,
+    `expiresAt` and `apiBase` (the build's API_BASE), at boot and after every
+    sign-in, deduped per web view. Only for kind `session-v1`
+    (`Auth.credentialKind()`, `Auth.sessionExpiresAt()`: two read-only
+    getters, the only bytes this round adds to the initial bundle); a legacy
+    username:password never crosses. Native takes it only from the main
+    frame of the web origin, keeps it in the keychain and never logs it. Never
+    log or print it on the web side either.
+  - `nav` (`navMessage`): every NAV_GROUPS row this person sees (onlyUser),
+    NAV_WORKSPACES, PHONE_TAB_PAGES, symbols through `resolveSymbol`, the
+    WorkQueue counts and `isNew` (newUntil), plus `search`: the lists that
+    read `?q=` on open (customers, products, sales, purchasing; sales-list
+    and purchase-list since this round). Native opens a tab root's own list
+    with another query as `open` replace onto the mounted list, and a
+    query-only navigation reuses the component: sales-list, purchase-list and
+    product-list follow `queryParamMap` for that host open only (`nav:
+    'replace'` in the navigation's info) and read the address again on a
+    fresh list; sales-list and purchase-list then drop `q` from the address.
+    product-list keeps `q` in its address (Location.replaceState, so Terug
+    restores the search), which never moves `router.url`, the page's `url`
+    that native compares a hand-off with: in host mode it drops `q` from
+    the router's own URL once the navigation that brought it ended, and
+    writes its address again, so the same text after a cleared or retyped
+    field is never "already there".
+    While signed in and once this web view's WorkQueue answered (a fresh
+    queue's zero counts would blank the native menu's counts), a second
+    after its last change, only when its JSON changed.
+  - `today` (`features/dashboard/home-today.ts`, loaded with `import()` from
+    home-phone's one host-only effect): the Home's Kas headline with 30 days
+    of the sparkline and its link, Nu te betalen (`HomeData.payNowEur`, Emre
+    2026-11-07: Kosten & bank's Te betalen headline, the page the widget
+    opens, so open costs dated today or earlier plus the container terms due
+    now; not the desk Kas card's Vooruitblik figure with 30 days of fixed
+    costs; absent while the costs or the purchase orders are missing), the
+    top 6 of Te doen with their router urls (`homeTargetLink`), the bell's
+    count, today's TICA
+    (on the Brussels day, `ticaToday`, as the Home's TICA card), the rest of
+    today's agenda (3) and the next expected arrivals (5); `at` is
+    `HomeData.loadedAt`, so the snapshot moves when the Home reloads or a
+    figure changes. `day` is the Home's own day (the phone's calendar, day 0
+    of the sparkline), not Brussels abroad: native judges "van gisteren" by
+    the Brussels day of `at`. Once `tasksReady()`, 2 s after the last
+    change, only when it changed, at most 8 KB. The mapper keeps type imports only and no
+    object spread: esbuild lowers spread to shared helpers, and a helper or
+    runtime import there split them into a new initial chunk (+0.3 kB).
+    Native sends the existing `refresh` to the Home root when its copy is
+    older than 30 minutes on a return to the foreground.
+  Initial total: 971.74 kB on main 2f92dc9, 971.82 kB with this round.
+
+**A refused back** (`app.config.ts`: `withRouterConfig({ canceledNavigationResolution:
+'computed' })`, 2026-10-30, for the PWA's back too). The router's default,
+`replace`, left the browser one entry lower with the editor's URL written over
+that entry, while NavHistory's index stayed: after the leave question's Annuleren
+the next back was dead without a message (`/sales`, `/sales/1/edit`: nothing below
+to go to, and the editor hides the tab bar, so no way out) or landed a screen too far
+(`/purchasing/1/edit`: Annuleren, back, Niet opslaan ended on `/purchasing`).
+`computed` goes forward again to the entry it left, so the steps keep fitting; that
+way forward is a same-URL navigation (NavigationSkipped, nothing for the shell), and
+the shell sees `nav.willChange pop`, `nav.willChange replace` with the current URL, the
+page again, the same stack. It holds on three things. Every entry needs its
+`ɵrouterPageId`, so a `location.replaceState` of our own always passes
+`this.location.getState()` (the product list, the stock page, `replaceTabInUrl`; the
+product view's hash keeps `window.history.state`), which also keeps NavHistory's id: a
+filtered list no longer restarts the stack when you return to it. Only the query may
+differ from the router's URL: such an entry (`?tab=` on the purchase editor) comes
+forward as a real navigation without a guard, a `pop` and a page at the same depth; another
+path would be another screen and the question a second time. So a new product whose
+save got half way keeps its id in its entry's state (`createdProductId`,
+`rememberCreatedProduct`), not in the address bar: a reload of that entry or a return
+to it goes to `/products/:id/edit` by replace without asking, and a later save that
+succeeds navigates there too. And the router's scroller sends that way forward to the
+top like any other navigation, so NavHistory puts the page back where it stood
+(`refused`, `keepRefusedPosition`): `Scroll` reaches `router.events` before the
+scroller's own listener, so a microtask comes after it and before a paint.
+
+**Explicit `[host]` descriptors** exist for: Home (`+` Toevoegen, bell,
+the "…" rows, refreshable), the Verkoop/Inkoop/Producten lists (`+` and
+`titleMenu: 'auto'` from `tabMenuFor` with the queue's counts; Producten
+also Voorraad and its "…" rows), the sales document view (Bewerken/Beheren
+or In verwerking nemen as the primary, PDF, Annuleren / Order splitsen),
+the sales editor (Opslaan while dirty, else the dock's step chain; PDF;
+Annuleren; `guardsBack`), the purchase order view (the next step as the
+primary with `STEP_SYMBOL`, Bewerken, PDF, the "…" rows, `tabBar: 'erp'`),
+the purchase editor (Opslaan or the save bar's step, the Acties rows,
+`guardsBack`), the product view (Bewerken, the "…" rows), the product editor
+(`[hostPage]`: Opslaan/Aanmaken, the toolbar menu, the dock's state as the
+subtitle), Kosten & bank (`financeHostTabs` from FINANCE_NAV with the
+shell's counts, `+`, the "…" rows: `phoneMenuItems` / `pickPhoneMenu`),
+Documenten & media (the three tabs, `+`, Selecteer or Alles/Geen + Klaar,
+`tabBar: 'hidden'` while picking), the website (the contribution above),
+Analyses (bell, Vernieuwen, the "…" rows, refreshable) and the login page.
+Meer and Instellingen rely on the mirror (the bell, a dirty editor's
+Opslaan).
+
+**host.scss** (`styles/host.scss`, loaded last, every selector under
+`:root[data-host]`): `--tabbar-h: 0`, `--appbar-h: var(--host-stick-t)`;
+`.tabbar`, `.fab`, `.ios-tabbar`, `.ios-accessory` invisible but present (the
+probe and the mirror read them); `.tabbar-menu*` and `.safe-paint` gone;
+`.shero-bar`, `.mpo-dock`, the PO editor's whole `.mpo-savebar` (its state text
+and fill hairline with it; the summary card's Lading tile has the fill) and
+`.product-editor-dock` hidden boxes (below); the `.appbar` and `.ios-nav` bars and the
+product editor's `.product-mobile-header` become transparent spacers of height
+`--safe-t` (the native status bar + navigation bar, since the shell sets
+`contentInsetAdjustmentBehavior = .never`), their children hidden boxes, the large
+titles and `[hero]` / `[below]` blocks kept; the sales editor's dock loses
+Opslaan and the primary button and keeps the step and its arrows.
+
+*The hidden containers rule.* Nothing that can hold a sheet or a menu is ever
+`display: none` in the host: the header's bell sheet on every page with
+`app-page-header` lives in `.appbar__actions`, and with that display it had rect 0,0,0,0
+while `overlay open:true` went to the shell, so its bars and tab bar went and nothing stood
+on screen, with no way out. These containers (`.appbar__back/__lead/__actions`,
+`.ios-nav__lead/__title/__trail`, the docks above) are a box of no size: absolute, 0 x 0,
+`overflow: clip` (their laid-out children add no scrollable overflow), `visibility: hidden`,
+no z-index, and none of a transform, a filter, a backdrop-filter or a contain, so
+`position: fixed` escapes the box and a sheet stays in `.main`'s stacking context. The
+mirror's clicks reach the controls as before. An `.overlay` or `.cm` inside turns
+`visibility: visible` again (and takes taps inside the four `pointer-events: none`
+elements above), and `.appbar` or `.ios-nav` with a sheet in it stands at z-index 100,
+above what the page raises (the kit's nav is only 30). `PageHeader.fit` does nothing in the
+host: everything in the box reads as cut. Proven by a sweep on the harness's stub
+(2026-10-30): every id of `primary`, `actions`, `menu` and `accessory` of 93 phone routes,
+343 ids, one at a time on a fresh load at 466x678 and 440x956: every overlay visible and on
+top at five points of its sheet, its cross closes it, and no `overlay open:true` without a
+sheet. After the bell's rows nothing was left to fix.
+
+The room the
+phone pages kept at their end for the ERP tab bar and their docks is the kit
+page's `--safe-b + 28px` (`.ios-page`, `.mpo-phone--view` / `--edit` with the
+purchase root's scroll-padding-bottom, `app-sales-view .content.erp-workspace`,
+`.content.product-editor-page`); the sales editor keeps its 128 px for its
+dock. Toasts follow `--safe-b`.
+
+*The top offsets.* `--safe-t` is the spacer's height, `--host-stick-t` the line
+a sticky band stands on. In the bars poses (every iPhone, the Duo unfolded
+upright: the web view's top inset is constant, title or no title, 116 pt on a
+Pro Max upright and 78 in landscape) both are `env(safe-area-inset-top)`. On the
+Duo's strip poses (folded upright, folded sideways, unfolded sideways) the top
+inset is 24 pt without a native title and 82 pt with one, with or without a
+subtitle (measured on the iPhone Duo simulator, iOS 27.1, 2026-10-30), and the
+title comes and goes with the large title, so env() moved the whole page 58 px
+at every flip (Emre: "wanneer ik te snel scrol flikkert ook alles"). So there
+the page no longer reads env(): with `data-host-strip` and `data-host-bar`,
+`--safe-t` is 24 px on a `large` page and 82 px on an `inline` one and
+`--host-stick-t` is 82 px, and `--ios-nav-h` is the step between them, so the
+partials' `--safe-t + --ios-nav-h` (minimum heights, scroll padding) end on that
+line too. The flip changes no layout at all: not one rect in the shell moves
+when env() steps 24 → 82 → 24 at a scroll past it. Without chrome env() stays.
+Everything sticky takes the line: `.ios-subbar`, `.home-agenda__fold`, the
+sales view's and editor's steps, the product editor's tabs
+(`--product-header-h`) and every `--appbar-h` consumer; what measures it in code
+reads the band's computed top, not the bar's height (`phoneStickPoint`, the
+agenda's fold, IosNav's `stuck`). A large title without a caption ends above that
+line (24 + 50 px), so above a sub-bar its block reaches 4 px past it
+(`.ios-large:has(~ .ios-subbar)`): Documenten's sub-bar stood stuck from the first
+frame otherwise. The last direct readers of the top inset (the sales hero, the two
+photo lightboxes) go through `--safe-t`, the same value without a host. A fixed
+full-screen viewer publishes no overlay (only a sheet does), so the native bar and its
+title stay above it: Quick Look, the agreement photos and the photo lightbox put
+`--safe-t` back on env() and `--ios-nav-h` on 44 px on themselves
+(`[data-host-strip] :is(.files-ql, .agreement-viewer, .lightbox)`; the inherited step is
+already computed and would not follow), so their header clears the bar as it is at that
+moment (Downloaden at y 92 with the title, 34 without) and moves over a page that stays
+put. They are fixed to the viewport, outside the shell's side padding, so all three carry
+`--safe-l`/`--safe-r` themselves (the two photo viewers on the whole layer): the native
+strip stays above them too, and sideways its back button lay over the close control. The agreement viewer's stage has definite tracks (`minmax(0, 1fr)` both ways): in an
+auto row the photo's max-height had nothing to go by and ran over the caption at the
+title's height, and its mark wraps instead of ending in an ellipsis below 560 px. The loading
+state of a screen with a `[hero]` (`app-ios-nav [heroLoading]`: purchase view and
+editor, product view) publishes the kind of page that is coming, `largeTitle` with
+no bar title: a title that comes with the push stays until the push has ended, also
+when the data is there at once, and on a strip pose it stood over the hero's first
+row for half a second, and the offsets jumped 58 px from the loading state to the page.
+
+*The bands* (Emre on Documenten: "die boven header is mooi en dan die sticky is
+grijs ... gelijk een T"). The band under the native bar is the web scroll view's
+top edge effect (`.hard`, hidden until the offset passes 8 pt, WebSession.swift):
+clear at scroll 0, full-height glass as soon as content runs under it, reading
+rgb(251 248 245) over the page colour. A `.ios-subbar`, the product editor's tabs
+and the sales document's steps (view and editor) carry a `::before` that at rest
+is the page's own colour, opaque and invisible on the plain page: in a fast scroll
+the rows reach a band before the script says stuck, and a band that only faded in
+let them run through the search field for some frames (a screen recording of a
+fling on Documenten, frame by frame). Once stuck (`.ios-nav--stuck ~ .ios-subbar`,
+`.home-agenda__fold.is-folded .ios-subbar`, `.is-stuck`, set by the
+`hostStickyBand` directive in `shared/host-page.ts`; a sub-bar under an inline
+bar has no sentinel and always stands on its line) it turns to `--host-band` over
+.2 s: 85 % of that tone on `--ios-glass-filter`, with a .5 px `--ios-sep` hairline
+at its bottom; under `prefers-reduced-transparency` the tone without the blur.
+Stuck has no hysteresis (`observeLargeTitle`'s release 0): it flips nothing native,
+and held on the way back a band hung below the bar with page in the gap. The
+observers' roots run on far below the viewport, so a jump past a sentinel below the
+fold (the sales steps at 678 px high) still flips. The product editor's grey tray
+and the sales steps' pill (main's look at rest, also its blur) go while stuck, so
+the tabs read as one piece with the band; the steps stand on the line, the editor's
+no longer 8 px under it, and the sentinel leaves their rest position as main's. The
+steps' `::before` has no backdrop-filter at rest: inside the pill's own backdrop root
+even a `blur(0)` composites the pill's paint a second time across the whole band (a
+whiter tray, its shadow doubled and ending on hard edges). The
+band runs across the whole window (`inset: 0 -100vw`, clipped by `overflow-x: clip`
+on `.shell`, which spans the window: clip is no scroll container, so the bands keep
+sticking, and no containing block for the fixed sheets), under the side strip and
+beyond the 760 px column of a wide phone, so `scrollWidth` stays `innerWidth` on
+every pose. On a strip pose beside a plain large title (a `[hero]` condenses long
+before its sub-bar comes) the bar has no title and so no band while the sub-bar
+already stands on its line: the `::before` reaches up to the top of the screen in
+the plain page colour, under the title (`.ios-large` stands above it, z-index 30),
+so the title slides away sharp and no row ever shows above the sub-bar. When the
+title has gone it turns to glass .15 s later and lets go of the top .45 s later, as
+late as the native band comes; it reaches up again at once when the title comes
+back. The blur stays on the `::before` (trap rule); the plain `::before` has no hit
+area. The lighter page colours run on under the strip: the editor's
+(`.shell:has(#product-editor-workspace)`), and Website beheren's shell and main take
+the kit's page colour under a phone page. The native effect draws its own hairline
+at the bar's bottom ("a hard cutoff and dividing line", no API takes it off), so a
+stuck band stands under that line, tone against tone within a level. The PWA's own
+condensed nav and sub-bars are glass in the page colour (workspace-kit.scss,
+`--ios-glass`), and so is every phone bar of `app-page-header` (shell.scss
+`.appbar::before`), except over a near-black card, where 72 % of the page colour
+reads grey (about 188). So two kinds of bar stay main's opaque `--ios-bg`: the sales
+editor's standing bar (`app-sales-editor .appbar::before`; the glass took the customer
+name under its title to 2.6:1) and the nav of a page with a dark hero
+(`.ios-page:has(.ios-hero) .ios-nav::before`: Home, Bank, Kasprognose; on a wide phone
+the glass also stood as a box in the 760 px column and as a seam under the Duo's status
+paint). Only the PWA's bars: the host hides them.
+
+*The sales document.* Below 600 px the PWA's hero bleeds under the status bar,
+which in the host put the black status text and the native title on near-black.
+In the host it is at every phone width the card `sales-phone.scss` draws from
+600 px: `margin: var(--safe-t) 0 4px`, 22 px corners, on the page colour. The
+card is 24 px narrower than the bleed, so `.hero-details b` wraps instead of
+ending in an ellipsis and below 600 px the facts' columns are `.9fr .72fr 1.2fr`
+("verkoopeenheden" stays in its cell at 382 px). Scrolled, the near-black card of the
+view and of the editor ran under the native band, whose glass read grey over it
+(rgb(210 207 201) against 251 248 245, for as long as the card passes): a `::before`
+on the card, a sticky float that takes no room and is clipped to the card
+(`overflow: clip`, because a hidden box would be the sticky's own scroller), covers
+the part under the bar in the page colour. Home's Kas card and the Bank hero keep the
+native look, they pass in a moment and Home is the band Emre named as the reference;
+whether they get the cover too is his call, still open.
+
+*Sheets.* Below 600 px a sheet is a floating card too (Emre: "de popups
+dichtgeklapt zijn niet correct alsook niet mooi"; the wide phone's own card:
+"Sheets and toasts as cards"): `.overlay` pads `--safe-r + 8px`, `--safe-l + 8px`
+and `--safe-b + 8px`, every corner round (26 px on the iOS variant), the height
+limited to `100dvh - --safe-t - --safe-b - 16px`, the foot's bottom padding 12 px
+and its corners with the card, a foot-less body clips its rows on the corners.
+Grab, head drag and `mo-sheet-in` are untouched. The native band goes while a sheet
+is open (its glass stood out above the dim), so in the bars poses on a page with a
+bar one stripe (`:has(.overlay) .main::before`, fixed, as high as the top inset) keeps
+the top inset the plain page, no rows under the clock. It stands under every dim
+(z-index 59: above the rows, under the header's stacking context of 60, which holds the
+bell's sheet, and the overlay's 100), so it dims with the page at rest, while a sheet is
+dragged (`Sheet.placeSheet` lightens the overlay) and under a sheet on a sheet (92 87 85
+both on /stock's Voorraad boeken); it is there from the sheet's first frame and goes when
+its leave has ended, it does not fade. On the product editor it is the editor's lighter
+page colour (`--ios-bg` left a straight seam across the window, 145 against 149 under the
+dim). Under a stuck band it stays the plain page, 4 levels under the dim against the
+band's lighter tone (145 against 149 on Documenten). Voorraad boeken's select keeps no
+room for a chevron the phone's rows do not draw: "Magazijn Lokeren (288 stuks)" fits the
+366 px card. Folded sideways the
+purchase order's fill line wraps (`[data-host-strip] .mpo-fillrow__line`): the column
+is 594 px in a 678 px window and "15,180 m³ vrij" ran out of the card.
+
+A swipe row is a composited layer that snaps to whole device pixels and the
+group rounds its corners, so in WKWebView the coloured buttons behind it showed at
+its last pixel and in the corners (a blue and an orange line under Documenten's
+rows): `.ios-swipe__actions` has opacity 0 unless the row moves or is open
+(`.is-dragging`, `.is-open` from `SwipeActions`) or a keyboard's focus is on one,
+and stays .25 s while the row slides shut.
+
+**Checking** (headless, no device needed): `node tools/check-host.mjs --out
+<dir>` against the harness (serve.mjs + mock-api.mjs of the 2026-10-29
+session's scratchpad, a development build in its `dist`). It installs the
+shell's stub (`window.enrosedHost`, the two message handlers logging into
+`window.__hostLog`) via `Page.addScriptToEvaluateOnNewDocument`, sets the
+user-agent suffix, applies `Emulation.setSafeAreaInsetsOverride` per pose
+(951×669 t24/r84/b34, 466×678 t24/r84/b34, 678×466 t24/l84/b34, 440×956
+t116/b83, 669×951 t116/b83: what the web view really gets), answers `ready`
+with the `insets` command as the shell does (top 0 on a strip pose),
+screenshots every main route, dumps the messages, validates each against the
+contract and checks the web chrome hidden, the content clear of the strip and
+the spacer as high as the top inset, on a strip pose the constant of its kind;
+on the first pose it drives `action`, `back`, `open`, `tabRoot`, `refresh`,
+`insets`, `sessionCheck`, a sheet's `overlay` and `Ui.confirm` through the
+ask channel. Before pushing: the same routes WITHOUT the stub at 390×780,
+382×700, 669×900 and 951×669 must be pixel-identical (`pngdiff.mjs --dir`)
+between a build of `main` and the branch. The 2026-10-29 review's seven
+fixes (the lazy split, the bell, `leaveTo`, the refused navigation, the
+costs refresh row, the push direction, the login root) were checked the
+same way, with a probe of those six behaviours next to the checker
+(scratchpad `fix-verify/probe.mjs`). The strip offsets of 2026-10-30 were proven
+by stepping env() with `Emulation.setSafeAreaInsetsOverride` (the harness's
+hostflow step `{"safeArea":[t,r,b,l]}`) at a scroll past the flip, comparing every
+rect in the shell (none moved on /dashboard, /files, /purchasing/1, /products/1,
+/sales/1, /products/1/edit), and in the simulators from the shell's own metrics:
+the sentinel at scroll 300 and 900 is exactly the distance apart while env() goes
+from 24 to 82. What moves in a fling or a push only shows frame by frame: `xcrun simctl
+io <udid> recordVideo` during a probe of the shell (`scripts/probe.sh --probe script`
+in enrosed-erp-ios: pushes, pops, scrolls, a fling, rotations), frames pulled with
+`AVAssetImageGenerator`.
 
 ## Analyses (2026-10-17 redesign)
 
@@ -720,9 +1379,17 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   remaining > 0) · Verwachte/Definitieve externe kost, in cents; one card
   "Verschil met de afspraak" whose lines add up to the net with "Tegoed
   leverancier" (`supplierCreditEur`) and, only when ≥ € 0,50 is left,
-  "Overig · afronding" (`varianceLines`), the Enrosed-kost + betaalresultaat
-  line under a divider. Afspraak, Nog te betalen, each non-zero line and a
-  several-products Per eenheid range open the Analyses drill-down
+  "Overig · afronding" (`varianceLines`), and under a divider the row "Extra
+  opbrengst" = Enrosed-kost + betaalresultaat (`markupWithResultEur`; Emre
+  2026-11-06: Enrosed pays its Enrosed-kost to nobody, so it is revenue next
+  to what was paid less). The table's last figure column and the phone sheet
+  read the same per container (the sheet also lists Enrosed-kost and
+  Betaalresultaat apart), the Overzicht Inkoop row says "extra opbrengst € x"
+  (`extraRevenueLine`), and "Nog te betalen" never holds the Enrosed-kost (it
+  is no payee stream, neither in Kosten & bank's Te betalen nor the Kaslijn).
+  Afspraak, Nog te betalen, each non-zero line, the Extra opbrengst
+  (`costExtraRevenueView`) and a several-products Per eenheid range open the
+  Analyses drill-down
   (`AnDrillHost`; views in the pure `drill-container-cost.ts`, sum rule in
   tests/analyses-drill-container-cost.test.mts). Its few new rules sit in the
   component's own `styles` (analyses-tabs.scss is at its budget).
@@ -745,7 +1412,16 @@ app-load-error, app-skeleton, motion tokens). Branch work/redesign-analyses.
   they left a 250 px hole), Per maand with "mrt 2026", every month up to
   today (`resultAnalysis` `today` option; credit notes counted apart:
   `creditNoteCount`) and a Totaal row. "Alle kosten ›" carries the period
-  (`costsQuery`).
+  (`costsQuery`). Its margin counts the Enrosed kost of what was sold as
+  revenue (Emre 2026-11-06): `accounting.recognizedEnrosedEur` (`enrosedOf`)
+  and TICA's `enrosedCostEur` (`ticaEnrosed`) leave the goods cost and join
+  the margin in `resultAnalysis` / `withTicaResult` (`enrosedEur`); the
+  Marge tile's foot reads "waarvan Enrosed-kost € x" and its drills, the
+  month and the channel views read `resultDocs` / `resultTicaMonths`
+  (`withEnrosedMargin`, `withEnrosedTica`) so their rows still add up. So
+  Resultaat's margin = Verkoop's Brutomarge + that Enrosed kost; Verkoop,
+  the quote and the sales line keep the commercial margin. The Home
+  "Resultaat dit jaar" reads the same functions.
 - Markt: its own tool row (desk: period segmented, ECB line, "+ Tarief
   toevoegen"; phone: the tinted capsule "6 maanden ⌄" opening a "Periode"
   sheet, as the Kasprognose horizon), tiles fill the card, "Onze laatste
@@ -1077,7 +1753,10 @@ the rows behind it; **the rows add up to the clicked figure** (A.4).
   two-step share; "Toon in map" opens the folder list, not the file.
 - Uploads: a finished tray with failures, failed links or files the
   library already had never closes by itself; a toast, the phone's pill
-  and the desk status bar lead back to it.
+  and the desk status bar lead back to it. While the tray holds files only
+  in memory (picked and not sent, on their way, failed or not linked) the
+  page carries `data-unsaved` (`trayHoldsWork`), so the reload for a newer
+  build waits.
 - Records link back with "In Documenten & media ›" (product card here;
   cost sheet and purchase dossier in their own rounds): `?view=<key>&doel=`.
 
@@ -1505,6 +2184,42 @@ cijfers'.
   uit Kosten'. Never 'Raming'. Code identifiers (`begrootEur`,
   `UNBUDGETED`, `BUDGET`) keep their names.
 
+- Koppelen en splitsen op de inkooporder (Emre, 2026-11-04: "betalingen
+  kunnen koppelen en splitsen ook op inkoop order, niet persee altijd via
+  bank en kosten"; "als ik 1 vd 2 transactie verwijder popup … alles
+  dekoppelen").
+  - 'Transactie koppelen' (desk bar button, phone '+' menu "Toevoegen", the
+    phone 'Op de bank' group; the read view hands it to the editor with
+    `?section=link`, which returns to `?section=ledger` like a payment):
+    `app-purchase-bank-link-sheet` = the shared picker (`fixed`, `note`)
+    then Kosten & bank's own split (`ContainerSplit`) with a `source`
+    (`SplitSource` in container-split.ts; FinanceState is the default
+    source and has exactly those members). This container starts ticked on
+    the open payment or term of the line's amount, else (a counterparty
+    that is not the supplier) its Douane & transport. Booked through the
+    same calls (POST …/purchase-payment; …/purchase-share once an open
+    payment is a part). '+ Deel' with a rest of at most € 100 starts as
+    Transactiekosten of that rest (both places).
+  - 'Op de bank' (desk table `.pw-banktx` above Alle betalingen, phone
+    group above it): per bank transaction that paid this container, who got
+    what (a pill per part in the payee tones, other containers in grey from
+    GET /purchase-payments, 'elders € x' for what neither explains), ⋯ /
+    sheet with 'Openen in Kosten & bank' and 'Losmaken…'. Pure:
+    purchase-bank-transactions.ts.
+  - Losmaken everywhere (payment sheet, Op de bank, Kosten & bank 'Koppeling
+    losmaken'; not 'Splitsing aanpassen', which keeps the payments to link
+    them again): `BankUnlink.run` (finance/bank-unlink.ts) reads GET
+    …/unlink-plan, asks one question naming every part and what happens to
+    it (a part of a payment in parts leaves it or goes back into its open
+    part, Transactiekosten and a Bankkosten/Koersverschil difference cost
+    go, the rest stays noted), 'Bedrag houden' when a part would leave its
+    payment, then POST …/unlink with the plan's `expected`. A server without
+    the plan (404/405) keeps the old question and DELETE …/links. The
+    native host shows the same question as plain text.
+  - The payment sheet shows Betaalbron only for transfers not on the bank
+    (a linked one was always 'Eigen bankrekening', locked, once per
+    transfer) and its summary line reads the whole payment in parts.
+
 ## Screens and their scenarios
 
 ### Dashboard (home, `features/dashboard/`)
@@ -1684,15 +2399,14 @@ cijfers'.
   "aanpassen" inline panel: TE_BEPALEN or own amount), revision handling
   with two-line buttons (Wijzigen/Overnemen explain themselves, Afwijzen
   quiet), floating action bar with total · pallets · margin (intern).
-- **Pallets**: optional hand layout in a bottom sheet - start from the
-  calculation or empty, steppers per product ([− n +], + disabled when
-  everything is placed), pallet type select (Europallet default,
-  "Anders…" prompt), small height field (cm) echoed in the count line,
-  reorder/rename (pencil affordance)/delete, "indeling compleet" status
-  chip, Herbereken, "Terug naar automatisch". Freight follows manual
-  pallet count when pallets exist; never required for sending.
+- **Pallets**: Transport & levering (`app-shipping-planner`, see "Pallet
+  planner (2026-11-04)"): Automatisch is the server's count and layout
+  (mixed on a concept), Zelf indelen a hand layout that starts from it and
+  that the freight then counts; never required for sending.
 - PDF sheet: quote PDF in any of 8 languages, plus **Pakbon** (packing
   slip, grouped per pallet when laid out).
+- A line on the customer's own price wears a quiet K beside its price (round
+  3b): see "Klantprijs op offertes en facturen".
 - **Save queue**: every mutation goes through `enqueue(make)` - a strict
   promise chain applying each change to the freshest order. Two quick
   taps used to race and resurrect stale state (pallets came back
@@ -2024,6 +2738,249 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
   through the esbuild bundle its header names; in the plain node run it is
   one of the known failing files.
 
+### Klantprijzen on the customer (round 3, 2026-11-06)
+One agreed price per customer and product: EUR excl. VAT on the product's
+own sales unit (per display when sold per display), like the catalogue
+price. A catalogue PDF made for the customer prints it while it is ACTIVE.
+Since round 3b (`round3/contract-sales.md`, 2026-11-06) it is also the
+default on that customer's quotes and invoices: the server pins it onto a
+line when the line is added, and the editor shows it (see "Klantprijs op
+offertes en facturen"); the website shows it to that customer's logins
+(website repo).
+- `core/api/customer-price-api.ts` (`CustomerPriceApi`, the round 3
+  contract, shared with the export popup): `list(customerId)` and
+  `save(customerId, { source, changes })` on `/api/customers/{id}/prices`
+  (a patch: only the listed products change, `priceExclVat: null` removes
+  one, the answer is the full list), `history(customerId, productId?)`,
+  `exports(customerId, limit?)` (`/api/customers/{id}/catalog-exports`, the
+  journal of catalogues made for the customer) and `exportDetail(id)`
+  (`/api/catalog/exports/{id}`, the price each product carried and its
+  source CATALOGUE / CUSTOMER / ONE_OFF / ON_REQUEST). A row keeps the basis
+  it was set on (`salesUnit`, `piecesPerUnit`, `unitKey`) and the server's
+  status: EXPIRED (past Geldig tot), BASIS_CHANGED (the product's price
+  basis changed since) and PRODUCT_GONE are kept but print nothing.
+  `productPrices(productId)` lists one product's customers (round 3b, see
+  "Klantprijzen on the product").
+- Customer sheet: `app-customer-price-block` (`customer-price-block.ts`,
+  block 'Klantprijzen' under Websitelogin in the same tinted wrapper, only
+  for a saved customer; wording in the pure `customer-price-state.ts`).
+  Head "n klantprijzen · k actief" and "Logboek ›"
+  (`/activity?type=CUSTOMER&id=`). Rows of two lines: name · variant and
+  the price, then "Catalogus € x · −n % · tot dd/mm/jjjj" and the unit of
+  the stored basis; a one-word pill only for a price that does not print
+  (Verlopen, Nakijken for a changed basis, Verwijderd). Six rows, then
+  "Alle n tonen". A row edits in place (Prijs per <unit> with the
+  catalogue price as placeholder, Geldig tot, Notitie; Verwijderen behind
+  a confirm; Geschiedenis of that product) while the other rows and
+  + Product wait. A changed basis opens with an empty price ("was € 36,00
+  per display van 6"): an amount on the old basis is never sent back.
+  Before the PUT: above 0, under 1 000 000, at most 2 decimals (refused,
+  never rounded), Geldig tot today or later; "Onder de kostprijs" warns
+  without blocking. "+ Product" loads the catalogue once per block into
+  `app-product-picker` (selection only; sellable products without a price
+  yet). Geschiedenis (all products, or one) and a Prijslijsten entry's
+  lines are iOS sheets stacked on the customer sheet (nothing around them
+  is a size container); Prijslijsten (the journal's 100 newest, the
+  server's maximum, counted in the head, "100+" when full; 3 shown) hides
+  while empty.
+- **Prijzen aanpassen** (2026-11-07, Emre: "alle stolpen aanpassen in 1 x
+  inpv 1 per 1"): a button before "+ Product" opens the catalogue's price
+  sheet (`app-catalog-price-sheet mode="customer"`, see Catalogus PDF ›
+  Prijzen aanpassen): catalogue = every active, non-demo product, selected =
+  the products with a stored price, "Klantprijzen van {klant}", columns
+  Catalogus · Klant · Nieuwe prijs. The same search over the whole catalogue,
+  "Zonder klantprijs" with Opnemen / "Alle n opnemen", "Alle n gevonden" for
+  one price over what a search shows (one unit basis), % on the rows on
+  screen. "Bewaren (n)" PUTs every typed price at once (source
+  CUSTOMER_SCREEN, the unit typed on, the sheet's optional "Geldig tot" for
+  all of them; a past date blocks; without one stored end dates stay and a
+  passed one is cleared; notes stay); a product taken in without a price
+  stores nothing; where no ACTIVE price applies every typed price counts,
+  also one equal to the catalogue price. No "Op aanvraag" and no keep box
+  there; the ⋯ has "Ongedaan maken" and "Niet opnemen". A 409 keeps the
+  sheet open and the block loads the products and rows again.
+  "Prijzen van klant…" (a select in the tools row, both modes, Emre:
+  "prijzen van andere klant kunnen overnemen dat het snel kan"): another
+  customer's ACTIVE prices become typed prices on each product's unit of now
+  (`oneOffPrice`), products not listed are taken in, expired prices, prices
+  on a unit the product left and products outside the catalogue are skipped
+  (counted in the toast); the list switches to "Alleen aangepast" to look
+  them over; nothing is stored before Bewaren / Toepassen. The customers
+  load once per sheet (`SalesApi.customers()`, the current customer left
+  out).
+- Every save there is a PUT of its own with source CUSTOMER_SCREEN. The
+  sheet's Opslaan first stores a typed price that is not saved yet
+  (`pending()` / `saveDraft()`); a refused one keeps the sheet open on it
+  (`reveal()`). ×, Annuleren and Escape drop it, like the sheet's fields.
+- Round 3c (2026-11-06): a save names the unit the amount was typed against
+  (`basis`, `piecesPerUnit` in `CustomerPriceChange`): the field's unit when
+  typed, a stored amount's own basis. 409 CUSTOMER_PRICE_BASIS_CHANGED
+  (`priceBasisRefusal`) stores nothing: the rows and the named products load
+  again, the typed amount stays with "Het product wordt nu per stolp verkocht
+  · geef de prijs opnieuw in" and Prijs opslaan waits until it is typed
+  again. A narrow row cuts the name, never the variant (`productParts`: a
+  size the name ends with goes along) nor the end date; a price just added
+  opens the list as far as its row and marks it for a moment; Notitie takes
+  300 characters like the server; the journal's lower-case language reads
+  "Nederlands".
+- Logboek: `CATALOG_EXPORTED` reads "Catalogus met prijzen gemaakt"
+  (`activity-copy.ts`); the backend writes it on the customer.
+- On the product: the read-only "n klantprijzen" chip of round 3b (next
+  section).
+
+### Klantprijzen on the product (round 3b, 2026-11-06)
+Contract-sales decision 5, the product part: wherever staff read a product's
+catalogue price, a quiet sign that customers have a price of their own for it,
+so a new catalogue price never forgets them. Staff screens only.
+- `app-product-customer-prices` (`features/products/product-customer-prices.ts`,
+  its own small component styles; the product screens' partials and the
+  editor's styles stay as they were, bar one rule `.pph-title-chip` in
+  `_product-phone.scss`). Data: `CustomerPriceApi.productPrices(productId)` =
+  `GET /api/products/{id}/customer-prices` → `ProductCustomerPrice[]`
+  (`customerId`, `customerName`, `priceExclVat` on the product's sales unit,
+  `validUntil`, `status`; admin only). Asked once per product, and again when
+  the saved price basis changes (packaging kind, sales unit, display count:
+  prices can turn to Nakijken). Nothing shows while loading, without rows or
+  when the list fails (an older server answers 404; no toast, no error); the
+  empty host is `display: none`, so it takes no room.
+- Where: desk `product-desk.ts` under the Catalogusprijs step of the price
+  flow (the step's link line, like Historiek ›); phone `product-view.ts` on
+  the title line of the Catalogusprijs cell (`.pph-title-chip`; the chip's
+  touch area reaches 12 px past it, so the row keeps its two lines); editor
+  `product-editor.ts` under the price in the dark preview (`class="pcu-dark"`,
+  `[product]="savedDraft()"`, `[changed]="savedPriceDiffers()"`).
+- Chip: `wk-pill` "n klantprijzen" / "1 klantprijs" (n = every row; accent,
+  grey when none applies). The list: the prices that apply first, then by
+  name (numeric); per row the customer, the price, "tot dd/mm/jjjj" when it
+  ends and a one-word pill only for a price that does not apply
+  (`statusPill` of `customer-price-state.ts`: Verlopen, Nakijken,
+  Verwijderd; its price muted); head "Klantprijzen per stolp". A row opens the
+  customer (`/customers?q=<name>`).
+- Desk: a mouse hovering the chip shows the list (`wk-popover`, 300 px, at
+  most 360 px high and scrolling; 180 ms grace to cross to it; touch and pen
+  wait for the tap); a click or Enter keeps it open; a second click, Escape
+  (focus back to the chip), a click outside or Tab out of it closes it. It
+  opens to the left when the window has no room right of the chip. Phone: a
+  tap opens the iOS sheet "Klantprijzen" (inset cells, foot "Per stolp, excl.
+  btw", Sluiten), rendered inside the component (no size container or
+  transform above it on the product page or the editor). The list and the
+  sheet reset the type they would inherit (white preview text, nowrap cell
+  title).
+- Editor: while the form's price differs from the saved one and at least one
+  price applies, the chip becomes the quiet line "2 klanten hebben een eigen
+  prijs ›" (n = the prices that apply) over the same list. Saving the product
+  changes no customer price.
+- Seen on the harness mock only (headless Chrome, 375/390 and 1080/1280/1440,
+  no overflow); not yet against the real backend or in iOS Safari.
+
+### Klantprijs op offertes en facturen (round 3b, 2026-11-06)
+Emre: customer prices on quotes and invoices as the default, and "always
+subtly the standard price on our side", by hovering on the desk and a press
+on the phone. The server pins (contract decision 2): a NEW line without a
+typed price on a regular document gets the customer's ACTIVE price with
+`priceSource` CUSTOMER; "Standaardprijs gebruiken" stores price null and
+STANDARD (follows the catalogue, never pinned again); a typed price is
+MANUAL; existing lines never change by themselves. Discounts apply to a
+pinned price as to a typed one.
+- Model (`models.ts`, all optional, absent from an older server):
+  `SalesOrderLine.priceSource` (`SalesLinePriceSource`), and on
+  `PricedLine` the source the server priced with (a preview's pinning
+  included) plus `standardUnitPriceEur` and `customerUnitPriceEur` (today's
+  catalogue and customer price on the line's basis, before discounts; staff
+  only, never on a customer document).
+- `app-line-price-source` (`features/sales/line-price-source.ts`, its own
+  ~3 kB of styles: the editor's and the desk's stylesheets are at their
+  budget and stay unchanged). The pure `linePriceState(draftLine,
+  pricedLine, unit, customerChanged)` decides: null (no marker) when the
+  customer has no price for the product and the line is not on one; the
+  draft's source wins over the server's (newer than the last preview),
+  except on a CUSTOMER line while the draft has another customer than the
+  saved document (`customerChanged`): a save pins it again, so it reads the
+  preview's source and price (the new customer's price, or no marker back on
+  the catalogue), never the old customer's pin; a new line (no id, no typed
+  price) that the preview priced at the customer's price reads CUSTOMER
+  already. The quiet K: filled in the accent tone on a CUSTOMER
+  line, with a warn dot when the pinned price is not today's customer price
+  (changed or gone); faint and hollow on a STANDARD, typed or older line
+  while the customer has a price (a reading of the contract's "not in the
+  row" to confirm with Emre: the popover must stay reachable and the price
+  never forgotten; the hint text itself stays in the popover).
+- Placement: desk before the unit under the price ("K per stolp",
+  `sales-desk.ts`; the marker's margin box keeps the line height); phone
+  editor after the price label, which the component then renders itself
+  (`labelText`/`labelFor`: a button inside a label is invalid). The
+  invisible finger-sized hit area around the glyph exists only on the phone
+  layout and coarse pointers, and the stale dot takes no clicks: under a
+  mouse they covered the bottom of the desk's price field.
+- Desk: hover or keyboard focus shows "Klantprijs · standaard € 4,95" (and
+  "· nieuw € x" / "· niet meer actief"; a hollow K: "Klantprijs € x
+  beschikbaar") under the marker; a click (or right click, the menu key)
+  opens a fixed popover under it. Phone: a tap or a long press
+  (`SalesMenuGesture`, with its guard against the click after the hold)
+  opens an iOS sheet titled with the product. Both list Klantprijs (the
+  pinned price) and Standaardprijs, "Eigen prijs" first on a typed line, the
+  hint "Klantprijs € x beschikbaar" on a catalogue line and "Geen actieve
+  klantprijs meer" on a pin whose price is gone; with the line editable
+  (`commercialEditable` / `mobileCommercialEditable`) also "Standaardprijs
+  gebruiken", "Klantprijs gebruiken" or "Nieuwe klantprijs € x toepassen".
+- A choice goes through `useLinePrice` → `setLine` into the draft like a
+  typed price (re-priced after 250 ms, saved with Opslaan). A typed price
+  goes through `setLinePrice` (desk and phone): `priceSource: 'MANUAL'`,
+  except the customer's price of today or the saved line's pin typed again,
+  which stays CUSTOMER as the server keeps it (the old customer's pin does
+  not count once the draft has another customer). Likewise a draft CUSTOMER
+  line whose amount is neither of those reads as the line's own price in the
+  marker (`SalesEditor.linePriceState`), as the server will store it.
+- Only on regular documents (`customerPricesApply`): no credit notes,
+  partner deals or container-cost pricing; a website order shows what the
+  website pinned. Checked against a production-code backend jar (2026-11-06,
+  desk 1080-1440, phone 375/390), not yet in iOS Safari.
+- Phone (Emre, 2026-11-07: "mobiel is alles al klein", press or
+  highlight): the read view (`sales-view.ts`) shows the Prijsopbouw figure
+  as a pill with the K (filled on the customer's price, outlined beside it,
+  a warn dot on an older pin); its open panel lists the figures
+  (`linePriceFigures`) and the hint (`linePriceHint(state, false)`: also
+  "Klantprijs nu € x" beside an older pin, since nothing changes there).
+  The phone editor tints the price field of a CUSTOMER line
+  (`.input-affix--agreed`, global) and its K is 18 px; the picker shows an
+  agreed price as a pill (`picker-price--agreed`). The desk is unchanged.
+- Product picker and sales line, what is coming (2026-11-10): the sales
+  editor and desk pass `[incoming]="incomingItems()"` (the expected-stock
+  answer per product id; loaded when a line is short of stock and again
+  on every picker open) with `[incomingState]` / `(incomingRetry)`: with
+  no answer in hand and the newest load failed (`incomingShown` 0) the
+  picker says "Onderweg niet geladen · opnieuw" once under its search
+  field and a short line says the same in place of the pill; a refresh
+  that fails keeps the answer on screen, and an older answer still
+  applies when a newer request failed. In the picker
+  (`stockAware` hosts only) a colour whose stock is empty, tight or
+  unconfirmed (`stockLevel` not 'ok') gets the inline status pill in its
+  stock line ("geen voorraad [+1.750] Onderweg 20/12"); the folded
+  series head sums those colours on a line of its own; the quantity step
+  shows "N op voorraad [+…]" once more is asked than there is. A sales
+  line that is short ("Levertermijn nodig" / a leverweek with a
+  shortfall) shows the same pill under its "niet op voorraad" line, phone
+  and desk, only on a document that still delivers (`stillDelivers`: no
+  credit note, not shipped, not `skipsShipping`, not refused or
+  cancelled; the load is skipped too). Nothing is stored and nothing
+  reaches the customer's
+  document or portal. Picker search takes every typed word in any order.
+- Product picker (same evening): "Producten toevoegen" shows what a new line
+  gets. `SalesEditor.pinsAgreedPrices` copies the server's
+  `pinsCustomerPrices` (also no advance invoice, no split part); there
+  `priceOf` gives the draft customer's ACTIVE price from
+  `CustomerPriceApi.list` (loaded once the customer is known and the
+  document editable, again on every open; an older answer never replaces a
+  newer one, a failure keeps the catalogue price), else `standardPriceOf`
+  (the server's `unitPriceFor`: a fixed catalogue price also holds under an
+  ORDER markup). `priceMarkOf` puts the K before that price
+  (`picker-price__mark`); its note "Klantprijs · standaard € x" shows on
+  hover on the desk (CSS, 250 ms delay) and after a long press, right click
+  or menu key (`PickerPriceHold`, a `SalesMenuGesture` per row, active only
+  on rows with a K; the press does not tick the row), fading 2.6 s after
+  the finger lifts. Other picker users pass no `priceMarkOf`; their rows
+  only lost text selection and the touch callout.
+
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
 The document is an ordinary quote whose view carries a `webOrder` block
@@ -2052,7 +3009,15 @@ and on copies. Without the blocks (older backend) every screen is as before.
   versie". The list reloads its rows. Every failure handler gets the id of
   the order the action ran on (`actionFailed(failure, fallback, orderId)`):
   the screens are reused across ids, and a late answer must not touch the
-  order now on screen. `persistOrder` and `saveDeliveryWeek` refuse to write
+  order now on screen. `persistOrder` sends `maxPalletHeightCm` only when it
+  differs from the last saved document (else null: the server keeps the stored
+  height), so a screen opened before the server's one-time 220 to 260 move
+  (2026-11-10) adopts 260 with its next save instead of writing 220 back. A
+  height it does send goes with `?heightPicked=true` (`SalesApi.updateOrder` /
+  `updateShipping`, `saveQuery`): the server takes an unmarked 220 on a document
+  that stores another height for the echo of a bundle from before 2026-11-10
+  and keeps the stored one; a server from before that day ignores the mark.
+  `persistOrder` and `saveDeliveryWeek` refuse to write
   while `customerEditable`: no save or autosave takes an order by itself.
 - **Wording.** A web order never shows request wording: `Websitebestelling`,
   `Bestelling annuleren`, and so on in every state. `webOrderNotice` in
@@ -2402,11 +3367,12 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   `jumpToSection` and `scrollToCard` switch the tab first. A switch with the
   bar stuck starts the new pane at its top under it; tapping the open tab
   goes back to its top (`purchase-phone-scroll.ts`; the stick point puts
-  the nav's 1px sentinel wholly above the nav, so the nav has condensed on
-  arrival). The root's scroll-padding (nav + tabs above, dock or save bar
+  the nav's 1px sentinel wholly above the tabs' sticky line, their own computed
+  top, so the nav says stuck on arrival; the small title comes earlier, when the
+  summary card's h1 has gone under the bar). The root's scroll-padding (nav + tabs above, dock or save bar
   below) keeps a focused field and scrollIntoView clear of the bars; the
   purchase-* sections keep no scroll-margin of their own. The nav's buttons
-  and the tabs once stuck (nav condensed) move their scroll area down past
+  and the tabs once stuck (`.ios-nav--stuck`) move their scroll area down past
   that padding (negative top, equal positive bottom scroll-margin), so focus
   on them, by keyboard or a sheet handing it back, never scrolls the page
   or unsticks the bar. Warn dots: Producten
@@ -2839,10 +3805,69 @@ polish together; I6 only with that I2 + I3 unit. The three polish commits
     stuk)". Restore sheet (`[unitsPerStep]`, `[multiple]`, `[units]`) and
     split sheet/state (`salesSplitStep`: `unitsPerOrderStep ??
     piecesPerCarton`; "in displays van 8 stuks") use the same step.
+  - Per piece on one sales line (2026-11-10, Emre: "aantallen per stuk in te
+    geven, in plaats van uitsluitend per omdoos"): `SalesOrderLine.perPiece`
+    (true, or absent; in a write absent or null keeps the stored choice,
+    true or false sets it - `orderWriteBody` lets it travel) and on the
+    priced line `perPiece` plus `perPieceChoice` (the server says where the
+    choice exists: the document rounds and the product's step is above 1;
+    an older server sends neither, so nothing is offered). Logic in
+    `sales-editor.ts`, shared with the desk; words and draft helper in
+    `sales-per-piece.ts`; styles in the global `styles/sales-per-piece.scss`
+    (both components sit at their style budget). The way in is the rounding
+    notice: under "Volle doos: wordt 24 st." the button "13 houden"
+    (`canKeepPieces`, `setLinePerPiece(id, true)`) keeps the typed number.
+    A line that counts per piece shows its switch "Stolp | Omdoos"
+    (`perPieceSwitch`, `app-segmented`, unit first like the product editor;
+    also on a saved choice just switched back, until it is saved - there
+    the switch is the way back and "houden" is not drawn beside it), the
+    phone tints the quantity field (`input--per-piece`, state on the
+    figure), the meta says "11 dozen, laatste niet vol" (`partCartonNote`; a
+    part omdoos still counts as a full one). The switch is deliberately NOT
+    on every line (all products are per omdoos: it would sit on every line
+    for a rare choice); a number off the step always brings the notice and
+    its "houden". Per piece does matter on a line at whole cartons too (the
+    customer's quote link then takes any number for it, his documents count
+    it in pieces), and there the way in is a detour: a number off the step,
+    "houden", then the number wanted. To put the switch on every line that
+    can switch: `perPieceSwitch` returns `mobileCommercialEditable() &&
+    perPieceChoice(id)`; `canKeepPieces` then never draws "houden" (the
+    switch is the way out). "houden" also waits while its own line's number
+    is typed (`typedLine` + `figuresWaiting`, cleared where the figures
+    come back), so the 44 px button does not come and go per digit; the
+    notice still shows at once. A press that removes the pressed control
+    moves focus to what took its place (`keepPerPieceFocus`: the switch's
+    chosen side, else "houden", else the quantity field when focus sat on
+    the control; both controls carry `data-per-piece-line`). Desk: the
+    remark and the switch stand in `.desk-per-row` UNDER
+    `.desk-product__meta`, not in it - at 1070 px the product copy is only as wide as its widest unbroken meta (about 100 px;
+    the table is 800 px in a 792 px wrap) and one more meta child gives the
+    cartons a "·" that widens the column and pushes the name under the
+    quantity field; `.desk-per` has inline-size containment and asks for
+    96 px, so it never widens the column (looked at in a headless browser at
+    1070 px, and the phone at 382, 669 and 867 px with hover none).
+    `unitsPerStep` returns 1 for a per-piece draft line at once (the
+    answer lags a press by 250 ms); `stepWhenRounded` is the step without
+    the choice. `announceRounding` runs after every preview answer and in
+    `adopt` (which now also clears `linePending`): a quantity the server
+    rounds up that nothing announced (a picker line, a container's exact
+    pieces on a quote made from a purchase order) gets the same notice;
+    only on `perPieceChoice` lines and only while `mobileCommercialEditable`
+    - a fixed version previews with today's step and is never rounded.
+    `salesLineWithPerPiece` drops the key when a never-saved choice is taken
+    back, so the draft is not dirty. `layoutKey` includes the choice. The
+    typing pause, blur and Enter are untouched. Nothing here for the quote
+    link: the server presents such a line as UNIT / step 1 there.
   - Product picker, selling (`enforceCartons()` true): a pick starts on one
     order step (`defaultQuantity`, also for a whole family), single mode
-    snaps to it, and the carton notices and "Een halve doos mag bij inkoop"
-    show only for CARTON products. Purchasing is unchanged.
+    snaps to it, and the carton notices show only for CARTON products. The
+    sales screens use multi mode, which never rounds: its hint ends "Per
+    stuk kies je daarna op de regel." only where the line offers it - the
+    editor's `perPieceOnLines` (a priced line carries `perPieceChoice`, not
+    a partner deal or container-cost draft) bound to `[perPieceOnLine]`,
+    and a picked product that rounds; else "Aantal stuks per product; start
+    op één doos." (an exempt document, an empty one, an older server).
+    Buying keeps "Een halve doos mag bij inkoop.". Purchasing is unchanged.
   - Analyses "Minder dan één outer carton" lists CARTON products only.
   - Rollout: no production product leaves CARTON before the website build
     that sends `quantity` items is live - the older site drops or inflates
@@ -2928,10 +3953,46 @@ contract `redesign/products/design.md` + `critique.md`).
   takes Tab once the focused one is deleted, folded or filtered away), ↑ ↓,
   → ←, Enter, E, ⌫/Delete, '/'. Phone: Voorraad and ⋯ in the bar, ios-search +
   filter sheet (Publicatie, Volgorde), category chips + Aandacht, the swipe
-  rows laid out as `plp-row` (names never clamped; "+n" with its date).
+  rows laid out as `plp-row` (names never clamped; what is coming is the
+  status pill). Search takes every typed word in any order
+  (`shared/search-words.ts`), as Voorraad and the product picker do.
   Default order label: "Standaardvolgorde (voorraad eerst)".
-- **`product-figures.ts`** (node-tested): `productMargin` (the desk
-  rounding), `onderwegSummary` (series sum, earliest date, each order once),
+- **What is coming: one status** (2026-11-10). `shared/product-incoming.ts`
+  (pure) turns `SourcingApi.incomingStock()` (`GET /purchase-orders/
+  expected-stock?arrived=true`) into `Incoming`: state, word, figure,
+  date, every order behind it. Fixed words: **Besteld** (not departed),
+  **Onderweg** (departed: status Vertrokken, or `shippedOn` has come),
+  **Binnenkort** (departed and expected within `SOON_DAYS` = 14 days of
+  today, either side), **Aangekomen** (received, stock not booked;
+  detail "ontvangen dd/mm/jjjj · nog bij te boeken"; the backend lists it
+  for 30 days after the receipt). The first arrival leads, by date and
+  not by state (`arrivalOf`): what is here, then the earliest date that
+  can still hold (`due`: today or later, or a departed container at most
+  14 days overdue), then orders without such a date, departed first.
+  `quantity` is the pieces of the orders of that first arrival, `later`
+  the rest with `laterNote` behind it on the pill: the next date
+  ("+12.000 · 15/01", "vanaf 15/01" when several moments follow), else
+  the state those orders share ("+200 Onderweg"), else "meer" - never
+  "later", which would guess an order of arrival. `total` is everything
+  (the filter, "Leeg verbergen"); `compareIncoming` sorts by the same
+  arrival. A past date is never printed bare: the pill
+  drops it, the detail reads "verwacht sinds dd/mm/jjjj". `incomingSum`
+  merges a series' colours (an order counted once). Against a backend
+  without `orders` every order reads "Onderweg" and the figure is the
+  total. `shared/incoming-pill.ts` (`app-incoming-pill`, variants
+  `stack` desk tables, `phone` tinted pill with figure and date - from
+  five digits the date moves to the word line, `inline`; `strong` =
+  the row has no stock: filled and ringed; `link` = desk tables open
+  the first order) draws it on Voorraad, Producten, the sales picker and
+  a short sales line; the product page uses the same words in its own
+  KPI and one bar per order. `expectedStock()` (no parameter) stays for
+  Analyses. A failed call says so with a retry on Voorraad (tile /
+  phone banner), Producten (warning line), the product page (KPI /
+  bar; "laden…" while the call is out, "niets besteld" only after an
+  answer) and the sales screens (see the picker bullet). Every notice
+  stays, disabled, while its retry runs, and its phone retry is a 44 px
+  target.
+- **`product-figures.ts`**: `productMargin` (the desk rounding),
   `stockValue` (rows without cost counted apart), `locationValues`,
   `totalsByProduct`, `locationSplit` (screens render one inline-block part
   per location, so a name never parts from its figure), `knownValueSum`
@@ -2978,8 +4039,9 @@ contract `redesign/products/design.md` + `critique.md`).
 - **Product page, phone** (`product-view.ts`): `app-ios-nav customLarge`
   with the product as its hero card (`pph-card`, 2 × 2 figures), the page
   root `.ios-page.pd-phone` with the bar and every sheet as direct
-  children; back from `NavHistory` (capsule, a circle when condensed;
-  Bewerken becomes a pencil circle then); inset sections incl. a read-only
+  children; back from `NavHistory` (capsule, a circle when condensed, which
+  is when the card's h1 has gone under the bar; Bewerken becomes a pencil
+  circle then); inset sections incl. a read-only
   Website & publicatie (`publication-groups.ts`). No Bewerken dock. Ids
   `product-overview`, `stock-card`, `product-core`, `product-packaging`,
   `product-media`, `product-agreements`, `product-publication`,
@@ -2992,7 +4054,18 @@ contract `redesign/products/design.md` + `critique.md`).
   roving tabindex on the rows. Phone rows: line 1 "{n} kleuren" + dots +
   fold chevron (or kleur · SKU), line 2 the location split and the value;
   a ⇄ circle with 2+ locations. `?locatie=&q=&categorie=`. /stock and the screens below it light the Producten phone tab;
-  its back falls back to "‹ Producten".
+  its back falls back to "‹ Producten". The Onderweg tile is a filter
+  (`onwayOnly`, in the address as `?onderweg=1` so Back from a purchase
+  order returns to it; `onwayShown` = applied only while an answer is in
+  hand; phone: chip "Onderweg · N" right after "Alle", and "Alle" is lit
+  only when no chip of the row cuts the list and clears them all):
+  only products with something coming, one list, first arrival
+  first; its N and M are counted from the rows the page shows. The
+  status pill sits in the Onderweg column (≥1360), under Totaal (below)
+  and in the phone end column; the product sheet has one tile per
+  purchase order. Search knows the series name. Inactive products stay
+  off this page, also when something is coming for them (Producten
+  shows them).
 - **EAN-codes**: Vrij (chip grid with × + undo; phone cells) and In gebruik
   (`features/settings/barcode-usage.ts`, node-tested, built from
   `catalog.products()`).
@@ -3047,6 +4120,32 @@ contract `redesign/products/design.md` + `critique.md`).
   sheet decides "no customers yet → add form" only after loading -
   deciding on an in-flight empty list opened the wrong flow.
 - Never trust `sessionStorage` auth outside `api.config.ts` helpers.
+- `Location.replaceState(path, query)` without a third argument wipes the entry's
+  router state: pass `this.location.getState()` (see "A refused back"), and never write
+  another path than the router's into the address bar.
+- A field's editability or visibility never follows the draft value that same field edits.
+  The series identity in `product-publication-editor.ts` (Vaste koppeling & URL) closed itself
+  on the first typed character of the URL (2026-11-10): `canEditProductFamilyIdentity(draft,
+  saved)` reads the SAVED series (the `savedFamily` input), so key, URL and variant codes stay
+  open in any order until the finalising save succeeds. Around it in `product-editor.ts`:
+  `save()` plans the identity first (a refusal carries `field`, `showIdentityField` jumps to it,
+  server refusals are put in the form's labels by `identityRefusedByServer`), asks "URL
+  vastleggen?" once, and `persistFamilyDraft` takes a finalised identity into draft, baseline,
+  the `families` list and the product's own key and code at once (`adoptFinalizedIdentity`);
+  when the rest of that save is refused the message reads "Vaste koppeling & URL opgeslagen ·
+  <reden>". A photo save, a linked or unlinked colour and a copy keep the identity that is
+  being typed (`keepTypedVariantKeys`, `keepTypedIdentity`). A series made by linking colours
+  is in the same no-URL state as an imported one (`model-<id>-<id>`). Same rule for the
+  colour's name field (`setProductColour` keeps `customColour`, reset per product).
+  A refused finalisation, or a 422 on the ordinary series PUT, fetches the series once
+  (`seriesChangedElsewhere`): when its identity differs from the copy the request was built
+  from (finalised in another tab, a lost answer, a colour copied in), `mergeFamilyPhotoState`
+  takes it over and the message points at no field; "is gewijzigd; verwacht" is never a key-field
+  error. The server finalises only a series stored as concept on every channel: a channel the
+  form puts on Concept (or a stored READY, shown as Concept) is saved first
+  (`conceptBeforeIdentity`); one still on live is a local message at its select. A wiped URL or
+  code of a saved series is null, like the saved value; the tags field keeps its typed text
+  while it means the draft's tags.
 
 ## Jaarinventaris (2026-10-09)
 
@@ -3562,6 +4661,16 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   buffer is disabled.
 - `?from=` on an older server returns every line; the payments round's own
   guard (`paymentRoundOnServer`) is unchanged.
+- Catalogus PDF (round 3): a request with a customer, a free name, a validity
+  or one-off prices is exported only when the preflight answers `prices`; an
+  older server would drop them silently (see "Catalogus PDF: prijzen voor een
+  klant").
+- Verkoop (round 3b): without `priceSource`, `standardUnitPriceEur` and
+  `customerUnitPriceEur` from the server no line wears the K; an older
+  server ignores the `priceSource` a typed price or a popover choice sends.
+- Klantprijzen on the product (round 3b): an older server answers 404 on
+  `GET /api/products/{id}/customer-prices`; the product screens and the
+  editor then simply show no chip.
 
 ### Kosten & bank refinements (2026-10-17)
 Design `redesign/finance/design.md` amended by its critique; one commit per
@@ -3793,3 +4902,588 @@ IBAN to `/settings?sectie=company`; an "Alle instellingen" row in NAV_GROUPS
 navItemActive rule for a bare `/settings`). Until it lands, every phone
 settings view ends with its own "Alle instellingen ›" row (settings-page,
 `.set-all`); drop that row once Meer has one.
+
+## Voorraadradar (2026-10-28, on production since 2026-10-31)
+
+A personal screen for Emre at `/voorraadradar` (`features/stock-radar/stock-radar-page.ts`,
+`core/api/stock-radar-api.ts`): the backend's stock radar for the iPhone Duo
+(see the backend AI-CONTEXT). One responsive component: a hero with the verdict
+("Nu beschikbaar bij N winkels" / "Nergens binnen 3 dagen te krijgen") and the
+Testpush and Testmail buttons, then per model (256 GB, 512 GB) a card per shop (status pill, last text,
+price, promised date, last check, rhythm, last notification with push/mail
+status, "Open winkel", "Nu controleren"). The header has "Nu controleren".
+Refreshes itself every minute while visible, the shops' own rhythm.
+
+Navigation: a row in the Bedrijf group (Emre, 2026-10-31: under Bedrijf on Meer
+and on the desk, no door of its own). The row carries `onlyUser: 'emre'`;
+`navItemVisible(item, username)` hides such rows from everyone else in the desk
+sidebar (`App.sidebarItems`) and on Meer (`meerItems(group, username)`). The
+backend answers 404 to other users anyway. No `[host]` descriptor: the native
+shell relies on the mirror, as on Logboek. Push needs the installed web app
+(no web push in the native shell).
+
+## Palletberekening (2026-11-04)
+
+Emre (2026-11-04): a Verkoop item to see at the fair how much of one product, or of
+several together, fits on a pallet and in a 20ft or 40ft, in omdozen, displays and
+pieces. `/palletberekening` (`features/sales/pallet-calculator-page.ts`), the second
+row of the Verkoop group (`nav-items.ts`, icon `pallet`, native symbol
+`square.stack.3d.up`), so it is also on the long-press Verkoop tab menu and on Meer.
+Its path is also in `PHONE_TAB_PAGES.sales` (phone-tabs.ts: lights Verkoop, back to
+/sales), the verkoop branch of `sidebarGroupForUrl` (the desk group stays open) and
+return-label.ts: every new nav row needs those three, and no test checks them any more.
+Frontend only: it reads `GET /api/products` (active, not demo), the categories, the
+product families (CatalogApi's 20 s cache) and the unit names in parallel; failing
+categories or families fall back quietly (the picker's fallback names, only the
+Recent and Alle chips). The picks, pallet type, height and the recent products stay
+in localStorage (`enrosed.palletCalculator`: `profile`, `heightCm`, `standardCm`,
+`rows`, `recent`; `standardCm` is the standard the height was saved under: a height
+equal to it was never picked and follows today's standard on the next visit, any
+other height was picked and stays, and a state without `standardCm` dates from 7-10
+November 2026 when the standard was 220, so a device still on 220 shows 260 once and
+a 240 someone chose stays; the pre-2026-11-07 field `maxHeightCm` is not read);
+nothing goes to the server. A europallet stops at 260 cm (`palletHeightLimit`: the
+"+" dims, a typed or stored higher number shows 260), blok and half go to 300; the
+page holds the pick (`pickedHeight`) and shows `min(pick, limit)`, so Blok 280, Euro,
+Blok shows 280 again while the page stays open. The settings hint keeps "max 700 kg
+per pallet" (no wording beyond the number changes; the caption and the catalogue say
+the height includes the pallet). Built for the fair: photo first, one tap
+adds, the answer stays in sight.
+
+- **Choosing by photo** (`pallet-browser.ts`, `app-pallet-browser`; pure
+  `pallet-browser-model.ts`): photo tiles under chips Recent · Alle · one per
+  category, in `productPickerFamilySections` order (Category.position, then the
+  range's position and name). **One tile is one carton**: each range is split by
+  `cartonSignature`, exactly the inputs of `palletFit`, `productUnits`,
+  `containerCapacity`, the carton m³, the weight and the piece word, so colour
+  variants that share an omdoos fold into one tile (no colour step) and a range
+  with a carton per size gets a tile per carton. Only then a label sits on the
+  photo, the first rule that tells every tile apart: size, "12 per omdoos",
+  colours, omdoos size, SKU. The tile's lead (the range lead when it is in the
+  tile, else its first variant) is the product a new row stores; the photo is
+  `salesPhotoUrl`. Every tile shows its answer for the pallet in use, "48
+  omdozen", or Maten ontbreken / Past niet / Te hoog of zwaar in warn. A tile in
+  the calculation wears a check in its pallet colour; a tap folds the grid and
+  rings its card (900 ms, instant under reduced motion). At 12 products the rest
+  is disabled ("Maximaal 12 producten"). Once there are cards a chip toggles the
+  grid and "Inklappen" folds it.
+- **Search** is the second path: every word in any order, accents folded,
+  category and range names, SKU and barcodes included, an exact SKU or barcode
+  first (`matchPalletTiles`). Phone: the search chip (an icon) swaps the chips
+  for the kit's `ios-search` (focused inside the tap so iOS raises the
+  keyboard; Annuleer or Esc ends it). Desk: the page's toolbar `wk-search`
+  drives the browser's `query` ('/' focuses, Enter adds the first match
+  through `chooseFirst()`, Esc clears, a second Esc leaves the field).
+- **Recents**: newest first, 12 kept (`rememberRecent`), the chip shows 8;
+  written on add only, unknown or inactive ids dropped on load. A stored row
+  of an older colour variant resolves to its range's tile (`tilesByProduct`);
+  two rows in one tile both stay, each title adding its colour.
+- **A new row** goes on top, in the unit the customer orders in (`startUnit`
+  in the model, from `effectiveOrderStep` and the display basis: per display →
+  displays when the omdoos holds whole ones, per unit → displays on a display
+  basis, else pieces; otherwise omdozen), with a haptic, the card's rise and a
+  screen-reader "… toegevoegd". Remove (×) and Wissen give "Ongedaan maken"
+  toasts; the last card gone opens the browser again.
+- **The numbers** live in `pallet-calculator-model.ts` (pure). `palletFit` mirrors
+  the backend's `PalletCalculator.fit` exactly (guillotine rows in both pallet
+  directions, layers under the total height with the 14.4 cm wood, then 700 kg) on
+  the `PalletProfile` footprints and the `SalesSettings` defaults, which production
+  does not override (`PALLET_MAX_HEIGHT_CM` 260 cm since 2026-11-10, Emre's "260 cm
+  standaard", the standard a new sales document stores; it was 220 from 2026-11-07 to
+  2026-11-10, `PALLET_FORMER_STANDARD_CM`, which documents and devices of those days
+  may still carry; `PALLET_LEGACY_MAX_HEIGHT_CM` 260 is what a document from before
+  2026-11-07 keeps; `EURO_PALLET_HEIGHT_LIMIT_CM` 260 and `palletHeightLimit(profile)`
+  are the highest pick, `clampPalletHeight(value, profile)` applies it); keep the two
+  in step when the backend changes.
+  `floorDiv` snaps near-integers so 245.6 / 24.56 counts 10 like BigDecimal FLOOR.
+- **A mix** stacks every product in layers of its own, a started layer as high as a
+  full one (the pallet planner's `estimatePalletHeightCm` model). `planPallets` is
+  first-fit decreasing and identical, step for step, to the backend's
+  `PalletCalculator.mixedPallets` (change both or neither): the lines whose omdozen
+  fit a pallet (`placeable`) go tallest carton first, ties in line order; each
+  takes its omdozen a layer at a time (`min(perLayer, rest)`) to the first pallet,
+  in the order the pallets were made, where that layer stays under the height
+  (1e-9 tolerance) and the weight still takes one omdoos, and puts there as many as
+  700 kg allows; with no such pallet a new one takes the layer (up to 700 kg). The
+  omdozen a weight split leaves behind join the product's next layer instead of
+  starting a short one of their own, so one product alone gets exactly its
+  `cartonsPerPallet` per pallet: 238 omdozen of 40×40×50 cm at 30.7 kg on a
+  Europallet at 260 cm (or 220) make 11 pallets, the strict count (the first version made
+  12, 22/20/22/20…; money review 2026-11-04). A plan that still needs more pallets
+  than every product on pallets of its own (`separatePallets`) becomes that layout
+  (`separateLayout`: per line its full pallets, then its rest; a pallet's layers
+  `ceil(omdozen / perLayer)`, its height the wood plus those layers, its weight the
+  omdozen's), so a mix never counts more than STRICT. With exact sizes and weights
+  that cap never acts (a product's own new pallets each take its
+  `cartonsPerPallet`); it catches the planner's carton weight (a line's rounded
+  weight over its omdozen) when that comes out a hair heavier. Deliberately
+  conservative ("freight never too low"): cartons of two products never share a
+  layer. The backend's MIXED rule counts a concept's automatic pallets with this
+  same algorithm (see "Pallet planner"), so both screens give one answer. "Past
+  nog bij, zonder extra pallet" (`roomWithoutExtraPallet`) is the largest extra
+  per product (up to one full pallet of it) for which a fresh plan, the cap
+  included, keeps the count, found by re-planning (a binary search that keeps only
+  an extra it re-planned), so a "+ N omdozen" button never adds a pallet; worked
+  out for plans of at most 30 pallets. "Verdeel 1 pallet" (`shareOnePallet`) hands out
+  whole layers to the product with the least height so far; its layers make one
+  stack, so the plan puts them on one pallet. Above 200 pallets counted per
+  product (`separatePallets`, a seven-digit typo) the plan is skipped: "Meer dan
+  200 pallets".
+- **Containers** take loose cartons per product: 20ft = the confirmed count, else
+  28 m³ by volume, else the 40ft HC count × 28/68 (the product screen's "Per 20ft
+  GP"); 40ft HC = the hand count, else 68 m³ ("Per 40' HC"); 40ft = scaled from a
+  hand count, else 58 m³ (ContainerType). A mix is the sum of cartons ÷ each
+  product's own capacity.
+- **Units**: `carton.piecesPerCarton` counts sales units (displays for a display
+  basis); a display column shows only when the omdoos holds whole displays of 2+.
+  A typed quantity in displays or pieces rounds up to whole omdozen and says so
+  ("Afgerond: 4 omdozen (…)"); the steppers move one omdoos in the chosen unit.
+- **The card**: 52 px photo, range name (plus the label, plus the colour when
+  two rows share a tile), colour dots or the one colour; its facts sit behind
+  an "i" sheet (Omdoos, Gewicht, Inhoud, Volume, Op de pallet, Containers
+  "Geteld: …" / "Op volume: …", Klant bestelt per, Varianten; "Product openen"
+  or "Product aanvullen"). The table: rows Omdoos · Pallet · 20ft · 40ft ·
+  40ft HC ("geteld" where a hand count counts) under Omdozen / Displays / the
+  piece word, the chosen unit's header underlined; then the fit line "8 per
+  laag × 6 lagen · 248 cm · 432 kg" (" · gewicht bepaalt"). Desk cards from
+  600 px (`@container pc-card`) put the quantity beside the table.
+- **The result** ("Resultaat"): the totals, the 20ft / 40ft / 40ft HC tiles,
+  the pallet rows (two lines, coloured counts, the names for screen readers),
+  products that fit no pallet, "Past nog bij" and "Verdeel 1 pallet". The phone
+  leaves it out while empty or with one product without a quantity (the card is
+  the answer); the desk says "Wat past erop?" or "48 omdozen per pallet".
+- **Layout**: `.content.pc` is the size container `pc`. Below 760 px one column
+  in the order settings (narrow desk only) → browser → cards → result
+  (`.pc-side{display:contents}` and `order`); from 760 px cards left and the
+  side (desk pallet panel + result) sticky right. Phone header: the pallet
+  button "Pallet instellen" (one shared settings template, here in an iOS sheet
+  with Klaar; changes apply live) and the trash; the caption is the pallet
+  ("Europallet 120 × 80 · max 260 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
+  the search, Wissen; the settings are a panel.
+- **The capsule** (phone): while there is a plan and the result is out of view
+  (IntersectionObserver, 96 px off the bottom for the tab bar) the kit's glass
+  `ios-float` reads "2 pallets · 20ft 13 %" (the smallest container that takes
+  everything, else "n × 40ft HC", no container part while sizes are missing);
+  a tap scrolls to the result. The sheets and the capsule render after
+  `.content`, outside the size container (trap rule). Still to check in the
+  native host: its placement (`--tabbar-h` is 0 there) and the bottom safe area.
+- Styles: the page 12.9 kB compiled, the browser 4.1 kB (16 kB warning each).
+  Initial bundle 971.61 kB (188.59 kB transfer) after the pallet round of
+  2026-11-04 (the page, the browser and the planner are lazy chunks; only the
+  nav row, the icon and the symbol are in the first screen).
+
+## Pallet planner (2026-11-04)
+
+Verkoop › order › Transport & levering (`app-shipping-planner`), the same
+component in the phone editor's sheet (sales-editor.ts) and the desk's
+(sales-desk.ts), both `<app-sheet [wide]="true" variant="ios">`. The answer
+comes first: a hero with the pallet ("Europallet 120 × 80 · max 260 cm", the
+document's own height: 260 on one from before 2026-11-07, 220 on one made, sent
+or invoiced from 7 to 10 November, on the
+phone a button to the Lading sheet), "4 pallets" with fill words and one state
+pill, "102 omdozen · m³ · kg" and the freight (phone: a button to Vracht); then
+the Automatisch | Zelf indelen switch with its "i" caption, Nakijken (products
+that fit no pallet, "Aanvullen"), Pallets, Producten and Vracht. Phone: rows
+(64 px, two lines) and nested iOS sheets. Desk: a hero band, then
+`.sp-layout` (`container: sp / inline-size`) with two columns from 720 px, the
+main column and a 300 px sticky aside with Lading and Vracht; automatic pallets
+are tiles, hand pallets are cards edited in place.
+
+| File | Selector | Role | Styles (raw; 16 kB compiled warning) |
+|---|---|---|---|
+| `shipping-planner.ts` | `app-shipping-planner` | The shell: hero, switch, sections, the mixed offer, all overlays, desk drag. Public API kept: inputs `view`, `canEdit`, `carriers`, `customerPostcode`, `countryName`, `splitFreight`, `pricing`; outputs `patch` (`ShippingOrderPatch`) and `action` (`ShippingPalletAction`); re-exports `normalizeManualPalletType` | 6.9 kB |
+| `shipping-planner-model.ts` | – | Pure: `plannerSpec`, `plannerLines`, `serverPallets` / `autoPallets`, `handPallets`, `placements`, `fillWords`, `mixedLayout`, `mixedRoom`, `checkLayout` / `layoutComplete` / `layoutPill`, `freightStrategy`, `strategyLabel`, `freightGap` | – |
+| `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
+| `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
+| `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, not `issued`: an invoice whose history holds UITGEREIKT or is not loaded yet, `SalesEditor.issuedBefore`; no source quote, no web order, invoice, advance or split) so nothing sent, issued or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; a height above the type's limit (an old europallet at 280) comes down only after "Max. hoogte naar 260 cm?" with Verlagen, for "−", typing, Standaard and the switch to Euro alike, since it cannot go back up; Annuleren keeps everything and `fieldKey` renews the field), "incl. pallet 14,4 cm" | 1.0 kB |
+| `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
+| `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
+
+- **Automatisch is the server's** count and layout, which the freight follows
+  (`PricedOrder.totals`, optional for an older server): `palletRule` MIXED
+  stacks the products together with Palletberekening's `planPallets` (new and
+  concept documents; Emre 2026-11-04 "Ja, gemengd tellen"; never more pallets
+  than STRICT, a plan that would is the separate layout), STRICT keeps every
+  product on pallets of its own (documents past concept keep the count and the
+  freight they were sent with); `palletsAutomatic` is the count freight, the
+  PDF, the portal and the website quote use without a hand layout; `autoPallets`
+  the pallets (`items` {productId, cartons, layers}, `heightCm` with the wood,
+  `weightKg` 0 when unknown). `serverPallets` shows exactly those, a run of equal
+  full pallets of one product as one row ("Pallet 1–2"). An older server sends
+  none: `autoPallets()` lays out `palletsStrict` here, shown only when it adds up
+  (never two counts on one screen). The "i" caption follows the rule. Producten:
+  "n pallets" are the automatic pallets the product stands on; "+n past" is the
+  room on its own last pallet (STRICT) or `mixedRoom` (MIXED: Palletberekening's
+  `roomWithoutExtraPallet` on this screen's plan, only while that plan gives the
+  server's count and at most 30 pallets).
+- **Every other count** without a hand layout reads `shippedPallets(totals)` =
+  `palletsManual || (palletsAutomatic ?? palletsStrict)`: the desk KPI and
+  Levering rail, the phone hero and step 3 (`palletTotal`, `palletFigure`,
+  `palletSummary`, `freightBasisLabel`), the sales list rows, `SalesView` and the
+  carrier quote. A phone line card counts the automatic pallets the line stands
+  on (`automaticLinePallets`, a shared pallet counting for each of its products).
+- **Zelf indelen** (`SalesEditor.autoLayout`, after `pricingSettled`) copies
+  `autoPallets` one to one ("Pallet n", `palletTypeLabel(profile)`, heightCm
+  null) when it holds `palletsAutomatic` pallets, else the strict derivation;
+  products that fit no pallet stay loose (Nakijken), nothing fits → one empty
+  "Pallet 1". "Indeling bijwerken" (Levering, loose omdozen that fit) and
+  "Indeling opnieuw maken" (after a pallet type change) run the same copy, so
+  the server must send `autoPallets` with a hand layout present too.
+- **A hand pallet's weight** (`handPallets`) is its omdozen times the line's
+  weight over its omdozen; the server rounds a line's weight to 0.1 kg, so a
+  pallet it filled to exactly 700 kg can read 700.04 here. "te zwaar" (the
+  pallet's status, the layout pill and Verstuur's "Een pallet weegt meer dan
+  700 kg" through `checkLayout`) therefore compares the weight rounded to
+  0.1 kg (review, 2026-11-04).
+- **The mixed offer** "Gemengd: m pallets · k minder · Indelen" shows only under
+  STRICT (or on an older server), on a concept the planner can edit, and when `mixedLayout`
+  (the frontend's `planPallets`, skipped above 200 separate pallets) needs fewer
+  pallets than the automatic count. It patches a hand layout, which then counts
+  for the freight.
+- **Undo toasts** instead of window.confirm: "Eigen indeling gewist", "Gemengd
+  ingedeeld", "{label} verwijderd" (an empty pallet goes without one), "Indeling
+  opnieuw gemaakt", each "Ongedaan maken" patching the snapshot back; the
+  planner dismisses its toasts when it goes. An edit made within a toast's
+  window is overwritten by its undo.
+- **Overlays outside `.sp-layout`**: the pallet sheet, the Lading sheet, the
+  "Op welke pallet?" menu and the desk ⋯ card menu render at the root of the
+  planner's template, because the container query traps position:fixed;
+  `PlannerPallet` and `PlannerFreight` render none. Phone sheets nest on
+  Sheet's stack. On the desk a menu is a `.cm` popover inside the sheet's
+  dialog: `Sheet.onKeydown` leaves Escape to an open `.cm` in its dialog, so the
+  first Escape closes the menu and the second the sheet.
+- **Inputs**: `pricing` (the hosts' `pricingStale()`, the figures being worked
+  out again) disables Zelf indelen, Indelen and Indeling opnieuw maken, so no
+  layout is cut from older figures. `splitFreight` (a financially locked split
+  part) shows only "Transport voor dit deel" (patches `manualFreightEur`,
+  "Handling blijft behouden"); the hosts' own field for it is gone.
+- **Saving**: every patch and action goes through the editor's
+  `enqueueShipping` and is autosaved 300 ms later by `flushTransport` (a
+  concept's whole draft through `updateOrder`, a sent document's
+  `updateShipping`). `transportQueued` marks a transport change of its own that
+  no save has taken along yet; each save of the loop clears it, a change made
+  meanwhile queues again, a refused save restores it. A hand layout that only
+  followed the lines (`removeLine` trims its pallets, "Tijdelijk niet
+  beschikbaar" prunes them, a lowered quantity `layoutFollowsLines` at the
+  next preview or save) is shipping-dirty without
+  being queued: no autosave, Klaar or leaving sends it; Opslaan and the leave
+  question do (review, 2026-11-04), and `transportSaveStatus` reads "Indeling
+  gaat mee met Opslaan" meanwhile instead of "Transport automatisch opgeslagen"
+  (the Levering card, the desk rail and both sheets' foot). Klaar, ×, Escape
+  and the backdrop always close the sheet. A refused save (`transportRefused`:
+  queued, dirty and a `saveError`) stays in the Levering card and the desk rail
+  as "Transport niet opgeslagen" with the reason, Opnieuw and "Wijzigingen weggooien"
+  (`discardTransport`: the shipping fields as last saved, the rest of the
+  draft kept); leaving then asks the usual question, where Niet opslaan leaves.
+  On a sent document a freight basis that cannot price yet (`freightGap`: Per
+  m³ without a rate, Vast bedrag without an amount, Landentarief with loose
+  cartons) holds as "Nog niet opgeslagen · vul het tarief per m³ in" instead of
+  being refused. "Losse dozen" on Landentarief or a carrier prefills Vast bedrag
+  with the current freight; straight back to pallets restores the pallet freight.
+- **Styles**: the dead global `.pallet`, `.pallet__*`, `.pallet-warn` and
+  `.pallet-intro` rules and their touch and coarse-pointer entries left
+  styles.scss; each planner component styles only its own classes (`sp-*`,
+  `ps-*`, `fr-*`, `ld-*`, `pg-*` / `st-*`) and sizes kit pieces (segmented,
+  sheet, context menu) without restyling them. Media queries are written out in full (desk
+  `(min-width: 1024px), (min-width: 680px) and (hover: hover)` and the phone
+  pair); the columns follow the container query only. Nothing went into the
+  styles of sales-editor.ts or sales-desk.ts, both about 18.7 kB compiled and
+  over the 16 kB warning since before this round.
+- Seen only in headless Chrome so far: the nested phone sheets in iOS Safari
+  and the native host, and the desk drag (synthetic pointer events).
+
+## Catalogus PDF: prijzen voor een klant (round 3, 2026-11-06)
+
+Emre (2026-11-06): pallet always next to 20ft and 40ft in the PDF; with "Prijzen
+tonen" on, a "Prijzen aanpassen" popup to change prices once, an optional target
+customer so the ERP keeps who got which price, and stored prices per customer that
+an export for that customer takes. The backend decides every printed price
+(`CatalogExportService`, out-ports implemented in sales); the studio previews,
+collects and checks. Order per product: one-off (this PDF) > the customer's stored
+price (status ACTIVE: not expired, basis still the product's) > catalogue price
+(`computedSalesPriceEur`) > "Prijs op aanvraag". Every amount is EUR excl. VAT on
+the product's own sales unit (per display when sold per display), at most 2
+decimals (more is refused, never rounded), 0 < price < 1 000 000.
+
+| File | Role | Styles (budget size) |
+|---|---|---|
+| `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
+| `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup: prices, taking products in, "Alle n gevonden"; `mode="customer"` for the customer's Klantprijzen | ~10 kB |
+| `catalog-product-selection-state.ts` | Pure: selection helpers and the catalogue search (`catalogSearchKey`, `catalogSearchWords`, `catalogSearchText`, `catalogSearchMatch`), shared by step 03 and the sheet | – |
+| `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
+| `core/api/catalog-api.ts` | `CatalogExportRequest` + `customerId`, `recipientName`, `pricesValidUntil`, `priceOverrides` (`CatalogPriceOverride`); `CatalogPreflightResult` + `prices`, `priceWarnings`, `recipient`; `CatalogPricesInvalid` | – |
+| `core/api/customer-price-api.ts` | `CustomerPriceApi` (list, save, history, exports, exportDetail), shared with the customer sheet's block | – |
+
+- **Pallet, 20ft, 40ft** in the compact preview, in that order, one line:
+  "Pallet: 144 · 20ft: 1.794 Auto · 40ft HC: 4.356" (grouped in the document
+  language, "-" when unknown). Pallet = `palletFit(carton, CATALOGUE_PALLET)`
+  whole omdozen × `piecesPerCarton`, with `CATALOGUE_PALLET` =
+  `palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)`, the frontend copy of
+  `SalesSettings.pallet()` the PDF counts with; 40ft is the carton's
+  `hcCapacity`. If `enrosed.pallet.*` is ever set on the server, preview and
+  PDF disagree.
+- **Under Prijzen tonen** (only while on): "Voor klant (optioneel)" (Geen
+  klant, the customers as "company — city" from `SalesApi.customers()`, loaded
+  the first time prices are on, and "Andere naam…" with "Naam op de
+  prijslijst", max 120, for a fair lead without a customer record and without
+  stored prices), "Geldig tot (optioneel)" (`app-date-field`; "Ligt in het
+  verleden" under it) and "Prijzen aanpassen (n)" with "n klantprijzen" (the
+  chosen customer's ACTIVE prices among the selected products, from
+  `CustomerPriceApi.list`). n counts the one-off prices the request carries.
+  Another choice in the select clears the one-off prices after "Andere klant
+  kiezen?" (Annuleren puts the select back). The prices remember who they
+  were typed for (`pricesFor`: 'c<id>' or 'n:<name>', case and spacing aside,
+  kept in the tab state with them): a free name left by blur or Enter that
+  differs asks the same question, with "Zelfde klant" (keeps them, a
+  corrected spelling) and Annuleren (puts the previous name back); Download
+  and Prijzen aanpassen ask first while a new name is still in the field.
+  Prices typed before any name follow the first name given. The action bar
+  reads "Met prijzen · voor {klant}" (the phone drops the language for it);
+  the preview prints "Prijslijst voor {klant}" in the document language on
+  the cover and under the compact title (`COMPACT_PREVIEW_COPY.priceListFor`;
+  the PDF has its own copy keys) and shows the printed price with its unit
+  ("€ 21,60 per display"; in Dutch the product's own unit, "per stolp", in
+  the other languages `perPiece` / `perDisplay`, the PDF's words).
+- **Never in the device draft**: customer, free name, validity and one-off
+  prices live in sessionStorage `enrosed.catalogBuilder.prices.v1` (this tab,
+  read back field by field), so the next customer cannot inherit them; the
+  builder state in localStorage keeps only `includePrices`. A stored customer
+  that no longer exists is dropped with a toast once the list loads, and its
+  one-off prices with it (they must not reach a general price list).
+- **The request** carries the new fields only when set and prices are on, so
+  without them it is the request every server knows. One-off prices go for
+  selected products only and only when they change what the PDF would print
+  (`requestOverrides`); one typed on another unit than the product's now goes
+  along so the server names it.
+- **Prijzen aanpassen** (`app-sheet variant="ios"`, wide on the desk): the
+  colours of one product stand below it (Emre, 2026-11-07). A product is one
+  family + variant size + sales unit (`groupKey`: sizes and units have prices
+  of their own, so another size is another product); a product with one
+  colour in the list, or without a family, stays a plain row. The product's
+  line: its name (the family's name when its colours carry different names;
+  the size only while the family is in the list in more sizes, kept whole),
+  "4 kleuren · per stolp" (phone "€ 54,00 / display · 4 kleuren"), Catalogus
+  and Klant ("verschillend" when the colours differ) and one field: typing
+  there puts that price on every colour (`setGroupPrice`), emptying it puts
+  every colour back to its standard; it shows a price only while every colour
+  has the same typed one, else empty with what they all print or
+  "Verschillend". Its ⋯ ("Op aanvraag", "Terug naar standaard") acts on every
+  colour. Below it each colour: smaller photo set in, "Rood" only (the full
+  label when the colours do not tell them apart: "3 varianten"), its own
+  field; on the phone a colour named by its colour alone is one line
+  (`.cps-row--compact`, field 100 px like the product's) unless it has a chip
+  or a message (`.has-note`); variants with names of their own keep the row's
+  two lines with the SKU.
+  A search for the product keeps all its colours, one for a colour or SKU
+  shows the colours it finds under "1 van 4 kleuren"; while a search or
+  "Alleen aangepast" hides some colours the product's line has no field and
+  no ⋯ (a price there would reach colours out of sight). A price typed on all
+  colours that they refuse (unit changed since, the server's word) puts the
+  colours' message on the product's line too ("Nakijken per kleur" when they
+  differ); "Op aanvraag" on all of them marks it changed. Each row: photo, name · variant (a size the name already ends
+  with is not repeated), then "SKU · per stolp" (desk;
+  Catalogus, Klant and In deze PDF columns, Klant only with a stored customer,
+  a stored price that does not apply struck through with "verlopen" or
+  "prijsbasis gewijzigd") or "€ 4,96 / stolp · SKU" (phone: the name has line
+  1 to itself, the field and the meta line 2; the price and its unit never
+  shrink, the SKU takes only the room left, and the row shows one chip, the
+  most urgent: "onvolledig", "onder kost", else the stored price's "klant",
+  "verlopen" or "nakijken", the customer block's word for a changed basis). The
+  field's placeholder is what the PDF prints without a change; "onder kost"
+  compares the shown price with `landedCostEur` and stops nothing. Row menu
+  (⋯, `app-context-menu` inside the sheet body so the desk popover is above
+  the overlay): "Op aanvraag" and "Terug naar standaard". Tools: search,
+  "Alleen aangepast", a −/+ toggle (the phone's decimal keypad has no minus),
+  a percentage and "% op alles" (from what each row prints without a change,
+  never compounding, whole cents half up; on the rows on screen: "% op 8"
+  while a search or the chip narrows the list), "Alles terug". Nothing applies
+  until "Toepassen (n)"; closing with changes asks first. With a stored
+  customer, "Ook bewaren als klantprijzen van {klant}" (hint "Ook op offertes,
+  facturen en de website", no date: a typed price equal to the colour's own
+  active price is not sent, so its end date stays; Emre asked what the box
+  was for) first PUTs the typed prices
+  (not "Op aanvraag") with source CATALOG_EXPORT: product, price and the unit
+  it was typed on (`basis`, `piecesPerUnit`, round 3c), plus
+  `validUntil` when the PDF has a validity that is not past, so a stored note
+  and end date stay (the backend keeps a field a change leaves out); without
+  such a validity a stored end date that already passed is sent as null, so
+  the kept price applies again instead of staying "verlopen"; the
+  answered list replaces the customer's prices, so the same prices stop being
+  one-offs. A display sold per display without its piece count prints "Prijs
+  op aanvraag" whatever it is given (the server's printable(),
+  `pricePrintable`): its row reads "Op aanvraag" instead of a field, with the
+  chip "onvolledig" and the reason in its title and row menu, and the compact
+  preview says "Prijs op aanvraag". A row with an invalid price or a unit
+  changed since it was typed blocks Toepassen until it is typed again or
+  reset.
+  **Taking in and one price for what is found** (Emre, 2026-11-07: "alle
+  domes van 12x25 kunnen kiezen in 1x om dan de prijs te zetten", instead of
+  adding products one by one in step 03 between two visits to the sheet). The
+  sheet gets the whole catalogue (`catalogue` = `orderedProducts()`,
+  `selected`) and opens even with an empty PDF ("Zoek een product om op te
+  nemen."). Its search ("Zoek in de hele catalogus…", the desk's first focus;
+  Enter goes to the found field or the first price) finds what the PDF does
+  not have yet under "Niet in deze PDF", above the list so it stays in sight
+  above a keyboard: one line per product built from the matching colours
+  only, the whole line takes them in (pill "Opnemen"), "Alle n opnemen" all of
+  them. Taken in (`added`) they are rows like the others with the chip "nieuw"
+  (on the product's line when all its colours are new), count in "Toepassen
+  (n)" and under "Alleen aangepast", and leave again through "Niet opnemen" in
+  a ⋯ (only what was taken in here; a product already in the PDF leaves in
+  step 03). A one-off left from an earlier PDF does not come back with a
+  product taken in. Toepassen emits `included` (after the keep PUT, before
+  `applied`; the page adds the ids with `selectProductIds`) and one toast
+  ("8 prijzen bewaard voor X · +8 varianten in de PDF"). While a search shows
+  rows of more than one product, or part of one, the list starts with "Alle 8
+  gevonden" (tinted, a magnifier for a photo, "7 producten · per stolp"): its
+  field types one price on exactly the printable rows on screen, never one a
+  search hides, and exists only while they share one unit basis (`unitKey`:
+  `priceBasis` basis + pieces per display; a stolp and a stuk are both per
+  piece, the words then show in warn colour) — else "Eenheden verschillen";
+  its ⋯ has Op aanvraag, Terug naar standaard and Niet opnemen; "n onder kost"
+  as a chip with its count. Never with "Alleen aangepast" on (rows would come
+  and go while typing). The refusal of a kept price (409 BASIS_CHANGED) holds
+  per `catalogue()` identity, so taking a product in does not drop it. On the
+  phone a product's line may take two lines (the end of a name tells "… 25 cm"
+  from "… 20 cm"). The search (also step 03's): no case or accents, 12x25 =
+  12*25 = 12×25 = 12 x 25, "30 cm" = "30cm", words in any order, a size word
+  never inside a larger number ("2x25" does not find "12x25"), a word of 4+
+  letters ending in s also finds its singular; it reads the product's, the
+  family's and the Dutch catalogue name and colour, Maat, colour, category,
+  SKU and barcodes.
+- **Download**: preflight first. Old-server guard: a request with a customer,
+  a free name, a validity or one-off prices is refused on the screen when the
+  preflight has no `prices` ("De server kent prijzen per klant nog niet…"); a
+  plain request with prices still exports. `ready` keeps meaning translations
+  only. 409 `CATALOG_PRICES_INVALID` shows its `priceIssues` as a list in the
+  error card with "Prijzen aanpassen" (instead of "Opnieuw proberen"); the
+  sheet then opens on "Alleen aangepast" with the server's words on the rows
+  as sent; a BASIS_CHANGED reloads the products quietly (`refreshProducts`,
+  not `load()`, which would clear the card). After the PDF, `priceWarnings`
+  stay in a card "PDF gemaakt met n opmerkingen" until the request changes.
+  The file is `enrosed-prijslijst-<slug>-<lang>.pdf` with a recipient (the
+  preflight's `recipient.name`, else the screen's; the slug as the server's
+  Recipient.fileSlug: NFD, every \p{M} dropped, lower case, other runs one
+  dash, 60 at most, "klant" when empty), the usual names without.
+- **Round 3c (2026-11-06)**: a kept price on a unit the product has left since
+  the tab loaded is refused (409 CUSTOMER_PRICE_BASIS_CHANGED, nothing stored):
+  one toast "Niets bewaard: de prijsbasis is gewijzigd", the sheet stays open,
+  the page reloads the products (`productsStale` → `refreshProducts`) and the
+  row reads "Nu per stolp · vul opnieuw in" and blocks Toepassen until typed
+  again. A row's name gives way on the phone, never its variant (a size the
+  name ends with goes along); the row menu's title and the field's aria-label
+  carry the variant (the title wraps, `.cps-menu`). No € before the
+  "Op aanvraag" placeholder (12.5 px on the phone, whole). The compact preview
+  shows a one-off on a changed unit as "Prijsbasis gewijzigd · vul opnieuw in".
+  A single CATALOG_PRICES_INVALID says its sentence once (the card, no list;
+  the toast "PDF niet gemaakt: kijk de prijzen na"), and a remark or refusal
+  that names the SKU gets no product name in front.
+- **Reference prices** in the selection name the product's own unit ("€ 21,60
+  / display", "/ bowl"; `productSalesUnit().singular`); the studio now loads
+  the unit names itself.
+- Not in this screen: the customer sheet's price block and its journal
+  (`customer-price-block.ts`, the same `CustomerPriceApi`) and the Logboek
+  label `CATALOG_EXPORTED`. Seen on the harness mock only (headless Chrome,
+  375/390/1080/1280/1440, no overflow); not yet against the real backend or in
+  iOS Safari.
+
+## Catalogus PDF: PDF verkleinen (2026-11-07)
+
+Emre: "pdf compresser toggle om pdf rond 10 mb te krijgen zet dit standaard aan". Step 02 has a switch
+"PDF verkleinen" ("Rond 10 MB, makkelijk te mailen") under Productfoto's, on by default, kept with the
+other choices in the builder state (`compressPdf`, missing reads on). `CatalogApi.exportCatalog(request,
+compress)` sends `?compress=false` only when it is off; the server (`PdfCompressor`, backend 2bdba9f)
+then leaves the photos as rendered. With it on, every photo becomes at most 1400 px as a JPEG (alpha
+kept): the whole range goes from 65-70 MB to about 10 MB, the export journal records the PDF that leaves.
+
+## Klanten: landen, CRM-status, sortering en gehanteerde prijzen (2026-11-07)
+
+Emre's first step towards a CRM menu, in one round (backend commits "Klanten:
+CRM status and contact moments" and "Klanten: the prices charged per product").
+
+- **Countries.** `core/api/geo.ts` holds every ISO 3166-1 country (250 with
+  Kosovo) with Dutch names and aliases people type (Saudi, UK, USA, Dubai,
+  Holland…), `countryFlag()` and `searchCountries()`. `shared/country-picker.ts`
+  (`<app-country-picker>`) is the one country field: a trigger shaped like the
+  house `.select`, on the desk an anchored popover with a search box and
+  keyboard, on the phone an iOS sheet with a sticky search; `preferred` lists
+  the countries of Landen & vracht first. Used in the customer form, the
+  supplier form and Landen & vracht; the prospects page keeps its plain select
+  and simply gets the longer list.
+- **Status and contact moments.** `Customer.crmStatus` (NIEUW, IN_GESPREK,
+  ACTIEF, SLAPEND, VERLOREN; null on older rows reads "Geen status") and
+  `Customer.touchpoints` (GEMAILD, GEBELD, GESPROKEN, CATALOGUS_GESTUURD,
+  STAAL_GESTUURD; the server stamps `at`/`by`, the client only sends kinds).
+  Vocabulary and pure helpers in `customers/customer-form.ts`
+  (`CRM_STATUSES`, `TOUCHPOINT_KINDS`, `sortCustomers`, `filterCustomers`,
+  `customerSince`, `metaLine`). The Klanten list has a status filter (desk
+  segmented, phone chips), a sort (Naam, Nieuwste eerst, Oudste eerst, Laatste
+  contact, Land, Status; remembered in localStorage `enrosed.customers.sort`),
+  `?status=` deep links, "klant sinds" and the status badge with the ticked
+  moments as quiet pills. The sheet opens with the Opvolging block: status
+  control and a checklist of pressable rows ("7 nov · Emre"), saved with
+  Opslaan.
+- **Gehanteerde prijzen.** `CustomerPriceApi.appliedPrices()` /
+  `appliedPriceEntries()`; `customers/customer-applied-prices.ts` lists per
+  product what the customer was charged (last price, document, count), and
+  `customers/customer-price-popup.ts` is the one popup (klantprijs,
+  standaardprijs, laatst gehanteerd, every document as a link). It opens from
+  those rows, from the product's "n klantprijzen" rows
+  (`products/product-customer-prices.ts`, with "Naar klant ›") and from the
+  K marker's popover on a line (`sales/line-price-source.ts`, "Eerder
+  gehanteerd" + "Alle documenten ›", desk table and phone editor alike). A
+  line that followed the catalogue shows the catalogue price with the pill
+  "standaard".
+- Checked live against a dev jar with the Nov-6 H2 dataset (desk at 800 px,
+  phone at 375 px): list, filter, sort, sheet, picker, popup, K marker.
+
+## Track & trace: what the field reads, one status, moved arrivals (2026-11-10)
+
+Emre: "Bekijk ook of de track trace beter kan." No paid provider: everything works with the Evergreen
+date lookup and a ship linked by hand. Backend side: its AI-CONTEXT and
+`docs/integrations/container-tracking.md` (section 2026-11-10).
+
+- **`features/purchasing/tracking-reference.ts`** (pure, erasable TypeScript so Node can load it) is
+  the rule the backend also runs (`ContainerTracking.recognise`): change both or neither.
+  `recogniseTrackingReference`, `trackingReferenceHint` (the line under the field),
+  `trackingReferenceAsBill` ("Dit is een B/L"), `stepTrackingReference` (what "Container vertrokken"
+  saves: one number from the B/L field, also typed in groups, as `BL: number`; other text is never
+  glued into one number; behind a filled Track & trace text an Evergreen bill as it is, another B/L
+  as ` BL: number`, in front of a text that is not recognised; never behind a link, or when the row
+  read for the saved text has a ship). `recogniseTrackingReference` first asks a copy of the
+  backend's parser of 2026-10-26 (`strictReading`), as the tracker does, so the line names what is
+  followed.
+- **`tracking-reference-hint.ts`** (`app-tracking-reference-hint`) stands under the four inputs: desk
+  form, desk "Container vertrokken" prompt (one line after both fields), phone editor, phone step
+  sheet. What was read shows at once; a warning only 900 ms after the last keystroke. The phone
+  tints the field from the line's state (`.mpo-input:has(+ app-tracking-reference-hint
+  .tt-hint--warn)` in `styles/purchase-phone.scss`), no glyph. `quiet` (received orders): no warning
+  and no button. `offerBill` false in the step prompt while its B/L field holds text (the button
+  rewrites the Track & trace field).
+- **`container-tracking-model.ts`** holds the shared answers: `trackingStatus` (one status for the
+  overview list and the panel), `trackingArrival`, `trackingFailure`, `trackingMove` (`news` = two
+  days or more and moved under 14 days ago: only news is tinted), `trackingAge`, `trackingListLine`,
+  `trackingProblems`, `trackingRefreshNotice` (reads the server's `refreshOutcome`).
+  `trackingStale` reads the last attempt; an error is its own notice.
+- **Overview** (`container-tracking.ts`): rows of three lines (name + expected arrival, status,
+  reference + age of the last check; "12 → 15 nov" and "+3 d" while a move is news), one summary
+  "Controle niet gelukt bij N containers" (a labelled section, not a live region: its ages change
+  every minute; pressing a line focuses the panel), no header "Vernieuwen" (it only re-read stored rows).
+- **Panel** (`container-tracking-panel.ts`): "was … · 3 dagen later" under the expected arrival, the
+  age under "Gecontroleerd", the check button until the container is finished (disabled with a
+  title when there is nothing to check), the refresh message from the outcome. That message goes
+  when the row shows a newer check or its time passed (`trackingRefreshNoticeUntil`: "Opnieuw kan
+  vanaf 14:32" at 14:32). No failure notice for an arrived container (as the list). "Gegevens
+  bewaard van" reads `failureDataAt` (the failing source's own last success).
+- **Order pages**: `purchase-tracking.ts` reads `?orderId=` every minute, also with the sheet closed,
+  because `PurchaseDesk` keeps its order equal to dates tracking wrote (`PurchaseTrackingBaseline`);
+  without that read the next save would put the old date back. `arrivalMove` on `PurchaseDesk`
+  (Ontvangen step + "Verwacht op" fact) and `PurchaseView` (step date tint + the Track & trace row).
+- **Bell**: container section is "Containers"; a moved arrival is a `CONTAINER_AANKOMST` row
+  ("Aankomst 15/11/2026 · 3 dagen later", detail "was 12/11/2026"; the tone reads the title's end).
+- **Older backend**: every new row field is optional. Without them: status and hint are computed
+  here, failure is the error of a linked source, no move is shown, the refresh message is the old
+  one, and `?orderId=` is ignored (the whole feed comes back and the row is found in it).
+- **Native app**: untouched. It reads the feed itself with its own port of the rules; host
+  messages, the today snapshot and `tools/host-contract.json` did not change.

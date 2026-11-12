@@ -6,6 +6,7 @@ import {
   effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { AuthImage } from '../../core/api/auth-image';
@@ -20,12 +21,23 @@ import {
   CatalogExportRequest,
   CatalogLayout,
   CatalogOrder,
+  CatalogPreflightResult,
+  CatalogPriceIssue,
+  CatalogPriceOverride,
 } from '../../core/api/catalog-api';
+import { CustomerPriceApi, type CustomerPrice } from '../../core/api/customer-price-api';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
-import { Category, LANGUAGES, LanguageCode, Product, ProductFamily } from '../../core/api/models';
+import { Category, Customer, LANGUAGES, LanguageCode, Product, ProductFamily } from '../../core/api/models';
+import { SalesApi } from '../../core/api/sales-api';
+import { DateField } from '../../shared/date-field';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
+import { palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
+import { CatalogPriceSheet } from './catalog-price-sheet';
+import {
+  basisChanged, changesPrint, printedPrice, recipientSlug, requestOverrides, standardPrice, storedOverride, todayIso,
+} from './catalog-prices';
 import {
   CatalogBrochureDraft,
   CatalogBrochureSettings,
@@ -37,13 +49,49 @@ import {
   catalogTranslationLinks,
 } from './catalog-translation-issues';
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
-import { deselectProductIds } from './catalog-product-selection-state';
+import { deselectProductIds, selectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
 import { variantLabelIn } from './product-translation-adapter';
+import { productSalesUnit } from './product-sales-unit';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
 const STATE_KEY = 'enrosed.catalogBuilder.v3';
 const LEGACY_STATE_KEY = 'enrosed.catalogBuilder.v2';
+/** Who the PDF is for and its one-off prices: this tab only, never in the device draft, so the next customer cannot inherit them. */
+const PRICE_STATE_KEY = 'enrosed.catalogBuilder.prices.v1';
+
+interface CatalogPriceState {
+  version: 1;
+  customerId: number | null;
+  /** "Andere naam…": a recipient without a customer record (a fair lead), with no stored prices. */
+  named: boolean;
+  recipientName: string;
+  pricesValidUntil: string;
+  overrides: CatalogPriceOverride[];
+  /** Who the one-off prices were typed for (recipientKey); absent in a tab stored before it existed. */
+  pricesFor?: PricesFor | null;
+}
+
+/** The recipient one-off prices belong to: its key and the name as it was typed. */
+interface PricesFor {
+  key: string;
+  name: string;
+}
+
+/** A free name as a recipient: case and spacing do not make another lead. */
+function nameKey(name: string): string {
+  return `n:${name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('nl-BE')}`;
+}
+
+/** "per display", "per stolp" (NL, the product's own unit) or the language's word for a piece. */
+function unitAfterPrice(product: Product, language: LanguageCode, copy: { perPiece: string; perDisplay: string }): string {
+  const unit = productSalesUnit(product);
+  if (unit.isDisplay) return copy.perDisplay;
+  return language === 'NL' ? unit.piece.per : copy.perPiece;
+}
+
+/** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80 at the standard loaded height (the wood included), 700 kg. */
+const CATALOGUE_PALLET = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
   version: 2 | 3;
@@ -52,6 +100,8 @@ interface CatalogBuilderState extends CatalogBrochureDraft {
   intro: string;
   includePrices: boolean;
   includePhotos: boolean;
+  /** "PDF verkleinen": the server makes the photos lighter, about 10 MB for the whole range; on unless turned off. */
+  compressPdf?: boolean;
   selectedIds: number[];
   /** All available products, so deselecting and reselecting retains their position. */
   orderedIds?: number[];
@@ -68,18 +118,22 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
   includeBackCover: true,
 };
 
+/* The preview's own words per document language; the PDF takes its copy from the catalogue texts. */
 const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
+  pallet: string; priceListFor: string;
+  /** After a price, as the PDF's catalog.simple.perpiece and its display word say it; NL names the product's own unit. */
+  perPiece: string; perDisplay: string;
 }> = {
-  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.' },
-  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.' },
-  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.' },
-  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.' },
-  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.' },
-  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.' },
-  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.' },
-  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.' },
-  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.' },
+  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
+  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
+  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
+  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
+  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
+  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
+  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
+  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
+  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
 };
 
 @Component({
@@ -88,9 +142,11 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   imports: [
     AuthImage,
     CatalogBrochureSettings,
+    CatalogPriceSheet,
     CatalogProductSelection,
     CatalogProductArrangement,
     CataloguePhotoImport,
+    DateField,
     FormsModule,
     PageHeader,
     RouterLink,
@@ -122,6 +178,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               <div class="cover-sheet__copy">
                 <img class="cover-sheet__brand" src="/catalog-logo-gold.png" alt="ENROSED" />
                 <span class="cover-sheet__edition">WHOLESALE COLLECTION</span>
+                @if (recipientLine()) { <span class="cover-sheet__recipient">{{ recipientLine() }}</span> }
                 <h2 id="studio-preview-title">{{ previewTitle() }}<em>{{ previewSubtitle() }}</em></h2>
                 <span class="cover-sheet__rule"></span>
               </div>
@@ -132,6 +189,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                 <header class="compact-sheet__head">
                   <img src="/logo-ui.png" alt="ENROSED" />
                   <h2 id="studio-preview-title">{{ compactCopy().title }}</h2>
+                  @if (recipientLine()) { <span class="compact-sheet__recipient">{{ recipientLine() }}</span> }
                   <span>{{ languageLabel() }}</span>
                 </header>
                 <div class="compact-sheet__columns" aria-hidden="true">
@@ -155,8 +213,9 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                         @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
                         @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
                         <span>HS {{ row.hsCode ?? '-' }}</span>
-                        <span>20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> }</span>
-                        @if (includePrices()) { <strong>{{ row.price }}</strong> }
+                        <!-- Pallet, 20ft and 40ft always together, in that order, as in the PDF. -->
+                        <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
+                        @if (includePrices()) { <strong [class.is-stale]="row.priceStale">{{ row.price }}</strong> }
                       </div>
                     </div>
                   } @empty {
@@ -233,9 +292,55 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                          aria-describedby="catalog-prices-help" [ngModel]="includePrices()" (ngModelChange)="includePrices.set($event)" />
                 </span>
               </label>
+              @if (includePrices()) {
+                <div class="price-target">
+                  <div class="price-target__who">
+                    <label class="field"><span>Voor klant (optioneel)</span>
+                      <select class="select" #recipientSelect (change)="chooseRecipient(recipientSelect)">
+                        <option value="" [selected]="recipientValue() === ''">Geen klant</option>
+                        @if (customerId() !== null && !targetKnown()) {
+                          <option [value]="recipientValue()" selected>{{ customersState() === 'ERROR' ? 'Klant #' + customerId() : 'Klanten laden…' }}</option>
+                        }
+                        @for (customer of customers(); track customer.id) {
+                          <option [value]="'c' + customer.id" [selected]="recipientValue() === 'c' + customer.id">{{ customer.company }}{{ customer.city ? ' — ' + customer.city : '' }}</option>
+                        }
+                        <option value="name" [selected]="recipientValue() === 'name'">Andere naam…</option>
+                      </select>
+                    </label>
+                    @if (named()) {
+                      <label class="field"><span>Naam op de prijslijst</span>
+                        <input class="input" maxlength="120" autocomplete="off" placeholder="Bijvoorbeeld: Bloemen Janssens"
+                               [ngModel]="recipientName()" (ngModelChange)="recipientName.set($event)"
+                               (change)="confirmRecipientName()" (keydown.enter)="confirmRecipientName()" />
+                      </label>
+                    }
+                  </div>
+                  <label class="field"><span>Geldig tot (optioneel)</span>
+                    <app-date-field fieldId="catalog-valid-until" [value]="pricesValidUntil()" (valueChange)="pricesValidUntil.set($event)" />
+                    @if (validityPast()) { <small class="price-target__past">Ligt in het verleden</small> }
+                  </label>
+                  <div class="price-target__adjust">
+                    <!-- Also with an empty PDF: the sheet finds and takes in products itself. -->
+                    <button class="btn" type="button" [disabled]="!dataReady()" (click)="openPriceSheet()">
+                      Prijzen aanpassen{{ overrideCount() ? ' (' + overrideCount() + ')' : '' }}
+                    </button>
+                    @if (customerNote()) { <small>{{ customerNote() }}</small> }
+                    @if (customerPricesState() === 'ERROR') {
+                      <button class="linklike" type="button" (click)="loadCustomerPrices()">Opnieuw laden</button>
+                    } @else if (customersState() === 'ERROR') {
+                      <small>Klanten niet geladen</small>
+                      <button class="linklike" type="button" (click)="loadCustomers()">Opnieuw laden</button>
+                    }
+                  </div>
+                </div>
+              }
               <label class="option-toggle">
                 <span><b>Productfoto’s</b><small>Je foto voor de catalogus krijgt voorrang</small></span>
                 <input class="studio-switch" type="checkbox" [ngModel]="includePhotos()" (ngModelChange)="includePhotos.set($event)" />
+              </label>
+              <label class="option-toggle">
+                <span><b>PDF verkleinen</b><small>Rond 10 MB, makkelijk te mailen</small></span>
+                <input class="studio-switch" type="checkbox" [ngModel]="compressPdf()" (ngModelChange)="compressPdf.set($event)" />
               </label>
             </div>
           </section>
@@ -352,6 +457,13 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                     }
                   </div>
                 }
+                @if (priceIssueList().length) {
+                  <div class="translation-issues__list price-issues" aria-label="Prijzen die niet in de PDF kunnen">
+                    @for (issue of priceIssueList(); track $index) {
+                      <div class="translation-issue"><span>@if (issue.name) {<b>{{ issue.name }}</b>}<small>{{ issue.message }}</small></span></div>
+                    }
+                  </div>
+                }
               </div>
               <div class="render-error__actions">
                 @if (renderTranslationError() && !renderTranslationIssues().length) {
@@ -360,8 +472,22 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                     Catalogusteksten openen
                   </a>
                 }
-                <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()"
-                        (click)="retryRender()">Opnieuw proberen</button>
+                <!-- Refused prices change only in the sheet; trying the same request again would be refused again. -->
+                @if (priceIssues().length) {
+                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()" (click)="openPriceSheet()">Prijzen aanpassen</button>
+                } @else {
+                  <button class="btn btn--sm btn--primary" type="button" [disabled]="busy()"
+                          (click)="retryRender()">Opnieuw proberen</button>
+                }
+              </div>
+            </section>
+          }
+
+          @if (priceNoteRows().length) {
+            <section class="card render-status render-notes" role="status">
+              <div>
+                <b>PDF gemaakt met {{ priceNoteRows().length }} {{ priceNoteRows().length === 1 ? 'opmerking' : 'opmerkingen' }}</b>
+                @for (note of priceNoteRows(); track $index) { <small>{{ note.name ? note.name + ': ' : '' }}{{ note.message }}</small> }
               </div>
             </section>
           }
@@ -372,8 +498,9 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
 
     <div class="action-bar catalog-action" [attr.aria-busy]="busy()">
       <div class="action-bar__total">
-        <div class="action-bar__label">
-          {{ languageLabel() }} · {{ includePrices() ? 'Met prijzen' : 'Zonder prijzen' }}
+        <!-- A phone has no room for both: the customer's name wins over the language. -->
+        <div class="action-bar__label" [attr.title]="recipientLabel() || null">
+          <span [class.catalog-action__lang]="!!recipientLabel()">{{ languageLabel() }} · </span>{{ includePrices() ? 'Met prijzen' : 'Zonder prijzen' }}@if (recipientLabel()) { · voor {{ recipientLabel() }}}
         </div>
         <div class="action-bar__value">{{ selectedFamilyCount() }} groepen · {{ selected().size }} varianten</div>
       </div>
@@ -385,6 +512,14 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
       </div>
       <span class="sr-only" aria-live="polite">{{ actionStatus() }}</span>
     </div>
+
+    @if (priceSheetOpen()) {
+      <app-catalog-price-sheet [catalogue]="orderedProducts()" [selected]="selected()" [families]="families()" [categories]="categories()"
+        [overrides]="priceOverrides()" [customer]="targetCustomer()"
+        [customerPrices]="customerPrices()" [customerNote]="customerNote()" [validUntil]="pricesValidUntil()" [issues]="priceIssues()"
+        (saved)="customerPricesSaved($event)" (included)="includeProducts($event)" (applied)="applyPrices($event)"
+        (productsStale)="refreshProducts()" (closed)="priceSheetOpen.set(false)" />
+    }
   `,
   styles: `
     :host { display: block; --studio-bordeaux: #651629; }
@@ -413,12 +548,14 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .cover-sheet:not(.cover-sheet--simple) h2 em { margin-top: 8px; color: #e7cba6; font-size: .82em; }
     .cover-sheet:not(.cover-sheet--simple) .cover-sheet__rule { position: absolute; top: 38%; left: 44%; width: 12%; margin: 0; background: #cbb07b; }
     .cover-sheet:not(.cover-sheet--simple) .cover-sheet__foot { position: absolute; bottom: 10%; left: 12%; width: 76%; padding: 0; color: #d6b783; }
+    .cover-sheet__recipient { position: absolute; top: 40.8%; left: 10%; width: 80%; overflow: hidden; color: #d6b783; font-size: clamp(5px, .7vw, 8px); letter-spacing: .14em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
     .cover-stage.cover-stage--compact { padding: 22px 0; }
     .compact-sheet { display: flex; flex-direction: column; box-sizing: border-box; width: min(100%, 360px); min-width: 0; aspect-ratio: 210 / 297; padding: 7%; background: #fff; color: #39282d; box-shadow: 0 12px 26px -12px rgb(45 17 22 / 28%); }
     .compact-sheet__head { padding-bottom: 12px; }
     .compact-sheet__head img { width: 77px; height: 27px; object-fit: contain; object-position: left; }
     .compact-sheet__head h2 { margin: 8px 0 4px; color: var(--studio-bordeaux); font-family: Georgia, 'Times New Roman', serif; font-size: clamp(16px, 2.3vw, 22px); font-weight: 400; line-height: 1.15; overflow-wrap: anywhere; }
     .compact-sheet__head > span { font-size: 8px; color: #80676d; }
+    .compact-sheet__head .compact-sheet__recipient { display: block; margin-bottom: 2px; color: var(--studio-bordeaux); font-weight: 650; overflow-wrap: anywhere; }
     .compact-sheet__columns { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 8px; border-block: 1px solid #cbb4ba; padding: 6px 0; color: var(--studio-bordeaux); font-size: 7px; }
     .compact-sheet__rows { flex: 1; display: flex; flex-direction: column; min-width: 0; }
     .compact-sheet__row { display: grid; grid-template-columns: 38px minmax(0, 1fr) minmax(0, .85fr); gap: 7px; align-items: center; min-height: 46px; padding: 7px 0; border-bottom: 1px solid #e9dfe2; }
@@ -428,6 +565,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .compact-sheet__identity b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 8px; font-weight: 650; }
     .compact-sheet__sku, .compact-sheet__ean { font-size: 6px; color: #745c63; }
     .compact-sheet__logistics strong { color: var(--studio-bordeaux); font-size: 8px; }
+    .compact-sheet__logistics .is-stale { color: var(--warn); }
     .compact-sheet--without-photos .compact-sheet__row { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
     .compact-sheet__empty { margin: 18px 0; font-size: 10px; color: #80676d; line-height: 1.5; }
     .compact-sheet__foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: #80676d; font-size: 6px; letter-spacing: .08em; }
@@ -473,6 +611,17 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .studio-switch:checked { background: var(--rose); border-color: var(--rose); }
     .studio-switch:checked::after { transform: translateX(17px); }
     .studio-switch:focus-visible { outline: 3px solid var(--rose); outline-offset: 3px; }
+    .option-toggle:has(+ .price-target) { border: 0; }
+    .price-target { display: grid; gap: 12px; padding: 2px 0 16px; border-bottom: 1px solid var(--line); }
+    .price-target__who { display: grid; gap: 12px; min-width: 0; }
+    .price-target .field { min-width: 0; margin: 0; }
+    .price-target__adjust { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+    .price-target__adjust small, .price-target__past { color: var(--muted); font-size: 12px; }
+    .price-target__past { color: var(--warn); }
+    @container catalog-page (min-width: 480px) {
+      .price-target { grid-template-columns: minmax(0, 1fr) 172px; align-items: start; }
+      .price-target__adjust { grid-column: 1 / -1; }
+    }
     .studio-personal { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
     .studio-personal summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 74px; padding: 16px 20px; cursor: pointer; list-style: none; }
     .studio-personal summary::-webkit-details-marker { display: none; }
@@ -495,6 +644,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .render-error { align-items: flex-start; justify-content: space-between; border-color: var(--danger); }
     .render-error__body { flex: 1 1 auto; }
     .render-error small { color: var(--danger); }
+    .render-notes { align-items: flex-start; border-color: var(--warn); }
     .render-error__actions { display:flex;justify-content:flex-end;flex-wrap:wrap;gap:7px }
     .render-error__actions .btn { min-height:48px }
     .translation-issues { display: grid; gap: 12px; margin-top: 12px; }
@@ -522,7 +672,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .catalog-action { background: color-mix(in srgb, var(--surface) 92%, transparent); border-color: var(--line); }
-    .catalog-action .action-bar__label { font-size: 10px; text-transform: none; letter-spacing: 0; margin-bottom: 3px; }
+    .catalog-action .action-bar__label { overflow: hidden; margin-bottom: 3px; font-size: 10px; letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
     .catalog-action .action-bar__value { font-size: 15px; font-weight: 700; }
     .catalog-action__buttons { display: flex; gap: 7px; }
     .catalog-action__buttons .btn { min-height: 48px; padding-inline: 22px; border-radius: 14px; font-size: 14px; white-space: nowrap; }
@@ -550,6 +700,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
       .studio-section__head { margin-bottom: 16px; }
       .catalog-action { bottom: calc(8px + env(safe-area-inset-bottom)); padding: 10px 12px; gap: 8px; border-radius: 20px; }
       .catalog-action .action-bar__value { font-size: 12px; }
+      .catalog-action__lang { display: none; }
       .catalog-action__buttons .btn { font-size: 13px; padding-inline: 16px; }
       .render-error { align-items: stretch; flex-direction: column; }
       .render-error__actions { display: grid; grid-template-columns: 1fr; }
@@ -573,19 +724,44 @@ export class CatalogExport {
   readonly desktop = inject(DesktopViewport);
 
   private readonly catalog = inject(CatalogApi);
+  private readonly sales = inject(SalesApi);
+  private readonly customerPriceApi = inject(CustomerPriceApi);
   private readonly ui = inject(Ui);
   private readonly destroyRef = inject(DestroyRef);
   private storedSelection: number[] | null = null;
   private storedOrder: number[] | null = null;
   private selectionInitialized = false;
   private destroyed = false;
+  private customerPricesRequest = 0;
 
   readonly layout = signal<CatalogLayout>('BROCHURE');
   readonly language = signal<LanguageCode>('NL');
   readonly intro = signal('');
   readonly includePrices = signal(false);
   readonly includePhotos = signal(true);
+  /** Emre, 2026-11-07: "pdf rond 10 mb … zet dit standaard aan". */
+  readonly compressPdf = signal(true);
   readonly brochure = signal<CatalogBrochureDraft>({ ...DEFAULT_BROCHURE });
+
+  /* Who the PDF is for and its one-off prices: they count only while "Prijzen tonen" is on (PRICE_STATE_KEY). */
+  readonly customers = signal<Customer[]>([]);
+  readonly customersState = signal<'IDLE' | 'LOADING' | 'READY' | 'ERROR'>('IDLE');
+  readonly customerId = signal<number | null>(null);
+  readonly named = signal(false);
+  readonly recipientName = signal('');
+  readonly pricesValidUntil = signal('');
+  readonly priceOverrides = signal<ReadonlyMap<number, CatalogPriceOverride>>(new Map());
+  /** Who the one-off prices were typed for; another recipient asks before they go (chooseRecipient, confirmRecipientName). */
+  readonly pricesFor = signal<PricesFor | null>(null);
+  private askingRecipient = false;
+  /** The chosen customer's stored prices by product; empty without a customer and while they load. */
+  readonly customerPrices = signal<ReadonlyMap<number, CustomerPrice>>(new Map());
+  readonly customerPricesState = signal<'IDLE' | 'LOADING' | 'READY' | 'ERROR'>('IDLE');
+  readonly priceSheetOpen = signal(false);
+  /** The server's refusal of one-off prices (409 CATALOG_PRICES_INVALID), per product. */
+  readonly priceIssues = signal<CatalogPriceIssue[]>([]);
+  /** What the preflight remarked on the PDF just made (below cost, validity in the past); it stops nothing. */
+  readonly priceNotes = signal<CatalogPriceIssue[]>([]);
 
   readonly products = signal<Product[]>([]);
   readonly categories = signal<Category[]>([]);
@@ -672,10 +848,23 @@ export class CatalogExport {
   readonly compactRows = computed(() => {
     const language = this.language();
     const currency = new Intl.NumberFormat(language.toLowerCase(), { style: 'currency', currency: 'EUR' });
+    const count = new Intl.NumberFormat(language.toLowerCase());
+    const overrides = this.priceOverrides();
+    const stored = this.customerPrices();
+    const copy = this.compactCopy();
     return this.selectedProducts().slice(0, 4).map(product => {
       const text = product.texts.find(row => row.language === language);
       const photo = cataloguePhoto(product);
       const gp = readGpCapacity(product.carton);
+      /* The PDF's figure: whole omdozen on the pallet times what one omdoos holds, in the unit of 20ft and 40ft. */
+      const pallet = palletFit(product.carton, CATALOGUE_PALLET);
+      const perCarton = product.carton.piecesPerCarton;
+      const override = overrides.get(product.id!);
+      /* A one-off typed on a unit the product has since left is no price at its unit now: it waits to be typed again
+         (the server refuses it, BASIS_CHANGED), as the sheet says. */
+      /* "Op aanvraag" has no unit to go stale: the server prints it whatever the product is sold per. */
+      const priceStale = !!override && !override.onRequest && basisChanged(product, override);
+      const price = printedPrice(product, override, stored.get(product.id!));
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       return {
         id: product.id,
@@ -688,14 +877,64 @@ export class CatalogExport {
         perBox: product.carton.piecesPerCarton,
         ean: product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null,
         hsCode: product.hsCode?.trim() || null,
-        per20Ft: gp.value,
+        perPallet: pallet.cartonsPerPallet > 0 && perCarton ? count.format(pallet.cartonsPerPallet * perCarton) : null,
+        per20Ft: gp.value === null ? null : count.format(gp.value),
         per20FtAuto: isAutoGpCapacity(gp),
         per20FtHint: gpCapacityHint(gp, product.carton),
-        price: Number.isFinite(product.computedSalesPriceEur) && product.computedSalesPriceEur > 0
-          ? currency.format(product.computedSalesPriceEur) : this.compactCopy().onRequest,
+        per40Ft: product.carton.hcCapacity ? count.format(product.carton.hcCapacity) : null,
+        /* The price names its unit, as the PDF does: per display or per piece is where a ×6 mistake would hide. */
+        price: priceStale ? 'Prijsbasis gewijzigd · vul opnieuw in'
+          : price === null ? copy.onRequest : `${currency.format(price)} ${unitAfterPrice(product, language, copy)}`,
+        priceStale,
       };
     });
   });
+  readonly targetKnown = computed(() => this.customers().some((customer) => customer.id === this.customerId()));
+  /** The stored customer's id while prices are on: their prices load for it. */
+  private readonly targetCustomerId = computed(() => this.includePrices() ? this.customerId() : null);
+  readonly targetCustomer = computed(() => {
+    const id = this.targetCustomerId();
+    if (id === null) return null;
+    return { id, name: this.customers().find((customer) => customer.id === id)?.company.trim() || `Klant #${id}` };
+  });
+  /** The name the PDF is made for; '' without a recipient, and always without prices. */
+  readonly recipientLabel = computed(() => this.targetCustomer()?.name
+    ?? (this.includePrices() && this.named() ? this.recipientName().trim().slice(0, 120) : ''));
+  readonly recipientValue = computed(() => this.customerId() !== null ? `c${this.customerId()}` : this.named() ? 'name' : '');
+  /** The recipient as one key: 'c12', 'n:bloemen janssens', '' for nobody. */
+  readonly recipientKey = computed(() => this.customerId() !== null ? `c${this.customerId()}`
+    : this.named() ? nameKey(this.recipientName()) : '');
+  /** The free name now differs from the one the one-off prices were typed for (prices typed before any name follow it). */
+  readonly recipientNameChanged = computed(() => {
+    const owner = this.pricesFor();
+    return this.includePrices() && this.named() && this.priceOverrides().size > 0
+      && !!owner && owner.key !== 'n:' && owner.key !== this.recipientKey();
+  });
+  readonly recipientLine = computed(() => this.recipientLabel()
+    ? this.compactCopy().priceListFor.replace('{name}', this.recipientLabel()) : '');
+  readonly requestPriceOverrides = computed(() => this.includePrices()
+    ? requestOverrides(this.selectedProducts(), this.priceOverrides(), this.customerPrices()) : []);
+  readonly overrideCount = computed(() => this.requestPriceOverrides().length);
+  readonly customerNote = computed(() => {
+    if (!this.targetCustomer()) return '';
+    switch (this.customerPricesState()) {
+      case 'LOADING': return 'Klantprijzen laden…';
+      case 'ERROR': return 'Klantprijzen niet geladen';
+      default: {
+        const stored = this.customerPrices();
+        const active = this.selectedProducts().filter((product) => stored.get(product.id!)?.status === 'ACTIVE').length;
+        return active ? `${active} ${active === 1 ? 'klantprijs' : 'klantprijzen'}` : 'Geen klantprijzen';
+      }
+    }
+  });
+  readonly validityPast = computed(() => !!this.pricesValidUntil() && this.pricesValidUntil() < todayIso());
+  readonly priceIssueRows = computed(() => this.withProductNames(this.priceIssues()));
+  /** The list under the card's message; a single refusal is that message already, so it is not said twice. */
+  readonly priceIssueList = computed(() => {
+    const rows = this.priceIssueRows();
+    return rows.length === 1 && rows[0].message === this.renderError() ? [] : rows;
+  });
+  readonly priceNoteRows = computed(() => this.withProductNames(this.priceNotes()));
   readonly previewTitle = computed(() => this.brochure().coverTitle.trim() || ({
     NL: 'Gepreserveerde rozen,', EN: 'Preserved roses,', FR: 'Roses préservées,', DE: 'Konservierte Rosen,',
     ES: 'Rosas preservadas,', PL: 'Róże stabilizowane,', PT: 'Rosas preservadas,', TR: 'Korunmuş güller,', EL: 'Διατηρημένα τριαντάφυλλα,',
@@ -708,7 +947,28 @@ export class CatalogExport {
 
   constructor() {
     this.restoreState();
+    this.restorePriceState();
     void this.load();
+    /* The unit words of the reference prices and the price sheet ("per bowl", "per display"). */
+    void this.catalog.unitNames().catch(() => undefined);
+
+    /* The customers load the first time prices are shown; a chosen customer's stored prices on every change. */
+    effect(() => {
+      if (this.includePrices() && this.customersState() === 'IDLE') untracked(() => void this.loadCustomers());
+    });
+    effect(() => {
+      const customerId = this.targetCustomerId();
+      untracked(() => void this.loadCustomerPrices(customerId));
+    });
+    effect(() => this.persistPriceState({
+      version: 1,
+      customerId: this.customerId(),
+      named: this.named(),
+      recipientName: this.recipientName(),
+      pricesValidUntil: this.pricesValidUntil(),
+      overrides: [...this.priceOverrides().values()],
+      pricesFor: this.pricesFor(),
+    }));
 
     effect(() => {
       if (!this.dataReady()) return;
@@ -720,6 +980,7 @@ export class CatalogExport {
         intro: this.intro(),
         includePrices: this.includePrices(),
         includePhotos: this.includePhotos(),
+        compressPdf: this.compressPdf(),
         selectedIds: this.selectedProducts().map(product => product.id!),
         orderedIds: this.orderedProducts().map(product => product.id!),
         ...brochure,
@@ -734,6 +995,8 @@ export class CatalogExport {
         this.renderError.set(null);
         this.renderTranslationError.set(false);
         this.missingTranslationPaths.set([]);
+        this.priceIssues.set([]);
+        this.priceNotes.set([]);
       }
       previousRequest = currentRequest;
     });
@@ -814,27 +1077,39 @@ export class CatalogExport {
 
   async download(): Promise<void> {
     if (!this.canExport() || this.busy()) return;
+    /* A name typed and not yet left (the click blurred it): the question comes before a PDF with someone else's prices. */
+    if (this.recipientNameChanged()) {
+      this.confirmRecipientName();
+      return;
+    }
     const request = this.buildRequest();
     const key = JSON.stringify(request);
     this.renderError.set(null);
     this.renderTranslationError.set(false);
     this.missingTranslationPaths.set([]);
+    this.priceIssues.set([]);
+    this.priceNotes.set([]);
     this.downloading.set(true);
     try {
       const preflight = await this.catalog.preflightCatalog(request);
       if (this.destroyed || key !== this.requestKey()) return;
+      /* An older server drops what it does not know: the PDF would leave without the customer or the typed prices. */
+      if (this.needsPriceServer(request) && !Array.isArray(preflight.prices)) {
+        this.showRenderProblem('De server kent prijzen per klant nog niet. Maak de PDF zonder klant, geldigheid en aangepaste prijzen, of probeer het later opnieuw.');
+        return;
+      }
       const missingPaths = this.validMissingPaths(preflight.missingPaths);
       if (!preflight.ready || missingPaths.length) {
         this.showMissingTranslations(missingPaths);
         return;
       }
-      const blob = await this.catalog.exportCatalog(request);
+      const blob = await this.catalog.exportCatalog(request, this.compressPdf());
       if (this.destroyed || key !== this.requestKey()) return;
-      saveBlob(
-        blob,
-        `enrosed-${request.layout === 'BROCHURE' ? 'brochure' : 'catalogus'}-${request.language.toLowerCase()}.pdf`,
-      );
-      this.ui.toast('Catalogus gedownload');
+      saveBlob(blob, this.fileName(request, preflight));
+      const notes = this.validPriceIssues(preflight.priceWarnings);
+      this.priceNotes.set(notes);
+      this.ui.toast(notes.length
+        ? `Catalogus gedownload · ${notes.length} ${notes.length === 1 ? 'opmerking' : 'opmerkingen'}` : 'Catalogus gedownload');
     } catch (failure) {
       if (!this.destroyed) await this.handleRenderFailure(failure, 'Catalogus maken mislukt');
     } finally {
@@ -910,8 +1185,139 @@ export class CatalogExport {
     }
   }
 
+  /* ------------------------------------------------- prices for a customer */
+
+  async loadCustomers(): Promise<void> {
+    this.customersState.set('LOADING');
+    try {
+      const customers = await this.sales.customers();
+      if (this.destroyed) return;
+      this.customers.set(customers.filter((customer) => customer.id !== null)
+        .sort((a, b) => a.company.localeCompare(b.company, 'nl-BE')));
+      this.customersState.set('READY');
+      const chosen = this.customerId();
+      if (chosen !== null && !customers.some((customer) => customer.id === chosen)) {
+        /* Its one-off prices were typed for that customer: they must not end up in a general price list. */
+        this.customerId.set(null);
+        this.priceOverrides.set(new Map());
+        this.pricesFor.set(null);
+        this.ui.toast('De gekozen klant bestaat niet meer', 'err');
+      }
+    } catch {
+      if (!this.destroyed) this.customersState.set('ERROR');
+    }
+  }
+
+  async loadCustomerPrices(customerId: number | null = this.targetCustomerId()): Promise<void> {
+    const request = ++this.customerPricesRequest;
+    this.customerPrices.set(new Map());
+    this.customerPricesState.set(customerId === null ? 'IDLE' : 'LOADING');
+    if (customerId === null) return;
+    try {
+      const prices = await this.customerPriceApi.list(customerId);
+      if (this.destroyed || request !== this.customerPricesRequest) return;
+      this.customerPrices.set(new Map(prices.map((price) => [price.productId, price])));
+      this.customerPricesState.set('READY');
+    } catch {
+      if (!this.destroyed && request === this.customerPricesRequest) this.customerPricesState.set('ERROR');
+    }
+  }
+
+  /** Another customer (or none, or a free name): the one-off prices were for the previous one, so they go, after a question. */
+  chooseRecipient(select: HTMLSelectElement): void {
+    const value = select.value;
+    const previous = this.recipientValue();
+    if (value === previous) return;
+    const commit = () => {
+      this.customerId.set(value.startsWith('c') ? Number(value.slice(1)) : null);
+      this.named.set(value === 'name');
+      this.priceOverrides.set(new Map());
+      this.pricesFor.set(null);
+    };
+    const count = this.overrideCount();
+    if (!count) {
+      commit();
+      return;
+    }
+    this.ui.confirm({
+      title: 'Andere klant kiezen?',
+      message: count === 1 ? 'Je aangepaste prijs vervalt.' : `Je ${count} aangepaste prijzen vervallen.`,
+      confirmLabel: 'Andere klant',
+    }, commit, undefined, () => { select.value = previous; });
+  }
+
+  /**
+   * A free name left (blur or Enter) that differs from the one the one-off
+   * prices were typed for is another recipient: they go after the same
+   * question as another customer. "Zelfde klant" keeps them for a corrected
+   * spelling; Annuleren puts the previous name back.
+   */
+  confirmRecipientName(): void {
+    if (this.askingRecipient || !this.named()) return;
+    const owner = this.pricesFor();
+    const key = this.recipientKey();
+    if (!this.priceOverrides().size || !owner || owner.key === 'n:') {
+      if (this.priceOverrides().size) this.pricesFor.set({ key, name: this.recipientName().trim() });
+      return;
+    }
+    if (owner.key === key) return;
+    const settle = (change: () => void) => () => { this.askingRecipient = false; change(); };
+    const adopt = () => this.pricesFor.set({ key: this.recipientKey(), name: this.recipientName().trim() });
+    const commit = () => { this.priceOverrides.set(new Map()); this.pricesFor.set(null); };
+    const count = this.overrideCount();
+    if (!count) {
+      commit();
+      return;
+    }
+    this.askingRecipient = true;
+    this.ui.confirm({
+      title: 'Andere klant kiezen?',
+      message: count === 1 ? 'Je aangepaste prijs vervalt.' : `Je ${count} aangepaste prijzen vervallen.`,
+      confirmLabel: 'Andere klant',
+      secondaryLabel: 'Zelfde klant',
+    }, settle(commit), settle(adopt), settle(() => this.recipientName.set(owner.name)));
+  }
+
+  openPriceSheet(): void {
+    if (this.recipientNameChanged()) {
+      this.confirmRecipientName();
+      return;
+    }
+    if (this.dataReady()) this.priceSheetOpen.set(true);
+  }
+
+  /** Products taken in from Prijzen aanpassen: added to the PDF (never replacing it), so step 03 and the counts follow. */
+  includeProducts(ids: readonly number[]): void {
+    const known = new Set(this.products().map((product) => product.id));
+    this.selected.update((current) => selectProductIds(current, ids.filter((id) => known.has(id))));
+  }
+
+  /** The sheet's prices; one that prints what the PDF would print anyway is not kept. */
+  applyPrices(overrides: ReadonlyMap<number, CatalogPriceOverride>): void {
+    const products = new Map(this.products().map((product) => [product.id, product]));
+    const stored = this.customerPrices();
+    const kept = new Map([...overrides].filter(([id, price]) => {
+      const product = products.get(id);
+      return !!product && changesPrint(product, price, standardPrice(product, stored.get(id)));
+    }));
+    this.priceOverrides.set(kept);
+    this.pricesFor.set(kept.size ? { key: this.recipientKey(), name: this.recipientName().trim() } : null);
+    this.priceSheetOpen.set(false);
+  }
+
+  /** "Ook bewaren als prijzen van …" answered with the customer's full list; it applies before the sheet's prices do. */
+  customerPricesSaved(prices: CustomerPrice[]): void {
+    this.customerPricesRequest++;
+    this.customerPrices.set(new Map(prices.map((price) => [price.productId, price])));
+    this.customerPricesState.set('READY');
+  }
+
   private buildRequest(): CatalogExportRequest {
     const brochure = this.brochure();
+    const prices = this.includePrices();
+    const customerId = prices ? this.customerId() : null;
+    const recipientName = prices && customerId === null && this.named() ? this.recipientName().trim().slice(0, 120) : '';
+    const overrides = this.requestPriceOverrides();
     return {
       productIds: this.selectedProducts().map(product => product.id!),
       preserveProductOrder: true,
@@ -936,7 +1342,26 @@ export class CatalogExport {
             coverSubtitle: brochure.coverSubtitle.trim() || undefined,
           }
         : undefined,
+      /* Only what is set travels: a request without them is the one every server knows. */
+      ...(customerId !== null ? { customerId } : {}),
+      ...(recipientName ? { recipientName } : {}),
+      ...(prices && this.pricesValidUntil() ? { pricesValidUntil: this.pricesValidUntil() } : {}),
+      ...(overrides.length ? { priceOverrides: overrides } : {}),
     };
+  }
+
+  private needsPriceServer(request: CatalogExportRequest): boolean {
+    return request.customerId != null || !!request.recipientName || !!request.pricesValidUntil || !!request.priceOverrides?.length;
+  }
+
+  /** enrosed-prijslijst-<customer>-<lang>.pdf for a recipient, as the server names it; else the usual names. */
+  private fileName(request: CatalogExportRequest, preflight: CatalogPreflightResult): string {
+    const language = request.language.toLowerCase();
+    const recipient = request.customerId != null || request.recipientName
+      ? preflight.recipient?.name?.trim() || this.recipientLabel() : '';
+    return recipient
+      ? `enrosed-prijslijst-${recipientSlug(recipient)}-${language}.pdf`
+      : `enrosed-${request.layout === 'BROCHURE' ? 'brochure' : 'catalogus'}-${language}.pdf`;
   }
 
   async saveCataloguePhotos(change: CataloguePhotoSelectionChange): Promise<void> {
@@ -960,12 +1385,108 @@ export class CatalogExport {
       this.showMissingTranslations(missingTranslations);
       return;
     }
+    const refused = this.priceIssuesFromFailure(decodedFailure);
+    if (refused) {
+      this.priceIssues.set(refused.issues);
+      /* The card says what and where; the toast only that the PDF did not come. */
+      this.showRenderProblem(refused.message, 'PDF niet gemaakt: kijk de prijzen na');
+      /* A product now sold on another unit: its price is typed again against the unit of now. */
+      if (refused.issues.some((issue) => issue.code === 'BASIS_CHANGED')) void this.refreshProducts();
+      return;
+    }
     const fallback = 'De PDF-rendering mislukte of duurde te lang. Probeer opnieuw of selecteer minder producten.';
     const message = messageOf(decodedFailure, fallback);
     this.renderError.set(message);
     this.renderTranslationError.set(false);
     this.missingTranslationPaths.set([]);
     this.ui.toast(messageOf(decodedFailure, toastFallback), 'err');
+  }
+
+  /**
+   * The products again, without touching the selection or the message on screen (load() clears that): after the PDF's
+   * BASIS_CHANGED, and after the price sheet's kept prices were refused for the same reason.
+   */
+  protected async refreshProducts(): Promise<void> {
+    try {
+      const products = await this.catalog.products();
+      if (!this.destroyed) this.products.set(orderCatalogProducts(products.filter((product) => !product.demo), this.categories()));
+    } catch {
+      /* The next load brings them. */
+    }
+  }
+
+  private showRenderProblem(message: string, toast = message): void {
+    this.renderError.set(message);
+    this.renderTranslationError.set(false);
+    this.missingTranslationPaths.set([]);
+    this.ui.toast(toast, 'err');
+  }
+
+  /** 409 CATALOG_PRICES_INVALID: the one-off prices the server cannot print, each with its reason. */
+  private priceIssuesFromFailure(failure: unknown): { message: string; issues: CatalogPriceIssue[] } | null {
+    const response = failure as { status?: number; error?: { code?: unknown; message?: unknown; priceIssues?: unknown } | null };
+    if (response.status !== 409 || response.error?.code !== 'CATALOG_PRICES_INVALID') return null;
+    const message = typeof response.error.message === 'string' && response.error.message.trim()
+      ? response.error.message.trim() : 'Niet alle aangepaste prijzen kunnen in de PDF.';
+    return { message, issues: this.validPriceIssues(response.error.priceIssues) };
+  }
+
+  private validPriceIssues(issues: unknown): CatalogPriceIssue[] {
+    if (!Array.isArray(issues)) return [];
+    return issues.flatMap((issue: Partial<CatalogPriceIssue> | null) => issue && typeof issue.message === 'string' && issue.message.trim()
+      ? [{ productId: Number(issue.productId) || 0, code: String(issue.code ?? ''), message: issue.message.trim() }] : []);
+  }
+
+  /**
+   * The product a remark is about, as the selection names it. None for a remark about the whole PDF, nor in front of
+   * the server's words when they already name the product (its SKU, or "Product #12"): each remark says it once.
+   */
+  private withProductNames(issues: readonly CatalogPriceIssue[]): (CatalogPriceIssue & { name: string })[] {
+    const products = new Map(this.products().map((product) => [product.id, product]));
+    return issues.map((issue) => {
+      const product = issue.productId > 0 ? products.get(issue.productId) : undefined;
+      const sku = product?.sku?.trim();
+      if ((sku && issue.message.includes(sku)) || issue.message.includes(`Product #${issue.productId}`)) return { ...issue, name: '' };
+      const variant = product ? [product.colour, product.variantSize].filter(Boolean).join(' · ') : '';
+      const name = product ? `${product.name}${variant ? ` · ${variant}` : ''}` : issue.productId > 0 ? `Product #${issue.productId}` : '';
+      return { ...issue, name };
+    });
+  }
+
+  private persistPriceState(state: CatalogPriceState): void {
+    try {
+      sessionStorage.setItem(PRICE_STATE_KEY, JSON.stringify(state));
+    } catch {
+      /* Blocked tab storage: the choice lasts as long as this screen. */
+    }
+  }
+
+  private restorePriceState(): void {
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(PRICE_STATE_KEY) ?? 'null') as Partial<CatalogPriceState> | null;
+      if (parsed?.version !== 1) return;
+      if (typeof parsed.customerId === 'number' && Number.isSafeInteger(parsed.customerId) && parsed.customerId > 0) {
+        this.customerId.set(parsed.customerId);
+      } else if (parsed.named === true) {
+        this.named.set(true);
+      }
+      if (typeof parsed.recipientName === 'string') this.recipientName.set(parsed.recipientName.slice(0, 120));
+      if (typeof parsed.pricesValidUntil === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.pricesValidUntil)) {
+        this.pricesValidUntil.set(parsed.pricesValidUntil);
+      }
+      if (Array.isArray(parsed.overrides)) {
+        this.priceOverrides.set(new Map(parsed.overrides.flatMap((price) => {
+          const valid = storedOverride(price);
+          return valid ? [[valid.productId, valid] as const] : [];
+        })));
+      }
+      const owner = parsed.pricesFor;
+      this.pricesFor.set(owner && typeof owner.key === 'string' && typeof owner.name === 'string'
+        ? { key: owner.key.slice(0, 130), name: owner.name.slice(0, 120) }
+        : this.priceOverrides().size ? { key: this.recipientKey(), name: this.recipientName().trim() } : null);
+    } catch {
+      /* A damaged or blocked tab store starts without a customer and without one-off prices. */
+    }
   }
 
   private async decodeBlobError(failure: unknown): Promise<unknown> {
@@ -1053,6 +1574,7 @@ export class CatalogExport {
       if (typeof parsed.intro === 'string') this.intro.set(parsed.intro);
       if (typeof parsed.includePrices === 'boolean') this.includePrices.set(parsed.includePrices);
       if (typeof parsed.includePhotos === 'boolean') this.includePhotos.set(parsed.includePhotos);
+      if (typeof parsed.compressPdf === 'boolean') this.compressPdf.set(parsed.compressPdf);
       if (Array.isArray(parsed.selectedIds)) {
         this.storedSelection = parsed.selectedIds.filter(
           (id): id is number => Number.isInteger(id) && id > 0,

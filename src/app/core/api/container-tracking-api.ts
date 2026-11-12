@@ -8,9 +8,12 @@ import type { ContainerTracking, ContainerTrackingFeed } from './container-track
 export class ContainerTrackingApi {
   private readonly http = inject(HttpClient);
 
-  /** Reads the saved snapshots; opening the screen never spends a provider credit. */
-  list(): Promise<ContainerTrackingFeed> {
-    return firstValueFrom(this.http.get<ContainerTrackingFeed>(api('/api/container-tracking')));
+  /**
+   * Reads the saved snapshots; opening the screen never spends a provider credit. With an order id the
+   * server answers that order's row only; an older server ignores the parameter and answers every container.
+   */
+  list(orderId?: number): Promise<ContainerTrackingFeed> {
+    return firstValueFrom(this.http.get<ContainerTrackingFeed>(api('/api/container-tracking'), orderId ? { params: { orderId } } : {}));
   }
 
   refresh(orderId: number): Promise<ContainerTracking> {
