@@ -2455,8 +2455,11 @@ export class AnalysesPage {
       if (sales.status === 'fulfilled') this.salesOrders.set(sales.value); else warnings.push('verkoop');
       if (tica.status === 'fulfilled') this.ticaDays.set(tica.value); else warnings.push('TICA verkopen');
       /* A backend without the portal (404) has none: no card, no warning. Another failure keeps the last rows. */
-      if (partnerSales.status === 'fulfilled') this.partnerSalesData.set(partnerSales.value);
-      else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
+      if (partnerSales.status === 'fulfilled') {
+        this.partnerSalesData.set(partnerSales.value);
+        /* The Veilingverkopen card counts pieces in their own noun (rozen, bowls): the unit names, once (a signal). */
+        if (partnerSales.value?.reports?.length) void this.catalog.unitNames().catch(() => undefined);
+      } else if (isMissingEndpoint(partnerSales.reason)) this.partnerSalesData.set(null);
       else warnings.push('veilingverkopen');
       if (customers.status === 'fulfilled') this.customers.set(customers.value); else warnings.push('klanten');
       if (expectedStock.status === 'fulfilled') this.expectedStock.set(expectedStock.value); else warnings.push('verwachte voorraad');
