@@ -88,8 +88,12 @@ function typed(part: DraftPart): boolean {
   return part.count != null || part.price != null;
 }
 
-function emptyPart(product: PartnerProductTile): DraftPart {
-  return { unit: defaultUnitOf(product).unit, count: null, price: null };
+/**
+ * A part nothing is typed in yet: a sale counts in Enrosed's default unit for the product, a buyback on the clock
+ * always per piece (stolp, roos): lots bought back are a few pieces, and 6 typed in a unit of 24 would book 144.
+ */
+function emptyPart(product: PartnerProductTile, which: 'sale' | 'buyback' = 'sale'): DraftPart {
+  return { unit: (which === 'buyback' ? pieceUnit(product) : defaultUnitOf(product)).unit, count: null, price: null };
 }
 
 /** The product of a melding's entry as a tile (round 2 sends the whole tile with every entry). */
@@ -335,7 +339,7 @@ export class MeldingDraft {
 
   add(product: PartnerProductTile): void {
     if (this.has(product.productId)) return;
-    this.entries.update((list) => [...list, { product, sale: emptyPart(product), buyback: emptyPart(product), buybackOpen: false }]);
+    this.entries.update((list) => [...list, { product, sale: emptyPart(product), buyback: emptyPart(product, 'buyback'), buybackOpen: false }]);
   }
 
   remove(productId: number): void {
@@ -363,7 +367,7 @@ export class MeldingDraft {
 
   setBuybackOpen(productId: number, open: boolean): void {
     this.entries.update((list) => list.map((entry) => entry.product.productId !== productId ? entry
-      : { ...entry, buybackOpen: open, buyback: open ? entry.buyback : emptyPart(entry.product) }));
+      : { ...entry, buybackOpen: open, buyback: open ? entry.buyback : emptyPart(entry.product, 'buyback') }));
   }
 
   /* ---- extra kost lines */
@@ -467,7 +471,7 @@ export class MeldingDraft {
       return {
         product,
         sale: entry.sale ? partOfReport(product, entry.sale) : emptyPart(product),
-        buyback: entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product),
+        buyback: entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product, 'buyback'),
         buybackOpen: kind === 'veiling' && !!entry.buyback,
       };
     }));

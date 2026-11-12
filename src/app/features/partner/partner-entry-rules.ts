@@ -13,7 +13,10 @@ import {
 
 export interface PartLineMessage {
   text: string;
+  /** It stops Opslaan (red). */
   bad: boolean;
+  /** Worth a second look, but it does not stop Opslaan (amber). */
+  warn?: boolean;
 }
 
 export interface PartLine {
@@ -58,6 +61,15 @@ export function partLine(draft: MeldingDraft, entry: DraftEntry, which: 'sale' |
     messages.push({ text: wholeHint(product), bad: true });
   } else if (part.kept) {
     messages.push({ text: `Gaat niet op in hele ${unit.other}: het aantal bleef staan.`, bad: false });
+  }
+  /* A buyback on the clock usually stays below what sold that day; more is possible (it can take back an earlier
+     sale), so it is said, not refused. */
+  if (which === 'buyback' && draft.kind() === 'veiling') {
+    const sold = draft.pieces(entry, 'sale');
+    if (sold > 0 && pieces > sold) {
+      const piece = pieceUnit(product);
+      messages.push({ text: `Meer teruggekocht (${unitText(piece, pieces)}) dan verkocht (${unitText(piece, sold)}): klopt dat?`, bad: false, warn: true });
+    }
   }
   return {
     unit,

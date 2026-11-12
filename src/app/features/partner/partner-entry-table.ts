@@ -122,7 +122,7 @@ import { safeColour } from './partner-photo';
 
     <ng-template #notes let-line="line" let-exceeds="exceeds">
       @for (message of line.messages; track message.text) {
-        <div class="wk-tr et-row et-note" role="row"><span class="et-span" role="cell" [class.is-bad]="message.bad">{{ message.text }}</span></div>
+        <div class="wk-tr et-row et-note" role="row"><span class="et-span" role="cell" [class.is-bad]="message.bad" [class.is-warn]="message.warn">{{ message.text }}</span></div>
       }
       @if (exceeds) {
         <div class="wk-tr et-row et-note" role="row"><span class="et-span is-bad" role="cell">De kosten zijn hoger dan de opbrengst</span></div>
@@ -162,6 +162,7 @@ import { safeColour } from './partner-photo';
     .et-note{min-height:28px;border-bottom-style:dashed;background:var(--surface-2)}
     .et-span{grid-column:1 / -1;min-width:0;padding:5px 0;color:var(--ink-2);font-size:12.5px;white-space:normal}
     .et-span.is-bad{color:var(--danger);font-weight:600}
+    .et-span.is-warn{color:#8a520c;font-weight:600}
     .et-empty .et-span{padding:18px 0;color:var(--muted);text-align:center}
     .et-foot{min-height:40px;border-bottom:0}
     .et-add{gap:4px;font-size:13px}

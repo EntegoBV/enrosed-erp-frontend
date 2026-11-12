@@ -84,7 +84,7 @@ import { PartnerStepper } from './partner-stepper';
                              (valueChange)="draft().updatePart(entry().product.productId, which, { count: $event })" />
       </div>
       @for (message of line.messages; track message.text) {
-        <p class="msg" [class.msg--bad]="message.bad" [attr.role]="message.bad ? 'alert' : null">{{ message.text }}</p>
+        <p class="msg" [class.msg--bad]="message.bad" [class.msg--warn]="message.warn" [attr.role]="message.bad ? 'alert' : null">{{ message.text }}</p>
       }
       <div class="price">
         <span class="pe-row__label">{{ priceLabel }} per {{ line.units[0].one }}</span>
@@ -126,7 +126,7 @@ import { PartnerStepper } from './partner-stepper';
     .sum{display:flex;align-items:baseline;justify-content:space-between;gap:10px;color:var(--ink-2);font-size:15px}
     .sum small{display:block;color:var(--muted);font-size:13px;font-weight:500}
     .sum b{color:var(--ink);font-size:17px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap}
-    .msg{margin:-4px 0 0;color:var(--ink-2);font-size:13.5px;font-weight:600}.msg--bad{color:var(--danger)}
+    .msg{margin:-4px 0 0;color:var(--ink-2);font-size:13.5px;font-weight:600}.msg--bad{color:var(--danger)}.msg--warn{color:#8a520c}
     .price .msg{margin:0}
     .add{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;margin-top:10px;padding:0 12px;border:1.5px dashed color-mix(in srgb,#c7851d 45%,transparent);border-radius:14px;background:transparent;color:#8a520c;font:inherit;font-size:15px;font-weight:650;cursor:pointer}
   `,
