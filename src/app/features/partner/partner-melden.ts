@@ -11,11 +11,13 @@ import { Icon } from '../../shared/icon';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
+import { PartnerContainersData } from './partner-containers-data';
 import { PartnerData } from './partner-data';
 import { MeldingDraft, reportChanges } from './partner-draft';
 import { EntryNotice, PartnerEntry } from './partner-entry';
 import { KIND_LABEL, PartnerKind, addDays, euro, longDate, parseKind, priceEuro, reportKind } from './partner-format';
 import { PartnerHead } from './partner-head';
+import { withCategories } from './partner-product-table';
 import { canEditReport, partCount, partPiecePrice, partnerStatus, pieceNoun } from './partner-report-format';
 import { twinTitle } from './partner-twins';
 
@@ -86,7 +88,7 @@ export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnie
           <button class="ios-capsule ios-capsule--tinted" type="button" (click)="toList()">Naar meldingen</button>
         </div>
       } @else {
-        <app-partner-entry [draft]="draft" [stock]="o.stock" [recent]="o.recentSales" [today]="o.serverDate"
+        <app-partner-entry [draft]="draft" [stock]="stock()" [recent]="recent()" [today]="o.serverDate"
                            [startPicking]="startPicking" [submit]="send" [buyerSearch]="findBuyers" [buyerCreate]="addBuyer"
                            [notice]="notice()" (noticeAction)="loadEdit()"
                            (done)="sent($event)" (refused)="refused()" (kindChanged)="kindChanged($event)" />
@@ -115,6 +117,7 @@ export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnie
 })
 export class PartnerMelden implements HasUnsavedChanges {
   readonly data = inject(PartnerData);
+  private readonly containers = inject(PartnerContainersData);
   private readonly api = inject(PartnerPortalApi);
   private readonly auth = inject(Auth);
   private readonly ui = inject(Ui);
@@ -153,6 +156,10 @@ export class PartnerMelden implements HasUnsavedChanges {
     if (!report || this.editId() === null) return null;
     return `${partnerStatus(report).label} · ${KIND_LABEL[reportKind(report)].toLowerCase()} · ${longDate(report.soldOn)}`;
   });
+
+  /** The stock and recent sales with their category (the product choice groups by it). */
+  readonly stock = computed(() => withCategories(this.data.stock(), this.containers.specs()));
+  readonly recent = computed(() => withCategories(this.data.recentSales(), this.containers.specs()));
 
   /** The edited melding changed meanwhile: what changed, by whom, and "Nieuwe versie laden". */
   readonly notice = computed<EntryNotice | null>(() => {
@@ -201,6 +208,8 @@ export class PartnerMelden implements HasUnsavedChanges {
     this.startPicking = !params.get('product') && !params.get('bewerk');
     /* Every Melden reads the stock and today afresh (the portal may have stood open since yesterday). */
     void this.data.load();
+    /* The products' categories for the product choice (the containers answer carries them; one shared read). */
+    if (!this.containers.page()) void this.containers.load();
 
     /* The kind from the address (a new melding only: an edit takes the melding's own). */
     effect(() => {

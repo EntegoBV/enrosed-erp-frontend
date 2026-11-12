@@ -1,29 +1,56 @@
 import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import type { PartnerProductTile } from '../../core/api/partner-portal-api';
+import type { PartnerProductSpec, PartnerProductTile } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
 import { searchText, shortDate } from './partner-format';
 import { PartnerPhoto, PhotoUrlFn, partnerPhoto, safeColour } from './partner-photo';
+import { twinKeys, twinLabel } from './partner-twins';
 import { stockFigure } from './partner-units';
 
 /** A row of the table: a product with its stock (sales units) and/or the day it last sold. */
 export type TableProduct = PartnerProductTile & { quantity?: number; lastSoldOn?: string };
 
-interface Group {
+/** One family's products in a section (a family header row above them), or one product on its own (family null). */
+interface Block {
   key: string;
-  /** Null: no group row (every product is without a family). */
-  label: string | null;
+  family: string | null;
   rows: TableProduct[];
 }
 
+/** A category's products; label null when no product has a category (no category row then). */
+interface Section {
+  key: string;
+  label: string | null;
+  count: number;
+  blocks: Block[];
+}
+
+const NAME_ORDER = new Intl.Collator('nl', { sensitivity: 'base', numeric: true });
+
 /**
- * The partner's products as one table grouped by family, the way the ERP's
- * Voorraad reads (kit wk-* rows, sticky group rows, a group folds away):
- * Foto · Product · Kleur · Op voorraad (in the product's default unit, with
- * the pieces beside it) and, in `stock` mode, Melden per row; in `pick` mode a
- * tick per row (the Melden page's product choice). Search and "Alleen met
- * voorraad" on top. On the phone the same rows stack to photo, name with the
- * colour, and the figure; the whole row is the target.
+ * Tiles with their category: the server's own field when it sends one, else the category the containers answer's
+ * spec carries for that product (a server that does not send it on tiles yet).
+ */
+export function withCategories<T extends PartnerProductTile>(tiles: readonly T[], specs: ReadonlyMap<number, PartnerProductSpec>): T[] {
+  if (!specs.size || tiles.every((tile) => tile.categoryName !== undefined)) return tiles as T[];
+  return tiles.map((tile) => {
+    if (tile.categoryName !== undefined) return tile;
+    const spec = specs.get(tile.productId);
+    return spec ? { ...tile, categoryId: spec.categoryId, categoryName: spec.categoryName } : tile;
+  });
+}
+
+/**
+ * The partner's products as one table grouped the way the ERP's Voorraad
+ * reads: a section per category (sticky, folds away, in Enrosed's category
+ * order, "Zonder categorie" last), in it each series under a small header row
+ * of its own (it folds too) and the products without a series as plain rows
+ * (kit wk-* rows): Foto · Product · Kleur · Op voorraad (in the product's
+ * default unit, with the pieces beside it) and, in `stock` mode, Melden per
+ * row; in `pick` mode a tick per row (the Melden page's product choice).
+ * Search and "Alleen met voorraad" on top. A product whose name and colour
+ * another one shares shows its code. On the phone the same rows stack to
+ * photo, name with the colour, and the figure; the whole row is the target.
  */
 @Component({
   selector: 'app-partner-product-table',
@@ -46,7 +73,7 @@ interface Group {
         <ng-content />
       </div>
     }
-    @if (groups().length) {
+    @if (sections().length) {
       <div class="wk-table pt-table" role="table" [attr.aria-label]="caption()" [class.wk-table--selecting]="mode() === 'pick'" [class.is-pick]="mode() === 'pick'">
         <div class="wk-thead pt-row" role="row">
           @if (mode() === 'pick') { <span class="wk-th" role="columnheader"><span class="sr-only">Kies</span></span> }
@@ -56,38 +83,35 @@ interface Group {
           <span class="wk-th wk-th--num" role="columnheader">{{ figureLabel() }}</span>
           @if (mode() === 'stock') { <span class="wk-th pt-desk" role="columnheader"><span class="sr-only">Melden</span></span> }
         </div>
-        @for (group of groups(); track group.key) {
-          @let open = isOpen(group);
-          @if (group.label !== null) {
+        @for (section of sections(); track section.key) {
+          @let open = isOpen(section.key, section.label);
+          @if (section.label !== null) {
             <div class="wk-group pt-group" role="row">
               <span class="wk-group__label pt-group__label" role="cell">
                 <button class="wk-group__toggle pt-group__toggle" type="button" [attr.aria-expanded]="open"
-                        [attr.aria-label]="(open ? 'Dichtklappen: ' : 'Openklappen: ') + group.label" (click)="fold(group)">
+                        [attr.aria-label]="(open ? 'Dichtklappen: ' : 'Openklappen: ') + section.label" (click)="fold(section.key)">
                   <app-icon name="chevron-down" [size]="14" />
                 </button>
-                {{ group.label }} <span class="wk-group__count">{{ group.rows.length }} {{ group.rows.length === 1 ? 'product' : 'producten' }}</span>
+                {{ section.label }} <span class="wk-group__count">{{ section.count }} {{ section.count === 1 ? 'product' : 'producten' }}</span>
               </span>
             </div>
           }
           @if (open) {
-            @for (item of group.rows; track item.productId) {
-              @let figure = figureOf(item);
-              @let blockedRow = isBlocked(item);
-              @if (mode() === 'pick') {
-                <label class="wk-tr pt-row pt-tr" role="row" [class.is-off]="blockedRow" [attr.aria-selected]="isSelected(item)">
-                  <span class="wk-td" role="cell">
-                    <input class="wk-check pt-check" type="checkbox" [checked]="isSelected(item)" [disabled]="blockedRow && !isSelected(item)"
-                           [attr.aria-label]="'Kies ' + label(item)" (change)="picked.emit(item)" />
-                  </span>
-                  <ng-container *ngTemplateOutlet="cells; context: { $implicit: item, figure: figure }" />
-                </label>
-              } @else {
-                <div class="wk-tr pt-row pt-tr" role="row" [class.wk-tr--link]="!!item.quantity" [class.is-off]="!item.quantity" (click)="item.quantity && report.emit(item)">
-                  <ng-container *ngTemplateOutlet="cells; context: { $implicit: item, figure: figure }" />
-                  <span class="wk-td pt-desk pt-act" role="cell">
-                    <button class="wk-btn wk-btn--sm" type="button" [disabled]="!item.quantity" [attr.aria-label]="'Melden: ' + label(item)" (click)="$event.stopPropagation(); report.emit(item)">Melden</button>
+            @for (block of section.blocks; track block.key) {
+              @if (block.family !== null) {
+                @let familyOpen = isOpen(block.key, block.family);
+                <div class="wk-tr pt-fam" role="row">
+                  <span class="pt-fam__label" role="cell">
+                    <button class="pt-fam__toggle" type="button" [attr.aria-expanded]="familyOpen"
+                            [attr.aria-label]="(familyOpen ? 'Dichtklappen: ' : 'Openklappen: ') + block.family" (click)="fold(block.key)">
+                      <app-icon name="chevron-down" [size]="13" />
+                    </button>
+                    {{ block.family }} <span class="pt-fam__count">{{ block.rows.length }}</span>
                   </span>
                 </div>
+                @if (familyOpen) { <ng-container *ngTemplateOutlet="rowList; context: { $implicit: block.rows }" /> }
+              } @else {
+                <ng-container *ngTemplateOutlet="rowList; context: { $implicit: block.rows }" />
               }
             }
           }
@@ -99,12 +123,37 @@ interface Group {
       <p class="pt-none">{{ emptyText() }}</p>
     }
 
+    <ng-template #rowList let-rows>
+      @for (item of rows; track item.productId) {
+        @let figure = figureOf(item);
+        @let blockedRow = isBlocked(item);
+        @if (mode() === 'pick') {
+          <label class="wk-tr pt-row pt-tr" role="row" [class.is-off]="blockedRow" [attr.aria-selected]="isSelected(item)">
+            <span class="wk-td" role="cell">
+              <input class="wk-check pt-check" type="checkbox" [checked]="isSelected(item)" [disabled]="blockedRow && !isSelected(item)"
+                     [attr.aria-label]="'Kies ' + label(item)" (change)="picked.emit(item)" />
+            </span>
+            <ng-container *ngTemplateOutlet="cells; context: { $implicit: item, figure: figure }" />
+          </label>
+        } @else {
+          <div class="wk-tr pt-row pt-tr" role="row" [class.wk-tr--link]="!!item.quantity" [class.is-off]="!item.quantity" (click)="item.quantity && report.emit(item)">
+            <ng-container *ngTemplateOutlet="cells; context: { $implicit: item, figure: figure }" />
+            <span class="wk-td pt-desk pt-act" role="cell">
+              <button class="wk-btn wk-btn--sm" type="button" [disabled]="!item.quantity" [attr.aria-label]="'Melden: ' + label(item)" (click)="$event.stopPropagation(); report.emit(item)">Melden</button>
+            </span>
+          </div>
+        }
+      }
+    </ng-template>
+
     <ng-template #cells let-item let-figure="figure">
       <span class="wk-td" role="cell"><app-partner-photo class="pt-photo" [product]="item" [photoUrl]="photoUrl()" /></span>
+      @let code = codeOf(item);
       <span class="wk-td pt-name" role="cell">
         <b>{{ item.name }}</b>
-        @if (item.variant) {
-          <span class="pt-sub pt-phone"><i class="pt-dot" [style.background]="colourOf(item)" aria-hidden="true"></i>{{ item.variant }}</span>
+        @if (code) { <span class="pt-sub pt-code pt-desk">{{ code }}</span> }
+        @if (item.variant || code) {
+          <span class="pt-sub pt-phone">@if (item.variant) { <i class="pt-dot" [style.background]="colourOf(item)" aria-hidden="true"></i>{{ item.variant }} }@if (item.variant && code) { · }{{ code }}</span>
         }
       </span>
       <span class="wk-td pt-desk pt-colour" role="cell">
@@ -140,6 +189,13 @@ interface Group {
     .pt-group__label{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase}
     .pt-group .wk-group__count{font-size:12px;letter-spacing:0;text-transform:none}
     .pt-group__toggle[aria-expanded=false] app-icon{transform:rotate(-90deg)}
+    .pt-fam{grid-template-columns:minmax(0,1fr);min-height:34px;background:var(--surface)}
+    .pt-fam__label{display:flex;align-items:center;gap:6px;min-width:0;color:var(--ink-2);font-size:12.5px;font-weight:700}
+    .pt-fam__toggle{display:grid;flex:none;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer}
+    .pt-fam__toggle:hover{background:var(--surface-2);color:var(--ink)}
+    .pt-fam__toggle[aria-expanded=false] app-icon{transform:rotate(-90deg)}
+    .pt-fam__count{color:var(--muted);font-weight:600}
+    .pt-code{font-variant-numeric:tabular-nums;letter-spacing:.02em}
     .pt-photo{display:block;width:36px;height:36px;border-radius:9px}
     .pt-name{display:grid;align-content:center;white-space:normal}
     .pt-name b{overflow:hidden;font-size:13.5px;font-weight:650;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
@@ -173,6 +229,9 @@ interface Group {
       .pt-fig b{font-size:16px}
       .pt-check{width:22px;height:22px;border-radius:50%}
       .pt-group{top:var(--wk-sticky-top,0px)}
+      .pt-fam{min-height:40px}
+      .pt-fam__label{font-size:14px}
+      .pt-fam__toggle{width:36px;height:36px}
     }
   `,
 })
@@ -200,37 +259,57 @@ export class PartnerProductTable {
 
   readonly hasEmpty = computed(() => this.items().some((item) => item.quantity === 0 || (item.quantity == null && !!item.lastSoldOn)));
 
-  readonly groups = computed<Group[]>(() => {
+  /** Names and colours more than one listed product shares (their rows show the code). */
+  private readonly twins = computed(() => twinKeys(this.items()));
+
+  readonly sections = computed<Section[]>(() => {
     const words = searchText(this.query()).split(/\s+/).filter(Boolean);
     const stockOnly = this.stockFilter() && this.stockOnly();
     const selected = this.selected();
-    const groups: Group[] = [];
-    const byKey = new Map<string, Group>();
-    const others: TableProduct[] = [];
-    for (const item of this.items()) {
+    const items = this.items();
+    /* Category sections only when the products carry categories; else one list of series and products. */
+    const byCategory = items.some((item) => !!item.categoryName?.trim());
+    const sections = new Map<string, Section & { order: number; name: string }>();
+    const blocks = new Map<string, Block>();
+    for (const item of items) {
       if (stockOnly && !(item.quantity && item.quantity > 0) && !selected.has(item.productId)) continue;
       if (words.length) {
-        const text = searchText([item.name, item.variant, item.sku, item.familyName].filter(Boolean).join(' '));
+        const text = searchText([item.name, item.variant, item.sku, item.familyName, item.categoryName].filter(Boolean).join(' '));
         if (!words.every((word) => text.includes(word))) continue;
       }
-      if (item.familyId == null) { others.push(item); continue; }
-      const key = 'f' + item.familyId;
-      let group = byKey.get(key);
-      if (!group) { group = { key, label: item.familyName || item.name, rows: [] }; byKey.set(key, group); groups.push(group); }
-      group.rows.push(item);
+      const name = item.categoryName?.trim() || '';
+      const sectionKey = !byCategory ? 'all' : item.categoryId != null ? `c${item.categoryId}` : name ? `n${name}` : 'none';
+      let section = sections.get(sectionKey);
+      if (!section) {
+        section = {
+          key: sectionKey, label: byCategory ? name || 'Zonder categorie' : null, count: 0, blocks: [],
+          order: !byCategory || !name ? Number.MAX_SAFE_INTEGER : item.categoryOrder ?? Number.MAX_SAFE_INTEGER - 1, name,
+        };
+        sections.set(sectionKey, section);
+      }
+      section.count++;
+      const blockKey = item.familyId != null ? `${sectionKey}:f${item.familyId}` : `${sectionKey}:p${item.productId}`;
+      let block = blocks.get(blockKey);
+      if (!block) {
+        block = { key: blockKey, family: item.familyId != null ? item.familyName?.trim() || item.name : null, rows: [] };
+        blocks.set(blockKey, block);
+        section.blocks.push(block);
+      }
+      block.rows.push(item);
     }
-    if (others.length) groups.push({ key: 'other', label: groups.length ? 'Andere producten' : null, rows: others });
-    return groups;
+    /* A series with one product here needs no header of its own: the product's name says it. */
+    for (const block of blocks.values()) if (block.rows.length < 2) block.family = null;
+    return [...sections.values()].sort((a, b) => a.order - b.order || NAME_ORDER.compare(a.name, b.name));
   });
 
-  isOpen(group: Group): boolean {
-    return group.label === null || !!this.query().trim() || !this.folded().has(group.key);
+  isOpen(key: string, label: string | null): boolean {
+    return label === null || !!this.query().trim() || !this.folded().has(key);
   }
 
-  fold(group: Group): void {
+  fold(key: string): void {
     this.folded.update((set) => {
       const next = new Set(set);
-      if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
@@ -248,7 +327,13 @@ export class PartnerProductTable {
   }
 
   label(item: TableProduct): string {
-    return item.variant ? `${item.name} ${item.variant}` : item.name;
+    const code = this.codeOf(item);
+    return [item.name, item.variant, code].filter(Boolean).join(' ');
+  }
+
+  /** The code of a product whose name and colour another listed product shares; null otherwise. */
+  codeOf(item: TableProduct): string | null {
+    return twinLabel(item, this.twins());
   }
 
   colourOf(item: TableProduct): string | null {
