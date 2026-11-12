@@ -32,6 +32,7 @@ export function parentOf(url: string): PageParent | null {
   if (/^\/sales\/[^/]+(?:\/edit)?$/.test(path)) return parent('Verkoop', '/sales');
   if (/^\/prospects\/[^/]+$/.test(path)) return parent('Prospects', '/prospects');
   if (/^\/purchasing\/[^/]+(?:\/edit)?$/.test(path)) return parent('Inkoop', '/purchasing');
+  if (/^\/veilingverkopen\/melding(?:\/[^/]+)?$/.test(path)) return parent('Veilingverkopen', '/veilingverkopen', 'Veiling');
   if ((match = path.match(/^\/products\/([^/]+)\/(?:edit|translations)$/)) && match[1] !== 'new') {
     return parent('Product', `/products/${match[1]}`);
   }

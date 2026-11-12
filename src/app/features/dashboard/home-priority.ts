@@ -27,7 +27,7 @@ export const ARRIVAL_SOON_DAYS = 1;                 // a container arriving toda
 export const PINNED_TASK_AHEAD_DAYS = 7;            // a pinned task dated ≤ 7 d ahead (or undated) → Vandaag
 export const LATER_ESCALATE_COUNT = 3;              // the 3rd "Later" moves the item up one tier
 export const SOURCE_ORDER = ['container-due', 'advance', 'overdue-invoices', 'krap', 'overdue-costs', 'vat', 'customers', 'login',
-  'planner', 'arrival', 'purchase-check', 'settlement', 'partner-sales', 'bank-lines', 'recurring-due', 'open-credits', 'small-invoices', 'advance-later',
+  'planner', 'arrival', 'purchase-check', 'settlement', 'partner-confirm', 'partner-sales', 'bank-lines', 'recurring-due', 'open-credits', 'small-invoices', 'advance-later',
   'regimes', 'catalog'] as const;
 
 /** Not a home threshold: a copy of finance-attention.ts OVERDUE_COST_DAYS for the "Waarom" text; a test keeps the two equal. */
@@ -103,8 +103,11 @@ export interface HomeTaskInput {
   advances: { count: number; eur: number; overdueEur: number; first: { orderId: number; label: string; due: string | null } | null;
     orderIds?: readonly number[] };
   settlements: number;
-  /** Veilingverkopen: the partner's meldingen not invoiced yet (WorkQueue.partnerSales); null while unknown or on an older backend. */
-  partnerSales: { count: number; eur: number; pieces: number } | null;
+  /**
+   * Veilingverkopen (WorkQueue.partnerSales): what Factureren can take now (round 2: confirmed and open; round 1: open)
+   * and the meldingen waiting for Bevestigen with their netto; null while unknown or on an older backend.
+   */
+  partnerSales: { count: number; eur: number; pieces: number; unconfirmed?: number; unconfirmedEur?: number } | null;
   invoicesOverdue: readonly { id: number; number: string; customer: string; dueDate: string; remainingEur: number }[];
   /** The 'overdue-costs' item of financeAttention(): its count, sum, title and target. */
   overdueCosts: { count: number; eur: number; oldestDays: number; title: string; location: Record<string, string> } | null;
@@ -538,14 +541,23 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
       context: 'Partnercontainers ontvangen; het veilingoverzicht wacht', chip: { label: 'ontvangen', tone: 'grey' }, count: n,
       verb: 'Afrekenen', target: { kind: 'route', path: ['/analyses/purchasing'], query: { deel: 'partners' } }, detail: String(n) });
   }
-  /* The partner's meldingen wait for an invoice; staff make it whenever they like (owner), so Ook nog, like the settlement.
-     Only with a sale open: a buyback alone waits for the next sale of that product, Factureren cannot take it. */
+  /* New meldingen wait for Bevestigen (until then the partner can still change them); Factureren takes only confirmed
+     ones. Both whenever staff like (owner), so Ook nog, like the settlement. */
+  const confirm = input.partnerSales?.unconfirmed ?? 0;
+  if (confirm > 0) {
+    out.push({ ...base, key: 'partner-confirm', source: 'partner-confirm', tier: 'ooknog', title: `Veilingverkopen bevestigen (${confirm})`,
+      context: `${confirm} ${plural(confirm, 'melding', 'meldingen')} van de partner · hij kan ze wijzigen tot je bevestigt`,
+      chip: { label: 'gemeld', tone: 'grey' }, eur: input.partnerSales?.unconfirmedEur ?? null, count: confirm,
+      verb: 'Bevestigen', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'te-bevestigen' } },
+      detail: `${confirm}|${Math.round((input.partnerSales?.unconfirmedEur ?? 0) * 100)}` });
+  }
+  /* Only with a sale open: a buyback alone waits for the next sale of that product, Factureren cannot take it. */
   if (input.partnerSales && input.partnerSales.count > 0 && input.partnerSales.pieces > 0) {
     const open = input.partnerSales;
-    out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: 'Veilingverkopen factureren',
+    out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: `Veilingverkopen factureren (${open.count})`,
       context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht`,
       chip: { label: 'gemeld', tone: 'grey' }, eur: open.eur, count: open.count,
-      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'] }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
+      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'bevestigd' } }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
   }
   if (input.catalog > 0) {
     const n = input.catalog;

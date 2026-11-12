@@ -13,21 +13,22 @@ export function parseQuantity(raw: string): number | null {
 }
 
 /**
- * Aantal: − and + of 48 px around a number field. Empty means not filled in
- * yet; + from empty gives 1, − stops at 1. With a max, + stops there and a
- * higher typed number stays visible (the screen says why it is too many).
+ * Aantal on the phone: − and + of 48 px around a number field. Empty means
+ * not filled in yet. The buttons move in steps (12 rozen of a display of 12):
+ * + from empty gives one step, − stops at one step. With a max, + stops there
+ * and a higher typed number stays visible (the screen says why it is too many).
  */
 @Component({
   selector: 'app-partner-stepper',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <button type="button" class="step__btn" [disabled]="disabled() || value() == null || value()! <= 1"
-            [attr.aria-label]="label() + ': één minder'" (click)="bump(-1)">−</button>
+    <button type="button" class="step__btn" [disabled]="disabled() || value() == null || value()! <= step()"
+            [attr.aria-label]="label() + ': ' + (step() === 1 ? 'één' : step()) + ' minder'" (click)="bump(-1)">−</button>
     <input #field class="step__field" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off"
            [attr.aria-label]="label()" [attr.aria-invalid]="invalid() ? 'true' : null" [disabled]="disabled()"
            (input)="typed(field.value)" (blur)="tidy()" />
     <button type="button" class="step__btn" [disabled]="disabled() || (max() != null && (value() ?? 0) >= max()!)"
-            [attr.aria-label]="label() + ': één meer'" (click)="bump(1)">+</button>
+            [attr.aria-label]="label() + ': ' + (step() === 1 ? 'één' : step()) + ' meer'" (click)="bump(1)">+</button>
   `,
   styles: `
     :host{display:inline-grid;grid-template-columns:48px minmax(56px,84px) 48px;align-items:stretch;height:48px;overflow:hidden;border-radius:14px;background:color-mix(in srgb,var(--ink) 6%,var(--surface))}
@@ -42,6 +43,8 @@ export function parseQuantity(raw: string): number | null {
 export class PartnerStepper {
   readonly value = input<number | null>(null);
   readonly max = input<number | null>(null);
+  /** The buttons' step (and the least they go to). */
+  readonly step = input(1);
   readonly label = input('Aantal');
   readonly invalid = input(false);
   readonly disabled = input(false);
@@ -70,11 +73,14 @@ export class PartnerStepper {
   }
 
   bump(delta: number): void {
+    const step = Math.max(1, this.step());
     const current = this.value();
-    let next = current == null ? (delta > 0 ? 1 : null) : current + delta;
-    if (next != null && next < 1) next = 1;
+    /* A typed count between steps goes to the step below or above it. */
+    let next = current == null ? (delta > 0 ? step : null)
+      : delta > 0 ? (Math.floor(current / step) + 1) * step : (Math.ceil(current / step) - 1) * step;
+    if (next != null && next < step) next = step;
     const max = this.max();
-    if (next != null && max != null && next > max) next = Math.max(1, max);
+    if (next != null && max != null && next > max) next = Math.max(step, Math.floor(max / step) * step);
     this.valueChange.emit(next);
   }
 }

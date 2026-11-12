@@ -1081,6 +1081,22 @@ export interface Customer {
   crmStatus?: CrmStatus | null;
   /** The ticked follow-up steps; null from a client keeps the stored list, [] clears it. */
   touchpoints?: CustomerTouchpoint[];
+  /**
+   * Made by a partner in the Partnerportaal (a buyer of a direct sale): who and when, and whether staff checked the
+   * record ("Nagekeken"). Server-owned, read-only; absent on an older backend and for every other customer.
+   */
+  partnerOrigin?: CustomerPartnerOrigin | null;
+}
+
+/** Where a partner-made customer came from (Partnerportaal, round 2). */
+export interface CustomerPartnerOrigin {
+  /** The partner customer's company, e.g. "Frans Verhoeven Bloemen BV". */
+  partnerName: string | null;
+  /** The partner login's name, e.g. "Frans". */
+  createdByName: string | null;
+  createdAt: string | null;
+  /** Null until staff mark it Nagekeken on the customer sheet. */
+  reviewedAt: string | null;
 }
 
 export interface Country {
@@ -2378,13 +2394,25 @@ export interface AdvanceContents {
   capturedAt: string;
 }
 
+/** One product of a partner settlement's snapshot (PartnerSettlements.Line on the server). */
+export interface SettlementSnapshotLine {
+  productId: number;
+  quantity: number;
+  proceedsEur: number;
+  costEur: number;
+  revenueEur: number;
+  advanceEur: number;
+}
+
 export interface SalesOrderView {
   fulfillment?: SalesFulfillment | null;
   customerRequestMessageReadonly?: boolean;
   customerRequestMessage?: string | null;
   advanceContents?: AdvanceContents | null;
   advanceAgreement?: AdvanceAgreement | null;
-  settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean } | null;
+  settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean;
+    /** Per product of a settlement: proceeds p, external cost c, our value v and the advance it nets; absent on an older backend. */
+    lines?: readonly SettlementSnapshotLine[] | null } | null;
   paymentSummary?: SalesPaymentSummary | null;
   accounting?: SalesAccounting | null;
   order: SalesOrder;
@@ -2820,7 +2848,7 @@ export interface ProductPhotoExportResult {
 /** Notification for the bell in the top right. */
 export interface AppNotification {
   kind: 'WEBSITE_AANVRAAG' | 'LEVERTERMIJN' | 'VRACHT' | 'VOORSTEL' | 'OPNIEUW_VERSTUREN'
-    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST' | 'PARTNER_VERKOOP';
+    | 'GETEKEND' | 'AFGEWEZEN' | 'BEKEKEN' | 'CONTAINER_AANKOMST' | 'PARTNER_VERKOOP' | 'PARTNER_KLANT';
   orderId: number | null;
   orderNumber: string;
   customer: string | null;

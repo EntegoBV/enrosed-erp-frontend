@@ -10,12 +10,33 @@ import { api } from './api.config';
  * role `partner` only and scopes to the partner's own customer from the
  * session. The partner app (features/partner) never calls a staff endpoint.
  * Money comes as euros with 2 decimals, unit prices with 4, percents as plain
- * numbers (4.5). Quantities are in the product's sales unit.
+ * numbers (4.5). Stock and booked quantities are in the product's sales unit;
+ * round 2 adds what was typed (a count in a count unit: roos, display,
+ * omdoos) and pieces beside them.
+ *
+ * Round-2 fields are optional in these types: a round-1 server (the deploy
+ * window) does not send them, and the screens fall back to the sales units.
+ * The round-2 screens only save when the overview answers `apiVersion: 2`.
  */
 
 export type PartnerChannel = 'AUCTION' | 'DIRECT';
 export type PartnerReportStatus = 'OPEN' | 'PARTLY_INVOICED' | 'INVOICED' | 'VOIDED';
 export type PartnerExtraCostMode = 'AMOUNT' | 'PCT';
+/** How a count is typed: one piece (roos, bowl, stuk), the display/verpakking, or the outer carton. */
+export type PartnerCountUnitKey = 'STUK' | 'VERPAKKING' | 'OMDOOS';
+export type PartnerSalesUnit = 'PIECE' | 'DISPLAY';
+
+/** The server's round of the portal API; the round-2 screens save only against this one. */
+export const PARTNER_API_VERSION = 2;
+
+/** A count unit the product offers: "roos/rozen" x 1, "display/displays" x 12, "omdoos/omdozen" x 144 (pieces). */
+export interface PartnerCountUnit {
+  unit: PartnerCountUnitKey;
+  one: string;
+  other: string;
+  /** Pieces in one of this unit. */
+  pieces: number;
+}
 
 /** A product as the partner sees it: name, colour and unit; never a price, cost, supplier or container. */
 export interface PartnerProductTile {
@@ -29,10 +50,21 @@ export interface PartnerProductTile {
   /** The sales unit: 'stuk' / 'stuks', 'display' / 'displays'. */
   unitOne: string;
   unitOther: string;
+  /** Round 1: pieces per sales unit (a display's pieces), null or 1 otherwise. */
   piecesPerUnit: number | null;
   hasPhoto: boolean;
   /** Changes when the photo changes, so it is part of the photo URL (cache key). */
   photoVersion: string | null;
+  /* ---- round 2 (additive) */
+  salesUnit?: PartnerSalesUnit;
+  piecesPerSalesUnit?: number;
+  /** The piece noun: roos / rozen, bowl / bowls, stuk / stuks. */
+  pieceOne?: string;
+  pieceOther?: string;
+  /** The offered count units, smallest first (STUK always). */
+  countUnits?: PartnerCountUnit[];
+  /** Enrosed's default for this partner and product (STUK unless staff set another). */
+  defaultUnit?: PartnerCountUnitKey;
 }
 
 /** Stock at the partner's location, in sales units (only products with stock). */
@@ -44,6 +76,7 @@ export interface PartnerStockTile extends PartnerProductTile {
 export interface PartnerRecentSale extends PartnerProductTile {
   soldQuantity: number;
   lastSoldOn: string;
+  /** Per sales unit. */
   lastAverageEur: number | null;
 }
 
@@ -57,12 +90,31 @@ export interface PartnerContact {
   phone: string | null;
 }
 
+/** Round 1: the one extra kost of a melding. */
 export interface PartnerExtraCost {
   mode: PartnerExtraCostMode;
   value: number;
 }
 
-export interface PartnerReportSale {
+/** Round 2: an extra kost line ("Doosjes € 40", "Veilingfee 1 %"). */
+export interface PartnerExtraCostLine {
+  description: string | null;
+  mode: PartnerExtraCostMode;
+  value: number;
+}
+
+/** What was typed for a part (round 2); the server falls back to the sales units for round-1 rows. */
+export interface PartnerEnteredPart {
+  enteredUnit?: PartnerCountUnitKey;
+  enteredCount?: number;
+  piecePriceEur?: number;
+  /** The pieces per entered unit when it was booked (a carton's content may change later). */
+  enteredPiecesPerUnit?: number;
+  pieces?: number;
+}
+
+export interface PartnerReportSale extends PartnerEnteredPart {
+  /** Sales units. */
   quantity: number;
   unitPriceEur: number;
   grossEur: number;
@@ -72,10 +124,17 @@ export interface PartnerReportSale {
   netEur: number;
 }
 
-export interface PartnerReportBuyback {
+export interface PartnerReportBuyback extends PartnerEnteredPart {
   quantity: number;
   unitPriceEur: number;
+  /** The clock price total. */
   grossEur: number;
+  /* round 2: a buyback carries the melding's commission and transport too */
+  commissionEur?: number;
+  transportEur?: number;
+  /** Terugkoopkost = gross + commission + transport (= -net). */
+  costEur?: number;
+  netEur?: number;
 }
 
 /** One product of a melding: its sale and/or (auction only) its buyback on the clock. */
@@ -90,9 +149,21 @@ export interface PartnerReportEntry {
   photoVersion: string | null;
   sale: PartnerReportSale | null;
   buyback: PartnerReportBuyback | null;
+  /* ---- round 2: the full tile, so an edit rebuilds the form without the stock list */
+  sku?: string | null;
+  familyId?: number | null;
+  familyName?: string | null;
+  piecesPerUnit?: number | null;
+  salesUnit?: PartnerSalesUnit;
+  piecesPerSalesUnit?: number;
+  pieceOne?: string;
+  pieceOther?: string;
+  countUnits?: PartnerCountUnit[];
+  defaultUnit?: PartnerCountUnitKey;
 }
 
 export interface PartnerReportTotals {
+  /** Sales units. */
   saleQuantity: number;
   buybackQuantity: number;
   grossEur: number;
@@ -100,9 +171,21 @@ export interface PartnerReportTotals {
   transportEur: number;
   extraCostEur: number;
   saleNetEur: number;
+  /** Terugkoopkost: round 2 the buyback's cost incl. commission and transport, round 1 its gross. */
   buybackEur: number;
   /** Sale net minus terugkoopkost; negative for a melding with only buybacks. */
   netEur: number;
+  /* round 2 */
+  salePieces?: number;
+  buybackPieces?: number;
+  buybackGrossEur?: number;
+}
+
+/** The buyer of a direct sale: name and city only. */
+export interface PartnerBuyerRef {
+  customerId: number;
+  company: string;
+  city: string | null;
 }
 
 /** A melding (VV-<id>), its parts merged back per product. */
@@ -115,11 +198,26 @@ export interface PartnerReport {
   createdByName: string | null;
   commissionPct: number;
   transportPct: number;
+  /** Round 1's one extra kost; round 2 fills it from a single line, or as the sum (AMOUNT) of several. */
   extraCost: PartnerExtraCost | null;
   entries: PartnerReportEntry[];
   totals: PartnerReportTotals;
   status: PartnerReportStatus;
+  /** Round 2: open, not mirrored by a later buyback and (for the partner) not yet confirmed by Enrosed. */
   canUndo: boolean;
+  /* ---- round 2 (additive) */
+  /** The version the client loaded; a PUT sends it back as expectedToken. */
+  editToken?: string;
+  updatedAt?: string | null;
+  updatedByName?: string | null;
+  note?: string | null;
+  extraCosts?: PartnerExtraCostLine[];
+  buyer?: PartnerBuyerRef | null;
+  /** Enrosed confirmed it (or a document holds part of it): Frans cannot change it any more. */
+  confirmed?: boolean;
+  confirmedAt?: string | null;
+  confirmedByName?: string | null;
+  canEdit?: boolean;
 }
 
 export interface PartnerOverview {
@@ -132,6 +230,8 @@ export interface PartnerOverview {
   reports: PartnerReport[];
   /** Today in Europe/Brussels (yyyy-mm-dd): the date row's "Vandaag" and its 90-day limit. */
   serverDate: string;
+  /** 2 from round 2 on; absent on a round-1 server. */
+  apiVersion?: number;
 }
 
 export interface PartnerReportPage {
@@ -139,12 +239,22 @@ export interface PartnerReportPage {
   more: boolean;
 }
 
-/** Exactly one of unitPriceEur / totalEur. */
-export interface PartnerReportPartRequest {
+/** Round 1: quantity in sales units and exactly one of unitPriceEur / totalEur (older clients). */
+export interface PartnerReportPartRequestV1 {
   quantity: number;
   unitPriceEur?: number;
   totalEur?: number;
 }
+
+/** Round 2: what was typed; the server computes the sales units (refuses a count that is not whole). */
+export interface PartnerReportPartRequestV2 {
+  enteredUnit: PartnerCountUnitKey;
+  enteredCount: number;
+  /** Per piece (per roos), 4 decimals. */
+  piecePriceEur: number;
+}
+
+export type PartnerReportPartRequest = PartnerReportPartRequestV1 | PartnerReportPartRequestV2;
 
 export interface PartnerReportEntryRequest {
   productId: number;
@@ -152,21 +262,52 @@ export interface PartnerReportEntryRequest {
   buyback?: PartnerReportPartRequest;
 }
 
-/** The body of a new melding; staff send the same body plus customerId to /api/partner-sales/reports. */
+/**
+ * The body of a new melding (POST) and of an edit (PUT, + expectedToken); staff send the same body plus
+ * customerId to /api/partner-sales/reports.
+ */
 export interface PartnerReportRequest {
   channel: PartnerChannel;
   soldOn?: string | null;
   /** One per melding, kept for its retries: the same ref again answers the melding already booked. */
   clientRef: string;
   note?: string | null;
+  /** Round 1 only; absent when extraCosts is sent. */
   extraCost?: PartnerExtraCost | null;
   entries: PartnerReportEntryRequest[];
+  /* ---- round 2 */
+  apiVersion?: number;
+  /** 0..5 lines; [] = none. */
+  extraCosts?: PartnerExtraCostLine[];
+  /** Direct only; required for a partner's direct sale. */
+  buyerCustomerId?: number | null;
+  /** PUT only: the editToken of the version that was loaded (409 when it changed meanwhile). */
+  expectedToken?: string;
 }
 
-/** A created melding; `existing` when the server already had this clientRef (200 instead of 201). */
+/** A created or saved melding; `existing` when the server already had this clientRef (200 instead of 201). */
 export interface PartnerReportResult {
   report: PartnerReport;
   existing: boolean;
+}
+
+/** An ERP customer the partner may pick as the buyer of a direct sale: name, city and country, nothing else. */
+export interface PartnerBuyer {
+  customerId: number;
+  company: string;
+  city: string | null;
+  countryCode: string | null;
+  /** This partner added it from the portal (staff still complete it). */
+  addedByYou: boolean;
+}
+
+/** A new buyer with the fewest fields; staff complete the rest in the ERP. */
+export interface PartnerBuyerRequest {
+  company: string;
+  countryCode?: string | null;
+  city?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 export const PARTNER_REPORT_PAGE_SIZE = 50;
@@ -186,11 +327,16 @@ export class PartnerPortalApi {
     return firstValueFrom(this.http.get<PartnerOverview>(api('/api/partner-portal/overview')));
   }
 
-  /** Meldingen newest first; `before` is the last id of the previous page. */
+  /** Meldingen newest first; `before` is an id: the page holds older ids only. */
   reports(before: number | null = null, limit = PARTNER_REPORT_PAGE_SIZE): Promise<PartnerReportPage> {
     const params: Record<string, string> = { limit: String(limit) };
     if (before != null) params['before'] = String(before);
     return firstValueFrom(this.http.get<PartnerReportPage>(api('/api/partner-portal/reports'), { params }));
+  }
+
+  /** One of the partner's own meldingen (an edit loads it); 404 for anything else. */
+  report(id: number): Promise<PartnerReport> {
+    return firstValueFrom(this.http.get<PartnerReport>(api(`/api/partner-portal/reports/${id}`)));
   }
 
   async createReport(body: PartnerReportRequest): Promise<PartnerReportResult> {
@@ -200,9 +346,25 @@ export class PartnerPortalApi {
     return { report: response.body, existing: response.status === 200 };
   }
 
-  /** Ongedaan maken: voids the partner's own melding while nothing of it is invoiced. */
+  /** Bewerken: the whole melding again, with the editToken it was loaded with (409 when it changed meanwhile). */
+  async updateReport(id: number, body: PartnerReportRequest): Promise<PartnerReportResult> {
+    const report = await firstValueFrom(this.http.put<PartnerReport>(api(`/api/partner-portal/reports/${id}`), body));
+    return { report, existing: false };
+  }
+
+  /** Ongedaan maken: voids the partner's own melding while nothing of it is invoiced or confirmed. */
   voidReport(id: number): Promise<PartnerReport> {
     return firstValueFrom(this.http.delete<PartnerReport>(api(`/api/partner-portal/reports/${id}`)));
+  }
+
+  /** ERP customers by name or city (2 letters or more); an empty query answers his last buyers. */
+  customers(query: string): Promise<PartnerBuyer[]> {
+    return firstValueFrom(this.http.get<PartnerBuyer[]>(api('/api/partner-portal/customers'), { params: { q: query } }));
+  }
+
+  /** A new buyer (or the one he already added under that name). */
+  createCustomer(body: PartnerBuyerRequest): Promise<PartnerBuyer> {
+    return firstValueFrom(this.http.post<PartnerBuyer>(api('/api/partner-portal/customers'), body));
   }
 
   /** Ends this device's partner session on the server; the caller then signs out locally. */

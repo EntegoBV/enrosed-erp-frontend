@@ -1,5 +1,5 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChildren } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
@@ -16,6 +16,7 @@ import {
   settingsChanged, settingsRequest,
 } from './partner-portal-fields';
 import { SettingsEditor, dirtyStatusText } from './settings-editor';
+import { SettingsPartnerUnits } from './settings-partner-units';
 
 const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -31,7 +32,7 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
 @Component({
   selector: 'app-settings-partner-portal',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, LoadError, RouterLink, Skeleton],
+  imports: [Icon, LoadError, RouterLink, SettingsPartnerUnits, Skeleton],
   template: `
     @if (missing()) {
       <div [class.wk-card]="desk.active()" [class.spp-empty]="true">
@@ -141,6 +142,9 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
               </div>
             }
           </div>
+          @if (row.partner) {
+            <app-settings-partner-units [customerId]="row.customerId" [person]="personOf(row)" [locationId]="row.settings.locationId ?? mainLocationId()" />
+          }
         </section>
       }
       <section class="wk-card spp-card spp-address" aria-label="Adres van het portaal">
@@ -238,6 +242,7 @@ const WHEN = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short', 
               </div>
               <p class="ios-section__foot">Leeg = standaard. {{ personOf(row, true) }} ziet de percentages en de voorraad van deze locatie.</p>
             </section>
+            <app-settings-partner-units [customerId]="row.customerId" [person]="personOf(row)" [locationId]="row.settings.locationId ?? mainLocationId()" />
           }
         }
         <section class="ios-section">
@@ -357,7 +362,10 @@ export class SettingsPartnerPortal implements SettingsEditor {
   readonly loaded = signal(false);
   readonly error = signal<string | null>(null);
   readonly missing = signal(false);
-  readonly saving = signal(false);
+  /** Eenheid per product of each partner card: its own draft, saved with the page's one Opslaan. */
+  private readonly unitEditors = viewChildren(SettingsPartnerUnits);
+  private readonly savingRows = signal(false);
+  readonly saving = computed(() => this.savingRows() || this.unitEditors().some((editor) => editor.saving()));
   private run = 0;
   private scrolled = false;
 
@@ -366,10 +374,13 @@ export class SettingsPartnerPortal implements SettingsEditor {
     .filter((location) => location.active && location.id != null && location.code !== 'MAIN')
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'nl')));
   readonly mainName = computed(() => this.locations().find((location) => location.code === 'MAIN')?.name || 'Magazijn');
+  /** The warehouse a partner without a location of his own sees; null until the locations are known (the units list then takes every location). */
+  readonly mainLocationId = computed(() => this.locations().find((location) => location.code === 'MAIN')?.id ?? null);
 
   private readonly changes = computed(() => new Map(this.rows().map((row) =>
     [row.customerId, changedFields(this.drafts().get(row.customerId) ?? draftOf(row), row)] as const)));
-  readonly dirtyCount = computed(() => [...this.changes().values()].reduce((sum, fields) => sum + fields.length, 0));
+  readonly dirtyCount = computed(() => [...this.changes().values()].reduce((sum, fields) => sum + fields.length, 0)
+    + this.unitEditors().reduce((sum, editor) => sum + editor.dirtyCount(), 0));
   readonly dirty = computed(() => this.dirtyCount() > 0);
   readonly statusText = computed(() => dirtyStatusText(this.dirtyCount()));
 
@@ -393,6 +404,8 @@ export class SettingsPartnerPortal implements SettingsEditor {
       this.passwordOpen.set(new Set());
       this.missing.set(false);
       this.loaded.set(true);
+      /* A reload of the page reads the unit defaults again too (a card that is new loads them itself). */
+      for (const editor of this.unitEditors()) void editor.load();
       this.scrollToAsked();
     } catch (failure: unknown) {
       if (run !== this.run) return;
@@ -474,11 +487,12 @@ export class SettingsPartnerPortal implements SettingsEditor {
     });
   }
 
-  /** Opslaan: per partner the login (when it changed), then its costs and location. */
+  /** Opslaan: per partner the login (when it changed), then its costs and location, then its unit defaults. */
   async save(): Promise<boolean> {
     if (this.saving()) return false;
     const work = this.rows().filter((row) => (this.changes().get(row.customerId)?.length ?? 0) > 0);
-    if (!work.length) return false;
+    const units = this.unitEditors().filter((editor) => editor.dirty());
+    if (!work.length && !units.length) return false;
     const errors = new Map(work.map((row) => [row.customerId, draftErrors(this.draftFor(row.customerId), row)] as const));
     const first = [...errors.values()].flatMap((found) => Object.values(found)).find(Boolean);
     if (first) {
@@ -487,7 +501,20 @@ export class SettingsPartnerPortal implements SettingsEditor {
       return false;
     }
     this.errors.set(new Map());
-    this.saving.set(true);
+    const failed = work.length ? await this.saveRows(work) : null;
+    let unitsFailed = false;
+    for (const editor of units) unitsFailed = !(await editor.save()) || unitsFailed;
+    if (failed || unitsFailed) {
+      this.ui.toast(failed ?? 'De eenheden zijn niet opgeslagen. Probeer opnieuw.', 'err');
+      return false;
+    }
+    this.ui.toast('Partnerportaal opgeslagen');
+    return true;
+  }
+
+  /** The login and settings of the changed partners; the first refusal (each stays on its card), or null. */
+  private async saveRows(work: PartnerPortalAdminRow[]): Promise<string | null> {
+    this.savingRows.set(true);
     let failed: string | null = null;
     try {
       for (const row of work) {
@@ -511,11 +538,9 @@ export class SettingsPartnerPortal implements SettingsEditor {
         }
       }
     } finally {
-      this.saving.set(false);
+      this.savingRows.set(false);
     }
-    if (failed) { this.ui.toast(failed, 'err'); return false; }
-    this.ui.toast('Partnerportaal opgeslagen');
-    return true;
+    return failed;
   }
 
   /** A row the server answered, with the draft that now applies to it. */
@@ -525,6 +550,7 @@ export class SettingsPartnerPortal implements SettingsEditor {
   }
 
   revert(): void {
+    for (const editor of this.unitEditors()) editor.revert();
     this.drafts.set(new Map(this.rows().map((row) => [row.customerId, draftOf(row)])));
     this.errors.set(new Map());
     this.serverErrors.set(new Map());

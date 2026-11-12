@@ -37,6 +37,10 @@ import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-s
 import { PartnerLinkSheet } from './partner-link-sheet';
 import { isSettlementInvoice, separateCostPerPiece, salesDocumentKind } from './partner-settlement';
 import { REPORT_BACKED_LABEL, REPORT_LOCK_NOTE, isReportBacked, shipsViaReports } from './report-backed';
+import { reportBreakdownOf } from './report-backed-breakdown';
+import { ReportBackedCostSheet, ReportCostRequest } from './report-backed-cost-sheet';
+import { reportLineCost, reportLineMargin, reportProceeds } from './report-backed-cost';
+import { partnerShortName } from '../../shared/partner-short-name';
 import { SALES_CHANNELS, channelChoices, channelCode } from './sales-channels';
 import { AuthImage } from '../../core/api/auth-image';
 import { SalesApi } from '../../core/api/sales-api';
@@ -105,7 +109,7 @@ function layoutKey(order: SalesOrder): string {
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet,
+            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
     @if (view(); as data) {
@@ -217,6 +221,13 @@ function layoutKey(order: SalesOrder): string {
               <span class="hero-fact__label">Tegoed</span>
               <strong>{{ data.priced.totals.totalInclVat | eur: 0 }}</strong>
               <span>{{ data.order.status === 'CONCEPT' ? 'incl. btw · na uitreiken' : 'incl. btw' }}</span>
+            </div>
+            } @else if (reportLocked()) {
+            <!-- From Veilingverkopen: nothing is delivered; what the meldingen brought in is the figure. -->
+            <div class="hero-fact">
+              <span class="hero-fact__label">Netto opbrengst</span>
+              <strong>{{ reportNetFigure() === null ? '—' : (reportNetFigure()! | eur: 0) }}</strong>
+              <span>{{ reportMeldingenLine() }}</span>
             </div>
             } @else {
             <div class="hero-fact">
@@ -494,7 +505,7 @@ function layoutKey(order: SalesOrder): string {
 
         <div class="workflow-layout erp-workspace__layout">
         <nav class="workflow-nav erp-workspace__section-nav" hostStickyBand aria-label="Onderdelen van de offerte">
-          @for (item of workflowSections; track item.id; let number = $index) {
+          @for (item of workflowNav(); track item.id; let number = $index) {
             <!-- On the phone, Status lives inside the Controle step; an
                  invoice has no send step at all. -->
             @if (item.id !== 'quote-status' ? true : (desktop.active() && !isInvoiceDoc())) {
@@ -858,7 +869,7 @@ function layoutKey(order: SalesOrder): string {
                   </div>
                 }
 
-                @if (!isCreditNoteDoc()) {
+                @if (!isCreditNoteDoc() && !reportLocked()) {
                 <div class="delivery order-line__delivery">
                   <div class="delivery-row">
                     <span class="stock-dot"
@@ -926,9 +937,9 @@ function layoutKey(order: SalesOrder): string {
                       <strong>Rendabiliteit per {{ lineUnit(line.productId).singular }}</strong>
                     </span>
                     <span class="line-internal__profit"
-                          [class.line-internal__profit--negative]="marginPerUnit(line) < 0">
-                      {{ marginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
-                      {{ absolute(marginPerUnit(line)) | eur: 2 }} / {{ lineUnit(line.productId).singular }}
+                          [class.line-internal__profit--negative]="lineMarginPerUnit(line) < 0">
+                      {{ lineMarginPerUnit(line) < 0 ? 'Verlies' : 'Winst' }}
+                      {{ absolute(lineMarginPerUnit(line)) | eur: 2 }} / {{ lineUnit(line.productId).singular }}
                     </span>
                   </summary>
 
@@ -937,8 +948,8 @@ function layoutKey(order: SalesOrder): string {
                       <!-- Tapping the cost opens where every cent came from. -->
                       <button class="line-internal__unit line-internal__unit--btn" type="button"
                               (click)="openCostSheet(line)">
-                        <dt>{{ line.stockUnitCost != null ? 'Kost bij levering' : 'Gelande kost' }} <i class="stock-tile__chev" aria-hidden="true"></i></dt>
-                        <dd>{{ line.landedUnitCost | eur: 4 }}<small>/ {{ lineUnit(line.productId).singular }}</small></dd>
+                        <dt>{{ reportLocked() ? 'Inkoop · opbouw' : line.stockUnitCost != null ? 'Kost bij levering' : 'Gelande kost' }} <i class="stock-tile__chev" aria-hidden="true"></i></dt>
+                        <dd>{{ lineCostPerUnit(line) | eur: 4 }}<small>/ {{ lineUnit(line.productId).singular }}</small></dd>
                       </button>
                       <div class="line-internal__unit">
                         <dt>Netto verkoop</dt>
@@ -1037,7 +1048,7 @@ function layoutKey(order: SalesOrder): string {
         }
 
         <!-- ==================================== transport and delivery -->
-        @if (desktop.active() || phoneStep() === 2) {
+        @if ((desktop.active() || phoneStep() === 2) && !reportLocked()) {
         @if (isAdvanceInvoice(data)) { <section id="quote-logistics" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
         @else if (isCreditNoteDoc()) { <section id="quote-logistics" class="card erp-workspace__section" aria-label="Levering"><p class="credit-card-note"><b>Geen levering · creditnota.</b> Niet van toepassing op een creditnota. Vracht crediteer je als aparte regel bij Controle.</p></section> }
         @else {<section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
@@ -1118,7 +1129,7 @@ function layoutKey(order: SalesOrder): string {
         <section class="card totals-card erp-workspace__section" id="quote-check" aria-labelledby="totals-title">
           <div class="section-card-head">
             <div class="section-heading">
-              <span class="section-heading__number">4</span>
+              <span class="section-heading__number">{{ reportLocked() ? 3 : 4 }}</span>
               <div>
                 <h2 id="totals-title">Controleren</h2>
                 <p>{{ advanceAgreement() ? 'Opgeslagen voorschottermijnen en latere slotfactuur' : 'Bedragen en voorwaarden vóór het versturen' }}</p>
@@ -1142,7 +1153,7 @@ function layoutKey(order: SalesOrder): string {
                 <p class="desk-form__group">Partnercontainer · {{ isSettlement(data.order) ? (data.settlement?.finalSettlement === false ? 'deelafrekening' : 'slotafrekening') : 'voorschot' }}</p>
                 @if (!isSettlement(data.order)) { <p class="hint">Dit voorschot is één afzonderlijke factuur. Beheer bedragen, mijlpalen en vervaldata van de <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [queryParams]="{ section: 'payments' }">factuurtermijnen op de container</a>.</p> }
                 @if (isSettlement(data.order)) {
-                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. De berekening per product staat in de notities.</p>
+                  <p class="desk-partner__copy">Dit is de veilingafrekening van <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze partnercontainer' }}</a>: per product de kost die wij financierden plus <b>{{ data.order.partnerSharePct | num }} %</b> van de winst op de veiling. {{ reportLocked() ? 'De opbouw per product zie je onder de marge van elke regel.' : 'De berekening per product staat in de notities.' }}</p>
                 } @else {
                   <p class="desk-partner__copy">De partner bestelt <a [routerLink]="['/purchasing', data.order.partnerPurchaseOrderId]" [attr.title]="containerNumber() ? 'Inkooporder ' + containerNumber() : null">{{ containerLabel() ? containerPhrase(containerLabel()) : 'deze container' }}</a> mee en verkoopt de goederen op de veiling. Na de veiling volgt de afrekening per product: de kost die wij financierden terug en <b>{{ data.order.partnerSharePct | num }} %</b> van de winst voor ons.</p>
                   <div class="desk-partner__facts"><span>Op dit document, excl. btw en vracht</span><b>{{ costBasis(data) | eur }}</b></div>
@@ -1153,6 +1164,8 @@ function layoutKey(order: SalesOrder): string {
                   </div>
                 }
               </section>
+            } @else if (reportLocked()) {
+              <p class="desk-partner__copy">Uit veilingverkopen · eigen voorraad: per product onze kost plus ons deel van de winst. De opbouw per product zie je onder de marge van elke regel.</p>
             } @else if (!isWebOrder()) {
               <p class="desk-partner-offer">Betaalt een partner deze goederen mee?
                 <button class="linklike" type="button" [disabled]="mobileFinanciallyLocked() || reportLocked()" (click)="partnerLinkOpen.set(true)">Container / soort verkoop kiezen</button></p>
@@ -1171,7 +1184,7 @@ function layoutKey(order: SalesOrder): string {
                   <span class="check-lines__what">
                     <b>{{ line.description }}</b>
                     <small>{{ line.quantity | num }} {{ line.quantity === 1 ? lineUnit(line.productId).singular : lineUnit(line.productId).plural }} × {{ line.unitPrice | eur: 2 }} per {{ lineUnit(line.productId).singular }}@if (lineOtherPrice(line); as other) { · {{ other.sign }} {{ other.price | eur: 2 }} {{ other.per }}@if (lineDiscounted(line)) {, vóór korting}}@if (line.discountPct) { · −{{ line.discountPct | pct: 1 }}}
-                      @if (!isCreditNoteDoc()) { · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}} }</small>
+                      @if (!isCreditNoteDoc() && !reportLocked()) { · {{ line.inStock ? 'op voorraad' : (line.deliveryWeek ? ('levering ' + (line.deliveryWeek | weekNl: 'short')) : 'levertijd onbekend') }}@if (line.deliveryDate) { · leverbaar vanaf {{ line.deliveryDate | dateNl }}} }</small>
                   </span>
                   <span class="num check-lines__amount">{{ line.net | eur }}</span>
                 </li>
@@ -1188,7 +1201,7 @@ function layoutKey(order: SalesOrder): string {
                   <span class="num check-lines__amount">{{ extra.total | eur }}</span>
                 </li>
               }
-              @if (!isAdvanceInvoice(data) && !isCreditNoteDoc() && data.priced.lines.length) {
+              @if (!isAdvanceInvoice(data) && !isCreditNoteDoc() && !reportLocked() && data.priced.lines.length) {
                 <li class="check-lines__delivery">
                   <span class="check-lines__delivery-icon" aria-hidden="true">
                     <svg viewBox="0 0 24 24"><path d="M3 7h11v8H3zM14 10h4l3 3v2h-7zM7.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0M17.5 17.5m-1.6 0a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0 -3.2 0" /></svg>
@@ -1293,7 +1306,7 @@ function layoutKey(order: SalesOrder): string {
                   </div>
                 }
               }
-              @if (!isCreditNoteDoc() || data.priced.totals.freight + data.priced.totals.handling > 0) {
+              @if ((!isCreditNoteDoc() && !reportLocked()) || data.priced.totals.freight + data.priced.totals.handling > 0) {
               <div class="receipt__row receipt__row--head">
                 <span>{{ isCreditNoteDoc() ? 'Vracht en handling gecrediteerd' : 'Verzending' }}</span>
                 <span class="num">
@@ -1305,7 +1318,7 @@ function layoutKey(order: SalesOrder): string {
                 </span>
               </div>
               }
-              @if (data.order.freight !== 'TE_BEPALEN') {
+              @if (data.order.freight !== 'TE_BEPALEN' && (!reportLocked() || data.priced.totals.freight)) {
                 <div class="receipt__row receipt__row--sub">
                   <span>Vracht · {{ freightBasisLabel(data) }}</span>
                   <span class="num">{{ data.priced.totals.freight | eur }}</span>
@@ -1425,12 +1438,12 @@ function layoutKey(order: SalesOrder): string {
              within thumb reach. The form itself remains a single source of truth. -->
         <div class="sales-mobile-dock erp-workspace__mobile-dock" role="group"
              aria-label="Offerte navigatie en acties">
-          @if (phoneStep() > 0) {
+          @if (phoneStepAt() > 0) {
             <button class="sales-mobile-dock__back" type="button" (click)="previousPhoneStep()"
-                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneStep() - 1]">‹</button>
+                    [attr.aria-label]="'Terug naar ' + phoneStepLabels[phoneSteps()[phoneStepAt() - 1]]">‹</button>
           }
           <span class="sales-mobile-dock__context">
-            <small>Stap {{ phoneStep() + 1 }} van 4</small>
+            <small>Stap {{ phoneStepAt() + 1 }} van {{ phoneSteps().length }}</small>
             <strong>{{ phoneStepLabels[phoneStep()] }}</strong>
           </span>
           @if (canEdit() && documentDirty() && !transportSaving()) {
@@ -1440,9 +1453,9 @@ function layoutKey(order: SalesOrder): string {
           } @else if (transportQueued() || transportSaving()) {
             <span class="tiny muted" role="status">{{ saveError() ? 'Niet opgeslagen' : 'Opslaan…' }}</span>
           }
-          @if (phoneStep() < 3) {
+          @if (phoneStepAt() < phoneSteps().length - 1) {
             <button class="sales-mobile-dock__next" type="button" (click)="nextPhoneStep()"
-                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneStep() + 1]">
+                    [attr.aria-label]="'Volgende: ' + phoneStepLabels[phoneSteps()[phoneStepAt() + 1]]">
               <span aria-hidden="true">›</span>
             </button>
           } @else if (webOrderOpen()) {
@@ -1518,6 +1531,9 @@ function layoutKey(order: SalesOrder): string {
         @if (costHistoryOpen() && sheet.product; as product) {
           <app-product-cost-history-sheet [product]="product" (closed)="costHistoryOpen.set(false)" />
         }
+      }
+      @if (reportCost(); as request) {
+        <app-report-backed-cost-sheet [request]="request" [breakdown]="reportBreakdown()" [variant]="desktop.active() ? 'default' : 'ios'" (closed)="reportCost.set(null)" />
       }
 
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
@@ -2475,6 +2491,45 @@ export class SalesEditor {
   readonly reportBacked = isReportBacked;
   /** Its stock left with the meldingen: no shipment to offer (the server stamps it at issue). */
   readonly shipsViaReports = shipsViaReports;
+  /** The way from bruto to this document per product (asked once per report-backed document; null = not on the server). */
+  readonly reportBreakdown = reportBreakdownOf(() => this.view());
+  /** The open margin popup of a report-backed line. */
+  readonly reportCost = signal<ReportCostRequest | null>(null);
+  /** Netto opbrengst of the meldingen behind this document; null while unknown. */
+  readonly reportNetFigure = computed(() => reportProceeds(this.reportBreakdown(), this.view()?.settlement?.lines));
+  /** "3 meldingen · veiling", or a pointer while the breakdown is unknown. */
+  readonly reportMeldingenLine = computed(() => {
+    const meldingen = this.reportBreakdown()?.meldingen ?? [];
+    if (!meldingen.length) return 'uit veilingverkopen';
+    const channels = new Set(meldingen.map((melding) => melding.channel));
+    const kind = channels.size > 1 ? 'veiling en direct' : channels.has('DIRECT') ? 'direct' : 'veiling';
+    return `${meldingen.length} ${meldingen.length === 1 ? 'melding' : 'meldingen'} · ${kind}`;
+  });
+  /** Our margin on a line: on a report-backed document the breakdown's value − cost, the same figure its popup highlights. */
+  lineMargin(line: PricedLine): number {
+    return this.reportLocked() ? reportLineMargin(this.reportBreakdown(), line.productId, line.marginEur) : line.marginEur;
+  }
+  lineMarginPerUnit(line: PricedLine): number {
+    return line.quantity > 0 ? this.lineMargin(line) / line.quantity : 0;
+  }
+  /** The cost under a margin: on a report-backed document the inkoopkost per unit of the breakdown. */
+  lineCostPerUnit(line: PricedLine): number {
+    return this.reportLocked() ? reportLineCost(this.reportBreakdown(), line.productId, line.quantity, line.landedUnitCost) : line.landedUnitCost;
+  }
+  /** Opens the margin popup of a report-backed line: what the clicked cell showed (per unit or the whole line). */
+  private openReportCost(line: PricedLine, mode: 'unit' | 'line'): void {
+    const data = this.view();
+    if (!data) return;
+    const unit = this.lineUnit(line.productId);
+    this.reportCost.set({
+      title: line.description, mode, productId: line.productId, quantity: line.quantity,
+      unit: { singular: unit.singular, plural: unit.plural, piecesPerDisplay: unit.isDisplay ? unit.piecesPerDisplay : null, pieceOne: unit.piece.one },
+      line: { net: line.net, landedUnitCost: line.landedUnitCost, marginEur: this.lineMargin(line) },
+      settlementLine: data.settlement?.lines?.find((item) => item.productId === line.productId) ?? null,
+      sharePct: data.order.partnerSharePct ?? null,
+      partner: partnerShortName(this.customerName()),
+    });
+  }
   /** The way on from a frozen document: a copy, the container's partner invoices, or the meldingen behind it. */
   copyActionLabel(data: SalesOrderView): string {
     return isReportBacked(data) ? 'Veilingverkopen' : isPartnerDocument(data.order) ? 'Partnerfacturen beheren' : 'Nieuwe kopie';
@@ -2551,7 +2606,8 @@ export class SalesEditor {
     return load;
   }
 
-  async openCostSheet(line: PricedLine): Promise<void> {
+  async openCostSheet(line: PricedLine, mode: 'unit' | 'line' = 'unit'): Promise<void> {
+    if (this.reportLocked()) { this.openReportCost(line, mode); return; }
     const request = ++this.costSheetRequests;
     this.costHistoryOpen.set(false);
     const orderId = this.view()?.order.id;
@@ -2813,6 +2869,12 @@ export class SalesEditor {
   readonly desktop = inject(DesktopViewport);
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Gegevens', 'Producten', 'Levering', 'Controle'] as const;
+  /** The phone's steps (indexes into phoneStepLabels): a document from Veilingverkopen has no Levering. */
+  readonly phoneSteps = computed<readonly number[]>(() => (this.reportLocked() ? [0, 1, 3] : [0, 1, 2, 3]));
+  /** Where phoneStep stands in that list (0 when it is not in it). */
+  readonly phoneStepAt = computed(() => Math.max(0, this.phoneSteps().indexOf(this.phoneStep())));
+  /** The rail's stops: Levering only on a document that delivers. */
+  readonly workflowNav = computed(() => this.workflowSections.filter((item) => item.id !== 'quote-logistics' || !this.reportLocked()));
 
   /**
    * The native host's chrome: Opslaan while something is unsaved, else the dock's step primary (the same chain as
@@ -2881,16 +2943,17 @@ export class SalesEditor {
 
   private stepOf(id: (typeof this.workflowSections)[number]['id']): number {
     return id === 'quote-setup' ? 0 : id === 'order-lines' ? 1
-      : id === 'quote-logistics' ? 2 : 3;
+      : id === 'quote-logistics' && !this.reportLocked() ? 2 : 3;
   }
 
   nextPhoneStep(): void {
-    this.phoneStep.update((step) => Math.min(3, step + 1));
+    const steps = this.phoneSteps();
+    this.phoneStep.set(steps[Math.min(steps.length - 1, this.phoneStepAt() + 1)]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   previousPhoneStep(): void {
-    this.phoneStep.update((step) => Math.max(0, step - 1));
+    this.phoneStep.set(this.phoneSteps()[Math.max(0, this.phoneStepAt() - 1)]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -3125,6 +3188,8 @@ export class SalesEditor {
     const text = issue.toLowerCase();
     if (text.includes('vracht') || text.includes('pallet') || text.includes('omdo')
         || text.includes('transport')) {
+      /* A document from Veilingverkopen ships nothing: its Controle is the place, never the transport sheet. */
+      if (this.reportLocked()) { this.scrollToSection('quote-check'); return; }
       this.palletSheet.set(true);
       return;
     }
@@ -3213,6 +3278,10 @@ export class SalesEditor {
     this.referenceLoad = this.loadReference();
     /* Lines name each product's unit ("16 bowls"); "stuks" until the list arrives. */
     void this.catalog.unitNames().catch(() => undefined);
+    /* A reused editor on a document without Levering: a stale Levering step moves on to Controle. */
+    effect(() => {
+      if (this.reportLocked() && this.phoneStep() === 2) untracked(() => this.phoneStep.set(3));
+    });
     effect(() => {
       const rawId = this.id();
       const routeId = Number(rawId);
@@ -4747,6 +4816,8 @@ export class SalesEditor {
   }
 
   scrollToSection(id: string): void {
+    /* A document from Veilingverkopen has no Levering: a jump there lands on Controle. */
+    if (id === 'quote-logistics' && this.reportLocked()) id = 'quote-check';
     if (!this.desktop.active()) {
       this.phoneStep.set(this.stepOf(id as (typeof this.workflowSections)[number]['id']));
       window.scrollTo({ top: 0, behavior: 'smooth' });

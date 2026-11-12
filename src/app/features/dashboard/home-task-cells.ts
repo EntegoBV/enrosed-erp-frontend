@@ -39,6 +39,7 @@ const LEAD: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
   regimes: { icon: 'info', tone: 'grey' },
   catalog: { icon: 'globe', tone: 'grey' },
   'partner-sales': { icon: 'arrow-in', tone: 'grey' },
+  'partner-confirm': { icon: 'tick', tone: 'grey' },
 };
 
 /**
