@@ -168,7 +168,7 @@ export class PartnerSalesProfit {
     const preview = this.state()?.status === 'ready' ? this.state()!.preview : null;
     if (!preview) return [];
     return [
-      ...preview.skipped.map((skip) => `Wacht nog: ${skip.name} · ${skip.source === 'OWN' ? 'eigen voorraad' : skip.containerName || 'container'}: ${skip.reason}`),
+      ...preview.skipped.map((skip) => `Wacht nog: ${skip.name} · ${skip.source === 'OWN' ? 'eigen voorraad' : skip.containerName?.trim() || this.containerOf(skip.purchaseOrderId)}: ${skip.reason}`),
       ...(preview.warnings ?? []),
     ];
   });
@@ -205,7 +205,12 @@ export class PartnerSalesProfit {
 
   private title(group: PartnerInvoicePreviewGroup): string {
     if (group.source === 'OWN') return 'Eigen voorraad';
-    const part = (this.report().parts ?? []).find((candidate) => candidate.purchaseOrderId === group.purchaseOrderId);
-    return group.containerName?.trim() || part?.containerName || `Inkoop #${group.purchaseOrderId}`;
+    return group.containerName?.trim() || this.containerOf(group.purchaseOrderId);
+  }
+
+  /** The container's name as the melding's own parts carry it. */
+  private containerOf(purchaseOrderId: number | null): string {
+    const part = (this.report().parts ?? []).find((candidate) => candidate.purchaseOrderId === purchaseOrderId);
+    return part?.containerName || (purchaseOrderId != null ? `Inkoop #${purchaseOrderId}` : 'container');
   }
 }
