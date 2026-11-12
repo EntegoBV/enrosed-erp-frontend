@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { StaffPartnerReport } from '../../core/api/partner-sales-api';
-import { count, euro } from '../partner/partner-format';
+import { count } from '../partner/partner-format';
 import { buyerLine, productsShort, reportPieces } from '../partner/partner-report-format';
 import { CHANNEL_CHOICES, ChannelChoice, PERIOD_CHOICES, PeriodKind, byDay, soldDay } from './partner-sales-filters';
 import { reportTitle } from './partner-sales-format';
+import { signedEur } from '../../shared/signed-eur';
 
 /**
  * Factureren, step 1 "Kies de meldingen": the partner's confirmed meldingen
@@ -163,6 +164,6 @@ export class PartnerSalesInvoicePick {
   products(r: StaffPartnerReport): string { return productsShort(r); }
   piecesOf(r: StaffPartnerReport): { sale: number; buyback: number } { return reportPieces(r); }
   dayText(day: string): string { return soldDay(day, this.today()); }
-  eur(value: number): string { return euro(value); }
+  eur(value: number): string { return signedEur(value); }
   num(value: number): string { return count(value); }
 }

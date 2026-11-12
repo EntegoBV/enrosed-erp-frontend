@@ -14,7 +14,7 @@ import { PageHeader } from '../../shared/page-header';
 import { partnerShortName } from '../../shared/partner-short-name';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
-import { count, euro, localToday } from '../partner/partner-format';
+import { count, localToday } from '../partner/partner-format';
 import { buyerLine, productsShort, reportPieces } from '../partner/partner-report-format';
 import { PartnerSalesDetail, canConfirmReport, canUnconfirmReport } from './partner-sales-detail';
 import {
@@ -24,6 +24,7 @@ import {
 import { reportTitle } from './partner-sales-format';
 import { InvoicePartner, PartnerSalesInvoiceSheet, invoiceable } from './partner-sales-invoice-sheet';
 import { PartnerSalesTable } from './partner-sales-table';
+import { signedEur } from '../../shared/signed-eur';
 
 /** The server's cap per list: a period holds fewer, "Alles" may say there is more. */
 const LIST_LIMIT = 1000;
@@ -732,6 +733,6 @@ export class PartnerSalesPage {
 
   dayText(day: string): string { return soldDay(day, this.today); }
   short(name: string): string { return partnerShortName(name); }
-  eur(value: number): string { return euro(value); }
+  eur(value: number): string { return signedEur(value); }
   num(value: number): string { return count(value); }
 }

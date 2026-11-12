@@ -6,6 +6,7 @@ import { count, euro, longDate, minusEuro, percent, priceEuro, productTitle, uni
 import { partCount, partPiecePrice, partPiecesText, pieceNoun } from '../partner/partner-report-format';
 import { shortDay } from './partner-sales-filters';
 import { partsBySource, timeOf, whoOf } from './partner-sales-format';
+import { signedEur } from '../../shared/signed-eur';
 
 /** A cost line as staff get it: round 2 also sends what it costs in euros. */
 type CostLine = PartnerExtraCostLine & { amountEur?: number | null };
@@ -320,10 +321,11 @@ export class PartnerSalesDetail {
   entryNet(entry: PartnerReportEntry): string {
     const sale = entry.sale?.netEur ?? 0;
     const back = entry.buyback ? this.buybackCost(entry.buyback) : 0;
-    return euro(Math.round((sale - back) * 100) / 100);
+    return signedEur(Math.round((sale - back) * 100) / 100);
   }
 
-  eur(value: number | null | undefined): string { return euro(value); }
+  /** Netto may be below zero: "− € 9,00" (the ERP's minus), never "€ -9,00". */
+  eur(value: number | null | undefined): string { return signedEur(value ?? 0); }
   minus(value: number | null | undefined): string { return minusEuro(value); }
   pct(value: number): string { return percent(value); }
 }

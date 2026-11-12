@@ -2,11 +2,12 @@ import { ChangeDetectionStrategy, Component, computed, effect, input, output } f
 import type { PartnerSalesFilteredTotals, StaffPartnerReport } from '../../core/api/partner-sales-api';
 import { Icon } from '../../shared/icon';
 import { partnerShortName } from '../../shared/partner-short-name';
-import { count, euro } from '../partner/partner-format';
+import { count } from '../partner/partner-format';
 import { buyerLine, costsEur, productsShort, reportPieces } from '../partner/partner-report-format';
 import { PartnerSalesDetail } from './partner-sales-detail';
 import { reportedLine, soldDay, staffStatus } from './partner-sales-filters';
 import { invoicesOf, reportTitle } from './partner-sales-format';
+import { signedEur } from '../../shared/signed-eur';
 
 /**
  * The Veilingverkopen desk table: one row per melding, newest sold-on day
@@ -205,6 +206,7 @@ export class PartnerSalesTable {
     return r.confirmedByName ? `Bevestigd door ${r.confirmedByName}` : 'Bevestigd';
   }
 
-  eur(value: number): string { return euro(value); }
+  /** Below zero as "− € 9,00" (the ERP's minus). */
+  eur(value: number): string { return signedEur(value); }
   num(value: number): string { return count(value); }
 }

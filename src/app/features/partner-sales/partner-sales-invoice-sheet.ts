@@ -11,10 +11,11 @@ import { partnerShortName } from '../../shared/partner-short-name';
 import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
-import { count, euro } from '../partner/partner-format';
+import { count } from '../partner/partner-format';
 import { ChannelChoice, PeriodKind, channelOf, periodRange, reportState } from './partner-sales-filters';
 import { PartnerSalesInvoicePick } from './partner-sales-invoice-pick';
 import { PartnerSalesInvoicePreview } from './partner-sales-invoice-preview';
+import { signedEur } from '../../shared/signed-eur';
 
 /** How long the ticks rest before the preview is asked again (each preview is a transaction per container). */
 const PREVIEW_PAUSE_MS = 450;
@@ -211,7 +212,7 @@ export class PartnerSalesInvoiceSheet {
   readonly chosenLine = computed(() => {
     const list = this.chosen();
     const cents = list.reduce((sum, r) => sum + Math.round((r.totals.netEur || 0) * 100), 0);
-    return `${list.length === 1 ? '1 melding' : count(list.length) + ' meldingen'} · netto ${euro(cents / 100)}`;
+    return `${list.length === 1 ? '1 melding' : count(list.length) + ' meldingen'} · netto ${signedEur(cents / 100)}`;
   });
   /** The preview of exactly what is chosen now (a stale one is never shown). */
   readonly currentPreview = computed(() => {
@@ -226,7 +227,7 @@ export class PartnerSalesInvoiceSheet {
     const groups = p.groups.filter((group) => !group.blocked);
     const cents = groups.reduce((sum, group) => sum + Math.round((group.balanceEur ?? 0) * 100), 0);
     if (!groups.length) return p.groups.length ? 'niets kan gemaakt worden' : 'niets te factureren';
-    return `${groups.length === 1 ? '1 concept' : groups.length + ' concepten'} · te factureren ${euro(cents / 100)}`;
+    return `${groups.length === 1 ? '1 concept' : groups.length + ' concepten'} · te factureren ${signedEur(cents / 100)}`;
   });
 
   readonly waiting = computed(() => {

@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import type { PartnerDocumentBreakdown } from '../../core/api/partner-sales-api';
-import { EurPipe } from '../../shared/pipes';
+import { SignedEurPipe } from '../../shared/signed-eur';
 import { Sheet } from '../../shared/ui';
 import { ReportCostInput, reportCostView } from './report-backed-cost';
 
@@ -24,7 +24,7 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
 @Component({
   selector: 'app-report-backed-cost-sheet',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [EurPipe, RouterLink, Sheet],
+  imports: [RouterLink, SignedEurPipe, Sheet],
   template: `
     <app-sheet [title]="request().title" [variant]="variant()" [backdropCloses]="true" (closed)="closed.emit()">
       <div body class="rbc" [class.rbc--ios]="variant() === 'ios'">
@@ -43,10 +43,10 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
               <div role="row" [class]="'rbc-row rbc-row--' + row.tone" [class.is-hit]="hit" [attr.aria-current]="hit ? 'true' : null">
                 <span role="cell" class="rbc-label"><i aria-hidden="true">{{ row.sign }}</i><span>{{ row.label }}@if (row.hint) { <small>{{ row.hint }}</small> }</span></span>
                 <span role="cell" class="rbc-num" [class.is-neg]="row.tone !== 'plain' && row.lineEur < 0" [class.is-clicked]="hit && request().mode === 'unit'">
-                  {{ row.unitEur === null ? '—' : (row.unitEur | eur: 2) }}
-                  @if (hit && view().perPiece !== null) { <small>= {{ view().perPiece! | eur: pieceDecimals() }} per {{ request().unit.pieceOne }}</small> }
+                  {{ row.unitEur === null ? '—' : (row.unitEur | signedEur: 2) }}
+                  @if (hit && view().perPiece !== null) { <small>= {{ view().perPiece! | signedEur: pieceDecimals() }} per {{ request().unit.pieceOne }}</small> }
                 </span>
-                <span role="cell" class="rbc-num" [class.is-neg]="row.tone !== 'plain' && row.lineEur < 0" [class.is-clicked]="hit && request().mode === 'line'">{{ row.lineEur | eur: 2 }}</span>
+                <span role="cell" class="rbc-num" [class.is-neg]="row.tone !== 'plain' && row.lineEur < 0" [class.is-clicked]="hit && request().mode === 'line'">{{ row.lineEur | signedEur: 2 }}</span>
               </div>
             }
           </div>

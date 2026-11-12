@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import type { PartnerInvoicePreview, PartnerInvoicePreviewGroup, PartnerInvoicePreviewLine } from '../../core/api/partner-sales-api';
-import { count, euro, minusEuro, percent } from '../partner/partner-format';
+import { count, minusEuro, percent } from '../partner/partner-format';
+import { signedEur } from '../../shared/signed-eur';
 
 /**
  * Factureren, step 2: the server's preview of the chosen meldingen, one
@@ -179,15 +180,12 @@ export class PartnerSalesInvoicePreview {
   }
 
   abs(value: number): number { return Math.abs(value); }
-  eur(value: number): string { return euro(value); }
-  /** A figure that may be below zero: "− € 1.172,72". */
-  signed(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return value < 0 ? '− ' + euro(-value) : euro(value);
-  }
+  eur(value: number): string { return signedEur(value); }
+  /** A figure that may be below zero: "− € 1.172,72" (the ERP's minus); "—" where the server computed none. */
+  signed(value: number | null | undefined): string { return signedEur(value); }
 
-  /** A figure of the preview; "—" where the server computed none. */
-  money(value: number | null | undefined): string { return value == null ? '—' : euro(value); }
+  /** A figure of the preview, below zero as "− € x"; "—" where the server computed none. */
+  money(value: number | null | undefined): string { return signedEur(value); }
   minus(value: number | null | undefined): string { return value == null ? '—' : minusEuro(value); }
   num(value: number): string { return count(value); }
 }
