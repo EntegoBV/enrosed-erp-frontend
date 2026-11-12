@@ -360,7 +360,10 @@ export interface PartnerDocumentBreakdownLine {
   boughtBackQuantity: number;
   /** soldQuantity − boughtBackQuantity: the invoice line's quantity. */
   quantity: number;
+  /** The invoice quantity in pieces. */
   pieces?: number | null;
+  /** What was sold, in pieces (the bruto's own count). */
+  salePieces?: number | null;
   grossEur: number;
   commissionEur: number;
   transportEur: number;

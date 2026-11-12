@@ -16,10 +16,11 @@ export interface ReportCostRequest extends Omit<ReportCostInput, 'breakdown'> {
 const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' });
 
 /**
- * The margin popup of a document from Veilingverkopen, desk and phone: per stuk and per regel, Bruto − commissie −
- * transport − extra − terugkoopkost = Netto opbrengst; − Inkoopkost (who financed it) = Winst, → Enrosed z % (the
- * clicked figure, highlighted) / → the partner; Onze waarde − voorschot = Te factureren; what the partner keeps;
- * the meldingen as links. Standalone so the sales screens' style budgets stay as they are.
+ * The margin popup of a document from Veilingverkopen, desk and phone: per invoiced unit and per regel, Bruto (with
+ * the auction's own price) − commissie − transport − extra − terugkoopkost = Netto opbrengst; − Inkoopkost, split
+ * → partner x % / → Enrosed y % by who paid it; = Winst, → Enrosed z % (the clicked figure, highlighted) / → the
+ * partner; Onze waarde − voorschot = Te factureren; what the partner keeps; the meldingen as links. Amounts below
+ * zero read "− € x". Standalone so the sales screens' style budgets stay as they are.
  */
 @Component({
   selector: 'app-report-backed-cost-sheet',
@@ -35,7 +36,7 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
           <div class="rbc-table" role="table" [attr.aria-label]="'Opbouw van ' + request().title">
             <div class="rbc-row rbc-row--head" role="row">
               <span role="columnheader"><span class="sr-only">Wat</span></span>
-              <span role="columnheader" class="rbc-num" [class.is-on]="request().mode === 'unit'">Per {{ request().unit.singular }}</span>
+              <span role="columnheader" class="rbc-num" [class.is-on]="request().mode === 'unit'">{{ view().unitHead }}</span>
               <span role="columnheader" class="rbc-num" [class.is-on]="request().mode === 'line'">Regel</span>
             </div>
             @for (row of view().rows; track row.key) {
@@ -80,6 +81,7 @@ const DAY = new Intl.DateTimeFormat('nl-BE', { day: 'numeric', month: 'short' })
     .rbc-row--head { min-height: 30px; border-top: 0; background: var(--surface-2); color: var(--muted); font-size: 10px; font-weight: 750;
       letter-spacing: .05em; text-transform: uppercase; }
     .rbc-row--head .is-on { color: var(--ink); }
+    .rbc-row--head .rbc-num { white-space: normal; line-height: 1.2; }
     .rbc-label { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
     .rbc-label i { flex: none; width: 12px; color: var(--muted); font-style: normal; font-weight: 700; text-align: center; }
     .rbc-label > span { display: grid; min-width: 0; }
@@ -113,8 +115,11 @@ export class ReportBackedCostSheet {
   readonly closed = output<void>();
 
   readonly view = computed(() => reportCostView({ ...this.request(), breakdown: this.breakdown() }));
-  /** A piece figure under a cent keeps four decimals, else two. */
-  readonly pieceDecimals = computed(() => Math.abs(this.view().perPiece ?? 0) < 1 ? 4 : 2);
+  /** A piece figure in cents; three decimals only when two would read € 0,00. */
+  readonly pieceDecimals = computed(() => {
+    const value = Math.abs(this.view().perPiece ?? 0);
+    return value > 0 && Math.round(value * 100) === 0 ? 3 : 2;
+  });
 
   day(iso: string): string {
     const date = new Date(`${iso}T12:00:00`);
