@@ -1,4 +1,5 @@
 import type { PartnerChannel, PartnerReport, PartnerReportStatus } from '../../core/api/partner-portal-api';
+import { signedEur } from '../../shared/signed-eur';
 
 /**
  * Words and number formats of the partner portal (Dutch, nl-BE numbers as the
@@ -50,15 +51,15 @@ export const STATUS_TONE: Record<PartnerReportStatus, string> = {
 
 const NUMBER = new Intl.NumberFormat('nl-BE', { maximumFractionDigits: 0 });
 const PRICE = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 4 });
-const EURO = new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const PERCENT = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 export function count(value: number | null | undefined): string {
   return NUMBER.format(Number(value) || 0);
 }
 
+/** "€ 1.234,56"; below zero the ERP's way (Analyses, Kaslijn, the staff screens): "− € 118,89", never "€ -118,89". */
 export function euro(value: number | null | undefined): string {
-  return EURO.format(Number(value) || 0);
+  return signedEur(Number(value) || 0);
 }
 
 /** A price per piece: "€ 0,45", "€ 0,4567" (up to the 4 decimals it is stored with). */
@@ -66,10 +67,9 @@ export function priceEuro(value: number | null | undefined): string {
   return PRICE.format(Number(value) || 0);
 }
 
-/** A cost line's minus amount: "− € 14,40" (nothing to subtract: "€ 0,00"). */
+/** A cost line's minus amount: "− € 14,40" (nothing to subtract: "€ 0,00"), written as euro() writes a negative. */
 export function minusEuro(value: number | null | undefined): string {
-  const amount = Number(value) || 0;
-  return amount === 0 ? euro(0) : '− ' + euro(amount);
+  return euro(-Math.abs(Number(value) || 0));
 }
 
 export function percent(value: number | null | undefined): string {
