@@ -5499,8 +5499,10 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
 - **Count units** (`features/partner/partner-units.ts`, pure mirror of the server's
   `PartnerCountUnits`): STUK (the piece noun: roos, bowl, stuk), VERPAKKING (display of 2+), OMDOOS
   (known carton content > 1); sales units = count x pieces / piecesPerSalesUnit and must be whole
-  (the stepper steps keep it whole). The staff unit editor has its own small mirror for a `Product`
-  (`features/settings/partner-unit-choices.ts`); both must say what the server says.
+  (the stepper steps keep it whole). The offer rule itself (which units, pieces per sales unit, the
+  order) is ONE module, `shared/partner-count-units.ts` (`buildCountUnits`, `countFactsOf` for a staff
+  `Product`); `partner-units.ts` re-exports it and the staff screens (`settings/partner-unit-choices.ts`,
+  the staff melding page, Analyses) read it. Change it only together with the server.
 - **Money** (`features/partner/partner-money.ts`, BigInt cents, half up): the same arithmetic as the
   server's `PartnerSaleMoney`, so the form's Netto is the booked Netto to the cent (piece price at 4
   dp x pieces per sales unit, gross = round2(Q x unit price); PCT extra lines per sale entry, AMOUNT
@@ -5522,15 +5524,26 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   Datum, Melding, Producten, Netto, Status; Stuks/Bruto/Kosten from 900, Terugkoop from 1100), one
   "Totaal · n meldingen" row from `filteredTotals`, bulk Bevestigen / Terugzetten / Factureren with
   edit tokens. Factureren sheet: step 1 Kies de meldingen (confirmed open only), step 2 Controleren
-  (Netto opbrengst − Inkoopkost (x % · y %) = Winst → Enrosed / partner, Ons deel = the value, −
-  Voorschot, = Te factureren). Melding toevoegen / Bewerken are pages `/veilingverkopen/melding` and
+  (`partner-sales-figures.ts`: Netto opbrengst − Inkoopkost, split → partner x % / → Enrosed y % by
+  who paid it, = Winst → Enrosed z % / → partner; Onze waarde (never "Ons deel": the Documentnotitie
+  uses that for our profit share), − Voorschot verrekend (also € 0,00 when the partner financed part of
+  the cost), = Te factureren); step 1 counts a partly invoiced melding's open part (from its parts'
+  `open`, "van € x" beside it). An opened melding shows the same split per source as "Inkoop en winst"
+  (`partner-sales-profit.ts`, the invoice preview of that melding alone with `includeUnconfirmed`).
+  Kosten carries the terugkoopkost while Terugkoop is folded; Ingetrokken has no total row;
+  `?meldingen=2,4` shows exactly those (a document's Meldingen links). Amounts below zero read
+  "− € x" (`shared/signed-eur.ts`, the Analyses way). "Stuks" are pieces everywhere, Analyses and the
+  home card included (the server's salePieces, else sales units × pieces per sales unit; the home
+  leaves stuks out while the summary has no pieces). Melding toevoegen / Bewerken are pages `/veilingverkopen/melding` and
   `/veilingverkopen/melding/:id` around the shared `app-partner-entry` (staff buyer search = the
   ERP customers, new buyer with the VAT number).
 - **Elsewhere in the ERP**: report-backed sales documents hide Levering (tab, column, phone step;
   hero KPIs Meldingen and Netto opbrengst) and the margin click opens `app-report-backed-cost-sheet`
   on `GET /api/partner-sales/documents/{id}/breakdown`; Instellingen › Partnerportaal has
-  "Eenheid per product" (`settings-partner-units.ts`); a partner-made customer shows its origin row
-  with Nagekeken and a "via Verhoeven" pill, `/customers?klant=<id>` opens it; the bell has
+  "Eenheid per product" (`settings-partner-units.ts`, the SKU on look-alike rows, stock in pieces); a
+  partner-made customer shows its origin row with Nagekeken (ticked on the sheet, sent after its own
+  Opslaan, needs the VAT number) and a "via Verhoeven" pill, `/customers?klant=<id>` opens it; the
+  margin popup reads per gefactureerd stuk with the auction's own price under Bruto; the bell has
   PARTNER_KLANT (keyed by notificationId) and the home has "Veilingverkopen bevestigen" and
   "Veilingverkopen factureren".
 
