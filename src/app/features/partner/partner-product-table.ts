@@ -50,7 +50,8 @@ export function withCategories<T extends PartnerProductTile>(tiles: readonly T[]
  * row; in `pick` mode a tick per row (the Melden page's product choice).
  * Search and "Alleen met voorraad" on top. A product whose name and colour
  * another one shares shows its code. On the phone the same rows stack to
- * photo, name with the colour, and the figure; the whole row is the target.
+ * photo, name with the colour (and a twin's code on a line of its own), and the figure; the
+ * whole row is the target.
  */
 @Component({
   selector: 'app-partner-product-table',
@@ -151,10 +152,11 @@ export function withCategories<T extends PartnerProductTile>(tiles: readonly T[]
       @let code = codeOf(item);
       <span class="wk-td pt-name" role="cell">
         <b>{{ item.name }}</b>
-        @if (code) { <span class="pt-sub pt-code pt-desk">{{ code }}</span> }
-        @if (item.variant || code) {
-          <span class="pt-sub pt-phone">@if (item.variant) { <i class="pt-dot" [style.background]="colourOf(item)" aria-hidden="true"></i>{{ item.variant }} }@if (item.variant && code) { · }{{ code }}</span>
+        @if (item.variant) {
+          <span class="pt-sub pt-phone"><i class="pt-dot" [style.background]="colourOf(item)" aria-hidden="true"></i>{{ item.variant }}</span>
         }
+        <!-- The code tells look-alikes apart: a line of its own, so a wide stock figure beside it never cuts it off. -->
+        @if (code) { <span class="pt-sub pt-code">{{ code }}</span> }
       </span>
       <span class="wk-td pt-desk pt-colour" role="cell">
         @if (item.variant) { <i class="pt-dot" [style.background]="colourOf(item)" aria-hidden="true"></i>{{ item.variant }} } @else { <span class="pt-muted">—</span> }
