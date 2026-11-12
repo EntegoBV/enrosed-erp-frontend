@@ -61,11 +61,11 @@ import { PartnerReportTable } from './partner-report-table';
         @if (latest().length) {
           @if (desk.active()) {
             <div class="sec__card">
-              <app-partner-report-table caption="Laatste meldingen" [reports]="latest()" [today]="o.serverDate"
+              <app-partner-report-table caption="Laatste meldingen" [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()"
                                         (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
             </div>
           } @else {
-            <app-partner-report-rows [reports]="latest()" [today]="o.serverDate" (opened)="open.set($event)" />
+            <app-partner-report-rows [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()" (opened)="open.set($event)" />
           }
         } @else {
           <p class="none">Nog niets gemeld.</p>
@@ -82,7 +82,7 @@ import { PartnerReportTable } from './partner-report-table';
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
+      <app-partner-report-sheet [report]="report" [twins]="data.twins()" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
     }
   `,
   styles: `

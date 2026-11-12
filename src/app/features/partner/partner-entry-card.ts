@@ -11,6 +11,7 @@ import { EntryMoney } from './partner-money';
 import { PartnerMoneyField } from './partner-money-field';
 import { PartnerPhoto, PhotoUrlFn, partnerPhoto, safeColour } from './partner-photo';
 import { PartnerStepper } from './partner-stepper';
+import { NO_TWINS, Twins, twinLabel } from './partner-twins';
 
 /**
  * One product of a melding on the phone: Eenheid (roos | display | omdoos),
@@ -138,12 +139,15 @@ export class PartnerEntryCard {
   readonly money = input<EntryMoney | null>(null);
   readonly lastSoldOn = input<string | null>(null);
   readonly photoUrl = input<PhotoUrlFn>(partnerPhoto);
+  /** Names and colours more than one product shares (the card then adds the code). */
+  readonly twins = input<Twins>(NO_TWINS);
 
   readonly colour = computed(() => safeColour(this.entry().product.colourHex));
-  /** "Rood · 720 rozen op voorraad"; on Terugkoop "Rood · verkocht 10/11". */
+  /** "Rood · 720 rozen op voorraad"; on Terugkoop "Rood · verkocht 10/11"; a twin adds its code. */
   readonly sub = computed(() => {
     const product = this.entry().product;
-    return [product.variant, stockLine(this.draft(), this.entry(), this.lastSoldOn(), shortDate)].filter(Boolean).join(' · ');
+    return [product.variant, twinLabel(product, this.twins()), stockLine(this.draft(), this.entry(), this.lastSoldOn(), shortDate)]
+      .filter(Boolean).join(' · ');
   });
 
   partOf(which: 'sale' | 'buyback'): DraftPart {

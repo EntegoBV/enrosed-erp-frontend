@@ -8,19 +8,23 @@ import { PartLine, partLine, pricePerLabel, sharedPieceNoun, stockLine, unitOpti
 import { euro, shortDate } from './partner-format';
 import { PartnerCountField } from './partner-count-field';
 import { PartnerMoneyField } from './partner-money-field';
-import { safeColour } from './partner-photo';
+import { PartnerPhoto, PhotoUrlFn, partnerPhoto, safeColour } from './partner-photo';
+import { NO_TWINS, Twins, twinLabel } from './partner-twins';
 
 /**
  * The products of a melding on the desk, as one table: Product · Eenheid ·
  * Aantal · = stuks · Prijs per roos · Totaal · ×. A buyback on the clock is an
  * indented sub-row of its product (Veiling), or the row itself (Terugkoop):
  * Klokprijs, and Terugkoopkost incl. commissie + transport. Lines that stop
- * Opslaan (too many, not whole) stand right under their row.
+ * Opslaan (too many, not whole, no whole count) stand right under their row,
+ * a buyback above the sale in amber. When the products count in different
+ * pieces (stolp, roos) each price field says per what. A wide table shows the
+ * photo; a product whose name and colour another one shares shows its code.
  */
 @Component({
   selector: 'app-partner-entry-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, Icon, PartnerCountField, PartnerMoneyField],
+  imports: [NgTemplateOutlet, FormsModule, Icon, PartnerCountField, PartnerMoneyField, PartnerPhoto],
   template: `
     @let d = draft();
     @let kind = d.kind();
@@ -42,8 +46,11 @@ import { safeColour } from './partner-photo';
         @let line = lineOf(entry, main);
         <div class="wk-tr et-row et-main" role="row">
           <span class="wk-td et-product" role="cell">
-            <b>@if (entry.product.variant) { <i class="et-dot" [style.background]="colour(entry)" aria-hidden="true"></i> }{{ entry.product.name }}</b>
-            <span class="et-sub">{{ productSub(entry) }}</span>
+            <app-partner-photo class="et-photo" [product]="entry.product" [photoUrl]="photoUrl()" />
+            <span class="et-name">
+              <b>@if (entry.product.variant) { <i class="et-dot" [style.background]="colour(entry)" aria-hidden="true"></i> }{{ entry.product.name }}</b>
+              <span class="et-sub">{{ productSub(entry) }}</span>
+            </span>
           </span>
           <ng-container *ngTemplateOutlet="part; context: { entry: entry, which: main, line: line, em: em }" />
           <span class="wk-td et-act" role="cell">
@@ -63,7 +70,7 @@ import { safeColour } from './partner-photo';
         @if (kind === 'veiling' && entry.buybackOpen) {
           @let back = lineOf(entry, 'buyback');
           <div class="wk-tr et-row et-back" role="row">
-            <span class="wk-td et-product et-product--back" role="cell" title="Teruggekocht op de klok"><b>Teruggekocht</b><span class="et-sub">op de klok</span></span>
+            <span class="wk-td et-product et-product--back" role="cell" title="Teruggekocht op de klok"><span class="et-name"><b>Teruggekocht</b><span class="et-sub">op de klok</span></span></span>
             <ng-container *ngTemplateOutlet="part; context: { entry: entry, which: 'buyback', line: back, em: em }" />
             <span class="wk-td et-act" role="cell">
               <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon" type="button" title="Terugkoop weghalen"
@@ -141,7 +148,9 @@ import { safeColour } from './partner-photo';
     .et .wk-thead{border-radius:14px 14px 0 0}
     .et .wk-th{white-space:normal;line-height:1.15}
     .et-main{min-height:52px}
-    .et-product{display:grid;align-content:center;white-space:normal}
+    .et-product{display:flex;align-items:center;gap:10px;white-space:normal}
+    .et-name{display:grid;align-content:center;min-width:0}
+    .et-photo{display:none;flex:none;width:34px;height:34px;border-radius:8px}
     .et-product b{overflow:hidden;font-size:13.5px;font-weight:650;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
     .et-sub{display:block;color:var(--muted);font-size:11.5px;line-height:1.3;overflow-wrap:anywhere}
     .et-dot{display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:#c9bfb7;box-shadow:inset 0 0 0 1px rgb(26 22 20/14%)}
@@ -150,6 +159,8 @@ import { safeColour } from './partner-photo';
     .et-product--back .et-sub{padding-left:14px;color:color-mix(in srgb,#c7851d 70%,var(--muted))}
     .et-product--back b{color:#7c4a0b;font-size:12.5px;font-weight:700}
     .et-product--back b::before{content:'↳ ';color:color-mix(in srgb,#c7851d 60%,var(--muted))}
+    /* A wide table has room for the photo (the phone card always shows it); the buyback label lines up with the name. */
+    @container et (min-width: 820px){.et-photo{display:grid}.et-product--back{padding-left:30px}}
     .et-unit{width:100%;height:32px;padding:0 22px 0 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23857a73' stroke-width='1.5'/%3E%3C/svg%3E") right 8px center no-repeat;color:var(--ink);font:inherit;font-size:12.5px;appearance:none;-webkit-appearance:none;cursor:pointer}
     .et-unit:focus{border-color:var(--rose);outline:none;box-shadow:var(--wk-focus)}
     .et-unit-text{color:var(--ink-2);font-size:12.5px}
@@ -179,6 +190,9 @@ export class PartnerEntryTable {
   readonly draft = input.required<MeldingDraft>();
   /** Recent sales: the day each product last sold (Terugkoop). */
   readonly recent = input<readonly PartnerRecentSale[]>([]);
+  readonly photoUrl = input<PhotoUrlFn>(partnerPhoto);
+  /** Names and colours more than one product shares (their rows add the code). */
+  readonly twins = input<Twins>(NO_TWINS);
   /** "+ Product": the screen opens its product choice. */
   readonly addProducts = output<void>();
 
@@ -194,7 +208,7 @@ export class PartnerEntryTable {
 
   productSub(entry: DraftEntry): string {
     const stock = stockLine(this.draft(), entry, this.recentById().get(entry.product.productId)?.lastSoldOn ?? null, shortDate);
-    return [entry.product.variant, stock].filter(Boolean).join(' · ');
+    return [entry.product.variant, twinLabel(entry.product, this.twins()), stock].filter(Boolean).join(' · ');
   }
 
   setUnit(entry: DraftEntry, which: 'sale' | 'buyback', key: string): void {

@@ -3,6 +3,7 @@ import type { PartnerReport } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
 import { KIND_ICON, KIND_SHORT, KIND_TONE, dayLabel, euro, reportKind } from './partner-format';
 import { buyerLine, partnerStatus, piecesWords, productsShort, reportPieces } from './partner-report-format';
+import { NO_TWINS, Twins } from './partner-twins';
 
 /** How many pieces a melding moved, in one short fact: "144 rozen", "12 stuks terug". */
 export function reportQuantity(report: PartnerReport): string {
@@ -63,6 +64,8 @@ export function reportQuantity(report: PartnerReport): string {
 export class PartnerReportRows {
   readonly reports = input.required<readonly PartnerReport[]>();
   readonly today = input('');
+  /** Names and colours more than one product shares (the products line adds the code). */
+  readonly twins = input<Twins>(NO_TWINS);
   readonly opened = output<PartnerReport>();
 
   readonly short = KIND_SHORT;
@@ -72,7 +75,7 @@ export class PartnerReportRows {
   kindOf(report: PartnerReport) { return reportKind(report); }
   statusOf(report: PartnerReport) { return partnerStatus(report); }
   quantityOf(report: PartnerReport): string { return reportQuantity(report); }
-  subOf(report: PartnerReport): string { return buyerLine(report) || productsShort(report); }
+  subOf(report: PartnerReport): string { return buyerLine(report) || productsShort(report, this.twins()); }
   eur(value: number): string { return euro(value); }
   day(iso: string): string { return dayLabel(iso, this.today()); }
 }

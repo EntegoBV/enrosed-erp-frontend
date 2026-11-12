@@ -13,12 +13,13 @@ import { DraftExtraLine, MAX_EXTRA_LINES, MeldingDraft } from './partner-draft';
 import { PartnerEntryCard } from './partner-entry-card';
 import { PartnerEntryTable } from './partner-entry-table';
 import {
-  KIND_SHORT, PARTNER_KINDS, PartnerKind, dayLabel, escapeHtml, euro, minusEuro, parseKind, percent, productTitle,
+  KIND_SHORT, PARTNER_KINDS, PartnerKind, dayLabel, escapeHtml, euro, minusEuro, parseKind, percent,
 } from './partner-format';
 import { piecePriceOf } from './partner-money';
 import { PartnerMoneyField } from './partner-money-field';
 import { PhotoUrlFn, partnerPhoto } from './partner-photo';
 import { PartnerProductTable, TableProduct } from './partner-product-table';
+import { twinKeys, twinTitle } from './partner-twins';
 import { pieceUnit, piecesPerSalesUnit } from './partner-units';
 
 /** How far the piece price may rise above the partner's last one before Opslaan asks "Klopt de prijs?". */
@@ -76,10 +77,10 @@ const PRICE_JUMP = 5;
         </section>
 
         @if (desk.active()) {
-          <app-partner-entry-table [draft]="d" [recent]="recent()" (addProducts)="pickerState.set(true)" />
+          <app-partner-entry-table [draft]="d" [recent]="recent()" [photoUrl]="photoUrl()" [twins]="twins()" (addProducts)="pickerState.set(true)" />
         } @else {
           @for (entry of d.entries(); track entry.product.productId; let i = $index) {
-            <app-partner-entry-card [draft]="d" [entry]="entry" [money]="money.entries[i] ?? null"
+            <app-partner-entry-card [draft]="d" [entry]="entry" [money]="money.entries[i] ?? null" [twins]="twins()"
                                     [lastSoldOn]="lastSoldOf(entry.product.productId)" [photoUrl]="photoUrl()" />
           }
         }
@@ -340,6 +341,9 @@ export class PartnerEntry implements OnInit {
 
   readonly selectedIds = computed(() => new Set(this.draft().entries().map((entry) => entry.product.productId)));
 
+  /** Names and colours more than one product shares, over everything the form can show. */
+  readonly twins = computed(() => twinKeys([...this.stock(), ...this.recent(), ...this.draft().entries().map((entry) => entry.product)]));
+
   /** A sale cannot pick a product with nothing there to sell. */
   readonly blockedIds = computed<ReadonlySet<number>>(() => {
     if (this.draft().kind() === 'terugkoop') return new Set();
@@ -349,7 +353,8 @@ export class PartnerEntry implements OnInit {
   readonly chosenLine = computed(() => {
     const entries = this.draft().entries();
     if (!entries.length) return 'kies wat je verkocht';
-    const names = entries.slice(0, 2).map((entry) => productTitle(entry.product)).join(', ');
+    const twins = this.twins();
+    const names = entries.slice(0, 2).map((entry) => twinTitle(entry.product, twins)).join(', ');
     return `${entries.length} gekozen · ${names}${entries.length > 2 ? ' …' : ''}`;
   });
 
@@ -420,7 +425,7 @@ export class PartnerEntry implements OnInit {
       const price = piecePriceOf({ salesUnits: draft.salesUnits(entry, 'sale'), piecesPerSalesUnit: piecesPerSalesUnit(entry.product), piecePrice: entry.sale.price });
       if (lastPiece != null && lastPiece > 0 && price != null && price > PRICE_JUMP * lastPiece) {
         const noun = escapeHtml(pieceUnit(entry.product).one);
-        return `${escapeHtml(productTitle(entry.product))}: ${euro(price)} per ${noun}. De vorige keer was dat ${euro(lastPiece)}.`;
+        return `${escapeHtml(twinTitle(entry.product, this.twins()))}: ${euro(price)} per ${noun}. De vorige keer was dat ${euro(lastPiece)}.`;
       }
     }
     return null;

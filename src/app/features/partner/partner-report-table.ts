@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import type { PartnerReport } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
 import { KIND_SHORT, KIND_TONE, count, dayLabel, euro, reportKind } from './partner-format';
+import { NO_TWINS, Twins } from './partner-twins';
 import {
   buyerLine, canEditReport, canUndoReport, costsEur, partnerStatus, productsShort, reportPieces,
 } from './partner-report-format';
@@ -112,6 +113,8 @@ export class PartnerReportTable {
   readonly caption = input('Meldingen');
   /** Bewerken and Ongedaan maken per row (where the melding allows it). */
   readonly actions = input(true);
+  /** Names and colours more than one product shares (the Producten cell adds the code). */
+  readonly twins = input<Twins>(NO_TWINS);
   readonly opened = output<PartnerReport>();
   readonly edit = output<PartnerReport>();
   readonly undo = output<PartnerReport>();
@@ -123,7 +126,7 @@ export class PartnerReportTable {
   piecesOf(report: PartnerReport) { return reportPieces(report); }
   statusOf(report: PartnerReport) { return partnerStatus(report); }
   buyer(report: PartnerReport): string { return buyerLine(report); }
-  products(report: PartnerReport): string { return productsShort(report); }
+  products(report: PartnerReport): string { return productsShort(report, this.twins()); }
   costs(report: PartnerReport): number { return costsEur(report.totals); }
   canEdit(report: PartnerReport): boolean { return canEditReport(report); }
   canUndo(report: PartnerReport): boolean { return canUndoReport(report); }

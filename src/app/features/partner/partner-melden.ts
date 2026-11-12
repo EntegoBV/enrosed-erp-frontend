@@ -17,6 +17,7 @@ import { PartnerEntry } from './partner-entry';
 import { KIND_LABEL, PartnerKind, addDays, euro, longDate, parseKind, priceEuro, productTitle, reportKind } from './partner-format';
 import { PartnerHead } from './partner-head';
 import { canEditReport, partCount, partPiecePrice, partnerStatus, pieceNoun } from './partner-report-format';
+import { twinTitle } from './partner-twins';
 
 /** How far back a melding may be dated (the server's rule). */
 const DAYS_BACK = 90;
@@ -304,7 +305,7 @@ export class PartnerMelden implements HasUnsavedChanges {
   }
 
   kindLabel(report: PartnerReport): string { return KIND_LABEL[reportKind(report)]; }
-  title(entry: { name: string; variant: string | null }): string { return productTitle(entry); }
+  title(entry: PartnerReportEntry): string { return twinTitle(entry, this.data.twins()); }
   countOf(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string { return partCount(entry, part); }
   piecePrice(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): number { return partPiecePrice(entry, part); }
   noun(entry: PartnerReportEntry): string { return pieceNoun(entry); }
