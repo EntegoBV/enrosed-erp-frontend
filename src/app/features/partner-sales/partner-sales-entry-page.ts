@@ -5,7 +5,7 @@ import { CatalogApi } from '../../core/api/catalog-api';
 import { messageOf } from '../../core/api/errors';
 import type { Customer, Product, ProductFamily, StockLevel, StockLocation } from '../../core/api/models';
 import type {
-  PartnerBuyer, PartnerRecentSale, PartnerReportRequest, PartnerReportResult, PartnerStockTile,
+  PartnerBuyer, PartnerRecentSale, PartnerReport, PartnerReportRequest, PartnerReportResult, PartnerStockTile,
 } from '../../core/api/partner-portal-api';
 import { PARTNER_API_VERSION } from '../../core/api/partner-portal-api';
 import {
@@ -23,10 +23,11 @@ import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import { blankCustomer } from '../customers/customer-form';
 import type { BuyerCreateBody } from '../partner/partner-buyer-field';
-import { MeldingDraft } from '../partner/partner-draft';
-import { PartnerEntry } from '../partner/partner-entry';
+import { MeldingDraft, reportChanges, tileOfEntry } from '../partner/partner-draft';
+import { EntryNotice, PartnerEntry } from '../partner/partner-entry';
 import { addDays, localToday, longDate } from '../partner/partner-format';
 import type { PhotoUrlFn } from '../partner/partner-photo';
+import { twinKeys, twinTitle } from '../partner/partner-twins';
 import { storedUnits } from '../settings/partner-unit-choices';
 import { buyerCandidates, buyerOf, lastBuyers, productTile, recentSales, searchBuyers } from './partner-sales-entry-data';
 import { shortDay } from './partner-sales-filters';
@@ -38,6 +39,11 @@ const RECENT_DAYS = 60;
 /** Said when the server is still round 1 (the portal's own words): nothing round-2 is sent to it. */
 const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
 
+/** The version a melding was loaded at (sent back as expectedToken). */
+function tokenOf(report: PartnerReport): string {
+  return report.editToken ?? report.updatedAt ?? report.createdAt;
+}
+
 /**
  * Melding toevoegen (/veilingverkopen/melding, ?partner=<id>) and Bewerken
  * (/veilingverkopen/melding/<id>): staff type in what Frans phoned in, or
@@ -47,7 +53,10 @@ const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
  * display or omdoos with his default from Instellingen › Partnerportaal);
  * the buyer of a direct sale from Klanten (a new one with the normal
  * customer creation, VAT number included). It posts to the staff POST, or
- * PUT with the token it loaded; a round-1 server gets nothing round-2.
+ * PUT with the token it loaded; a round-1 server gets nothing round-2. A PUT
+ * refused because the melding changed meanwhile (Frans or a colleague) reads
+ * it again: the same as the form = it was saved (its answer got lost), else
+ * the form says who changed what and offers "Nieuwe versie laden".
  */
 @Component({
   selector: 'app-partner-sales-entry-page',
@@ -58,7 +67,7 @@ const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
     <div class="content ve" [class.ve--phone]="!desk.active()">
       @if (failure(); as message) {
         <app-load-error [title]="editId() ? 'De melding laden lukt nu niet' : 'Melding toevoegen kan nu niet'" [message]="message" [busy]="loading()" (retry)="reload()" />
-      } @else if (!ready()) {
+      } @else if (!ready() || reloading()) {
         <app-skeleton [kind]="desk.active() ? 'card' : 'group'" [rows]="4" />
       } @else if (!partners().length && !editId()) {
         <p class="ve-none">Geen partner met Partnercontainers. Zet dat aan bij de klant.</p>
@@ -75,7 +84,8 @@ const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
         @if (customerId() != null) {
           <app-partner-entry [draft]="draft" [stock]="stock()" [recent]="recent()" [today]="today" [photoUrl]="photoUrl"
                              [startPicking]="!editId()" [submit]="send" [buyerSearch]="findBuyers" [buyerCreate]="addBuyer" [buyerVat]="true"
-                             [submitLabel]="editId() ? 'Opslaan' : 'Melding opslaan'" (done)="done($event)" (refused)="refused()" />
+                             [submitLabel]="editId() ? 'Opslaan' : 'Melding opslaan'" [notice]="notice()" (noticeAction)="loadNewVersion()"
+                             (done)="done($event)" (refused)="refused()" />
         }
       }
     </div>
@@ -129,6 +139,10 @@ export class PartnerSalesEntryPage implements HasUnsavedChanges {
   readonly customerId = signal<number | null>(null);
   /** The melding being edited, as the server answered it. */
   readonly editReport = signal<StaffPartnerReport | null>(null);
+  /** A newer version of the edited melding than the one on the form (a PUT refused because it changed meanwhile), and what changed. */
+  readonly stale = signal<{ report: StaffPartnerReport; changes: string[] } | null>(null);
+  /** "Nieuwe versie laden": the form is rebuilt from the melding as it is now. */
+  readonly reloading = signal(false);
   private customers: Promise<Customer[]> | null = null;
   private partnerRun = 0;
   private loadedFor: string | null = null;
@@ -196,6 +210,20 @@ export class PartnerSalesEntryPage implements HasUnsavedChanges {
       const product = products.get(id);
       return product ? this.tileOf(product) : null;
     });
+  });
+
+  /** The edited melding changed meanwhile: who changed what, and "Nieuwe versie laden" (Opslaan waits for it). */
+  readonly notice = computed<EntryNotice | null>(() => {
+    const stale = this.stale();
+    if (!stale) return null;
+    const fresh = stale.report;
+    const by = fresh.updatedByName && fresh.updatedByName !== this.auth.username() ? ` door ${fresh.updatedByName}` : '';
+    const changes = stale.changes;
+    const what = changes.length ? ` (${changes.slice(0, 3).join(', ')}${changes.length > 3 ? ' …' : ''})` : '';
+    return {
+      text: `${fresh.number} is intussen gewijzigd${by}${what}. Laad de nieuwe versie; wat je hier invulde, vervalt dan.`,
+      action: 'Nieuwe versie laden',
+    };
   });
 
   /** Why a loaded melding cannot be changed (the server decides with canEdit). */
@@ -316,6 +344,7 @@ export class PartnerSalesEntryPage implements HasUnsavedChanges {
   private async loadEdit(id: number): Promise<void> {
     this.loading.set(true);
     this.failure.set(null);
+    this.stale.set(null);
     try {
       const report = await this.api.report(id);
       this.editReport.set(report);
@@ -386,9 +415,38 @@ export class PartnerSalesEntryPage implements HasUnsavedChanges {
     void this.router.navigate(['/veilingverkopen'], { queryParams: { melding: result.report.id } });
   }
 
-  /** A refusal keeps the draft; the stock may have changed meanwhile (the rows then say which is too many). */
-  refused(): void {
+  /**
+   * A refusal keeps the draft; the stock may have changed meanwhile (the rows then say which is too many). An edit
+   * also reads its melding again: changed meanwhile and now holding exactly what the form holds = the save went
+   * through (its answer got lost); changed otherwise = the notice with the new version (a retry with the old token
+   * would be refused for ever).
+   */
+  async refused(): Promise<void> {
     void this.catalog.stockLevels().then((levels) => this.levels.set(levels)).catch(() => undefined);
+    const editing = this.draft.editing();
+    if (!editing) return;
+    try {
+      const fresh = await this.api.report(editing.id);
+      if (this.draft.editing() !== editing || tokenOf(fresh) === editing.token) return;
+      if (this.draft.sameAs(fresh)) { this.done({ report: fresh, existing: true }); return; }
+      const loaded = this.editReport();
+      const twins = twinKeys([...this.stock(), ...this.recent(), ...(loaded?.entries ?? []).map(tileOfEntry), ...fresh.entries.map(tileOfEntry)]);
+      this.stale.set({ report: fresh, changes: loaded ? reportChanges(loaded, fresh, (product) => twinTitle(product, twins)) : [] });
+    } catch {
+      /* The refusal stays on the form; reloading the page still reads the melding afresh. */
+    }
+  }
+
+  /** "Nieuwe versie laden": the melding as it is now on the form; what was typed here is dropped (the notice said so). */
+  async loadNewVersion(): Promise<void> {
+    const id = this.editId();
+    if (!id || this.reloading()) return;
+    this.reloading.set(true);
+    try {
+      await this.loadEdit(id);
+    } finally {
+      this.reloading.set(false);
+    }
   }
 
   back(): void {
