@@ -56,7 +56,10 @@ export function partLine(draft: MeldingDraft, entry: DraftEntry, which: 'sale' |
       messages.push({ text: `Er liggen maar ${there ? mixText(product, there) : unitText(pieceUnit(product), 0)}${rest ? ' · rest: tel per ' + pieceUnit(product).one : ''}`, bad: true });
     }
   }
-  if (draft.notWhole(entry, which)) {
+  if (part.unreadable) {
+    invalid = true;
+    messages.push({ text: countUnreadableText(entry, unit), bad: true });
+  } else if (draft.notWhole(entry, which)) {
     invalid = true;
     messages.push({ text: wholeHint(product), bad: true });
   } else if (part.kept) {

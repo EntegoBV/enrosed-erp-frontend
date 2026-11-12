@@ -36,6 +36,8 @@ export interface DraftPart {
   price: number | null;
   /** A unit switch kept the count (the pieces did not fit the new unit): said once under the row. */
   kept?: boolean;
+  /** The Aantal field holds text that is no whole count ("2,5"); count is null meanwhile. */
+  unreadable?: boolean;
 }
 
 export interface DraftEntry {

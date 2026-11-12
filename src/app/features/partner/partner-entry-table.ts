@@ -99,6 +99,7 @@ import { safeColour } from './partner-photo';
         <input class="et-num" appPartnerCount [step]="line.step" [max]="line.max" placeholder="0"
                [attr.aria-label]="(which === 'buyback' ? 'Aantal teruggekocht ' : 'Aantal ') + entry.product.name"
                [attr.aria-invalid]="line.invalid ? 'true' : null"
+               (unreadableChange)="draft().updatePart(entry.product.productId, which, { unreadable: $event })"
                [ngModel]="entry[which].count" (ngModelChange)="draft().updatePart(entry.product.productId, which, { count: $event })" />
       </span>
       <span class="wk-td et-pieces" role="cell">{{ line.piecesText }}</span>

@@ -81,6 +81,7 @@ import { PartnerStepper } from './partner-stepper';
         <span class="pe-row__label">Aantal @if (line.piecesText) { <small>{{ line.piecesText }}</small> }</span>
         <app-partner-stepper [value]="partOf(which).count" [max]="line.max" [step]="line.step" [invalid]="line.invalid"
                              [label]="(which === 'sale' ? 'Aantal ' : 'Aantal teruggekocht ') + entry().product.name"
+                             (unreadableChange)="draft().updatePart(entry().product.productId, which, { unreadable: $event })"
                              (valueChange)="draft().updatePart(entry().product.productId, which, { count: $event })" />
       </div>
       @for (message of line.messages; track message.text) {
