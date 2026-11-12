@@ -6,6 +6,7 @@ import { PartnerPortalApi } from '../../core/api/partner-portal-api';
 import { useAppManifest } from '../../core/platform/app-manifest';
 import { HostBridge } from '../../core/platform/host-bridge';
 import { BrandMark } from '../../shared/brand-mark';
+import { PartnerContainersData } from './partner-containers-data';
 import { PartnerData } from './partner-data';
 
 /** The portal's tabs. */
@@ -31,7 +32,7 @@ const TABS: readonly { path: string; label: string; exact: boolean }[] = [
   selector: 'app-partner-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, RouterLink, BrandMark],
-  providers: [PartnerData],
+  providers: [PartnerData, PartnerContainersData],
   template: `
     <div class="pt-page ios-page ios-page--bare">
       <header class="pt-head">
