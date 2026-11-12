@@ -147,9 +147,14 @@ export class MeldingDraft {
    * stock there is, so 0; null (the default) means no limit is known.
    */
   readonly saleLimitOtherwise = signal<number | null>(null);
-  /** The first and last day the date row accepts (yyyy-mm-dd); empty = no limit. */
+  /**
+   * The first and last day the date picker offers (yyyy-mm-dd); empty = no limit. In an edit of an older melding
+   * `earliest` is its own day, so the picker can show it; a changed day must still lie within `bound`.
+   */
   readonly earliest = signal('');
   readonly latest = signal('');
+  /** The first day a new or changed date may have (today - 90, the server's rule). */
+  private readonly bound = signal('');
   /** The melding being edited; null for a new one. */
   readonly editing = signal<DraftEditing | null>(null);
   /** Per product what the edited melding booked (sales units): the sale limit adds it back. */
@@ -288,7 +293,8 @@ export class MeldingDraft {
     if (this.latest() && day > this.latest()) return 'Een datum in de toekomst kan niet';
     /* An edit keeps its own date, however old; only a changed date must lie within the 90 days. */
     if (this.editing()?.soldOn === day) return null;
-    if (this.earliest() && day < this.earliest()) return 'Hoogstens 90 dagen terug';
+    const first = this.bound() || this.earliest();
+    if (first && day < first) return 'Hoogstens 90 dagen terug';
     return null;
   });
 
@@ -438,6 +444,7 @@ export class MeldingDraft {
     const before = this.latest();
     const editing = this.editing();
     this.latest.set(today);
+    this.bound.set(earliest);
     this.earliest.set(editing && editing.soldOn < earliest ? editing.soldOn : earliest);
     if (editing) return;
     if (!this.soldOn() || this.soldOn() === before) this.soldOn.set(today);
