@@ -310,6 +310,117 @@ export interface PartnerBuyerRequest {
   phone?: string | null;
 }
 
+/* ---- containers (round 2): every container of Enrosed's, logistics only, never a price, amount or supplier */
+
+/** The order's own status (a concept never comes). */
+export type PartnerContainerStatus = 'BESTELD' | 'ONDERWEG' | 'ONTVANGEN';
+/** The partner's word: Besteld, Onderweg, Binnenkort (departed, due within 14 days), Aangekomen. */
+export type PartnerContainerState = 'BESTELD' | 'ONDERWEG' | 'BINNENKORT' | 'AANGEKOMEN';
+
+/** B x D x H in cm. */
+export interface PartnerSize {
+  b: number | null;
+  d: number | null;
+  h: number | null;
+}
+
+/** The pallet the ± pallets are counted on (Enrosed's europallet and its loaded height). */
+export interface PartnerPallet {
+  widthCm: number;
+  depthCm: number;
+  maxHeightCm: number;
+}
+
+/** One product on a container: sales units, pieces, cartons, m³, pallets (each product on its own), weight. */
+export interface PartnerContainerLine {
+  productId: number;
+  /** Sales units: what is ordered now, or (received) what went on the shelf. */
+  quantity: number;
+  /** Received only, when it differs from what arrived. */
+  orderedQuantity: number | null;
+  pieces: number;
+  cartons: number;
+  cbm: number;
+  pallets: number | null;
+  weightKg: number | null;
+}
+
+export interface PartnerContainerTotals {
+  products: number;
+  units: number;
+  pieces: number;
+  cartons: number;
+  cbm: number;
+  /** Null for groupage (LCL). */
+  capacityCbm: number | null;
+  fillPercent: number | null;
+  /** Null when no line has a fit; palletsUnknown lines are not in it. */
+  pallets: number | null;
+  palletsUnknown: number;
+  weightKg: number | null;
+  weightUnknown: boolean;
+  cbmUnknown?: boolean;
+}
+
+/** A container: its PO number, whether it is his own (shared with him), dates, ports and cargo. */
+export interface PartnerContainer {
+  id: number;
+  number: string | null;
+  /** The PO number ("PO-2026-010"); never Enrosed's own nickname. */
+  name: string;
+  /** His own container (Samen met jou). */
+  own: boolean;
+  status: PartnerContainerStatus;
+  /** The server's word; a server without it is read with the same rule (partner-containers-model). */
+  state?: PartnerContainerState;
+  containerType: string;
+  containerLabel: string | null;
+  orderDate: string | null;
+  shippedOn: string | null;
+  expectedArrival: string | null;
+  /** The expected date while it can still hold. */
+  due?: string | null;
+  receivedOn: string | null;
+  /** Tracking moved the arrival from this date (not received yet). */
+  arrivalMovedFrom: string | null;
+  stockBooked: boolean;
+  /** Received (or put away) more than 60 days ago: shown behind "Ook oude containers". */
+  old?: boolean;
+  departurePort: string | null;
+  destinationPort: string | null;
+  /** Only for his own container or the main warehouse. */
+  locationName: string | null;
+  totals: PartnerContainerTotals;
+  lines: PartnerContainerLine[];
+}
+
+/** A product as the container screen shows it: the tile plus the product card's sizes and packaging. */
+export interface PartnerProductSpec extends PartnerProductTile {
+  categoryId: number | null;
+  categoryName: string | null;
+  colour: string | null;
+  variantSize: string | null;
+  productCm: PartnerSize | null;
+  productWeightKg: number | null;
+  packagingKind: string | null;
+  packagingCm: PartnerSize | null;
+  /** Sales units per omdoos. */
+  unitsPerCarton: number | null;
+  cartonCm: PartnerSize | null;
+  cartonWeightKg: number | null;
+  cartonsPerPallet: number | null;
+}
+
+export interface PartnerContainerPage {
+  /** Today in Europe/Brussels (yyyy-mm-dd). */
+  serverDate: string;
+  pallet: PartnerPallet | null;
+  /** Open ones by arrival, then received ones newest first. */
+  containers: PartnerContainer[];
+  /** Once per product on the listed lines. */
+  products: PartnerProductSpec[];
+}
+
 export const PARTNER_REPORT_PAGE_SIZE = 50;
 
 /** The partner-scoped photo of a product (small for tiles), versioned so a changed photo is fetched anew. */
@@ -365,6 +476,11 @@ export class PartnerPortalApi {
   /** A new buyer (or the one he already added under that name). */
   createCustomer(body: PartnerBuyerRequest): Promise<PartnerBuyer> {
     return firstValueFrom(this.http.post<PartnerBuyer>(api('/api/partner-portal/customers'), body));
+  }
+
+  /** Every container of Enrosed's (no concepts), with its products' specifications; no price, amount or supplier. */
+  containers(): Promise<PartnerContainerPage> {
+    return firstValueFrom(this.http.get<PartnerContainerPage>(api('/api/partner-portal/containers')));
   }
 
   /** Ends this device's partner session on the server; the caller then signs out locally. */

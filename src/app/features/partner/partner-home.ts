@@ -7,6 +7,7 @@ import { Icon } from '../../shared/icon';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
+import { PartnerComing } from './partner-coming';
 import { PartnerData } from './partner-data';
 import { KIND_ICON, KIND_LABEL, KIND_TONE, PARTNER_KINDS, percent } from './partner-format';
 import { PartnerProductTable, TableProduct } from './partner-product-table';
@@ -17,14 +18,15 @@ import { PartnerReportTable } from './partner-report-table';
 
 /**
  * Overzicht, desk first: three buttons for what happened (veiling, direct,
- * terugkoop), the two cost percentages, the stock as one table grouped by
+ * terugkoop), the two cost percentages, the next three containers coming
+ * (links to Containers), the stock as one table grouped by
  * family (Melden on a row reports that product sold at the auction), and the
  * latest meldingen as a table.
  */
 @Component({
   selector: 'app-partner-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, LoadError, Skeleton, PartnerProductTable, PartnerReportRows, PartnerReportSheet, PartnerReportTable],
+  imports: [RouterLink, Icon, LoadError, Skeleton, PartnerComing, PartnerProductTable, PartnerReportRows, PartnerReportSheet, PartnerReportTable],
   template: `
     <nav class="acts" aria-label="Melden">
       @for (kind of kinds; track kind) {
@@ -38,7 +40,7 @@ import { PartnerReportTable } from './partner-report-table';
     @if (overview(); as o) {
       <p class="costs">Veilingcommissie {{ pct(o.costs.auctionCommissionPct) }} · Transport {{ pct(o.costs.auctionTransportPct) }}</p>
 
-      <!-- The containers' "Komt eraan" strip (FP2) goes here. -->
+      <app-partner-coming />
 
       <section class="sec" aria-labelledby="pp-stock">
         <div class="sec__head">
