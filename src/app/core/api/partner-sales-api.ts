@@ -70,6 +70,11 @@ export interface PartnerPortalSettingsRequest {
 /* --------------------------------------------------------- veilingverkopen */
 
 export type PartnerSalesStatusFilter = 'OPEN' | 'INVOICED' | 'ALL';
+/**
+ * Round 2 list filter (`state`): VOIDED > INVOICED > CONFIRMED > UNCONFIRMED per melding; CONFIRMED = confirmed,
+ * not voided, at least one open part; OPEN = not fully invoiced and not voided.
+ */
+export type PartnerSalesState = 'UNCONFIRMED' | 'CONFIRMED' | 'INVOICED' | 'VOIDED' | 'OPEN' | 'ALL';
 export type PartnerPartType = 'SALE' | 'BUYBACK';
 
 /** One part of a melding: what one source (container or own stock) took of one product. */
@@ -90,9 +95,17 @@ export interface PartnerReportPart {
   invoiceId: number | null;
   invoiceNumber: string | null;
   open: boolean;
+  /* round 2 (additive): this part's share of the costs, and its pieces */
+  commissionEur?: number;
+  transportEur?: number;
+  extraCostEur?: number;
+  pieces?: number;
 }
 
-/** A melding as staff see it: the partner's view plus who, the void and the parts. */
+/**
+ * A melding as staff see it: the partner's view plus who, the void and the parts. Round 2: canEdit / canUndo are
+ * the staff rule (open and not mirrored by a later buyback; also once confirmed).
+ */
 export interface StaffPartnerReport extends PartnerReport {
   customerId: number;
   customerName: string;
@@ -102,6 +115,8 @@ export interface StaffPartnerReport extends PartnerReport {
   voidReason: string | null;
   note?: string | null;
   parts: PartnerReportPart[];
+  /** An old version of an edited melding (never listed; readable by id). */
+  revisionOf?: number | null;
 }
 
 export interface PartnerSalesOpenTotals {
@@ -110,10 +125,48 @@ export interface PartnerSalesOpenTotals {
   openNetEur: number;
 }
 
+/** Round 2: the sums of the whole filtered list (voided meldingen left out); "Stuks" in pieces. */
+export interface PartnerSalesFilteredTotals {
+  reports: number;
+  salePieces: number;
+  grossEur: number;
+  /** Veilingcommissie + transport + extra kost of the sales. */
+  costsEur: number;
+  /** Terugkoopkost (incl. its commission and transport). */
+  buybackEur: number;
+  netEur: number;
+}
+
 export interface StaffPartnerReportPage {
   reports: StaffPartnerReport[];
   more: boolean;
   totals: PartnerSalesOpenTotals;
+  /** Round 2; absent from an older backend (the page then sums what it got). */
+  filteredTotals?: PartnerSalesFilteredTotals | null;
+  apiVersion?: number | null;
+}
+
+/** The round-2 list: filters by state, channel, sold_on period, partner and buyer; newest sold_on first. */
+export interface PartnerSalesListQuery {
+  customerId?: number | null;
+  state?: PartnerSalesState;
+  channel?: PartnerChannel | null;
+  /** yyyy-mm-dd, both inclusive, by sold_on. */
+  from?: string | null;
+  to?: string | null;
+  buyerCustomerId?: number | null;
+  /** At most 1000 (the server's cap; `more` says when there was more). */
+  limit?: number;
+}
+
+/** Bevestigen / Terugzetten: each melding with the editToken the screen showed (a changed one is refused). */
+export interface PartnerReportTokenRef {
+  id: number;
+  token: string;
+}
+
+export interface PartnerReportsConfirmed {
+  reports: StaffPartnerReport[];
 }
 
 export interface PartnerSalesPartnerSummary extends PartnerSalesOpenTotals {
@@ -197,11 +250,22 @@ export interface PartnerInvoicePreviewLine {
   /** soldQuantity - buybackQuantity: what the invoice line counts. */
   quantity: number;
   saleNetEur: number;
+  /** Terugkoopkost (round 2: incl. its commission and transport). */
   buybackEur: number;
   proceedsEur: number;
   /** null on a blocked group: the settlement was not computed. */
   costEur: number | null;
   valueEur: number | null;
+  /* round 2 (additive, ERP only) */
+  buybackGrossEur?: number;
+  salePieces?: number;
+  grossEur?: number;
+  commissionEur?: number;
+  transportEur?: number;
+  extraEur?: number;
+  buybackCostEur?: number;
+  /** Proceeds moved onto this line from a product sold and bought back (q = 0); negative when moved off it. */
+  absorbedEur?: number | null;
 }
 
 export interface PartnerInvoicePreviewGroup {
@@ -219,6 +283,19 @@ export interface PartnerInvoicePreviewGroup {
   /** Why creating this group would be refused; null when it can be made. */
   blocked: string | null;
   warnings: string[];
+  /*
+   * Round 2 (additive, ERP only; the invoice's own figures, never recomputed here):
+   * proceeds (netto opbrengst) − cost (inkoopkost, external) = profit; enrosedProfit = value − cost,
+   * partnerProfit = proceeds − value; value − advance = balance; correction = a slotfactuur's true-up.
+   */
+  /** The partner's financed part of the cost, in percent (own stock 0). */
+  costSharePct?: number | null;
+  proceedsEur?: number | null;
+  costEur?: number | null;
+  profitEur?: number | null;
+  enrosedProfitEur?: number | null;
+  partnerProfitEur?: number | null;
+  correctionEur?: number | null;
 }
 
 export interface PartnerInvoiceSkipped {
@@ -238,6 +315,8 @@ export interface PartnerInvoicePreview {
   reportIds: number[];
   /** The partner customer's share: what the own-stock group uses (a container uses its own). */
   profitSharePct: number;
+  /** Round 2: e.g. an unconfirmed buyback that mirrors a selected sale. */
+  warnings?: string[] | null;
 }
 
 export interface PartnerInvoiceCreated {
@@ -398,13 +477,52 @@ export class PartnerSalesApi {
 
   /* ---- Veilingverkopen */
 
-  /** Newest first; `before` is the last id of the previous page. */
+  /** Round 1 paging: newest id first; `before` is the last id of the previous page. */
   reports(options: { customerId?: number | null; status?: PartnerSalesStatusFilter; before?: number | null; limit?: number } = {}):
       Promise<StaffPartnerReportPage> {
     const params: Record<string, string> = { status: options.status ?? 'ALL', limit: String(options.limit ?? 100) };
     if (options.customerId != null) params['customerId'] = String(options.customerId);
     if (options.before != null) params['before'] = String(options.before);
     return firstValueFrom(this.http.get<StaffPartnerReportPage>(api('/api/partner-sales'), { params }));
+  }
+
+  /**
+   * Round 2: the meldingen of a filter, newest sold_on first (then id), at most `limit` (1000) with `more` when cut,
+   * and `filteredTotals` over the whole filtered set. `status` goes along for an older backend (it ignores the
+   * rest and answers by id; the page then filters and sums what it got).
+   */
+  list(query: PartnerSalesListQuery = {}): Promise<StaffPartnerReportPage> {
+    const state = query.state ?? 'ALL';
+    const params: Record<string, string> = {
+      state, status: state === 'INVOICED' ? 'INVOICED' : state === 'ALL' || state === 'VOIDED' ? 'ALL' : 'OPEN',
+      limit: String(query.limit ?? 1000),
+    };
+    if (query.customerId != null) params['customerId'] = String(query.customerId);
+    if (query.channel) params['channel'] = query.channel;
+    if (query.from) params['from'] = query.from;
+    if (query.to) params['to'] = query.to;
+    if (query.buyerCustomerId != null) params['buyerCustomerId'] = String(query.buyerCustomerId);
+    return firstValueFrom(this.http.get<StaffPartnerReportPage>(api('/api/partner-sales'), { params }));
+  }
+
+  /** One melding with its parts (also an archive row, by id). */
+  report(id: number): Promise<StaffPartnerReport> {
+    return firstValueFrom(this.http.get<StaffPartnerReport>(api(`/api/partner-sales/reports/${id}`)));
+  }
+
+  /** Bevestigen: all or nothing; a melding changed since its token was read is refused (409). */
+  confirmReports(reports: readonly PartnerReportTokenRef[]): Promise<PartnerReportsConfirmed> {
+    return firstValueFrom(this.http.post<PartnerReportsConfirmed>(api('/api/partner-sales/reports/confirm'), { reports }));
+  }
+
+  /** Terugzetten: back to "te bevestigen" (the partner can change it again); refused once a document holds a part. */
+  unconfirmReports(reports: readonly PartnerReportTokenRef[]): Promise<PartnerReportsConfirmed> {
+    return firstValueFrom(this.http.post<PartnerReportsConfirmed>(api('/api/partner-sales/reports/unconfirm'), { reports }));
+  }
+
+  /** Bewerken by staff: the create body + expectedToken (409 when it changed meanwhile); stays confirmed. */
+  updateReport(id: number, body: StaffPartnerReportRequest): Promise<StaffPartnerReport> {
+    return firstValueFrom(this.http.put<StaffPartnerReport>(api(`/api/partner-sales/reports/${id}`), body));
   }
 
   summary(): Promise<PartnerSalesSummary> {
