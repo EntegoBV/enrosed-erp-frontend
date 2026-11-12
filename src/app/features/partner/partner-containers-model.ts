@@ -240,6 +240,27 @@ export function cartonContentText(spec: PartnerProductSpec | undefined): string 
   return [content, kgText(spec.cartonWeightKg)].filter(Boolean).join(' · ');
 }
 
+const PACKAGING_WORD: Record<string, string> = { GIFT_BOX: 'geschenkverpakking', DISPLAY: 'display' };
+
+/** "Geschenkverpakking 12 × 12 × 10 cm", "display"; empty without packaging. */
+export function packagingText(spec: PartnerProductSpec | undefined): string {
+  const word = spec?.packagingKind ? PACKAGING_WORD[spec.packagingKind] : undefined;
+  if (!word) return '';
+  return [word, sizeText(spec!.packagingCm)].filter(Boolean).join(' ');
+}
+
+/** The product's own specification in one line: "10 × 10 × 8 cm · 0,25 kg · display 12 × 12 × 10 cm". */
+export function productSpecText(spec: PartnerProductSpec | undefined): string {
+  if (!spec) return '';
+  return [sizeText(spec.productCm), kgText(spec.productWeightKg), packagingText(spec)].filter(Boolean).join(' · ');
+}
+
+/** "± 48 dozen per pallet" (the europallet estimate); empty when unknown. */
+export function perPalletText(spec: PartnerProductSpec | undefined): string {
+  const n = spec?.cartonsPerPallet;
+  return n && n > 0 ? `± ${count(n)} ${n === 1 ? 'doos' : 'dozen'} per pallet` : '';
+}
+
 /** Totals in one Lading cell: "2 producten · 75 dozen", "1,08 m³ · 1,6 % vol". */
 export function loadLines(totals: PartnerContainerTotals): { first: string; second: string } {
   const cbm = (totals.cbmUnknown ? '± ' : '') + cbmText(totals.cbm);

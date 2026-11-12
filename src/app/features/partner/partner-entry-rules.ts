@@ -13,7 +13,10 @@ import {
 
 export interface PartLineMessage {
   text: string;
+  /** It stops Opslaan (red). */
   bad: boolean;
+  /** Worth a second look, but it does not stop Opslaan (amber). */
+  warn?: boolean;
 }
 
 export interface PartLine {
@@ -53,11 +56,23 @@ export function partLine(draft: MeldingDraft, entry: DraftEntry, which: 'sale' |
       messages.push({ text: `Er liggen maar ${there ? mixText(product, there) : unitText(pieceUnit(product), 0)}${rest ? ' · rest: tel per ' + pieceUnit(product).one : ''}`, bad: true });
     }
   }
-  if (draft.notWhole(entry, which)) {
+  if (part.unreadable) {
+    invalid = true;
+    messages.push({ text: countUnreadableText(entry, unit), bad: true });
+  } else if (draft.notWhole(entry, which)) {
     invalid = true;
     messages.push({ text: wholeHint(product), bad: true });
   } else if (part.kept) {
     messages.push({ text: `Gaat niet op in hele ${unit.other}: het aantal bleef staan.`, bad: false });
+  }
+  /* A buyback on the clock usually stays below what sold that day; more is possible (it can take back an earlier
+     sale), so it is said, not refused. */
+  if (which === 'buyback' && draft.kind() === 'veiling') {
+    const sold = draft.pieces(entry, 'sale');
+    if (sold > 0 && pieces > sold) {
+      const piece = pieceUnit(product);
+      messages.push({ text: `Meer teruggekocht (${unitText(piece, pieces)}) dan verkocht (${unitText(piece, sold)}): klopt dat?`, bad: false, warn: true });
+    }
   }
   return {
     unit,
@@ -79,8 +94,20 @@ export function stockLine(draft: MeldingDraft, entry: DraftEntry, lastSoldOn: st
   return `${stockFigure(entry.product, limit).main} ${draft.editing() ? 'beschikbaar' : 'op voorraad'}`;
 }
 
-/** The price column's head: "Prijs per roos" when every product counts in roses, else "Prijs per stuk". */
-export function pricePerLabel(entries: readonly DraftEntry[], prefix = 'Prijs'): string {
+/** The piece noun every product of the melding shares ("roos"), or null when they differ (each row then says its own). */
+export function sharedPieceNoun(entries: readonly DraftEntry[]): string | null {
   const nouns = new Set(entries.map((entry) => pieceUnit(entry.product).one));
-  return `${prefix} per ${nouns.size === 1 ? [...nouns][0] : 'stuk'}`;
+  return nouns.size === 1 ? [...nouns][0] : nouns.size === 0 ? 'stuk' : null;
+}
+
+/** The price column's head: "Prijs per roos" when every product counts in roses, else "Prijs" (each row says per what). */
+export function pricePerLabel(entries: readonly DraftEntry[], prefix = 'Prijs'): string {
+  const noun = sharedPieceNoun(entries);
+  return noun ? `${prefix} per ${noun}` : prefix;
+}
+
+/** Under an Aantal that is no whole number ("2,5"): what to type instead. */
+export function countUnreadableText(entry: DraftEntry, unit: PartnerCountUnit): string {
+  const piece = pieceUnit(entry.product);
+  return unit.unit === piece.unit ? 'Alleen hele aantallen' : `Alleen hele ${unit.other}: tel de rest per ${piece.one}`;
 }

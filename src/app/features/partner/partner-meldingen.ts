@@ -7,6 +7,7 @@ import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import { PartnerData } from './partner-data';
+import { twinKeys } from './partner-twins';
 import { localToday } from './partner-format';
 import { PartnerHead } from './partner-head';
 import { bySoldOn } from './partner-report-format';
@@ -29,10 +30,10 @@ import { PartnerReportTable } from './partner-report-table';
       @if (list.length) {
         @if (desk.active()) {
           <div class="pm-card">
-            <app-partner-report-table [reports]="list" [today]="today()" (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
+            <app-partner-report-table [reports]="list" [today]="today()" [twins]="twins()" (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
           </div>
         } @else {
-          <app-partner-report-rows [reports]="list" [today]="today()" (opened)="open.set($event)" />
+          <app-partner-report-rows [reports]="list" [today]="today()" [twins]="twins()" (opened)="open.set($event)" />
         }
         @if (more()) {
           <button class="more ios-capsule ios-capsule--tinted" type="button" [disabled]="loading()" (click)="loadMore()">
@@ -50,7 +51,7 @@ import { PartnerReportTable } from './partner-report-table';
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" [related]="reports() ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
+      <app-partner-report-sheet [report]="report" [twins]="twins()" [related]="reports() ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
     }
   `,
   styles: `
@@ -76,6 +77,8 @@ export class PartnerMeldingen {
   readonly open = signal<PartnerReport | null>(null);
   readonly failureText = computed(() => messageOf(this.failure(), LOAD_ERROR_FALLBACK));
   readonly today = computed(() => this.data.overview()?.serverDate ?? localToday());
+  /** Names and colours more than one product shares, over the stock and every melding listed here. */
+  readonly twins = computed(() => twinKeys([...this.data.stock(), ...this.data.recentSales(), ...(this.reports() ?? []).flatMap((report) => report.entries)]));
   readonly sub = computed(() => this.desk.active() ? 'Wijzigen kan tot Enrosed een melding bevestigt.' : null);
 
   constructor() {

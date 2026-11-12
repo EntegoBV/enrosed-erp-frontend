@@ -4,28 +4,33 @@ import { FormsModule } from '@angular/forms';
 import type { PartnerCountUnitKey, PartnerRecentSale } from '../../core/api/partner-portal-api';
 import { Icon } from '../../shared/icon';
 import { DraftEntry, MeldingDraft } from './partner-draft';
-import { PartLine, partLine, pricePerLabel, stockLine, unitOption } from './partner-entry-rules';
+import { PartLine, partLine, pricePerLabel, sharedPieceNoun, stockLine, unitOption } from './partner-entry-rules';
 import { euro, shortDate } from './partner-format';
 import { PartnerCountField } from './partner-count-field';
 import { PartnerMoneyField } from './partner-money-field';
-import { safeColour } from './partner-photo';
+import { PartnerPhoto, PhotoUrlFn, partnerPhoto, safeColour } from './partner-photo';
+import { NO_TWINS, Twins, twinLabel } from './partner-twins';
 
 /**
  * The products of a melding on the desk, as one table: Product · Eenheid ·
  * Aantal · = stuks · Prijs per roos · Totaal · ×. A buyback on the clock is an
  * indented sub-row of its product (Veiling), or the row itself (Terugkoop):
  * Klokprijs, and Terugkoopkost incl. commissie + transport. Lines that stop
- * Opslaan (too many, not whole) stand right under their row.
+ * Opslaan (too many, not whole, no whole count) stand right under their row,
+ * a buyback above the sale in amber. When the products count in different
+ * pieces (stolp, roos) each price field says per what. A wide table shows the
+ * photo; a product whose name and colour another one shares shows its code.
  */
 @Component({
   selector: 'app-partner-entry-table',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NgTemplateOutlet, FormsModule, Icon, PartnerCountField, PartnerMoneyField],
+  imports: [NgTemplateOutlet, FormsModule, Icon, PartnerCountField, PartnerMoneyField, PartnerPhoto],
   template: `
     @let d = draft();
     @let kind = d.kind();
     @let money = d.money();
-    <div class="wk-table et" role="table" aria-label="Producten van de melding">
+    @let noun = pieceNoun();
+    <div class="et-wrap"><div class="wk-table et" [class.et--per]="!noun" role="table" aria-label="Producten van de melding">
       <div class="wk-thead et-row" role="row">
         <span class="wk-th" role="columnheader">Product</span>
         <span class="wk-th" role="columnheader">Eenheid</span>
@@ -41,8 +46,11 @@ import { safeColour } from './partner-photo';
         @let line = lineOf(entry, main);
         <div class="wk-tr et-row et-main" role="row">
           <span class="wk-td et-product" role="cell">
-            <b>@if (entry.product.variant) { <i class="et-dot" [style.background]="colour(entry)" aria-hidden="true"></i> }{{ entry.product.name }}</b>
-            <span class="et-sub">{{ productSub(entry) }}</span>
+            <app-partner-photo class="et-photo" [product]="entry.product" [photoUrl]="photoUrl()" />
+            <span class="et-name">
+              <b>@if (entry.product.variant) { <i class="et-dot" [style.background]="colour(entry)" aria-hidden="true"></i> }{{ entry.product.name }}</b>
+              <span class="et-sub">{{ productSub(entry) }}</span>
+            </span>
           </span>
           <ng-container *ngTemplateOutlet="part; context: { entry: entry, which: main, line: line, em: em }" />
           <span class="wk-td et-act" role="cell">
@@ -62,7 +70,7 @@ import { safeColour } from './partner-photo';
         @if (kind === 'veiling' && entry.buybackOpen) {
           @let back = lineOf(entry, 'buyback');
           <div class="wk-tr et-row et-back" role="row">
-            <span class="wk-td et-product et-product--back" role="cell" title="Teruggekocht op de klok"><b>Teruggekocht</b><span class="et-sub">op de klok</span></span>
+            <span class="wk-td et-product et-product--back" role="cell" title="Teruggekocht op de klok"><span class="et-name"><b>Teruggekocht</b><span class="et-sub">op de klok</span></span></span>
             <ng-container *ngTemplateOutlet="part; context: { entry: entry, which: 'buyback', line: back, em: em }" />
             <span class="wk-td et-act" role="cell">
               <button class="wk-btn wk-btn--ghost wk-btn--sm wk-btn--icon" type="button" title="Terugkoop weghalen"
@@ -81,7 +89,7 @@ import { safeColour } from './partner-photo';
           <button class="wk-link et-add" type="button" (click)="addProducts.emit()"><app-icon name="plus" [size]="14" />Product</button>
         </span>
       </div>
-    </div>
+    </div></div>
 
     <ng-template #part let-entry="entry" let-which="which" let-line="line" let-em="em">
       <span class="wk-td" role="cell">
@@ -98,6 +106,7 @@ import { safeColour } from './partner-photo';
         <input class="et-num" appPartnerCount [step]="line.step" [max]="line.max" placeholder="0"
                [attr.aria-label]="(which === 'buyback' ? 'Aantal teruggekocht ' : 'Aantal ') + entry.product.name"
                [attr.aria-invalid]="line.invalid ? 'true' : null"
+               (unreadableChange)="draft().updatePart(entry.product.productId, which, { unreadable: $event })"
                [ngModel]="entry[which].count" (ngModelChange)="draft().updatePart(entry.product.productId, which, { count: $event })" />
       </span>
       <span class="wk-td et-pieces" role="cell">{{ line.piecesText }}</span>
@@ -107,6 +116,7 @@ import { safeColour } from './partner-photo';
           <input appPartnerMoney #price="partnerMoney" placeholder="0,00"
                  [attr.aria-label]="(which === 'buyback' ? 'Klokprijs per ' : 'Prijs per ') + line.units[0].one + ' ' + entry.product.name"
                  [ngModel]="entry[which].price" (ngModelChange)="draft().updatePart(entry.product.productId, which, { price: $event })" />
+          @if (!pieceNoun()) { <span class="et-per" aria-hidden="true">/ {{ line.units[0].one }}</span> }
         </label>
         @if (price.unreadable()) { <span class="et-bad">Geen bedrag</span> }
       </span>
@@ -122,7 +132,7 @@ import { safeColour } from './partner-photo';
 
     <ng-template #notes let-line="line" let-exceeds="exceeds">
       @for (message of line.messages; track message.text) {
-        <div class="wk-tr et-row et-note" role="row"><span class="et-span" role="cell" [class.is-bad]="message.bad">{{ message.text }}</span></div>
+        <div class="wk-tr et-row et-note" role="row"><span class="et-span" role="cell" [class.is-bad]="message.bad" [class.is-warn]="message.warn">{{ message.text }}</span></div>
       }
       @if (exceeds) {
         <div class="wk-tr et-row et-note" role="row"><span class="et-span is-bad" role="cell">De kosten zijn hoger dan de opbrengst</span></div>
@@ -131,11 +141,16 @@ import { safeColour } from './partner-photo';
   `,
   styles: `
     :host{display:block;min-width:0}
+    .et-wrap{container:et / inline-size}
     .et{--wk-cols:minmax(140px,1fr) 112px 68px 80px 100px 88px 56px;--wk-gap:8px;--wk-pad-x:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+    /* Products that count in different pieces: each price field says "/ roos", so it gets the room. */
+    .et--per{--wk-cols:minmax(130px,1fr) 108px 64px 76px 128px 86px 56px}
     .et .wk-thead{border-radius:14px 14px 0 0}
     .et .wk-th{white-space:normal;line-height:1.15}
     .et-main{min-height:52px}
-    .et-product{display:grid;align-content:center;white-space:normal}
+    .et-product{display:flex;align-items:center;gap:10px;white-space:normal}
+    .et-name{display:grid;align-content:center;min-width:0}
+    .et-photo{display:none;flex:none;width:34px;height:34px;border-radius:8px}
     .et-product b{overflow:hidden;font-size:13.5px;font-weight:650;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
     .et-sub{display:block;color:var(--muted);font-size:11.5px;line-height:1.3;overflow-wrap:anywhere}
     .et-dot{display:inline-block;width:9px;height:9px;margin-right:6px;border-radius:50%;background:#c9bfb7;box-shadow:inset 0 0 0 1px rgb(26 22 20/14%)}
@@ -144,6 +159,8 @@ import { safeColour } from './partner-photo';
     .et-product--back .et-sub{padding-left:14px;color:color-mix(in srgb,#c7851d 70%,var(--muted))}
     .et-product--back b{color:#7c4a0b;font-size:12.5px;font-weight:700}
     .et-product--back b::before{content:'↳ ';color:color-mix(in srgb,#c7851d 60%,var(--muted))}
+    /* A wide table has room for the photo (the phone card always shows it); the buyback label lines up with the name. */
+    @container et (min-width: 820px){.et-photo{display:grid}.et-product--back{padding-left:30px}}
     .et-unit{width:100%;height:32px;padding:0 22px 0 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23857a73' stroke-width='1.5'/%3E%3C/svg%3E") right 8px center no-repeat;color:var(--ink);font:inherit;font-size:12.5px;appearance:none;-webkit-appearance:none;cursor:pointer}
     .et-unit:focus{border-color:var(--rose);outline:none;box-shadow:var(--wk-focus)}
     .et-unit-text{color:var(--ink-2);font-size:12.5px}
@@ -152,6 +169,7 @@ import { safeColour } from './partner-photo';
     .et-num[aria-invalid=true]{border-color:var(--danger);background:var(--danger-soft);color:var(--danger)}
     .et-pieces{color:var(--muted);font-size:12px}
     .et-money{display:flex;align-items:center;gap:4px;height:32px;padding:0 8px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--muted);font-size:12.5px;cursor:text}
+    .et-per{flex:none;color:var(--muted);font-size:11.5px;white-space:nowrap}
     .et-money input{flex:1;width:100%;min-width:0;height:30px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13.5px;font-weight:650;font-variant-numeric:tabular-nums;text-align:right;outline:none}
     .et-money:has(input[aria-invalid=true]){border-color:var(--danger);background:var(--danger-soft)}
     .et-bad{display:block;color:var(--danger);font-size:11px;font-weight:600}
@@ -162,6 +180,7 @@ import { safeColour } from './partner-photo';
     .et-note{min-height:28px;border-bottom-style:dashed;background:var(--surface-2)}
     .et-span{grid-column:1 / -1;min-width:0;padding:5px 0;color:var(--ink-2);font-size:12.5px;white-space:normal}
     .et-span.is-bad{color:var(--danger);font-weight:600}
+    .et-span.is-warn{color:#8a520c;font-weight:600}
     .et-empty .et-span{padding:18px 0;color:var(--muted);text-align:center}
     .et-foot{min-height:40px;border-bottom:0}
     .et-add{gap:4px;font-size:13px}
@@ -171,12 +190,17 @@ export class PartnerEntryTable {
   readonly draft = input.required<MeldingDraft>();
   /** Recent sales: the day each product last sold (Terugkoop). */
   readonly recent = input<readonly PartnerRecentSale[]>([]);
+  readonly photoUrl = input<PhotoUrlFn>(partnerPhoto);
+  /** Names and colours more than one product shares (their rows add the code). */
+  readonly twins = input<Twins>(NO_TWINS);
   /** "+ Product": the screen opens its product choice. */
   readonly addProducts = output<void>();
 
   private readonly recentById = computed(() => new Map(this.recent().map((tile) => [tile.productId, tile])));
 
   readonly priceHead = computed(() => pricePerLabel(this.draft().entries(), this.draft().kind() === 'terugkoop' ? 'Klokprijs' : 'Prijs'));
+  /** The piece noun all products share (the head says it), or null (each row says its own). */
+  readonly pieceNoun = computed(() => sharedPieceNoun(this.draft().entries()));
 
   lineOf(entry: DraftEntry, which: 'sale' | 'buyback'): PartLine {
     return partLine(this.draft(), entry, which);
@@ -184,7 +208,7 @@ export class PartnerEntryTable {
 
   productSub(entry: DraftEntry): string {
     const stock = stockLine(this.draft(), entry, this.recentById().get(entry.product.productId)?.lastSoldOn ?? null, shortDate);
-    return [entry.product.variant, stock].filter(Boolean).join(' · ');
+    return [entry.product.variant, twinLabel(entry.product, this.twins()), stock].filter(Boolean).join(' · ');
   }
 
   setUnit(entry: DraftEntry, which: 'sale' | 'buyback', key: string): void {

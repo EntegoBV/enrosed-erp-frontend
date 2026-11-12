@@ -1,7 +1,8 @@
 import type {
   PartnerReport, PartnerReportBuyback, PartnerReportEntry, PartnerReportSale, PartnerReportTotals,
 } from '../../core/api/partner-portal-api';
-import { count, productTitle, units } from './partner-format';
+import { count, units } from './partner-format';
+import { NO_TWINS, Twins, twinTitle } from './partner-twins';
 import { pieceUnit, piecesPerSalesUnit, unitOf, unitText } from './partner-units';
 
 /**
@@ -72,11 +73,12 @@ export function buyerLine(report: Pick<PartnerReport, 'buyer'>): string {
   return buyer ? [buyer.company, buyer.city].filter(Boolean).join(' · ') : '';
 }
 
-/** The products of a melding in one short line: the first one, then "+ 2". */
-export function productsShort(report: Pick<PartnerReport, 'entries'>): string {
+/** The products of a melding in one short line: the first one, then "+ 2"; a twin carries its code. */
+export function productsShort(report: Pick<PartnerReport, 'entries'>, twins: Twins = NO_TWINS): string {
   const [first, ...rest] = report.entries;
   if (!first) return '';
-  return rest.length ? `${productTitle(first)} + ${rest.length}` : productTitle(first);
+  const title = twinTitle(first, twins);
+  return rest.length ? `${title} + ${rest.length}` : title;
 }
 
 export interface StatusView {

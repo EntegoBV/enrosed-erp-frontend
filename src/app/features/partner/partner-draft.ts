@@ -5,7 +5,7 @@ import {
   type PartnerExtraCostLine, type PartnerProductTile, type PartnerReport, type PartnerReportBuyback, type PartnerReportEntry,
   type PartnerReportEntryRequest, type PartnerReportPartRequestV2, type PartnerReportRequest, type PartnerReportSale,
 } from '../../core/api/partner-portal-api';
-import { KIND_CHANNEL, PartnerKind, reportKind } from './partner-format';
+import { KIND_CHANNEL, PartnerKind, productTitle, reportKind } from './partner-format';
 import { MeldingMoney, MoneyPart, meldingMoney, partComplete, round2, round4 } from './partner-money';
 import {
   defaultUnitOf, maxCountOf, pieceUnit, piecesOf, piecesPerSalesUnit, salesUnitsOf, switchCount, unitOf,
@@ -36,6 +36,8 @@ export interface DraftPart {
   price: number | null;
   /** A unit switch kept the count (the pieces did not fit the new unit): said once under the row. */
   kept?: boolean;
+  /** The Aantal field holds text that is no whole count ("2,5"); count is null meanwhile. */
+  unreadable?: boolean;
 }
 
 export interface DraftEntry {
@@ -88,8 +90,12 @@ function typed(part: DraftPart): boolean {
   return part.count != null || part.price != null;
 }
 
-function emptyPart(product: PartnerProductTile): DraftPart {
-  return { unit: defaultUnitOf(product).unit, count: null, price: null };
+/**
+ * A part nothing is typed in yet: a sale counts in Enrosed's default unit for the product, a buyback on the clock
+ * always per piece (stolp, roos): lots bought back are a few pieces, and 6 typed in a unit of 24 would book 144.
+ */
+function emptyPart(product: PartnerProductTile, which: 'sale' | 'buyback' = 'sale'): DraftPart {
+  return { unit: (which === 'buyback' ? pieceUnit(product) : defaultUnitOf(product)).unit, count: null, price: null };
 }
 
 /** The product of a melding's entry as a tile (round 2 sends the whole tile with every entry). */
@@ -141,9 +147,14 @@ export class MeldingDraft {
    * stock there is, so 0; null (the default) means no limit is known.
    */
   readonly saleLimitOtherwise = signal<number | null>(null);
-  /** The first and last day the date row accepts (yyyy-mm-dd); empty = no limit. */
+  /**
+   * The first and last day the date picker offers (yyyy-mm-dd); empty = no limit. In an edit of an older melding
+   * `earliest` is its own day, so the picker can show it; a changed day must still lie within `bound`.
+   */
   readonly earliest = signal('');
   readonly latest = signal('');
+  /** The first day a new or changed date may have (today - 90, the server's rule). */
+  private readonly bound = signal('');
   /** The melding being edited; null for a new one. */
   readonly editing = signal<DraftEditing | null>(null);
   /** Per product what the edited melding booked (sales units): the sale limit adds it back. */
@@ -282,7 +293,8 @@ export class MeldingDraft {
     if (this.latest() && day > this.latest()) return 'Een datum in de toekomst kan niet';
     /* An edit keeps its own date, however old; only a changed date must lie within the 90 days. */
     if (this.editing()?.soldOn === day) return null;
-    if (this.earliest() && day < this.earliest()) return 'Hoogstens 90 dagen terug';
+    const first = this.bound() || this.earliest();
+    if (first && day < first) return 'Hoogstens 90 dagen terug';
     return null;
   });
 
@@ -335,7 +347,7 @@ export class MeldingDraft {
 
   add(product: PartnerProductTile): void {
     if (this.has(product.productId)) return;
-    this.entries.update((list) => [...list, { product, sale: emptyPart(product), buyback: emptyPart(product), buybackOpen: false }]);
+    this.entries.update((list) => [...list, { product, sale: emptyPart(product), buyback: emptyPart(product, 'buyback'), buybackOpen: false }]);
   }
 
   remove(productId: number): void {
@@ -363,7 +375,7 @@ export class MeldingDraft {
 
   setBuybackOpen(productId: number, open: boolean): void {
     this.entries.update((list) => list.map((entry) => entry.product.productId !== productId ? entry
-      : { ...entry, buybackOpen: open, buyback: open ? entry.buyback : emptyPart(entry.product) }));
+      : { ...entry, buybackOpen: open, buyback: open ? entry.buyback : emptyPart(entry.product, 'buyback') }));
   }
 
   /* ---- extra kost lines */
@@ -432,6 +444,7 @@ export class MeldingDraft {
     const before = this.latest();
     const editing = this.editing();
     this.latest.set(today);
+    this.bound.set(earliest);
     this.earliest.set(editing && editing.soldOn < earliest ? editing.soldOn : earliest);
     if (editing) return;
     if (!this.soldOn() || this.soldOn() === before) this.soldOn.set(today);
@@ -467,7 +480,7 @@ export class MeldingDraft {
       return {
         product,
         sale: entry.sale ? partOfReport(product, entry.sale) : emptyPart(product),
-        buyback: entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product),
+        buyback: entry.buyback ? partOfReport(product, entry.buyback) : emptyPart(product, 'buyback'),
         buybackOpen: kind === 'veiling' && !!entry.buyback,
       };
     }));
@@ -494,4 +507,38 @@ export class MeldingDraft {
   markSaved(): void {
     this.snapshot.set(this.signature());
   }
+
+  /** The form holds exactly what this saved melding holds (a save whose answer was lost did go through). */
+  sameAs(report: PartnerReport): boolean {
+    return MeldingDraft.fromReport(report).signature() === this.signature();
+  }
+}
+
+/**
+ * What differs between two versions of one melding, in the partner's words: the products whose count, unit or price
+ * changed (or that came or went), "de datum", "de soort", "de klant", "de extra kosten", "de opmerking".
+ */
+export function reportChanges(before: PartnerReport, after: PartnerReport,
+    title: (product: PartnerProductTile) => string = productTitle): string[] {
+  const a = MeldingDraft.fromReport(before);
+  const b = MeldingDraft.fromReport(after);
+  const changes: string[] = [];
+  const part = (entry: DraftEntry | undefined, which: 'sale' | 'buyback', kind: PartnerKind) =>
+    !entry || (which === 'sale' ? kind === 'terugkoop' : !b.showsBuyback(entry, kind)) ? null
+      : JSON.stringify([entry[which].unit, entry[which].count, entry[which].price == null ? null : round4(entry[which].price!)]);
+  const ids = [...new Set([...a.entries(), ...b.entries()].map((entry) => entry.product.productId))];
+  for (const id of ids) {
+    const was = a.entries().find((entry) => entry.product.productId === id);
+    const now = b.entries().find((entry) => entry.product.productId === id);
+    if (!was || !now || part(was, 'sale', a.kind()) !== part(now, 'sale', b.kind()) || part(was, 'buyback', a.kind()) !== part(now, 'buyback', b.kind())) {
+      changes.push(title((now ?? was)!.product));
+    }
+  }
+  if (a.kind() !== b.kind()) changes.push('de soort');
+  if (a.soldOn() !== b.soldOn()) changes.push('de datum');
+  if ((a.buyer()?.customerId ?? null) !== (b.buyer()?.customerId ?? null)) changes.push('de klant');
+  const extras = (draft: MeldingDraft) => JSON.stringify(draft.extraCosts().map((line) => [line.description.trim(), line.mode, line.value]));
+  if (extras(a) !== extras(b)) changes.push('de extra kosten');
+  if (a.note().trim() !== b.note().trim()) changes.push('de opmerking');
+  return changes;
 }

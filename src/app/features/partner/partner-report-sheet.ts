@@ -7,6 +7,7 @@ import { KIND_ICON, KIND_LABEL, KIND_TONE, euro, longDate, minusEuro, percent, p
 import { percentOfEur } from './partner-money';
 import { PartnerPhoto } from './partner-photo';
 import { piecesPerSalesUnit, unitOf } from './partner-units';
+import { NO_TWINS, Twins, twinLabel } from './partner-twins';
 import {
   buyerLine, canEditReport, canUndoReport, partCount, partPiecePrice, partPiecesText, partnerStatus, pieceNoun,
 } from './partner-report-format';
@@ -33,7 +34,8 @@ export function confirmUndo(ui: Ui, api: PartnerPortalApi, report: PartnerReport
 
 /**
  * One melding: per product what was sold (as typed: "120 rozen × € 0,50")
- * and bought back on the clock, the buyer, the costs with every extra kost
+ * and bought back on the clock (at the clock price, so the line adds up; its
+ * commission and transport sit in Terugkoopkost below), the buyer, the costs with every extra kost
  * line, Terugkoopkost and Netto; Bewerken and Ongedaan maken while Enrosed has
  * not confirmed it (the server decides: canEdit, canUndo).
  */
@@ -59,12 +61,12 @@ export function confirmUndo(ui: Ui, api: PartnerPortalApi, report: PartnerReport
               <app-partner-photo class="entry__photo" [product]="entry" />
               <div class="entry__body">
                 <strong>{{ entry.name }}</strong>
-                @if (entry.variant) { <span class="entry__variant">{{ entry.variant }}</span> }
+                @if (entry.variant || code(entry)) { <span class="entry__variant">{{ variantLine(entry) }}</span> }
                 @if (entry.sale; as sale) {
                   <div class="fact"><span>{{ countOf(entry, sale) }} × {{ price(entry, sale) }}@if (piecesOf(entry, sale); as p) { <small>{{ p }}</small> }</span><b>{{ eur(sale.grossEur) }}</b></div>
                 }
                 @if (entry.buyback; as buyback) {
-                  <div class="fact fact--buyback"><span>Teruggekocht {{ countOf(entry, buyback) }} × {{ price(entry, buyback) }}</span><b>{{ minus(buyback.costEur ?? buyback.grossEur) }}</b></div>
+                  <div class="fact fact--buyback"><span>Teruggekocht {{ countOf(entry, buyback) }} × {{ price(entry, buyback) }}</span><b>{{ minus(buyback.grossEur) }}</b></div>
                 }
               </div>
             </div>
@@ -141,6 +143,8 @@ export class PartnerReportSheet {
   private readonly ui = inject(Ui);
 
   readonly report = input.required<PartnerReport>();
+  /** Names and colours more than one product shares (the line under the name adds the code). */
+  readonly twins = input<Twins>(NO_TWINS);
   /** The other meldingen on the screen: to name the buyback that keeps this one from being undone. */
   readonly related = input<readonly PartnerReport[]>([]);
   readonly closed = output<void>();
@@ -214,6 +218,9 @@ export class PartnerReportSheet {
 
   countOf(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string { return partCount(entry, part); }
   piecesOf(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string | null { return partPiecesText(entry, part); }
+  code(entry: PartnerReportEntry): string | null { return twinLabel(entry, this.twins()); }
+  /** "Gemengd", with the code of a twin: "Gemengd · ENR-P08". */
+  variantLine(entry: PartnerReportEntry): string { return [entry.variant, this.code(entry)].filter(Boolean).join(' · '); }
   price(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string {
     /* A count per piece reads "120 rozen × € 0,50"; another unit names the piece: "3 omdozen × € 0,50 per roos". */
     const unit = unitOf(entry, part.enteredUnit);

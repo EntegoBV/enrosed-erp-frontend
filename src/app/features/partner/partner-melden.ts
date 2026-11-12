@@ -11,15 +11,23 @@ import { Icon } from '../../shared/icon';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
+import { PartnerContainersData } from './partner-containers-data';
 import { PartnerData } from './partner-data';
-import { MeldingDraft } from './partner-draft';
-import { PartnerEntry } from './partner-entry';
-import { KIND_LABEL, PartnerKind, addDays, euro, longDate, parseKind, priceEuro, productTitle, reportKind } from './partner-format';
+import { MeldingDraft, reportChanges } from './partner-draft';
+import { EntryNotice, PartnerEntry } from './partner-entry';
+import { KIND_LABEL, PartnerKind, addDays, euro, longDate, parseKind, priceEuro, reportKind } from './partner-format';
 import { PartnerHead } from './partner-head';
+import { withCategories } from './partner-product-table';
 import { canEditReport, partCount, partPiecePrice, partnerStatus, pieceNoun } from './partner-report-format';
+import { twinTitle } from './partner-twins';
 
 /** How far back a melding may be dated (the server's rule). */
 const DAYS_BACK = 90;
+
+/** The version a melding was loaded at (sent back as expectedToken). */
+function tokenOf(report: PartnerReport): string {
+  return report.editToken ?? report.updatedAt ?? report.createdAt;
+}
 
 /** Said when the server is still round 1 (the deploy window): nothing round-2 is sent to it. */
 export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnieuw.';
@@ -80,9 +88,10 @@ export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnie
           <button class="ios-capsule ios-capsule--tinted" type="button" (click)="toList()">Naar meldingen</button>
         </div>
       } @else {
-        <app-partner-entry [draft]="draft" [stock]="o.stock" [recent]="o.recentSales" [today]="o.serverDate"
+        <app-partner-entry [draft]="draft" [stock]="stock()" [recent]="recent()" [today]="o.serverDate"
                            [startPicking]="startPicking" [submit]="send" [buyerSearch]="findBuyers" [buyerCreate]="addBuyer"
-                           (done)="sent($event)" (refused)="reload()" (kindChanged)="kindChanged($event)" />
+                           [notice]="notice()" (noticeAction)="loadEdit()"
+                           (done)="sent($event)" (refused)="refused()" (kindChanged)="kindChanged($event)" />
       }
     }
   `,
@@ -108,6 +117,7 @@ export const SERVER_UPDATING = 'De server wordt bijgewerkt; probeer het zo opnie
 })
 export class PartnerMelden implements HasUnsavedChanges {
   readonly data = inject(PartnerData);
+  private readonly containers = inject(PartnerContainersData);
   private readonly api = inject(PartnerPortalApi);
   private readonly auth = inject(Auth);
   private readonly ui = inject(Ui);
@@ -125,6 +135,8 @@ export class PartnerMelden implements HasUnsavedChanges {
   readonly editReport = signal<PartnerReport | null>(null);
   readonly editLoading = signal(false);
   readonly editFailure = signal<string | null>(null);
+  /** A newer version of the edited melding than the one on the form (an edit refused because it changed meanwhile), and what changed. */
+  readonly stale = signal<{ report: PartnerReport; changes: string[] } | null>(null);
   readonly failureText = computed(() => messageOf(this.data.failure(), LOAD_ERROR_FALLBACK));
   /** A new melding opens the product choice; Melden on a stock row or an edit starts with the form. */
   readonly startPicking: boolean;
@@ -143,6 +155,24 @@ export class PartnerMelden implements HasUnsavedChanges {
     const report = this.editReport();
     if (!report || this.editId() === null) return null;
     return `${partnerStatus(report).label} · ${KIND_LABEL[reportKind(report)].toLowerCase()} · ${longDate(report.soldOn)}`;
+  });
+
+  /** The stock and recent sales with their category (the product choice groups by it). */
+  readonly stock = computed(() => withCategories(this.data.stock(), this.containers.specs()));
+  readonly recent = computed(() => withCategories(this.data.recentSales(), this.containers.specs()));
+
+  /** The edited melding changed meanwhile: what changed, by whom, and "Nieuwe versie laden". */
+  readonly notice = computed<EntryNotice | null>(() => {
+    const stale = this.stale();
+    if (!stale) return null;
+    const fresh = stale.report;
+    const by = fresh.updatedByName && fresh.updatedByName !== this.auth.username() ? ` door ${fresh.updatedByName}` : '';
+    const changes = stale.changes;
+    const what = changes.length ? ` (${changes.slice(0, 3).join(', ')}${changes.length > 3 ? ' …' : ''})` : '';
+    return {
+      text: `${fresh.number} is intussen gewijzigd${by}${what}. Laad de nieuwe versie; wat je hier invulde, vervalt dan.`,
+      action: 'Nieuwe versie laden',
+    };
   });
 
   /** Why a loaded melding cannot be changed here (the server decides with canEdit). */
@@ -178,6 +208,8 @@ export class PartnerMelden implements HasUnsavedChanges {
     this.startPicking = !params.get('product') && !params.get('bewerk');
     /* Every Melden reads the stock and today afresh (the portal may have stood open since yesterday). */
     void this.data.load();
+    /* The products' categories for the product choice (the containers answer carries them; one shared read). */
+    if (!this.containers.page()) void this.containers.load();
 
     /* The kind from the address (a new melding only: an edit takes the melding's own). */
     effect(() => {
@@ -237,6 +269,7 @@ export class PartnerMelden implements HasUnsavedChanges {
     const run = ++this.editRun;
     this.editLoading.set(true);
     this.editFailure.set(null);
+    this.stale.set(null);
     try {
       const report = await this.api.report(id);
       if (run !== this.editRun) return;
@@ -303,8 +336,30 @@ export class PartnerMelden implements HasUnsavedChanges {
     void this.data.load();
   }
 
+  /**
+   * Opslaan was refused (or its answer got lost). The stock is read again; an edit also reads its melding: when that
+   * changed meanwhile and now holds exactly what the form holds, the save did go through; otherwise the form offers
+   * the new version (a retry would be refused for ever with the old token).
+   */
+  async refused(): Promise<void> {
+    this.reload();
+    const editing = this.draft.editing();
+    if (!editing) return;
+    try {
+      const fresh = await this.api.report(editing.id);
+      if (this.draft.editing() !== editing) return;
+      if (tokenOf(fresh) === editing.token) return;
+      if (this.draft.sameAs(fresh)) { this.sent({ report: fresh, existing: true }); return; }
+      const loaded = this.editReport();
+      const twins = this.data.twins();
+      this.stale.set({ report: fresh, changes: loaded ? reportChanges(loaded, fresh, (product) => twinTitle(product, twins)) : [] });
+    } catch {
+      /* The refusal stays on the form; reloading the page still reads the melding afresh. */
+    }
+  }
+
   kindLabel(report: PartnerReport): string { return KIND_LABEL[reportKind(report)]; }
-  title(entry: { name: string; variant: string | null }): string { return productTitle(entry); }
+  title(entry: PartnerReportEntry): string { return twinTitle(entry, this.data.twins()); }
   countOf(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): string { return partCount(entry, part); }
   piecePrice(entry: PartnerReportEntry, part: PartnerReportSale | PartnerReportBuyback): number { return partPiecePrice(entry, part); }
   noun(entry: PartnerReportEntry): string { return pieceNoun(entry); }

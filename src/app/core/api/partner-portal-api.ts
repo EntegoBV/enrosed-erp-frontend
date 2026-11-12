@@ -65,6 +65,14 @@ export interface PartnerProductTile {
   countUnits?: PartnerCountUnit[];
   /** Enrosed's default for this partner and product (STUK unless staff set another). */
   defaultUnit?: PartnerCountUnitKey;
+  /**
+   * The product's category, for grouping like the ERP's Voorraad (left out by servers that do not send it yet: the
+   * screens then take it from the containers answer's specs). Never a price.
+   */
+  categoryId?: number | null;
+  categoryName?: string | null;
+  /** The category's place in Enrosed's own category order. */
+  categoryOrder?: number | null;
 }
 
 /** Stock at the partner's location, in sales units (only products with stock). */

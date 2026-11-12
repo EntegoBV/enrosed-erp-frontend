@@ -5519,6 +5519,21 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   PUTs with `expectedToken`. Meldingen = table with the partner's status words (Ingediend /
   Bevestigd / Deels gefactureerd / Gefactureerd / Ingetrokken), Bewerken on `canEdit`, Ongedaan
   maken on `canUndo`. Never an inkoopkost or profit split in the portal.
+- **Portal details (review round 1)**: a buyback on the clock starts per piece (`emptyPart(…,
+  'buyback')`; a sale starts in Enrosed's default unit) and says in amber when it books more pieces
+  than the same row sold (not a refusal: it may take back an earlier sale). An Aantal that is no whole
+  count ("2,5") stays in the field, red, with "Alleen hele …" (`DraftPart.unreadable`, set from
+  `unreadableChange` of `appPartnerCount` / the stepper). Products of one melding with different piece
+  nouns: the head says "Prijs", each field "/ roos". A changed date must lie within today - 90
+  (`bound`), whatever the picker's min. After a refused or lost PUT Melden re-reads the melding: a new
+  `editToken` with the form's exact content = saved (`MeldingDraft.sameAs`); else the entry shows the
+  `notice` "VV-n is intussen gewijzigd door … (what changed, `reportChanges`)" with "Nieuwe versie
+  laden" and Opslaan waits. Klant search: Enter takes the first hit of what is typed now (waits for
+  that answer; one letter picks nothing). Same name + colour twice (`partner-twins.ts`): every list
+  adds the SKU. The product table groups by category (tile `categoryName`/`categoryOrder`, else the
+  containers answer's spec through `withCategories`), then series (a series of one is a plain row).
+  The melding sheet's buyback line is count x clock price (commission and transport sit in
+  Terugkoopkost).
 - **Staff** (`features/partner-sales/*`): Veilingverkopen page with Status / Soort / Periode /
   Partner filters in the address, the table by sold-on date (fold plan: under 900 px card width
   Datum, Melding, Producten, Netto, Status; Stuks/Bruto/Kosten from 900, Terugkoop from 1100), one
@@ -5567,8 +5582,11 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
   "Komt eraan" (5 desk / 3 phone) with a thin bar from departure (or order day) to arrival.
 - **Table** (`partner-container-table.ts`, `partner-container-lines.ts`): Container · Type ·
   Lading · ± Pallets · Vertrek · Aankomst · Status, Type and Vertrek fold under 900 px; a row opens
-  the products grouped by category · family (photo, colour, Aantal in the partner's default count
-  unit + "= n stuks", Dozen, m³, ± Pallets, Omdoos). "Ook oude containers" adds `old` ones.
+  the products grouped by category · family (photo, colour, Afmeting = the product's own B × D × H,
+  weight and packaging, Aantal in the partner's default count unit + "= n stuks", Dozen, m³, ±
+  Pallets, Omdoos + "± n dozen per pallet"; Afmeting folds into the product cell under 980 px table
+  width, Omdoos under 820). A photo opens the product larger (medium photo) with its whole
+  specification. "Ook oude containers" adds `old` ones.
 - **Address**: a pick writes `?container=` with `Location.replaceState` (a router navigation would
   scroll to the top: `scrollPositionRestoration: 'top'`); arriving with it, the row is opened and
   scrolled to after the router's `Scroll` event.

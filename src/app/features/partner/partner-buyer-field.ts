@@ -20,7 +20,9 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * city only; staff: their own search), the last buyers while nothing is typed,
  * and "Niet gevonden? Nieuwe klant" for a small form (Bedrijfsnaam, Land,
  * Stad, E-mail, Telefoon) prefilled with what was typed. Staff complete the
- * customer in the ERP later.
+ * customer in the ERP later. Enter takes the first hit of what is typed now:
+ * while that search is still under way (the 250 ms pause, the request) it
+ * waits for its answer, never the list of the text before.
  */
 @Component({
   selector: 'app-partner-buyer-field',
@@ -72,17 +74,17 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                (keydown.enter)="$event.preventDefault(); pickFirst()" (keydown.escape)="open.set(false)" />
       </label>
       @if (open()) {
-        <div class="bf-list" role="listbox" aria-label="Klanten" (mousedown)="$event.preventDefault()">
+        <div class="bf-list" role="listbox" aria-label="Klanten" [attr.aria-busy]="searching() ? 'true' : null" [class.is-stale]="!fresh()" (mousedown)="$event.preventDefault()">
           @if (listLabel()) { <span class="bf-list__label">{{ listLabel() }}</span> }
-          @for (buyer of results(); track buyer.customerId) {
+          @for (buyer of shown(); track buyer.customerId) {
             <button class="bf-item" type="button" role="option" aria-selected="false" (click)="pick(buyer)">
               <b>{{ buyer.company }}</b>
               <small>{{ place(buyer) }}@if (buyer.addedByYou) { · door jou toegevoegd }</small>
             </button>
           }
-          @if (loading()) { <span class="bf-list__label">Zoeken…</span> }
+          @if (searching()) { <span class="bf-list__label">Zoeken…</span> }
           @else if (error()) { <span class="bf-bad">{{ error() }}</span> }
-          @else if (!results().length && query().trim().length >= 2) { <span class="bf-list__label">Geen klant gevonden</span> }
+          @else if (fresh() && !results().length && wanted()) { <span class="bf-list__label">Geen klant gevonden</span> }
           @if (create()) {
             <button class="bf-link bf-new" type="button" (click)="startCreate()"><app-icon name="plus" [size]="14" />Niet gevonden? Nieuwe klant</button>
           }
@@ -100,6 +102,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     .bf-search input::-webkit-search-cancel-button{display:none}
     .bf-list{display:grid;margin-top:6px;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
     .bf-list__label{padding:4px 8px;color:var(--muted);font-size:12px;font-weight:600}
+    .bf-list.is-stale .bf-item{opacity:.55}
     .bf-item{display:grid;gap:1px;min-height:40px;padding:5px 8px;border:0;border-radius:7px;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
     .bf-item:hover,.bf-item:focus-visible{background:var(--surface-2);outline:none}
     .bf-item b{overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
@@ -153,13 +156,29 @@ export class PartnerBuyerField {
   readonly vat = signal('');
   /** The query the shown results answer ('' = the last buyers). */
   private readonly answered = signal<string | null>(null);
+  /** Enter was pressed for this query before its answer came: the first hit is taken when it lands. */
+  private pendingEnter: string | null = null;
+  /** The query of the search under way. */
+  private asking: string | null = null;
   private run = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  /** A search is waiting for its pause or its answer. */
+  private readonly waiting = signal(false);
+
+  /** What the list must answer now: '' for the last buyers, null while one letter is typed (nothing to search). */
+  readonly wanted = computed<string | null>(() => {
+    const query = this.query().trim();
+    return query.length >= 2 ? query : query.length === 0 ? '' : null;
+  });
+  /** The shown results answer what is typed now (not the text before it). */
+  readonly fresh = computed(() => !this.loading() && !this.waiting() && this.answered() !== null && this.answered() === this.wanted());
+  readonly searching = computed(() => this.loading() || (this.waiting() && this.wanted() !== null));
+  /** One letter shows no list: the last buyers would read as hits for it. */
+  readonly shown = computed(() => (this.wanted() === null ? [] : this.results()));
 
   readonly listLabel = computed(() => {
-    const query = this.query().trim();
-    if (query.length === 1) return 'Typ minstens 2 letters';
-    return this.answered() === '' && this.results().length ? 'Laatste klanten' : '';
+    if (this.wanted() === null) return 'Typ minstens 2 letters';
+    return this.fresh() && this.answered() === '' && this.results().length ? 'Laatste klanten' : '';
   });
 
   readonly formProblem = computed<string | null>(() => {
@@ -169,7 +188,7 @@ export class PartnerBuyerField {
   });
 
   constructor() {
-    inject(DestroyRef).onDestroy(() => { if (this.timer) clearTimeout(this.timer); });
+    inject(DestroyRef).onDestroy(() => { if (this.timer) clearTimeout(this.timer); this.pendingEnter = null; });
   }
 
   openList(): void {
@@ -180,15 +199,25 @@ export class PartnerBuyerField {
   typed(value: string): void {
     this.query.set(value);
     this.open.set(true);
+    this.pendingEnter = null;
+    this.stopTimer();
+    const query = this.wanted();
+    if (query === null) return;
+    this.waiting.set(true);
+    this.timer = setTimeout(() => { this.timer = null; void this.lookup(query); }, 250);
+  }
+
+  private stopTimer(): void {
     if (this.timer) clearTimeout(this.timer);
-    const query = value.trim();
-    if (query.length === 1) return;
-    this.timer = setTimeout(() => this.lookup(query), 250);
+    this.timer = null;
+    this.waiting.set(false);
   }
 
   private async lookup(raw: string): Promise<void> {
     const query = raw.trim().length >= 2 ? raw.trim() : '';
     const run = ++this.run;
+    this.waiting.set(false);
+    this.asking = query;
     this.loading.set(true);
     this.error.set(null);
     try {
@@ -196,27 +225,46 @@ export class PartnerBuyerField {
       if (run !== this.run) return;
       this.results.set(found.slice(0, 20));
       this.answered.set(query);
+      if (this.pendingEnter === query) {
+        this.pendingEnter = null;
+        const first = found[0];
+        if (first) this.pick(first);
+      }
     } catch (failure: unknown) {
       if (run !== this.run) return;
       const status = (failure as { status?: number } | null)?.status;
       this.results.set([]);
       this.error.set(status === 429 ? 'Even te veel opzoekingen; probeer het zo opnieuw.' : messageOf(failure, 'Klanten zoeken lukt nu niet.'));
     } finally {
-      if (run === this.run) this.loading.set(false);
+      if (run === this.run) { this.loading.set(false); this.asking = null; }
     }
   }
 
+  /** Enter: the first hit for what is typed now; while that search runs, once its answer lands. One letter: nothing. */
   pickFirst(): void {
-    const first = this.results()[0];
-    if (first) this.pick(first);
+    const wanted = this.wanted();
+    if (wanted === null) return;
+    if (this.fresh()) {
+      const first = this.results()[0];
+      if (first) this.pick(first);
+      return;
+    }
+    this.pendingEnter = wanted;
+    if (this.loading() && this.asking === wanted) return;
+    this.stopTimer();
+    void this.lookup(wanted);
   }
 
   pick(buyer: PartnerBuyer): void {
+    this.stopTimer();
+    this.pendingEnter = null;
     this.open.set(false);
     this.changed.emit({ customerId: buyer.customerId, company: buyer.company, city: buyer.city });
   }
 
   clear(): void {
+    this.stopTimer();
+    this.pendingEnter = null;
     this.query.set('');
     this.answered.set(null);
     this.changed.emit(null);

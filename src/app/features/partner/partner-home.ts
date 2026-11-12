@@ -8,9 +8,10 @@ import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
 import { Ui } from '../../shared/ui';
 import { PartnerComing } from './partner-coming';
+import { PartnerContainersData } from './partner-containers-data';
 import { PartnerData } from './partner-data';
 import { KIND_ICON, KIND_LABEL, KIND_TONE, PARTNER_KINDS, percent } from './partner-format';
-import { PartnerProductTable, TableProduct } from './partner-product-table';
+import { PartnerProductTable, TableProduct, withCategories } from './partner-product-table';
 import { bySoldOn } from './partner-report-format';
 import { PartnerReportRows } from './partner-report-rows';
 import { PartnerReportSheet, confirmUndo } from './partner-report-sheet';
@@ -20,7 +21,8 @@ import { PartnerReportTable } from './partner-report-table';
  * Overzicht, desk first: three buttons for what happened (veiling, direct,
  * terugkoop), the two cost percentages, the next three containers coming
  * (links to Containers), the stock as one table grouped by
- * family (Melden on a row reports that product sold at the auction), and the
+ * category and series like the ERP's Voorraad (Melden on a row reports that
+ * product sold at the auction), and the
  * latest meldingen as a table.
  */
 @Component({
@@ -61,11 +63,11 @@ import { PartnerReportTable } from './partner-report-table';
         @if (latest().length) {
           @if (desk.active()) {
             <div class="sec__card">
-              <app-partner-report-table caption="Laatste meldingen" [reports]="latest()" [today]="o.serverDate"
+              <app-partner-report-table caption="Laatste meldingen" [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()"
                                         (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
             </div>
           } @else {
-            <app-partner-report-rows [reports]="latest()" [today]="o.serverDate" (opened)="open.set($event)" />
+            <app-partner-report-rows [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()" (opened)="open.set($event)" />
           }
         } @else {
           <p class="none">Nog niets gemeld.</p>
@@ -82,7 +84,7 @@ import { PartnerReportTable } from './partner-report-table';
     }
 
     @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
+      <app-partner-report-sheet [report]="report" [twins]="data.twins()" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
     }
   `,
   styles: `
@@ -120,6 +122,7 @@ import { PartnerReportTable } from './partner-report-table';
 })
 export class PartnerHome {
   readonly data = inject(PartnerData);
+  private readonly containers = inject(PartnerContainersData);
   private readonly api = inject(PartnerPortalApi);
   private readonly router = inject(Router);
   private readonly ui = inject(Ui);
@@ -141,7 +144,7 @@ export class PartnerHome {
     if (!overview) return [];
     const ids = new Set(overview.stock.map((tile) => tile.productId));
     const gone = overview.recentSales.filter((tile) => !ids.has(tile.productId)).map((tile) => ({ ...tile, quantity: 0 }));
-    return [...overview.stock, ...gone];
+    return withCategories<TableProduct>([...overview.stock, ...gone], this.containers.specs());
   });
 
   constructor() {
