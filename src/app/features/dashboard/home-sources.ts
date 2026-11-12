@@ -232,9 +232,27 @@ export interface HomeTaskSources {
   milestones: readonly PlannerMilestone[];
   catalog: number;
   /** WorkQueue.partnerSales(): the open Veilingverkopen; null while unknown or on a backend without the portal. */
-  partnerSales: { openReports: number; openSaleQuantity: number; openNetEur: number } | null;
+  partnerSales: { openReports: number; openSaleQuantity: number; openNetEur: number; unconfirmedReports?: number | null;
+    confirmedOpenReports?: number | null; confirmedOpenSaleQuantity?: number | null; confirmedOpenNetEur?: number | null } | null;
   later: LaterState;
   sources: Readonly<Record<CoverageSource, boolean>>;
+}
+
+/**
+ * The two Veilingverkopen tasks: what Factureren can take now and what waits for Bevestigen. A round-2 summary
+ * says the confirmed figures; a round-1 one does not, and then every open melding counts as invoiceable.
+ */
+function partnerSalesOf(summary: HomeTaskSources['partnerSales']): HomeTaskInput['partnerSales'] {
+  if (!summary) return null;
+  if (summary.confirmedOpenReports == null) {
+    return { count: summary.openReports, eur: summary.openNetEur, pieces: summary.openSaleQuantity, unconfirmed: 0, unconfirmedEur: 0 };
+  }
+  const unconfirmed = Math.max(0, summary.unconfirmedReports ?? 0);
+  const confirmedEur = summary.confirmedOpenNetEur ?? 0;
+  return {
+    count: summary.confirmedOpenReports, eur: confirmedEur, pieces: summary.confirmedOpenSaleQuantity ?? 0,
+    unconfirmed, unconfirmedEur: unconfirmed ? Math.round((summary.openNetEur - confirmedEur) * 100) / 100 : 0,
+  };
 }
 
 export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
@@ -246,8 +264,7 @@ export function homeTaskInputOf(s: HomeTaskSources): HomeTaskInput {
     containerDue: containerDueOf(s.purchases),
     advances: advancesOf(s.financing),
     settlements: s.financing.awaitingSettlement,
-    partnerSales: s.partnerSales
-      ? { count: s.partnerSales.openReports, eur: s.partnerSales.openNetEur, pieces: s.partnerSales.openSaleQuantity } : null,
+    partnerSales: partnerSalesOf(s.partnerSales),
     invoicesOverdue: invoicesOverdueOf(s.sales, s.customers, s.today),
     overdueCosts: overdueCostsOf(s.attention, s.costs, s.today),
     vat: vatOf(s.cash, s.forecast, s.vatQuarters, s.today),

@@ -46,6 +46,7 @@ const LOOK: Readonly<Record<HomeSource, { icon: string; tone: string }>> = {
   'purchase-check': { icon: 'purchase', tone: 'grey' }, settlement: { icon: 'exchange', tone: 'grey' }, 'bank-lines': { icon: 'link', tone: 'grey' },
   'recurring-due': { icon: 'repeat', tone: 'grey' }, 'open-credits': { icon: 'restore', tone: 'grey' }, regimes: { icon: 'settings', tone: 'grey' },
   catalog: { icon: 'globe', tone: 'grey' }, 'partner-sales': { icon: 'arrow-in', tone: 'grey' },
+  'partner-confirm': { icon: 'tick', tone: 'grey' },
 };
 
 /** "08:12" of an epoch time, local. */
