@@ -1,17 +1,20 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { StaffPartnerReport } from '../../core/api/partner-sales-api';
 import { count } from '../partner/partner-format';
-import { buyerLine, productsShort, reportPieces } from '../partner/partner-report-format';
-import { CHANNEL_CHOICES, ChannelChoice, PERIOD_CHOICES, PeriodKind, byDay, soldDay } from './partner-sales-filters';
+import { buyerLine, productsShort } from '../partner/partner-report-format';
+import { CHANNEL_CHOICES, ChannelChoice, PERIOD_CHOICES, PeriodKind, byDay, openPartOf, soldDay } from './partner-sales-filters';
 import { reportTitle } from './partner-sales-format';
 import { signedEur } from '../../shared/signed-eur';
 
 /**
  * Factureren, step 1 "Kies de meldingen": the partner's confirmed meldingen
- * that are still open, by sold-on day, each with a tick. Soort and Periode
- * narrow the list (only what is shown and ticked counts), a day's tick takes
- * that whole day, "Alleen deze dag" takes only it, Alles / Niets the shown
- * list. The host keeps the ticks (`selected`) and previews them.
+ * that are still open, by sold-on day, each with a tick and what Factureren
+ * can still take of it (a partly invoiced one: its open part, "van € x"
+ * beside it). Soort and Periode narrow the list (only what is shown and
+ * ticked counts), a day's tick takes that whole day, "Alleen deze dag" takes
+ * only it, "Alles aanvinken" / "Niets" the shown list (named apart from the
+ * Periode chip "Alles"). The host keeps the ticks (`selected`) and previews
+ * them.
  */
 @Component({
   selector: 'app-partner-sales-invoice-pick',
@@ -29,7 +32,7 @@ import { signedEur } from '../../shared/signed-eur';
         }
       </div>
       <span class="ip-bar__end">
-        <button class="wk-link" type="button" [disabled]="!shown().length" (click)="all()">Alles</button>
+        <button class="wk-link" type="button" [disabled]="!shown().length" (click)="all()">Alles aanvinken</button>
         <button class="wk-link" type="button" [disabled]="!chosenCount()" (click)="none()">Niets</button>
       </span>
     </div>
@@ -51,13 +54,13 @@ import { signedEur } from '../../shared/signed-eur';
             @if (days().length > 1) { <button class="wk-link ip-only" type="button" (click)="onlyDay(day.reports)">Alleen deze dag</button> }
           </div>
           @for (r of day.reports; track r.id) {
-            @let pieces = piecesOf(r);
+            @let open = openOf(r);
             <label class="ip-row" role="row" [class.is-on]="selected().has(r.id)">
               <span role="cell"><input class="ip-check" type="checkbox" [checked]="selected().has(r.id)" [attr.aria-label]="r.number + ' factureren'" (change)="toggle(r.id)" /></span>
-              <span class="ip-what" role="cell"><b>{{ title(r) }}</b>@if (buyer(r); as b) { <span class="ip-muted">{{ b }}</span> }</span>
+              <span class="ip-what" role="cell"><b>{{ title(r) }}</b>@if (open.partial) { <span class="ip-muted">deels gefactureerd</span> } @else if (buyer(r); as b) { <span class="ip-muted">{{ b }}</span> }</span>
               <span class="ip-products" role="cell">{{ products(r) }}</span>
-              <span class="ip-num" role="cell">{{ pieces.sale ? num(pieces.sale) + ' st' : '' }}@if (pieces.buyback) { <small> −{{ num(pieces.buyback) }} terug</small> }</span>
-              <span class="ip-num ip-strong" role="cell">{{ eur(r.totals.netEur) }}</span>
+              <span class="ip-num" role="cell">{{ open.salePieces ? num(open.salePieces) + ' st' : '' }}@if (open.buybackPieces) { <small> −{{ num(open.buybackPieces) }} terug</small> }</span>
+              <span class="ip-num ip-strong" role="cell">{{ eur(open.netEur) }}@if (open.partial) { <small>van {{ eur(r.totals.netEur) }}</small> }</span>
             </label>
           }
         }
@@ -83,7 +86,7 @@ import { signedEur } from '../../shared/signed-eur';
     .ip-products{min-width:0;overflow:hidden;color:var(--ink-2);text-overflow:ellipsis;white-space:nowrap}
     .ip-muted{overflow:hidden;color:var(--muted);font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}
     .ip-num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-    .ip-num small{display:block;color:var(--muted);font-size:11.5px}
+    .ip-num small{display:block;color:var(--muted);font-size:11.5px;font-weight:500}
     .ip-strong{font-weight:700}
     .ip-check{width:16px;height:16px;margin:0;accent-color:var(--rose);cursor:pointer}
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){
@@ -155,14 +158,15 @@ export class PartnerSalesInvoicePick {
     this.selectedChange.emit(next);
   }
 
+  /** What Factureren can still take of the day: the open part of each melding. */
   dayNet(reports: readonly StaffPartnerReport[]): number {
-    return reports.reduce((sum, r) => sum + Math.round((r.totals.netEur || 0) * 100), 0) / 100;
+    return reports.reduce((sum, r) => sum + Math.round((openPartOf(r).netEur || 0) * 100), 0) / 100;
   }
 
   title(r: StaffPartnerReport): string { return reportTitle(r); }
   buyer(r: StaffPartnerReport): string { return buyerLine(r); }
   products(r: StaffPartnerReport): string { return productsShort(r); }
-  piecesOf(r: StaffPartnerReport): { sale: number; buyback: number } { return reportPieces(r); }
+  openOf(r: StaffPartnerReport): ReturnType<typeof openPartOf> { return openPartOf(r); }
   dayText(day: string): string { return soldDay(day, this.today()); }
   eur(value: number): string { return signedEur(value); }
   num(value: number): string { return count(value); }

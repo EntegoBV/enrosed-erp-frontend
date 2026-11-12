@@ -212,6 +212,25 @@ export function totalsOf(reports: readonly StaffPartnerReport[]): PartnerSalesFi
   return { reports: n, salePieces: pieces, grossEur: gross / 100, costsEur: costs / 100, buybackEur: buyback / 100, netEur: net / 100 };
 }
 
+/**
+ * What Factureren can still take of a melding: the netto and pieces of its open parts (the server's open-part rule,
+ * part by part, as the summary and the home card count it). `partial` = some of it is on a document already. A melding
+ * without parts (an older server) counts whole.
+ */
+export function openPartOf(report: StaffPartnerReport): { netEur: number; salePieces: number; buybackPieces: number; partial: boolean } {
+  const parts = report.parts ?? [];
+  const whole = reportPieces(report);
+  if (!parts.length) return { netEur: report.totals.netEur, salePieces: whole.sale, buybackPieces: whole.buyback, partial: false };
+  let net = 0, sale = 0, buyback = 0, held = false;
+  for (const part of parts) {
+    if (!part.open) { held = true; continue; }
+    net += cents(part.netEur);
+    const pieces = part.pieces ?? part.quantity;
+    if (part.lineType === 'BUYBACK') buyback += pieces; else sale += pieces;
+  }
+  return { netEur: net / 100, salePieces: sale, buybackPieces: buyback, partial: held && report.status !== 'VOIDED' };
+}
+
 /** The search: number (VV-12 or 12), product, buyer, partner, note. */
 export function reportMatches(report: StaffPartnerReport, query: string): boolean {
   const words = searchText(query).split(/\s+/).filter(Boolean);

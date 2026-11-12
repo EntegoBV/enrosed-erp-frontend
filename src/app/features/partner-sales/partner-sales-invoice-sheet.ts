@@ -12,7 +12,7 @@ import { Segmented, SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet } from '../../shared/ui';
 import { count } from '../partner/partner-format';
-import { ChannelChoice, PeriodKind, channelOf, periodRange, reportState } from './partner-sales-filters';
+import { ChannelChoice, PeriodKind, channelOf, openPartOf, periodRange, reportState } from './partner-sales-filters';
 import { PartnerSalesInvoicePick } from './partner-sales-invoice-pick';
 import { PartnerSalesInvoicePreview } from './partner-sales-invoice-preview';
 import { signedEur } from '../../shared/signed-eur';
@@ -211,7 +211,8 @@ export class PartnerSalesInvoiceSheet {
   private readonly chosenKey = computed(() => this.chosen().map((r) => r.id).sort((a, b) => a - b).join(','));
   readonly chosenLine = computed(() => {
     const list = this.chosen();
-    const cents = list.reduce((sum, r) => sum + Math.round((r.totals.netEur || 0) * 100), 0);
+    /* What Factureren can still take: a partly invoiced melding counts its open part. */
+    const cents = list.reduce((sum, r) => sum + Math.round((openPartOf(r).netEur || 0) * 100), 0);
     return `${list.length === 1 ? '1 melding' : count(list.length) + ' meldingen'} · netto ${signedEur(cents / 100)}`;
   });
   /** The preview of exactly what is chosen now (a stale one is never shown). */
