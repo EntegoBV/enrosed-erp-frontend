@@ -107,7 +107,7 @@ export interface HomeTaskInput {
    * Veilingverkopen (WorkQueue.partnerSales): what Factureren can take now (round 2: confirmed and open; round 1: open)
    * and the meldingen waiting for Bevestigen with their netto; null while unknown or on an older backend.
    */
-  partnerSales: { count: number; eur: number; pieces: number; unconfirmed?: number; unconfirmedEur?: number } | null;
+  partnerSales: { count: number; eur: number; quantity: number; pieces: number | null; unconfirmed?: number; unconfirmedEur?: number } | null;
   invoicesOverdue: readonly { id: number; number: string; customer: string; dueDate: string; remainingEur: number }[];
   /** The 'overdue-costs' item of financeAttention(): its count, sum, title and target. */
   overdueCosts: { count: number; eur: number; oldestDays: number; title: string; location: Record<string, string> } | null;
@@ -552,12 +552,14 @@ function simpleTasks(input: HomeTaskInput): Candidate[] {
       detail: `${confirm}|${Math.round((input.partnerSales?.unconfirmedEur ?? 0) * 100)}` });
   }
   /* Only with a sale open: a buyback alone waits for the next sale of that product, Factureren cannot take it. */
-  if (input.partnerSales && input.partnerSales.count > 0 && input.partnerSales.pieces > 0) {
+  if (input.partnerSales && input.partnerSales.count > 0 && input.partnerSales.quantity > 0) {
     const open = input.partnerSales;
+    /* Stuks are pieces (a display of 12 rozen counts 12): said only when the server counts them, never sales units. */
+    const sold = open.pieces != null ? ` · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht` : '';
     out.push({ ...base, key: 'partner-sales', source: 'partner-sales', tier: 'ooknog', title: `Veilingverkopen factureren (${open.count})`,
-      context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner · ${open.pieces} ${plural(open.pieces, 'stuk', 'stuks')} verkocht`,
+      context: `${open.count} ${plural(open.count, 'melding', 'meldingen')} van de partner${sold}`,
       chip: { label: 'gemeld', tone: 'grey' }, eur: open.eur, count: open.count,
-      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'bevestigd' } }, detail: `${open.count}|${open.pieces}|${Math.round(open.eur * 100)}` });
+      verb: 'Factureren', target: { kind: 'route', path: ['/veilingverkopen'], query: { status: 'bevestigd' } }, detail: `${open.count}|${open.quantity}|${Math.round(open.eur * 100)}` });
   }
   if (input.catalog > 0) {
     const n = input.catalog;

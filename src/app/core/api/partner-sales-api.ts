@@ -121,8 +121,11 @@ export interface StaffPartnerReport extends PartnerReport {
 
 export interface PartnerSalesOpenTotals {
   openReports: number;
+  /** In sales units (a display counts 1). */
   openSaleQuantity: number;
   openNetEur: number;
+  /** The same open sale in pieces (a display of 12 rozen counts 12); absent from a server that does not send it. */
+  openSalePieces?: number | null;
 }
 
 /** Round 2: the sums of the whole filtered list (voided meldingen left out); "Stuks" in pieces. */
@@ -182,8 +185,11 @@ export interface PartnerSalesPartnerSummary extends PartnerSalesOpenTotals {
 export interface PartnerSalesConfirmTotals {
   unconfirmedReports?: number | null;
   confirmedOpenReports?: number | null;
+  /** In sales units. */
   confirmedOpenSaleQuantity?: number | null;
   confirmedOpenNetEur?: number | null;
+  /** The confirmed open sale in pieces; absent from a server that does not send it. */
+  confirmedOpenSalePieces?: number | null;
 }
 
 /** The cheap count behind the nav, the bell and the home card. */

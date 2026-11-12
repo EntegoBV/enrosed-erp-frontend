@@ -23,7 +23,7 @@ import { HomeWidget, amount, count, counted } from './home-w';
                   [wide]="true" [sub]="subLine()">
         @if (invoiceable() && toInvoice(); as open) {
           <span class="home-w__value">{{ whole(open.netEur) }}</span>
-          <span class="home-w__line">netto te factureren · {{ counted(open.reports, 'melding', 'meldingen') }} · {{ counted(open.quantity, 'stuk', 'stuks') }}</span>
+          <span class="home-w__line">netto te factureren · {{ counted(open.reports, 'melding', 'meldingen') }}@if (open.pieces != null) { · {{ counted(open.pieces, 'stuk', 'stuks') }}}</span>
         } @else if (unconfirmed()) {
           <span class="home-w__value">{{ count(unconfirmed()) }}</span>
           <span class="home-w__line">{{ unconfirmed() === 1 ? 'melding wacht' : 'meldingen wachten' }} op bevestigen</span>
