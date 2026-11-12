@@ -259,7 +259,7 @@ const LIST_LIMIT = 1000;
     .vv-select:has(>.vv-select__native:focus-visible){outline:2px solid var(--rose);outline-offset:2px}
     .vv-range{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px}
     .vv-date{height:28px;padding:0 6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px}
-    .vv-search{width:210px;margin-left:auto}
+    .vv-search{width:228px;margin-left:auto}
     .vv-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--rose-line);border-radius:10px;background:var(--rose-soft)}
     .vv-bulk__count{margin-right:4px;color:var(--rose-dark);font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
     .vv-bulk__note{color:var(--muted);font-size:12px}
