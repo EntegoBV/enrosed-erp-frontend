@@ -45,11 +45,10 @@ export function sidebarGroupForUrl(url: string): SidebarGroup | null {
   if (path.startsWith('/analyses')) return 'analyses';
 
   /* The company group: Logboek, Bedrijfsgegevens, Voorwaarden & privacy,
-     Verwijderde items, Voorraadradar, and the settings overview itself. The settings of
+     Verwijderde items, and the settings overview itself. The settings of
      this device (notifications, appearance) belong to no group. */
   if (
     path.startsWith('/activity')
-    || path.startsWith('/voorraadradar')
     || path.startsWith('/voorwaarden')
     || path === '/settings/deleted-items'
     || (path === '/settings' && !section)

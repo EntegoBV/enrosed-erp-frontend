@@ -167,8 +167,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { id: 'terms', label: 'Voorwaarden & privacy', icon: 'book', link: '/voorwaarden', wide: true, hint: 'Bekijk wat klanten te zien krijgen' },
       { id: 'deleted-items', label: 'Verwijderde items', icon: 'trash', link: '/settings/deleted-items', wide: true,
         hint: 'Verwijderde offertes, facturen en inkooporders herstellen' },
-      { id: 'stock-radar', label: 'Voorraadradar', short: 'Radar', icon: 'search', link: '/voorraadradar', wide: true, onlyUser: 'emre',
-        hint: 'iPhone Duo wit 256 en 512 GB bij Apple, MediaMarkt, Coolblue en meer' },
     ],
   },
 ];
