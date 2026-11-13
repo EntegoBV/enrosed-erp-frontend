@@ -14,56 +14,72 @@
      links and buttons, never a box that can hold a sheet) and only while pressed or entering; a section fades by
      opacity alone. Nothing enters inside a sheet (it slides up on its own).
    ========================================================================== */
-/* Rows of a group give .98 and round off into an inset highlight (iOS 26), the kit's tint on them; a swipe row as a whole
-   with its actions (never while dragged). A group of one row is a card: it gives .97 as a whole. Cards give .97 and
-   darken a little. */
-$mg-rows: ':is(.ios-group > :is(a, button, .swipe, .ios-swipe):not(:only-child), :is(a, button).ios-cell:not(.swipe__row, .ios-swipe *, .ios-group > *), .ios-disclosure > summary)';
-$mg-one: '.ios-group:has(> :is(a, button, .swipe, .ios-swipe):only-child)';
-$mg-cards: ':is(.ios-widget:is(a, button, :has(.home-w__go)), :is(a, button):is(.ios-hero, .ios-banner, .mpo-tile, .pl-tracking-link), .ios-chip)';
-$mg-spring: cubic-bezier(.34, 1.5, .64, 1);
-$mg-out: cubic-bezier(.2, .8, .2, 1);
-/* Into the press fast; the base rule's spring takes it back. */
-@mixin mg-press { transition-duration: .12s; transition-timing-function: $mg-out; }
+/* Rows give .98 and round off into an inset highlight (iOS 26), the kit's tint on them; a swipe row as a whole with its
+   actions (never while dragged); a group's only row too, inside its card. Cards give .97 and darken a little; the sales
+   document's model heads are both (their gradient takes no tint, their square corners round off). */
+$mg-rows: ':is(.ios-group > :is(a, button, .swipe, .ios-swipe), :is(a, button).ios-cell:not(.swipe__row, .ios-swipe *, .ios-group > *), details > summary, .purchase-model__head)';
+$mg-cards: ':is(.ios-widget:is(a, button, :has(.home-w__go)), :is(a, button):is(.ios-hero, .ios-banner, .mpo-tile, .pl-tracking-link, .purchase-model__head), .ios-chip)';
+/* The entrance's blocks: the containers fade, the leaves (controls, heroes, banners) also rise. Only the page's top level:
+   nothing inside another block, nothing in a sheet. */
+$mg-box: '.ios-card, .ios-subbar, .ios-figures, .ios-widgets, .mpo-summary';
+$mg-leaf: '.ios-search, .ios-chips, .ios-seg, .ios-hero, .ios-banner, .pl-tracking-link';
+$mg-top: ':not(.overlay *, :is(.ios-section, #{$mg-box}) *)';
+$mg-spring: var(--mg-s);
+$mg-out: var(--ease-out);
+/* Into the press quickly but after 50 ms, so a scroll that starts on a row (WKWebView sets :active at touchstart and drops
+   it when the pan begins) neither shrinks nor tints it; the base rule's spring takes it back. */
+@mixin mg-press { transition-duration: .12s; transition-delay: 50ms; }
+/* The entrance plays only in the first second of a page: its routed host (router-outlet + *) runs mg-win, which holds
+   --mg-on: 1 that long, and the entrance rules stand in @container style(--mg-on: 1) (every element is a style container:
+   no container-type). A block inserted in that second enters; the sections and rows that a search, a chip, a refresh or a
+   delete inserts later do not replay, and a block that is animating when the second ends simply stands. Where style
+   queries do not follow the animation nothing enters (checked in WebKit and Chrome: they do). */
 @media screen {
-  /* :where keeps the resting rules at the specificity of one class under the root: every area's own state (a chip's tone,
-     a dragged swipe row's transition: none, a list's own animation) still wins; only the :active rules weigh more. */
+  /* :where keeps the resting rules at the root's own weight (two classes): an area's own state written with more (a
+     dragged swipe row's transition: none) still wins; only the :active rules weigh more. */
   :root[data-host] {
     /* the ink #1a1614 at 7-15 %, white at 85 % */
     --mg-rim: inset 0 1px 0 #ffffffd9, 0 0 0 .5px #1a161414, 0 1px 4px #1a161417;
     --mg-lens: inset 0 1px 0 #fff, 0 0 0 .5px #1a161412, 0 3px 10px #1a161426;
+    --mg-s: cubic-bezier(.34,1.4,.64,1);
   }
-  :root[data-host] :where(.ios-search input, .ios-chip:not([aria-pressed=true]), .sl-filter:not(.sl-filter--on), .pl-filter:not(.pl-filter--on)) { background: var(--glass-bg); box-shadow: var(--mg-rim); }
-  :root[data-host] :where(.ios-search input) { border-radius: 999px; }
+  :root[data-host] :where(.ios-search input, .ios-chip:not([aria-pressed=true]), .sl-filter:not(.sl-filter--on), .pl-filter:not(.pl-filter--on)) { border-radius: 999px; background: var(--glass-bg); box-shadow: var(--mg-rim); }
   :root[data-host] :where(.ios-circle, .ios-capsule:not(.ios-capsule--accent, .ios-capsule--tinted), .ios-glass-group)::before { box-shadow: var(--mg-rim); }
-  :root[data-host] :where(.ios-chip[aria-pressed=true]) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 3px 10px color-mix(in srgb, var(--rose) 32%, transparent); }
-  :root[data-host] :where(.ios-seg) { background: color-mix(in srgb, var(--ink) 6%, transparent); box-shadow: inset 0 1px 2px rgb(26 22 20 / 9%), inset 0 -.5px 0 rgb(255 255 255 / 70%); }
+  :root[data-host] :where(.ios-chip[aria-pressed=true]) { box-shadow: inset 0 1px 0 #ffffff4d, 0 3px 10px color-mix(in srgb, var(--rose) 32%, transparent); }
+  :root[data-host] :where(.ios-seg) { background: color-mix(in srgb, var(--ink) 6%, transparent); box-shadow: inset 0 1px 2px #1a161417, inset 0 -.5px 0 #ffffffb3; }
   :root[data-host] :where(.ios-seg)::before, :root[data-host] :where(.workflow-nav .workflow-nav__active) { box-shadow: var(--mg-lens); }
-  /* The kit tints a pressed cell; the rows that are no cell (product rows, a group's plain buttons, a disclosure's summary)
-     take the same tint. */
-  :root[data-host] :is(.swipe__row, .ios-group > button, .ios-disclosure > summary):not(:disabled):active { background-color: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
+  /* A swipe row's red and green buttons stand behind it only while it is dragged or open (as host.scss does for the kit's
+     .ios-swipe, and the sales, purchase and supplier lists already did): a pressed row shrinks and rounds off, and behind
+     the product list's rows the delete showed through at its edges. Hidden once the row has slid shut. */
+  :root[data-host] .swipe:not(.swipe--open, .swipe--open-start, .swipe--dragging) > :is(.swipe__delete, .swipe__archive):not(:focus-visible) { opacity: 0; transition: opacity 0s .25s; }
 
   @media (prefers-reduced-motion: no-preference) {
-    /* Press: a quick give under the finger, released on a soft spring. */
-    :root[data-host] :where(#{$mg-rows}, #{$mg-one}, #{$mg-cards}) { transition: scale .5s $mg-spring, filter .3s, background-color .3s, border-radius .3s, box-shadow .25s, color .2s; }
+    /* Press: a quick give under the finger, released on a soft spring. The rows that are no cell (product rows, a group's
+       plain buttons, a summary) take the kit's tint too, never while a row is dragged. */
+    :root[data-host] :where(#{$mg-rows}, #{$mg-cards}, .swipe__row) { transition: scale .45s $mg-spring, transform .25s #{'cubic-bezier(.16,1,.3,1)'}, filter .25s, background-color .25s, border-radius .25s, box-shadow .25s, color .2s; }
+    :root[data-host] :is(.swipe:not(.swipe--dragging) > .swipe__row, .ios-group > button, details > summary):not(:disabled):active { background-color: color-mix(in srgb, var(--ink) 6%, var(--surface)); @include mg-press; }
     :root[data-host] #{$mg-rows}:not(:disabled, .swipe--dragging, .is-dragging):active { scale: .98; border-radius: 14px; @include mg-press; }
-    :root[data-host] #{$mg-one}:not(:has(.swipe--dragging, .is-dragging)):active { scale: .97; @include mg-press; }
     :root[data-host] #{$mg-cards}:not(:disabled):active { scale: .97; filter: brightness(.96); @include mg-press; }
-    :root[data-host] :where(.swipe__row) { transition: transform .25s cubic-bezier(.16, 1, .3, 1), background-color .3s; }
+    /* The hairlines at a pressed row's top and bottom go with the highlight (they ran past its rounded corners) and come
+       back once it has sprung back. */
+    :root[data-host] .ios-group > * + *::before { transition: opacity 0s .2s; }
+    :root[data-host] .ios-group > :is(:active, :active + *)::before { opacity: 0; transition-delay: 50ms; }
     :root[data-host] :where(.ios-circle, .ios-capsule)::before { transition: transform .45s $mg-spring; }
-    :root[data-host] :is(.ios-circle, .ios-capsule):active::before { transition-duration: .12s; }
     /* State changes: the segment's lens slides on a spring, the labels, switches and chevrons follow. */
-    :root[data-host] :where(.ios-seg)::before { transition: transform .38s cubic-bezier(.3, 1.15, .45, 1); }
+    :root[data-host] :where(.ios-seg)::before { transition: transform .38s #{'cubic-bezier(.3,1.15,.45,1)'}; }
     :root[data-host] :where(.ios-seg__opt) { transition: color .2s; }
     :root[data-host] :where(.ios-switch)::after, :root[data-host] .ios-cell__chev { transition: transform .35s $mg-spring; }
-    /* Entrance: the first six sections of a page fade in one after another (0, 40, 80 ms), the cards at the top and the
-       first three rows of each of their groups rise 8 px with them: 220 ms each, 300 ms in all, a handful of layers at
-       a time however long the list (WKWebView). Only on insertion, so the rows a refresh keeps (tracked) do not replay.
-       Never on a leaving row (mo-leave), never inside a sheet. */
-    :root[data-host] :where(.ios-section:nth-child(-n+6 of .ios-section):not(.overlay *)) { animation: mg-fade .22s $mg-out var(--mg-d, 0s) backwards; }
-    :root[data-host] :where(:is(.ios-section:nth-child(-n+6 of .ios-section) :is(.ios-widget, .ios-group > :is(a, button, .swipe, .ios-swipe):nth-child(-n+3)), :is(a, button):is(.ios-hero, .ios-banner, .pl-tracking-link)):not(.overlay *, .mo-leave)) { animation: mg-in .22s $mg-out var(--mg-d, 0s) backwards; }
-    :root[data-host] .ios-section:nth-child(2 of .ios-section) { --mg-d: 40ms; }
-    :root[data-host] .ios-section:nth-child(n+3 of .ios-section) { --mg-d: 80ms; }
+    /* Entrance: the page's top blocks, the first six sections of a column at most, 200 ms each: controls and heroes at
+       once, the first block of content 40 ms later, the rest at 80 ms (280 ms in all). The sales document rises as a
+       whole already (.anim-rise). */
+    :root[data-host] router-outlet + * { animation: mg-win 1s; }
+    @container style(--mg-on: 1) {
+      :root[data-host] :is(.ios-section:nth-child(-n+6 of .ios-section), #{$mg-box})#{$mg-top} { animation: mg-fade .2s $mg-out var(--mg-d, 40ms) backwards; }
+      :root[data-host] :is(#{$mg-leaf})#{$mg-top} { animation: mg-in .2s $mg-out backwards; }
+    }
+    :root[data-host] .ios-section:nth-child(n+2 of .ios-section) { --mg-d: 80ms; }
   }
 }
+@keyframes mg-win { from, to { --mg-on: 1; } }
 @keyframes mg-fade { from { opacity: 0; } }
 @keyframes mg-in { from { opacity: 0; translate: 0 8px; } }
