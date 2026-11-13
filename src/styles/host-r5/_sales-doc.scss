@@ -1,1 +1,59 @@
-/* Round 5 (2026-11-13): sales-doc. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): sales-doc. Every selector under :root[data-host]; see host-r5.scss.
+   The detail screens on the unfolded iPhone Duo held sideways: two panes that meet on the hinge. The summary (the sales
+   document's dark hero, the product's card, the customer's follow-up) stands in the first column, sticky under the native
+   bar; the section pill and the sections run in the second. Each column keeps its own side margins, so the gutter lies
+   around the hinge. Floats, not a grid: the pages keep their own flow, margins and empty hosts as they are, and the
+   summary sticks for the whole page. No transform, filter or contain anywhere (the trap rule). */
+$c1: calc(475.5px - var(--safe-l, 0px));
+
+@media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
+  :root[data-host][data-host-device='duo'] {
+    /* ---- the sales document: the page's own padding moves past the hinge, the hero floats back into the first column. */
+    app-sales-view .sales-view-page.sales-view-page { max-width: none; padding-top: calc(14px + var(--safe-t)); padding-left: calc(#{$c1} + 12px); }
+    app-sales-view .sales-hero.sales-hero {
+      float: left;
+      position: sticky;
+      top: var(--host-stick-t);
+      width: calc(#{$c1} - 24px);
+      margin: 0 0 0 calc(-1 * #{$c1});
+    }
+    /* The pill's band reaches from the hinge to the window's edge, never over the hero. */
+    app-sales-view .workflow-nav::before { left: -12px; }
+    /* The second column is as narrow as a folded phone: its look, not the 760 px column's; the hero's four details two by
+       two, so a contact's name keeps to one line. */
+    app-sales-view .sales-section-nav.sales-section-nav button { flex-direction: column; gap: 3px; font-size: 11px; }
+    app-sales-view :is(.hero-details, .details-grid) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    app-sales-view .details-grid.details-grid > .detail-item:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    /* A product model's head: its totals go under the name, as on the phone (styles.scss, below 560 px). */
+    app-sales-view .purchase-model__head { grid-template-columns: 48px minmax(0, 1fr) 20px; row-gap: 6px; }
+    app-sales-view .purchase-model__totals { grid-column: 2; grid-row: 2; }
+    app-sales-view .purchase-model__totals > :is(strong, small) { text-align: left; white-space: normal; }
+    app-sales-view .purchase-model__chevron { grid-column: 3; grid-row: 1 / span 2; }
+
+    /* ---- the product: the same, the card in the first column, the groups in the second, both starting on the bar's line. */
+    app-product-view .ios-page.pd-phone { max-width: none; padding-top: calc(var(--host-stick-t) - var(--safe-t)); padding-left: #{$c1}; }
+    app-product-view .pph-card {
+      float: left;
+      position: sticky;
+      top: var(--host-stick-t);
+      width: calc(#{$c1} - 32px);
+      margin: 4px 0 18px calc(16px - #{$c1});
+    }
+    app-product-view .pph-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* TICA's card has no inset of its own and ran up to the hinge: the groups' 16 px. */
+    app-product-view .pcp { margin-inline: 16px; }
+
+    /* ---- the customer (Klant bewerken, the list's sheet): the card spans the page, the follow-up stands sticky in the
+       first column, the form and the buttons in the second (16 px card + 16 px body inset before the first column). */
+    app-customer-list .sheet:has(.cl-followup) { max-width: none; }
+    app-customer-list .sheet:has(.cl-followup) .sheet__foot { padding-left: #{$c1}; }
+    app-customer-list [body]:has(> .cl-followup) {
+      display: grid;
+      grid-template-columns: calc(#{$c1} - 48px) minmax(0, 1fr);
+      column-gap: 32px;
+      align-items: start;
+    }
+    app-customer-list [body]:has(> .cl-followup) > * { grid-column: 2; }
+    app-customer-list [body] > .cl-followup { grid-column: 1; grid-row: 1 / span 9; position: sticky; top: 0; }
+  }
+}
