@@ -1,1 +1,64 @@
-/* Round 5 (2026-11-13): lists. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): lists. Every selector under :root[data-host]; see host-r5.scss.
+   The list pages on the unfolded iPhone Duo held sideways (Emre: "niet gelijk mobiel"): the whole 867 px page instead of
+   the wide phone's 760 px column (--page-col, read by styles.scss, workspace-kit.scss and shell.scss), the section groups
+   in two columns that meet on the hinge, row-wise, a section whole in its column. What filters (the segmented control,
+   the chips) stands on the left, the search on the right, both beside the hinge; banners, captions, empty states and
+   other single blocks keep the left column, so nothing lies on the fold. A page of one list (Klanten, Leveranciers) lays
+   its rows out in the two columns, each column a group of its own. Track & trace: the container on the left, the filters,
+   the search, the alert and the list on the right.
+   The first column ends on the hinge, 475.5 px from the page's left edge (- --safe-l); each column keeps its own margins:
+   - a .content with its 12 px padding whose blocks keep a 4 px inset: 451.5 px, 24 px between the columns;
+   - a block at the page's edge whose groups keep the kit's 16 px inset (--c: 475.5px, --g: 0): the insets make the gap;
+   - a group laid out in two (--i: twice its inset): its own columns end where the page's do.
+   Only this pose: the query below is the hinge rule of nav-rail.scss; folded, upright and the PWA never match it. */
+$duo-land: '(hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px)';
+$edge: '.plp, .skp, app-bank-movement-panel, .home-open';
+$cl: 'app-customer-list > .content';
+$two: '#{$cl} > .card > .list, .sup--phone > .ios-group';
+$search: '.sl--phone, .pl--phone, #{$cl}, .sup--phone, .plp, .skp, .fin-tx-filters';
+$blocks: ':where(#{$search}, app-bank-movement-panel, .home-open)';
+$transacties: '#finance-workspace:has(app-bank-movement-panel:not([mode]))';
+
+@media #{$duo-land} {
+  :root[data-host][data-host-device='duo'] {
+    :is(app-sales-list, app-purchase-list, app-product-list, app-stock-page, app-customer-list, app-supplier-list, app-container-tracking, app-open-page, #{$transacties} .fin-ios) { --page-col: 100%; }
+
+    :is(.sl--phone, .pl--phone, #{$cl}, .sup--phone, .content.ct, [id=sales-document-results], #{$edge}, #{$two}) {
+      display: grid;
+      align-items: start;
+      grid-template-columns: calc(var(--c, 451.5px) - var(--safe-l, 0px) - var(--i, 0px)) minmax(0, 1fr);
+      column-gap: calc(var(--g, 24px) + var(--i, 0px));
+    }
+    :is(#{$edge}) { --c: 475.5px; --g: 0px; }
+    :is(#finance-workspace .fin-tx-filters, .ct-layout) { display: contents; }
+
+    /* Every block on the left, one per row; a section after another takes the next column, the first one starts a row. */
+    #{$blocks} > :where(:not(.ios-section + .ios-section)) { grid-column: 1; }
+    :where(#{$search}) > :is(.ios-search, .search-bar, .cl-sort--phone) { grid-column: 2; }
+    /* A search that leads the page takes the chips up beside it; chips wrap in their column (Klanten's six fit on one line). */
+    :where(#{$search}) > :is(.ios-search, .search-bar):first-child + :is(.ios-chips, .chips) { grid-row: 1; }
+    :where(#{$search}) > :is(.ios-chips, .chips) { flex-wrap: wrap; }
+    #{$cl} > .chips { gap: 6px; }
+    #{$cl} > .chips > .chip { padding-inline: 10px; }
+    :is(.sl-tabs, .pl-tabs) { margin-top: 4px; }
+    /* A column is narrower than the 760 px one was: an open point's context takes a second line before it is cut. */
+    .home-open .home-task__context { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .pl-tracking-entry { padding-right: calc(100% - 463.5px + var(--safe-l, 0px)); }
+    #{$transacties} .fin-ios-banner { width: calc(443.5px - var(--safe-l, 0px)); }
+    :is(#sales-document-results, #{$cl} > .card, .sup--phone > .ios-group, .home-open > app-ios-nav > *) { grid-column: 1 / -1; }
+
+    /* One list in two groups: the list only lays out, each row keeps its surface and takes the group's corners. */
+    #{$cl} > .card { overflow: visible; border: 0; background: none; box-shadow: none; }
+    #{$cl} > .card > .list { --rr: var(--r); }
+    .sup--phone > .ios-group { --i: 8px; --rr: var(--ios-radius); }
+    :is(#{$two}) { align-items: stretch; overflow: visible; border-radius: 0; background: none; }
+    :is(#{$two}) > :nth-child(-n + 2) { border-radius: var(--rr) var(--rr) 0 0; }
+    :is(#{$two}) > :nth-last-child(-n + 2) { border-bottom: 0; border-bottom-left-radius: var(--rr); border-bottom-right-radius: var(--rr); }
+    .sup--phone > .ios-group > :nth-child(2)::before { display: none; }
+
+    /* .content.ct and .ct-layout > .ct-detail: the partner portal's container table has a .ct and a .ct-detail of its own. */
+    .content.ct { grid-template-rows: auto auto auto 1fr; }
+    :is(.content.ct, .ct-layout) > * { grid-column: 2; }
+    .ct-layout > .ct-detail { grid-area: 1 / 1 / -1; }
+  }
+}
