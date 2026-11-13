@@ -1,1 +1,73 @@
-/* Round 5 (2026-11-13): dash. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): dash. Every selector under :root[data-host]; see host-r5.scss.
+   The overview screens on the unfolded iPhone Duo held sideways (the land pose only: an 867 px page, the hinge 475.5 px
+   from its left edge). Two columns meet on the hinge: the first ends at --r5-c1, the second takes the rest (391.5 px,
+   a phone's width), and every card keeps its 16 px side margins, so the 32 px gutter lies around the hinge (the
+   Analyses pattern, nav-rail.scss).
+   - Kosten & bank lifts the 760 px column on every place and segment, the skeleton included, so the title and the
+     segmented control never move sideways. A panel's own flow moves past the hinge (padding) and its summary floats
+     back into the first column: Bank's hero, accounts, four figures and Kaslijn; a list's headline, search, chips,
+     notes and totals; Rapportage's figures, chart and Btw per kwartaal; Aan wie beside Beurzen. The lists run on in the
+     second (Vraagt aandacht, Laatst geboekt, the rows, the empty states). The skeleton splits the same way (figures
+     left, rows right). Floats, not a grid: the two columns run on independently whatever is shown (no gap under a
+     short card, an absent block needs no rule), and nothing becomes a containing block (the trap rule).
+     #finance-workspace outranks the finance partials' own margins (finance-phone.scss, bank-cockpit.scss). Transacties
+     (app-bank-panel) is the lists partial's.
+   - Meer: Snel naar and App op dit toestel on the left, Werkruimtes and Afmelden on the right. The second row is the
+     flexible one (home-phone.scss), so an opened Werkruimte pushes only Afmelden down.
+   - Analyses: the figure block (one grouped card across the page, a figure on the hinge) becomes tiles like Vandaag's
+     Cijfers: two (three of five) per column, the empty middle track on the hinge; a legacy body's figures drop their
+     second inset so the tracks line up. Kasprognose floats like Kosten & bank (hero, chart, figures, result left;
+     Scenario, Komende bewegingen and the cells right); Markt & container puts Valuta and Zeevracht side by side, and
+     Bezoekers' cards pair on the hinge, its wide chart one card of the pair. */
+$c2: 'app-ios-nav, .ios-banner, app-finance-tabbar, app-finance-create-menu, app-bank-panel, .fin-loading';
+$kid: ':is(.fin-ios > :not(app-bank-panel), app-bank-cockpit, app-incoming-payment-list)';
+
+@media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
+  :root[data-host][data-host-device='duo'] {
+    --r5-c1: calc(475.5px - var(--safe-l, 0px));
+    --r5-w: calc(var(--r5-c1) - 32px);
+    /* Kosten & bank, Meer and Kasprognose lift the shell's 760 px column (workspace-kit.scss .ios-page). */
+    :is(app-more-page, .fin-ios, .cf-phone) { --page-col: 100%; }
+
+    /* ---- Kosten & bank */
+    :is(.fin-ios > .ios-banner, .fin-phone-seg > app-segmented) { max-width: var(--r5-w); }
+    #finance-workspace :is(.fin-ios > :not(#{$c2}), app-bank-cockpit) { display: flow-root; padding-left: var(--r5-c1); }
+    #finance-workspace :is(#{$kid} > :is(.ios-headline, .ios-chips, .ios-search, .fin-cost-list-summary, .fin-carousel, app-kaslijn-card), app-cost-analysis > .ios-section, app-cost-lists-panel > .ios-section:first-child) {
+      float: left; clear: left; width: var(--r5-c1); margin-left: calc(-1 * var(--r5-c1)); }
+    #finance-workspace :is(#{$kid} > :is(.ios-banner, .fin-hero, .fin-widgets, .ios-figures, .fin-inv-entry, .fin-cost-list-totals, .fin-foot-link, .fin-ios-note), app-cost-analysis > .ios-card) {
+      float: left; clear: left; width: var(--r5-w); margin-left: calc(16px - var(--r5-c1)); }
+    /* A period row wraps rather than run under the hinge (Kosten has six). */
+    .fin-ios .ios-chips { flex-wrap: wrap; }
+    #finance-workspace .fin-ios > .fin-loading { grid-template-columns: var(--r5-w) minmax(0, 1fr); gap: 0 32px; padding: 0 16px; }
+    /* A list's skeleton alone, in the second column: a group skeleton keeps its own 16 px inset. */
+    .fin-ios > .fin-loading > :only-child { grid-column: 2; margin-inline: -16px; }
+
+    /* ---- Meer */
+    .more-content { display: grid; grid-template-columns: var(--r5-c1) minmax(0, 1fr); grid-template-rows: auto 1fr auto; align-items: start; max-width: none; }
+    .more-content > :nth-child(1) { grid-area: 1 / 1; }
+    .more-content > :nth-child(2) { grid-area: 1 / 2 / 3; }
+    .more-content > :nth-child(3) { grid-area: 2 / 1 / 4; }
+    .more-content > :nth-child(4) { grid-area: 3 / 2; }
+
+    /* ---- Analyses: the figures as tiles, the middle track m (12 px + two 10 px gaps = the 32 px gutter) on the hinge;
+       the tiles of --l (two or three of --k) left of it, those of --r right. */
+    .an-phone .an-kpis { --k: calc((var(--r5-c1) - 42px) / 2); --l: var(--k) var(--k); --r: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: var(--l) [m] 12px var(--r); gap: 0 10px; margin-bottom: 12px; overflow: visible; border-radius: 0; background: none; }
+    .an-phone .an-kpis::before { content: ''; grid-column: m; grid-row: 1 / span 8; }
+    .an-phone .an-kpis--3 { --r: minmax(0, 1fr); }
+    .an-phone .an-kpis--5 { --k: calc((var(--r5-c1) - 52px) / 3); --l: var(--k) var(--k) var(--k); }
+    .an-phone .an-kpi { margin-bottom: 10px; border-radius: 20px; }
+    .an-body--legacy .an-kpis { margin-inline: 0; }
+    /* Inkoop's part switch and search stay in the first column. */
+    .an-phone :is(.an-parts, .an-phone-search) { max-width: var(--r5-w); }
+    /* Bezoekers and Markt & container: their bodies start 16 px in, so the first track ends 16 px before the hinge. */
+    :is(.wa__grid, .mk) { grid-template-columns: var(--r5-w) minmax(0, 1fr); column-gap: 32px; }
+    .wa__card--wide { grid-column: auto; }
+    .mk > :not(.mk-card) { grid-column: 1 / -1; }
+    /* Kasprognose */
+    .cf-phone { display: flow-root; }
+    .cf-phone > :is(.ios-banner, .ios-hero, .ios-card, .ios-figures) { float: left; clear: left; width: var(--r5-w); }
+    .cf-phone > .ios-section { margin-left: var(--r5-c1); }
+    .cf-phone > .ios-group { margin-left: calc(var(--r5-c1) + 16px); }
+  }
+}
