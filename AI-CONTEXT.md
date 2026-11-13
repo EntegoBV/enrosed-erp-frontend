@@ -1241,6 +1241,45 @@ io <udid> recordVideo` during a probe of the shell (`scripts/probe.sh --probe sc
 in enrosed-erp-ios: pushes, pops, scrolls, a fling, rotations), frames pulled with
 `AVAssetImageGenerator`.
 
+### Round 5 of the native app (2026-11-13)
+
+Emre: "Maak de ios app beter op iphone duo, zowel verticaal als horizontaal. Bij horizontaal moet eigenlijk beetje als
+desktop view zijn die inklapbare menu enzo is veel te groot ... echt modern nieuw ui ux met animaties ... liquid glass ...
+Dichtgeklapt front screen kan ook beter"; for the landscape screen "niet per se dezelfde schermen als desktop, maar niet
+gelijk mobiel"; and "heel veel popups zijn zo links rechts sleepbaar". The shell's big sidebar is off by default
+(enrosed-erp-ios round 5): the strip's tab bar is the menu and the page gets 867 px.
+
+- **One stylesheet, app only.** `src/styles/host-r5.scss` and its partials `src/styles/host-r5/_*.scss` are a global
+  bundle the build does not inject (angular.json: `host-r5`, `inject: false`, unhashed). `installHost` (core/platform/
+  host.ts) links `host-r5.css` the moment the page knows it runs in the app, after styles.css. The PWA and the desk never
+  download it, and the initial bundle stays under its 1 MB budget (it was 984 kB; the round adds about 19 kB). Vercel
+  serves unhashed files with max-age=0, must-revalidate. FreshBuild does not see a release that changes only this file
+  (its build is the hashed entries); the next start of the app has it. Every selector still starts with :root[data-host].
+- **The wide landscape canvas** (the unfolded Duo held sideways, `(hover: none) and (orientation: landscape) and
+  (min-width: 860px) and (max-width: 960px) and (min-height: 560px)` with [data-host-device='duo']): the page drops the
+  760 px column; two columns meet on the hinge (the first ends at `calc(475.5px - var(--safe-l))`, each column keeps its
+  own side margins). `_lists.scss`: Verkoop, Inkoop, Producten, Voorraad, Klanten, Leveranciers, Track & trace,
+  Transacties, Open punten (filters left, search right, sections row-wise in two columns, one-list pages as one group
+  with a row's facts beside the hinge). `_dash.scss`: Kosten & bank (every place and segment; floats: the summary blocks
+  left, the lists right; skeleton split the same way), Meer, Analyses (figures as tiles per column), Kasprognose.
+  `_po.scss`: the purchase order's summary card left (a sticky float, so the section bar's sticky line still spans the
+  order), the section bar and panes right. `_sales-doc.scss`: the sales document's hero, the product's card and the
+  customer's follow-up left, sticky; sections right. Sheets in that pose are a card in the first column (`_fold-sheets.scss`).
+- **Glass and motion** in every pose (`_motion-glass.scss`, paint and motion only): raised glass on search fields, chips,
+  filter circles and capsules, a groove and lens for segmented controls; press feedback (scale .98 rows, .97 cards, a
+  tint, 50 ms delay so a scroll never presses) with a spring release; a page entrance (first blocks fade and rise, 280 ms)
+  that plays only in a page's first second: `router-outlet + *` runs `mg-win`, which holds `--mg-on: 1`, and the
+  entrance rules stand in `@container style(--mg-on: 1)` (no container-type: the trap rule holds), so a search, a chip or a
+  refresh never replays it (checked in the app's WKWebView, iOS 27.3). Reduced motion turns it all off.
+- **The folded screen and sheets** (`_fold-sheets.scss`): Home's task context and the agenda pin take two lines instead
+  of a cut; small spacing fixes; sheets no longer grow past their card (implicit grid columns `minmax(0, auto)`, long
+  words break, fields capped at 100 %). styles.scss also clips a phone `.sheet__body` horizontally (an overflow-y: auto
+  scroller makes its x-axis scrollable, so one wide child let the whole popup slide). Home's task context wraps under its
+  pill in every app pose (`_lists.scss`).
+- Checked with the harness under a fake host in headless Chrome at all four Duo poses (land 951x669 strip right, up
+  669x951, fold 466x678, foldside 678x466), PWA and desk pixel-identical; in the iOS simulator on the folded Duo. The
+  unfolded screen itself cannot be shown in the simulator by script: Emre's own Duo is the final check.
+
 ## Analyses (2026-10-17 redesign)
 
 Contract: scratchpad redesign/analyses/design.md + critique.md (the critique
