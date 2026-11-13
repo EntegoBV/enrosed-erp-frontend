@@ -10,7 +10,9 @@
      at --safe-t (24 px, no title, no band), and the section bar sticks there instead of at the future title's 82 px.
    - The section bar's band covers only the second column (and runs on under the strip), reaching up to the top of the
      screen so no row of a pane shows above it; the card's column keeps the plain page.
-   Only the loaded order (it has panes); the loading state and the editor keep the column. */
+   - The loading state already splits the same way: the card skeleton where the card comes, the lines in the second column
+     (a load error stands in the first), so nothing runs over the hinge and the page does not jump when the order arrives.
+   The editor keeps the column. */
 /* IosNav re-reads the bar's sticky line when the bar resizes (a fold or an unfold does), from the bar's computed top. Under
    reduced motion every property transitions for .01 ms (motion.scss), so that top was still the other pose's: no
    transition for it, in every pose (nothing else on the bar itself transitions). */
@@ -19,11 +21,17 @@ $land: '(hover: none) and (orientation: landscape) and (min-width: 860px) and (m
 $po: ":root[data-host][data-host-device='duo'] app-purchase-view .mpo-phone--view";
 
 @media #{$land} {
-  #{$po}:has(> .mpo-panes) {
+  #{$po} {
     --po-col: calc(475.5px - var(--safe-l, 0px));
     display: flow-root;
     max-width: none;
     margin-inline: 0;
+  }
+  #{$po} > .mpo-loading {
+    grid-template-columns: calc(var(--po-col) - 32px) minmax(0, 1fr);
+    gap: 12px 32px;
+    align-items: start;
+    padding: 10px 16px;
   }
   #{$po} .mpo-summary {
     position: sticky;
@@ -32,6 +40,10 @@ $po: ":root[data-host][data-host-device='duo'] app-purchase-view .mpo-phone--vie
     width: calc(var(--po-col) - 32px);
     margin: 10px 16px 12px;
   }
+  /* The card sits in the root's top scroll padding (the bar's 74 px under --safe-t) while always in view: its scroll area
+     and its controls' move down past the part of it they sit in (74 - 10), as the nav's buttons do in purchase-phone.scss,
+     so a focus handed back to a tile or the track link leaves the page where it is. */
+  #{$po} :is(.mpo-summary, .mpo-summary :is(a, button)) { scroll-margin: -64px 0 64px; }
   #{$po} :is(.ios-large__sentinel, .mpo-tabs, .mpo-panes) { margin-left: var(--po-col); }
   #{$po} .mpo-tabs { top: var(--safe-t); }
   #{$po} .mpo-tabs::before { inset: calc(-1 * var(--safe-t)) -100vw 0 0; }
@@ -39,6 +51,10 @@ $po: ":root[data-host][data-host-device='duo'] app-purchase-view .mpo-phone--vie
   /* A pane's figures are the phone's again: Lading and Volume side by side, the third across. */
   #{$po} .mpo-figures { --fig-n: 2; }
   #{$po} .mpo-figures > :nth-child(3) { grid-column: 1 / -1; }
+  /* About 330 px a row: a value ('40' High Cube — 68 m³') may take two thirds before it wraps, and a row with a button
+     ('Noteer') shows its whole line ('€ 17.779,20 · nu te betalen · Leverancier') on two lines instead of cutting it. */
+  #{$po} .mpo-panes .ios-cell__trail:has(> .mpo-value) { max-width: 66%; }
+  #{$po} .mpo-panes .ios-cell:has(> .ios-capsule) > .ios-cell__body > .ios-cell__sub { overflow-wrap: anywhere; white-space: normal; }
   /* A focused field or a card the summary's tiles open lands under the section bar, not 58 px lower. */
   :root[data-host][data-host-device='duo']:has(app-purchase-view .mpo-panes) { scroll-padding-top: calc(var(--safe-t) + 74px); }
 }
