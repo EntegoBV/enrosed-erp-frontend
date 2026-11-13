@@ -1,1 +1,70 @@
-/* Round 5 (2026-11-13): lists. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): lists. Every selector under :root[data-host]; see host-r5.scss.
+   The list pages on the unfolded iPhone Duo held sideways (Emre: "niet gelijk mobiel"): the whole 867 px page instead of
+   the wide phone's 760 px column (--page-col, read by styles.scss, workspace-kit.scss and shell.scss), the section groups
+   in two columns that meet on the hinge, row-wise, a section whole in its column. What filters (the segmented control,
+   the chips) stands on the left, the search on the right, both beside the hinge; banners, captions, empty states and
+   other single blocks keep the left column, so nothing lies on the fold. A page of one list (Klanten, Leveranciers) stays
+   one group across the page, read top to bottom (split in two groups its alphabet zig-zagged over the hinge); a row's
+   facts stand side by side instead of stacked: name (and contact) left of the hinge, the rest from the right column's
+   edge. Track & trace: the container on the left, the filters, the search, the alert and the list on the right.
+   The first column ends on the hinge, 475.5 px from the page's left edge (- --safe-l); each column keeps its own margins:
+   - a .content with its 12 px padding whose blocks keep a 4 px inset: 451.5 px, 24 px between the columns;
+   - a block at the page's edge whose groups keep the kit's 16 px inset (--c: 475.5px, --g: 0): the insets make the gap;
+   - a row across the page: its body's first column ends where the .content's does (463.5 px), the second starts at 487.5 px.
+   Only this pose: the query below is the hinge rule of nav-rail.scss; folded, upright and the PWA never match it. */
+$duo-land: '(hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px)';
+$edge: '.plp, .skp, app-bank-movement-panel, .home-open';
+$cl: 'app-customer-list > .content';
+$search: '.sl--phone, .pl--phone, #{$cl}, .sup--phone, .plp, .skp, .fin-tx-filters';
+$blocks: ':where(#{$search}, app-bank-movement-panel, .home-open)';
+$transacties: '#finance-workspace:has(app-bank-movement-panel:not([mode]))';
+
+@media #{$duo-land} {
+  :root[data-host][data-host-device='duo'] {
+    :is(app-sales-list, app-purchase-list, app-product-list, app-stock-page, app-customer-list, app-supplier-list, app-container-tracking, app-open-page, #{$transacties} .fin-ios) { --page-col: 100%; }
+
+    :is(.sl--phone, .pl--phone, #{$cl}, .sup--phone, .content.ct, [id=sales-document-results], #{$edge}) {
+      display: grid;
+      align-items: start;
+      grid-template-columns: calc(var(--c, 451.5px) - var(--safe-l, 0px)) minmax(0, 1fr);
+      column-gap: var(--g, 24px);
+    }
+    :is(#{$edge}) { --c: 475.5px; --g: 0px; }
+    :is(#finance-workspace .fin-tx-filters, .ct-layout) { display: contents; }
+
+    /* Every block on the left, one per row; a section after another takes the next column, the first one starts a row. */
+    #{$blocks} > :where(:not(.ios-section + .ios-section)) { grid-column: 1; }
+    :where(#{$search}) > :is(.ios-search, .search-bar, .cl-sort--phone) { grid-column: 2; }
+    /* A search that leads the page takes the chips up beside it; chips wrap in their column (Klanten's six fit on one line). */
+    :where(#{$search}) > :is(.ios-search, .search-bar):first-child + :is(.ios-chips, .chips) { grid-row: 1; }
+    :where(#{$search}) > :is(.ios-chips, .chips) { flex-wrap: wrap; }
+    #{$cl} > .chips { gap: 6px; }
+    #{$cl} > .chips > .chip { padding-inline: 10px; }
+    :is(.sl-tabs, .pl-tabs) { margin-top: 4px; }
+    /* A column is narrower than the 760 px one was: an open point's context wraps, and goes under its pill when less than
+       12em is left beside it (a count in the trail leaves ~100 px). Never cut: the 760 px column showed it whole. */
+    .home-open .home-task__sub { flex-wrap: wrap; }
+    .home-open .home-task__context { flex: 1 1 12em; white-space: normal; }
+    .pl-tracking-entry { padding-right: calc(100% - 463.5px + var(--safe-l, 0px)); }
+    #{$transacties} .fin-ios-banner { width: calc(443.5px - var(--safe-l, 0px)); }
+    :is(#sales-document-results, #{$cl} > .card, .sup--phone > .ios-group, .home-open > app-ios-nav > *) { grid-column: 1 / -1; }
+
+    /* One list across the page: a row's body in two columns on the hinge (--x: the body's left edge in the page; the
+       customer's body starts at 12 + 1 + 14 px, the supplier's at 12 + 4 + 16 px). Klanten: name and contact on the left,
+       country and klant sinds on the right; Leveranciers: name on the left, place on the right. The swipe is untouched. */
+    :is(#{$cl} .list-item__body, .sup--phone .swipe__row > .ios-cell__body) {
+      display: grid;
+      grid-auto-flow: dense;
+      align-items: baseline;
+      grid-template-columns: calc(463.5px - var(--safe-l, 0px) - var(--x, 27px)) minmax(0, 1fr);
+      column-gap: 24px;
+    }
+    .sup--phone .ios-cell__body { --x: 32px; }
+    #{$cl} :is(.list-item__title, .list-item__title + .list-item__meta) { grid-column: 1; }
+
+    /* .content.ct and .ct-layout > .ct-detail: the partner portal's container table has a .ct and a .ct-detail of its own. */
+    .content.ct { grid-template-rows: auto auto auto 1fr; }
+    :is(.content.ct, .ct-layout) > * { grid-column: 2; }
+    .ct-layout > .ct-detail { grid-area: 1 / 1 / -1; }
+  }
+}
