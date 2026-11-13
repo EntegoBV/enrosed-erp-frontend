@@ -79,7 +79,27 @@ export function installHost(doc: Document): HostInfo | null {
   if (!info) return null;
   if (root.dataset['host'] !== info.platform) root.dataset['host'] = info.platform;
   if (root.dataset['hostDevice'] !== info.device) root.dataset['hostDevice'] = info.device;
+  installHostStyles(doc);
   return info;
+}
+
+/** The id of the host-only stylesheet's link (installHostStyles). */
+export const HOST_STYLES_ID = 'enrosed-host-styles';
+
+/**
+ * Round 5's host-only stylesheet (styles/host-r5.scss: the wide landscape canvas of the unfolded iPhone Duo, glass and
+ * motion, the folded screen). A global style bundle of its own that the build does not inject (angular.json,
+ * `inject: false`, bundle `host-r5`, unhashed), so the PWA and the desk never download it and the initial bundle stays
+ * under its 1 MB budget; the page links it the moment it knows it runs inside the app, after styles.css as before. Vercel
+ * serves unhashed files with max-age=0, must-revalidate, so a new build's file is fetched again.
+ */
+export function installHostStyles(doc: Document): void {
+  if (doc.getElementById(HOST_STYLES_ID)) return;
+  const link = doc.createElement('link');
+  link.id = HOST_STYLES_ID;
+  link.rel = 'stylesheet';
+  link.href = 'host-r5.css';
+  doc.head.appendChild(link);
 }
 
 /** True once installHost marked this document (readable without the bridge, e.g. by saveBlob). */

@@ -1,8 +1,9 @@
 /* ==========================================================================
    Round 5 of the native app (2026-11-13, Emre: "Bij horizontaal moet eigenlijk beetje als desktop view zijn ... niet
    perse dezelfde schermen als desktop, maar niet gelijk mobiel"; "Maak echt modern nieuw ui ux met animaties ...
-   liquid glass"; "Dichtgeklapt front screen kan ook beter"). Loaded after host.scss. Every selector starts with
-   :root[data-host], so the PWA and the desk never see any of it.
+   liquid glass"; "Dichtgeklapt front screen kan ook beter"). A global bundle of its own that the build does not inject
+   (angular.json: bundle host-r5, inject false): core/platform/host.ts links it inside the app only, after styles.css,
+   so the PWA and the desk never download it. Every selector still starts with :root[data-host].
 
    The wide landscape canvas (the unfolded iPhone Duo held sideways: a 951 x 669 window, the strip on the right, an
    867 px page whose hinge runs 475.5 px from the page's left edge) uses this one media query, the hinge rule of
