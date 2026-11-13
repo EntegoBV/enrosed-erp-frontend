@@ -1,1 +1,69 @@
-/* Round 5 (2026-11-13): motion-glass. Every selector under :root[data-host]; see host-r5.scss. */
+/* ==========================================================================
+   Round 5 (2026-11-13): motion-glass (Emre: "echt modern nieuw UI/UX met animaties, smooth UI ... liquid glass").
+   The native bars are Liquid Glass; here the web content takes the same material and motion. Every selector under
+   :root[data-host] (see host-r5.scss): the PWA and the desk never see it. Paint and motion only: no size, margin or
+   position changes, so the other round 5 partials lay out the same boxes.
+   - Glass: the floating controls (search fields, chips, the round filter buttons, the kit's glass circles and capsules)
+     are raised glass: the kit's --glass-bg tint (solid under prefers-reduced-transparency), a specular top edge, a
+     hairline and a soft drop. A segment's track is a groove and its selection a raised lens (the PO's tabs in their band
+     too, and the sales document's section bar). No new backdrop-filter: the controls stand on the plain page or on a
+     host band that already blurs (host.scss), and WKWebView pays for every filter.
+   - Motion only under prefers-reduced-motion: no-preference. Press and entrance use the individual scale and translate
+     properties, never transform: the swipe rows move by transform and the kit's capsules scale their ::before, and
+     neither cuts into the other. Trap rule: scale, translate and filter only on leaves (rows, cells, widgets, cards:
+     links and buttons, never a box that can hold a sheet) and only while pressed or entering; a section fades by
+     opacity alone. Nothing enters inside a sheet (it slides up on its own).
+   ========================================================================== */
+/* Rows of a group give .98 and round off into an inset highlight (iOS 26), the kit's tint on them; a swipe row as a whole
+   with its actions (never while dragged). A group of one row is a card: it gives .97 as a whole. Cards give .97 and
+   darken a little. */
+$mg-rows: ':is(.ios-group > :is(a, button, .swipe, .ios-swipe):not(:only-child), :is(a, button).ios-cell:not(.swipe__row, .ios-swipe *, .ios-group > *), .ios-disclosure > summary)';
+$mg-one: '.ios-group:has(> :is(a, button, .swipe, .ios-swipe):only-child)';
+$mg-cards: ':is(.ios-widget:is(a, button, :has(.home-w__go)), :is(a, button):is(.ios-hero, .ios-banner, .mpo-tile, .pl-tracking-link), .ios-chip)';
+$mg-spring: cubic-bezier(.34, 1.5, .64, 1);
+$mg-out: cubic-bezier(.2, .8, .2, 1);
+/* Into the press fast; the base rule's spring takes it back. */
+@mixin mg-press { transition-duration: .12s; transition-timing-function: $mg-out; }
+@media screen {
+  /* :where keeps the resting rules at the specificity of one class under the root: every area's own state (a chip's tone,
+     a dragged swipe row's transition: none, a list's own animation) still wins; only the :active rules weigh more. */
+  :root[data-host] {
+    /* the ink #1a1614 at 7-15 %, white at 85 % */
+    --mg-rim: inset 0 1px 0 #ffffffd9, 0 0 0 .5px #1a161414, 0 1px 4px #1a161417;
+    --mg-lens: inset 0 1px 0 #fff, 0 0 0 .5px #1a161412, 0 3px 10px #1a161426;
+  }
+  :root[data-host] :where(.ios-search input, .ios-chip:not([aria-pressed=true]), .sl-filter:not(.sl-filter--on), .pl-filter:not(.pl-filter--on)) { background: var(--glass-bg); box-shadow: var(--mg-rim); }
+  :root[data-host] :where(.ios-search input) { border-radius: 999px; }
+  :root[data-host] :where(.ios-circle, .ios-capsule:not(.ios-capsule--accent, .ios-capsule--tinted), .ios-glass-group)::before { box-shadow: var(--mg-rim); }
+  :root[data-host] :where(.ios-chip[aria-pressed=true]) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 30%), 0 3px 10px color-mix(in srgb, var(--rose) 32%, transparent); }
+  :root[data-host] :where(.ios-seg) { background: color-mix(in srgb, var(--ink) 6%, transparent); box-shadow: inset 0 1px 2px rgb(26 22 20 / 9%), inset 0 -.5px 0 rgb(255 255 255 / 70%); }
+  :root[data-host] :where(.ios-seg)::before, :root[data-host] :where(.workflow-nav .workflow-nav__active) { box-shadow: var(--mg-lens); }
+  /* The kit tints a pressed cell; the rows that are no cell (product rows, a group's plain buttons, a disclosure's summary)
+     take the same tint. */
+  :root[data-host] :is(.swipe__row, .ios-group > button, .ios-disclosure > summary):not(:disabled):active { background-color: color-mix(in srgb, var(--ink) 6%, var(--surface)); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    /* Press: a quick give under the finger, released on a soft spring. */
+    :root[data-host] :where(#{$mg-rows}, #{$mg-one}, #{$mg-cards}) { transition: scale .5s $mg-spring, filter .3s, background-color .3s, border-radius .3s, box-shadow .25s, color .2s; }
+    :root[data-host] #{$mg-rows}:not(:disabled, .swipe--dragging, .is-dragging):active { scale: .98; border-radius: 14px; @include mg-press; }
+    :root[data-host] #{$mg-one}:not(:has(.swipe--dragging, .is-dragging)):active { scale: .97; @include mg-press; }
+    :root[data-host] #{$mg-cards}:not(:disabled):active { scale: .97; filter: brightness(.96); @include mg-press; }
+    :root[data-host] :where(.swipe__row) { transition: transform .25s cubic-bezier(.16, 1, .3, 1), background-color .3s; }
+    :root[data-host] :where(.ios-circle, .ios-capsule)::before { transition: transform .45s $mg-spring; }
+    :root[data-host] :is(.ios-circle, .ios-capsule):active::before { transition-duration: .12s; }
+    /* State changes: the segment's lens slides on a spring, the labels, switches and chevrons follow. */
+    :root[data-host] :where(.ios-seg)::before { transition: transform .38s cubic-bezier(.3, 1.15, .45, 1); }
+    :root[data-host] :where(.ios-seg__opt) { transition: color .2s; }
+    :root[data-host] :where(.ios-switch)::after, :root[data-host] .ios-cell__chev { transition: transform .35s $mg-spring; }
+    /* Entrance: the first six sections of a page fade in one after another (0, 40, 80 ms), the cards at the top and the
+       first three rows of each of their groups rise 8 px with them: 220 ms each, 300 ms in all, a handful of layers at
+       a time however long the list (WKWebView). Only on insertion, so the rows a refresh keeps (tracked) do not replay.
+       Never on a leaving row (mo-leave), never inside a sheet. */
+    :root[data-host] :where(.ios-section:nth-child(-n+6 of .ios-section):not(.overlay *)) { animation: mg-fade .22s $mg-out var(--mg-d, 0s) backwards; }
+    :root[data-host] :where(:is(.ios-section:nth-child(-n+6 of .ios-section) :is(.ios-widget, .ios-group > :is(a, button, .swipe, .ios-swipe):nth-child(-n+3)), :is(a, button):is(.ios-hero, .ios-banner, .pl-tracking-link)):not(.overlay *, .mo-leave)) { animation: mg-in .22s $mg-out var(--mg-d, 0s) backwards; }
+    :root[data-host] .ios-section:nth-child(2 of .ios-section) { --mg-d: 40ms; }
+    :root[data-host] .ios-section:nth-child(n+3 of .ios-section) { --mg-d: 80ms; }
+  }
+}
+@keyframes mg-fade { from { opacity: 0; } }
+@keyframes mg-in { from { opacity: 0; translate: 0 8px; } }
