@@ -68,3 +68,13 @@ $transacties: '#finance-workspace:has(app-bank-movement-panel:not([mode]))';
     .ct-layout > .ct-detail { grid-area: 1 / 1 / -1; }
   }
 }
+
+/* Home's task rows in every pose of the app (main, round 5): the context (the lowest balance, the oldest wait, the
+   pieces arriving) wraps under its pill instead of ending in '…' after a few words, as Open punten does above. The
+   folded strip poses clamp it to two lines (_fold-sheets.scss, more specific). */
+@media screen {
+  :root[data-host] .home-task__sub { flex-wrap: wrap; }
+  :root[data-host] .home-task__context { flex: 1 1 12em; white-space: normal; }
+  /* The agenda's pinned task: two lines before a cut, as on the folded screen. */
+  :root[data-host] .home-strip__pin > .home-strip__pin-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; }
+}
