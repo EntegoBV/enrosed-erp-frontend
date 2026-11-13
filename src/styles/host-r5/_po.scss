@@ -1,1 +1,44 @@
-/* Round 5 (2026-11-13): po. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): po. Every selector under :root[data-host]; see host-r5.scss.
+
+   The purchase order (app-purchase-view, purchase-phone.scss) on the unfolded iPhone Duo held sideways: a two-pane detail
+   on the hinge instead of the wide phone's 760 px column. The summary card stands in the first column, the section bar and
+   the panes (made for the folded phone's page, about 360 px of content here) in the second.
+   - The card is a float, not a grid item: the bar's sticky line then still runs over the whole order (a grid area would be
+     its containing block and hold it in place), and a sticky float works in WKWebView (host.scss's sales hero).
+   - The card always fits the 669 px window (at most about 420 px with two-line labels), so it stays: sticky at the bar's
+     line, and with it its h1 never goes under the bar. The native bar therefore never takes the title in this pose: it stays
+     at --safe-t (24 px, no title, no band), and the section bar sticks there instead of at the future title's 82 px.
+   - The section bar's band covers only the second column (and runs on under the strip), reaching up to the top of the
+     screen so no row of a pane shows above it; the card's column keeps the plain page.
+   Only the loaded order (it has panes); the loading state and the editor keep the column. */
+/* IosNav re-reads the bar's sticky line when the bar resizes (a fold or an unfold does), from the bar's computed top. Under
+   reduced motion every property transitions for .01 ms (motion.scss), so that top was still the other pose's: no
+   transition for it, in every pose (nothing else on the bar itself transitions). */
+:root[data-host][data-host-device='duo'] app-purchase-view .mpo-tabs { transition-property: none; }
+$land: '(hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px)';
+$po: ":root[data-host][data-host-device='duo'] app-purchase-view .mpo-phone--view";
+
+@media #{$land} {
+  #{$po}:has(> .mpo-panes) {
+    --po-col: calc(475.5px - var(--safe-l, 0px));
+    display: flow-root;
+    max-width: none;
+    margin-inline: 0;
+  }
+  #{$po} .mpo-summary {
+    position: sticky;
+    top: calc(var(--safe-t) + 10px);
+    float: left;
+    width: calc(var(--po-col) - 32px);
+    margin: 10px 16px 12px;
+  }
+  #{$po} :is(.ios-large__sentinel, .mpo-tabs, .mpo-panes) { margin-left: var(--po-col); }
+  #{$po} .mpo-tabs { top: var(--safe-t); }
+  #{$po} .mpo-tabs::before { inset: calc(-1 * var(--safe-t)) -100vw 0 0; }
+  #{$po} .mpo-panes { min-height: calc(100dvh - var(--safe-t) - var(--mpo-tabs-h)); }
+  /* A pane's figures are the phone's again: Lading and Volume side by side, the third across. */
+  #{$po} .mpo-figures { --fig-n: 2; }
+  #{$po} .mpo-figures > :nth-child(3) { grid-column: 1 / -1; }
+  /* A focused field or a card the summary's tiles open lands under the section bar, not 58 px lower. */
+  :root[data-host][data-host-device='duo']:has(app-purchase-view .mpo-panes) { scroll-padding-top: calc(var(--safe-t) + 74px); }
+}
