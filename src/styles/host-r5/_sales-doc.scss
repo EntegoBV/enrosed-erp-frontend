@@ -3,20 +3,23 @@
    document's dark hero, the product's card, the customer's follow-up) stands in the first column, sticky under the native
    bar; the section pill and the sections run in the second. Each column keeps its own side margins, so the gutter lies
    around the hinge. Floats, not a grid: the pages keep their own flow, margins and empty hosts as they are, and the
-   summary sticks for the whole page. No transform, filter or contain anywhere (the trap rule). */
+   summary sticks for the whole page. Only the loaded pages: the loading and error states keep their own centred column.
+   No transform, filter or contain anywhere (the trap rule). */
 $c1: calc(475.5px - var(--safe-l, 0px));
 
 @media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
   :root[data-host][data-host-device='duo'] {
-    /* ---- the sales document: the page's own padding moves past the hinge, the hero floats back into the first column. */
-    app-sales-view .sales-view-page.sales-view-page { max-width: none; padding-top: calc(14px + var(--safe-t)); padding-left: calc(#{$c1} + 12px); }
+    /* ---- the sales document: the page's own padding moves past the hinge, the hero floats back into the first column.
+       The hero takes the 12 px the second column's first block gets (.sales-view-page>*+*), so both start on one line. */
+    app-sales-view .sales-view-page.erp-workspace--sales { max-width: none; padding-top: calc(2px + var(--safe-t)); padding-left: calc(#{$c1} + 12px); }
     app-sales-view .sales-hero.sales-hero {
       float: left;
       position: sticky;
       top: var(--host-stick-t);
       width: calc(#{$c1} - 24px);
-      margin: 0 0 0 calc(-1 * #{$c1});
+      margin: 12px 0 0 calc(-1 * #{$c1});
     }
+    app-sales-view .adv-card { margin-top: 12px; }
     /* The pill's band reaches from the hinge to the window's edge, never over the hero. */
     app-sales-view .workflow-nav::before { left: -12px; }
     /* The second column is as narrow as a folded phone: its look, not the 760 px column's; the hero's four details two by
@@ -30,15 +33,17 @@ $c1: calc(475.5px - var(--safe-l, 0px));
     app-sales-view .purchase-model__totals > :is(strong, small) { text-align: left; white-space: normal; }
     app-sales-view .purchase-model__chevron { grid-column: 3; grid-row: 1 / span 2; }
 
-    /* ---- the product: the same, the card in the first column, the groups in the second, both starting on the bar's line. */
-    app-product-view .ios-page.pd-phone { max-width: none; padding-top: calc(var(--host-stick-t) - var(--safe-t)); padding-left: #{$c1}; }
+    /* ---- the product: the same, the card in the first column, the groups in the second. The card sticks where it starts,
+       under the 24 px bar of the large title: its name never leaves the screen, so the bar has no title to take over. */
+    app-product-view .ios-page.pd-phone:has(.pph-card) { max-width: none; padding-left: #{$c1}; }
     app-product-view .pph-card {
       float: left;
       position: sticky;
-      top: var(--host-stick-t);
+      top: calc(var(--safe-t) + 4px);
       width: calc(#{$c1} - 32px);
       margin: 4px 0 18px calc(16px - #{$c1});
     }
+    app-product-view app-ios-nav + :is(.pph-onway, .ios-section) { margin-top: 4px; }
     app-product-view .pph-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     /* TICA's card has no inset of its own and ran up to the hinge: the groups' 16 px. */
     app-product-view .pcp { margin-inline: 16px; }
