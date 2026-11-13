@@ -1,1 +1,57 @@
-/* Round 5 (2026-11-13): dash. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): dash. Every selector under :root[data-host]; see host-r5.scss.
+   The overview screens on the unfolded iPhone Duo held sideways (the land pose only: an 867 px page, the hinge 475.5 px
+   from its left edge). Two columns meet on the hinge: the first ends at --r5-c1, the second takes the rest (391.5 px,
+   a phone's width), and every card keeps its 16 px side margins, so the 32 px gutter lies around the hinge (the
+   Analyses pattern, nav-rail.scss).
+   - Kosten & bank (Bank, Te betalen, Te ontvangen, Kosten, Rapportage) lifts the 760 px column. The panel's own flow
+     moves past the hinge (padding), and the summary floats back into the first column: Bank's hero, accounts, four
+     figures and Kaslijn; a list's headline, search, chips and totals; Rapportage's figures, chart and Btw per kwartaal.
+     The lists run on in the second (Vraagt aandacht, Te koppelen, Laatst geboekt; the rows of a list). Floats, not a
+     grid: the two columns run on independently whatever is shown (no gap under a short card, an absent Te koppelen
+     or account strip needs no rule), and nothing becomes a containing block (the trap rule). #finance-workspace
+     outranks the finance partials' own margins (finance-phone.scss, bank-cockpit.scss).
+   - Meer: Snel naar and App op dit toestel on the left, Werkruimtes and Afmelden on the right. The second row is the
+     flexible one (home-phone.scss), so an opened Werkruimte pushes only Afmelden down.
+   - Analyses: the figure block (one grouped card across the page, a figure on the hinge) becomes tiles like Vandaag's
+     Cijfers: two (three of five or six) per column, the empty middle track on the hinge. */
+/* The panels that split; the received payments (Te ontvangen › Ontvangen) are a list inside the receivables' panel. */
+$fin: 'app-bank-cockpit, app-cost-analysis, app-payables-panel, app-receivables-panel, app-cost-list';
+$all: ':is(#{$fin}, app-incoming-payment-list)';
+
+@media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
+  :root[data-host][data-host-device='duo'] {
+    --r5-c1: calc(475.5px - var(--safe-l, 0px));
+
+    /* ---- Kosten & bank */
+    #finance-workspace .fin-ios:has(#{$fin}) { --r5-w: calc(var(--r5-c1) - 32px); max-width: none; }
+    #finance-workspace .fin-ios > .ios-banner { max-width: var(--r5-w, none); }
+    #finance-workspace .fin-phone-seg > app-segmented { max-width: var(--r5-w, 480px); }
+    #finance-workspace :is(#{$fin}) { display: flow-root; padding-left: var(--r5-c1); }
+    #finance-workspace :is(#{$all} > :is(.ios-headline, .ios-chips, .ios-search, .fin-cost-list-summary, .fin-carousel, app-kaslijn-card), app-cost-analysis > .ios-section) {
+      float: left; clear: left; width: var(--r5-c1); margin-left: calc(-1 * var(--r5-c1)); }
+    #finance-workspace :is(#{$all} > :is(.ios-banner, .fin-hero, .fin-widgets, .ios-figures, .fin-inv-entry, .fin-cost-list-totals, .fin-foot-link), app-cost-analysis > .ios-card) {
+      float: left; clear: left; width: calc(var(--r5-c1) - 32px); margin-left: calc(16px - var(--r5-c1)); }
+    /* A period row wraps rather than run under the hinge (Kosten has six). */
+    #finance-workspace #{$all} > .ios-chips { flex-wrap: wrap; }
+
+    /* ---- Meer */
+    app-more-page { --page-col: 100%; }
+    .more-content { display: grid; grid-template-columns: var(--r5-c1) minmax(0, 1fr); grid-template-rows: auto 1fr auto; align-items: start; max-width: none; }
+    .more-content > :nth-child(1) { grid-area: 1 / 1; }
+    .more-content > :nth-child(2) { grid-area: 1 / 2 / 3; }
+    .more-content > :nth-child(3) { grid-area: 2 / 1 / 4; }
+    .more-content > :nth-child(4) { grid-area: 3 / 2; }
+
+    /* ---- Analyses: the figures as tiles, the middle track (12 px + two 10 px gaps = the 32 px gutter) on the hinge */
+    .an-phone .an-kpis { --k: calc((var(--r5-c1) - 42px) / 2); --k3: calc((var(--r5-c1) - 52px) / 3);
+      grid-template-columns: var(--k) var(--k) 12px repeat(2, minmax(0, 1fr)); gap: 0 10px; margin-bottom: 12px; overflow: visible; border-radius: 0; background: none; }
+    .an-phone .an-kpis::before { content: ''; grid-column: 3; grid-row: 1 / span 8; }
+    .an-phone .an-kpis--3 { grid-template-columns: var(--k) var(--k) 12px minmax(0, 1fr); }
+    .an-phone .an-kpis--5 { grid-template-columns: repeat(3, var(--k3)) 12px repeat(2, minmax(0, 1fr)); }
+    .an-phone .an-kpis--6 { grid-template-columns: repeat(3, var(--k3)) 12px repeat(3, minmax(0, 1fr)); }
+    .an-phone :is(.an-kpis--5, .an-kpis--6)::before { grid-column: 4; }
+    .an-phone .an-kpi { margin-bottom: 10px; border-radius: 20px; }
+    /* Inkoop's part switch and search stay in the first column. */
+    .an-phone :is(.an-parts, .an-phone-search) { max-width: calc(var(--r5-c1) - 32px); }
+  }
+}
