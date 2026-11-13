@@ -1,0 +1,18 @@
+/* ==========================================================================
+   Round 5 of the native app (2026-11-13, Emre: "Bij horizontaal moet eigenlijk beetje als desktop view zijn ... niet
+   perse dezelfde schermen als desktop, maar niet gelijk mobiel"; "Maak echt modern nieuw ui ux met animaties ...
+   liquid glass"; "Dichtgeklapt front screen kan ook beter"). Loaded after host.scss. Every selector starts with
+   :root[data-host], so the PWA and the desk never see any of it.
+
+   The wide landscape canvas (the unfolded iPhone Duo held sideways: a 951 x 669 window, the strip on the right, an
+   867 px page whose hinge runs 475.5 px from the page's left edge) uses this one media query, the hinge rule of
+   nav-rail.scss, and [data-host-device='duo']:
+     @media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px)
+   Two columns always meet on the hinge: the first column ends at 475.5px - var(--safe-l), the second takes the rest.
+   ========================================================================== */
+@use 'host-r5/lists';
+@use 'host-r5/dash';
+@use 'host-r5/po';
+@use 'host-r5/sales-doc';
+@use 'host-r5/motion-glass';
+@use 'host-r5/fold-sheets';
