@@ -1,1 +1,50 @@
-/* Round 5 (2026-11-13): fold-sheets. Every selector under :root[data-host]; see host-r5.scss. */
+/* Round 5 (2026-11-13): fold-sheets. Every selector under :root[data-host]; see host-r5.scss.
+   (1) The folded iPhone Duo (Emre: "dichtgeklapt front screen kan ook beter"): upright a 382 px page beside the strip
+   (a 466 px window), sideways 594 px with the strip on the left (678 px). Only those two poses: a strip and a window
+   under 720 px (the unfolded upright Duo has no strip, the unfolded sideways one is 951 px).
+   (2) Sheets in every pose (Emre: "heel veel popups zijn zo links rechts sleepbaar"): styles.scss clips a phone sheet's
+   body sideways, so what was too wide is cut; here the causes go, measured with the clip undone and real-length data
+   (long names, an IBAN, a select with a long option). The usual one: a grid without columns of its own (the sheets'
+   'display: grid; gap' stacks) sizes its implicit column by its widest row's min-content, so one select with a long
+   option or one nowrap name grew the payment sheet to 709 px in a 366 px card and the quote sheet's lines past their
+   box. minmax(0, auto) is auto as long as the content fits and the card's width when it does not; :where() keeps it
+   at zero specificity, so every grid that sets its own columns keeps them. A long word (an IBAN, an e-mail address,
+   a file name) breaks where it would run out of its line (break-word, not anywhere: that one also shrank the quote
+   sheet's week field in a full row); a lone select or field never passes its row. With the sample data every sheet
+   reached (61, upright folded and unfolded sideways) lays out exactly as before. */
+
+/* ---- (2) sheets: every width the phone shell shows */
+@media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) {
+  :where(:root[data-host] .overlay > .sheet > .sheet__body *) { grid-auto-columns: minmax(0, auto); }
+  :root[data-host] .overlay > .sheet > .sheet__body { overflow-wrap: break-word; }
+  :root[data-host] .overlay > .sheet > .sheet__body :is(select, textarea, input:not([type='checkbox'], [type='radio'], [type='range'])) { max-width: 100%; }
+}
+/* The unfolded Duo held sideways: a card in the middle of the screen, as the desk's dialogs (Emre: "bij horizontaal
+   moet eigenlijk beetje als desktop view zijn"), between the bar and the home indicator; the height rule of styles.scss
+   already leaves 12 px above and below. */
+@media (hover: none) and (orientation: landscape) and (min-width: 860px) and (max-width: 960px) and (min-height: 560px) {
+  :root[data-host][data-host-device='duo'] .overlay { align-items: center; padding-top: calc(var(--safe-t) + 12px); }
+}
+
+/* ---- (1) the folded Duo, upright and sideways */
+@media (hover: none) and (max-width: 719.98px) {
+  :root[data-host][data-host-device='duo'][data-host-strip] {
+    /* Home's task rows: the context wraps (up to three lines) instead of ending in '…' (the lowest balance, the oldest wait);
+       beside a wide pill (Wacht 1 werkdag) it goes under the pill rather than into a column of single words. */
+    .home-task__sub { flex-wrap: wrap; align-items: flex-start; row-gap: 2px; }
+    .home-task__context { flex: 1 1 128px; }
+    .home-task__context, .home-strip__pin > .home-strip__pin-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal; }
+    .home-strip__pin { padding-block: 5px; }
+    /* Track & trace stood 4 px wider than the tabs, the search and the groups under it. */
+    app-purchase-list .pl-tracking-link { margin-inline: 4px; }
+    /* The sales steps: a step's name and its figure touched. */
+    .workflow-nav__copy { gap: 2px; }
+    /* Kasprognose scrolls its chips to the active one by offsetLeft, which counted the strip on the left: the first chip
+       stood half under it. Measured from the row itself it is 16 px, the row's own inset. */
+    .cf-phone__tabs { position: relative; }
+  }
+}
+/* Sideways: the 480 px cap of the wide phone's tabs left them 82 px short of the search and the list. */
+@media (hover: none) and (orientation: landscape) and (min-width: 600px) and (max-width: 719.98px) {
+  :root[data-host][data-host-device='duo'][data-host-strip] :is(app-purchase-list .pl--phone > .pl-tabs, app-sales-list .sl--phone > .sl-tabs) { max-width: none; }
+}
