@@ -41,6 +41,7 @@ import {
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { gpCapacityHint, isAutoGpCapacity, readGpCapacity } from './carton-capacity';
+import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -437,6 +438,10 @@ export type { ReceivedContainer } from './received-containers';
               <span class="ios-cell__value num">@if (product.carton.weightKg) { {{ product.carton.weightKg | kg }} } @else { — }</span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Volume</span>@if (product.pieceCbm) { <span class="ios-cell__sub">{{ product.pieceCbm | cbm: 5 }} per {{ salesUnit(product).singular }}</span> }</span>
               <span class="ios-cell__value num">@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }</span></div>
+            @for (load of carrierLoads(); track load.label) {
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ load.label }}</span>@if (load.units !== null) { <span class="ios-cell__sub">{{ load.cartons }}</span> }</span>
+                <span class="ios-cell__value num">@if (load.units !== null) { {{ load.units | num }} {{ salesUnit(product).plural }} } @else { — }</span></div>
+            }
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per 20ft GP</span>@if (gpCapacity().value !== null) { <span class="ios-cell__sub" [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig' }}</span> }</span>
               <span class="ios-cell__value num">@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} {{ salesUnit(product).plural }} } @else { — }</span></div>
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per 40' HC</span>@if (product.carton.hcCapacity) { <span class="ios-cell__sub">{{ product.carton.piecesPerHc ? 'handmatig' : 'auto' }}</span> }</span>
@@ -728,6 +733,32 @@ export class ProductView {
   });
   readonly isAutoGpCapacity = isAutoGpCapacity;
   readonly gpCapacityHint = gpCapacityHint;
+  /**
+   * Whole omdozen on one europallet and on one Deense kar, as the catalogue prints them: upright,
+   * at the standard heights (260 cm, 230 cm). Palletberekening can count other heights and tipped omdozen.
+   */
+  readonly carrierLoads = computed(() => {
+    const product = this.product();
+    if (!product) return [];
+    const perCarton = product.carton.piecesPerCarton ?? 0;
+    return [
+      { label: 'Per europallet', one: 'pallet', fit: palletFit(product.carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)) },
+      { label: 'Per Deense kar', one: 'kar', fit: palletFit(product.carton, karSpec(KAR_MAX_HEIGHT_CM)) },
+    ].map(({ label, one, fit }) => {
+      const cartons = perCarton > 0 ? fit.cartonsPerPallet : 0;
+      return {
+        label,
+        units: cartons > 0 ? cartons * perCarton : null,
+        cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${fit.heightCm.toLocaleString('nl-BE')} cm hoog` : '',
+        /* Why nothing fits, in Palletberekening's words (its problemText), naming this carrier. */
+        problem: perCarton <= 0 ? 'inhoud per omdoos ontbreekt'
+          : fit.problem === 'afmetingen ontbreken' ? 'Omdoosmaten ontbreken'
+            : fit.problem === 'doos past niet op de pallet' ? `Omdoos te groot voor deze ${one}`
+              : fit.problem === 'te hoog of te zwaar' ? 'Omdoos te hoog of te zwaar'
+                : fit.problem ?? 'onvoldoende gegevens',
+      };
+    });
+  });
   readonly agreementPhotos = signal<ProductSupplierAgreementPhoto[]>([]);
   readonly supplierAgreement = signal<ProductSupplierAgreement | null>(null);
   readonly agreementVariantNames = computed(() => this.supplierAgreement()?.variants.map((variant) => variant.color || variant.name || variant.sku).join(', ') ?? '');

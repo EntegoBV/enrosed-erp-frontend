@@ -33,7 +33,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { DateField } from '../../shared/date-field';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
-import { palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
+import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
 import { CatalogPriceSheet } from './catalog-price-sheet';
 import {
   basisChanged, changesPrint, printedPrice, recipientSlug, requestOverrides, standardPrice, storedOverride, todayIso,
@@ -51,7 +51,7 @@ import {
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
 import { deselectProductIds, selectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
-import { variantLabelIn } from './product-translation-adapter';
+import { productText, variantLabelIn } from './product-translation-adapter';
 import { productSalesUnit } from './product-sales-unit';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
@@ -92,6 +92,8 @@ function unitAfterPrice(product: Product, language: LanguageCode, copy: { perPie
 
 /** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80 at the standard loaded height (the wood included), 700 kg. */
 const CATALOGUE_PALLET = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
+/** The catalogue's Deense kar: the standard height, omdozen upright (the server's PalletSpec.deenseKar). */
+const CATALOGUE_KAR = karSpec(KAR_MAX_HEIGHT_CM);
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
   version: 2 | 3;
@@ -122,18 +124,20 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
   pallet: string; priceListFor: string;
+  /** The PDF's catalog.simple.kar, shortened as the pallet is. */
+  kar: string;
   /** After a price, as the PDF's catalog.simple.perpiece and its display word say it; NL names the product's own unit. */
   perPiece: string; perDisplay: string;
 }> = {
-  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
-  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
-  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
-  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
-  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
-  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
-  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
-  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
-  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
+  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', kar: 'Deense kar', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
+  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', kar: 'Danish trolley', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
+  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', kar: 'Chariot danois', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
+  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', kar: 'CC-Container', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
+  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', kar: 'Carro danés', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
+  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', kar: 'Wózek duński', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
+  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', kar: 'Carro dinamarquês', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
+  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', kar: 'Danimarka arabası', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
+  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', kar: 'Δανέζικο καρότσι', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
 };
 
 @Component({
@@ -213,8 +217,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                         @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
                         @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
                         <span>HS {{ row.hsCode ?? '-' }}</span>
-                        <!-- Pallet, 20ft and 40ft always together, in that order, as in the PDF. -->
-                        <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
+                        <!-- Pallet, kar, 20ft and 40ft always together, in that order, as in the PDF. -->
+                        <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · {{ compactCopy().kar }}: {{ row.perKar ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
                         @if (includePrices()) { <strong [class.is-stale]="row.priceStale">{{ row.price }}</strong> }
                       </div>
                     </div>
@@ -224,7 +228,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
                 </div>
                 <footer class="compact-sheet__foot">
                   <span>ENROSED.COM</span>
-                  @if (selectedProducts().length > compactRows().length) { <span>+ {{ selectedProducts().length - compactRows().length }}</span> }
+                  @if (compactHidden() > 0) { <span>+ {{ compactHidden() }}</span> }
                   <span>{{ language() }}</span>
                 </footer>
               </div>
@@ -845,6 +849,10 @@ export class CatalogExport {
   readonly selectedCategoryCount = computed(() => new Set(this.selectedProducts().map((product) => product.categoryId).filter((id) => id !== null)).size);
   readonly previewProducts = computed(() => catalogueFamilies(this.selectedProducts(), this.families()).filter((family) => family.photo).slice(0, 4));
   readonly compactCopy = computed(() => COMPACT_PREVIEW_COPY[this.language()]);
+  /**
+   * The first products of the PDF as it prints them: a family's colours together on one row while
+   * they share carton, pallet, kar, 20ft, 40ft and price (the server's compactProducts), in its order.
+   */
   readonly compactRows = computed(() => {
     const language = this.language();
     const currency = new Intl.NumberFormat(language.toLowerCase(), { style: 'currency', currency: 'EUR' });
@@ -852,32 +860,30 @@ export class CatalogExport {
     const overrides = this.priceOverrides();
     const stored = this.customerPrices();
     const copy = this.compactCopy();
-    return this.selectedProducts().slice(0, 4).map(product => {
-      const text = product.texts.find(row => row.language === language);
-      const photo = cataloguePhoto(product);
+    const familyNames = new Map(this.families().map((family) => [family.id,
+      family.texts.find((text) => text.language === language)?.name?.trim() || family.name]));
+    const figures = (product: Product) => {
       const gp = readGpCapacity(product.carton);
-      /* The PDF's figure: whole omdozen on the pallet times what one omdoos holds, in the unit of 20ft and 40ft. */
-      const pallet = palletFit(product.carton, CATALOGUE_PALLET);
+      /* The PDF's figures: whole omdozen on the pallet or kar times what one omdoos holds, in the unit of 20ft and 40ft. */
       const perCarton = product.carton.piecesPerCarton;
+      const load = (cartons: number) => cartons > 0 && perCarton ? count.format(cartons * perCarton) : null;
       const override = overrides.get(product.id!);
       /* A one-off typed on a unit the product has since left is no price at its unit now: it waits to be typed again
          (the server refuses it, BASIS_CHANGED), as the sheet says. */
       /* "Op aanvraag" has no unit to go stale: the server prints it whatever the product is sold per. */
       const priceStale = !!override && !override.onRequest && basisChanged(product, override);
       const price = printedPrice(product, override, stored.get(product.id!));
-      const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
+      const packaging = product.packaging;
+      /* The PDF's Packaging.soldAsDisplay: a display, sold as one. */
+      const soldAsDisplay = packaging.kind === 'DISPLAY' && packaging.salesUnit === 'DISPLAY';
       return {
-        id: product.id,
-        name: text?.name?.trim() || product.name,
-        sku: product.sku,
-        /* The Maat is not translated; every language shows the product's own. */
-        variant: variantLabelIn(product, language),
-        dimensions: dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null,
-        photoUrl: photo?.smallUrl || photo?.url || null,
-        perBox: product.carton.piecesPerCarton,
-        ean: product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null,
-        hsCode: product.hsCode?.trim() || null,
-        perPallet: pallet.cartonsPerPallet > 0 && perCarton ? count.format(pallet.cartonsPerPallet * perCarton) : null,
+        /* What the PDF's unit words follow: a display sold as one (with its contents) or a piece, and the unit's name. */
+        unit: `${soldAsDisplay ? `display ${packaging.piecesPerUnit ?? ''}` : 'piece'}|${(packaging.unitKey || 'stuk').trim().toLowerCase()}`,
+        /* A display of known contents also prints its total price (the PDF's catalogPrices), sold as one or not. */
+        displayPieces: packaging.kind === 'DISPLAY' && (packaging.piecesPerUnit ?? 0) > 1 ? packaging.piecesPerUnit : null,
+        perBox: perCarton,
+        perPallet: load(palletFit(product.carton, CATALOGUE_PALLET).cartonsPerPallet),
+        perKar: load(palletFit(product.carton, CATALOGUE_KAR).cartonsPerPallet),
         per20Ft: gp.value === null ? null : count.format(gp.value),
         per20FtAuto: isAutoGpCapacity(gp),
         per20FtHint: gpCapacityHint(gp, product.carton),
@@ -887,8 +893,52 @@ export class CatalogExport {
           : price === null ? copy.onRequest : `${currency.format(price)} ${unitAfterPrice(product, language, copy)}`,
         priceStale,
       };
+    };
+    const includePrices = this.includePrices();
+    const rows = new Map<string, ReturnType<typeof figures> & { products: Product[] }>();
+    for (const product of this.selectedProducts()) {
+      const printed = figures(product);
+      /* What the PDF groups on (compactFigures): the unit, the carton and its size, the loads, and the price only
+         when prices are printed. The carton size goes as typed: the PDF prints it so. */
+      const carton = product.carton;
+      const signature = [printed.unit, printed.perBox, [carton.lengthCm, carton.widthCm, carton.heightCm].join('x'),
+        printed.perPallet, printed.perKar, printed.per20Ft, printed.per40Ft,
+        ...(includePrices ? [printed.price, printed.priceStale, printed.displayPieces] : [])];
+      const key = `${product.familyId ?? `p${product.id}`}|${JSON.stringify(signature)}`;
+      const row = rows.get(key);
+      if (row) row.products.push(product);
+      else if (rows.size < 4) rows.set(key, { ...printed, products: [product] });
+    }
+    return [...rows.values()].map(({ products, ...printed }) => {
+      const product = products[0];
+      const text = product.texts.find(row => row.language === language);
+      const photo = cataloguePhoto(product);
+      const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
+      /* The Maat is not translated. One Maat stands once, as in the PDF's heading; several stand with their colour. */
+      const sizes = new Set(products.map((colour) => colour.variantSize?.trim()).filter((size): size is string => !!size));
+      const size = sizes.size === 1 ? [...sizes][0] : null;
+      return {
+        ...printed,
+        id: product.id,
+        colourCount: products.length,
+        name: (product.familyId !== null ? familyNames.get(product.familyId) : null) || text?.name?.trim() || product.name,
+        /* One colour names its SKU, as its PDF row does; several colours are listed. */
+        sku: products.length === 1 ? product.sku : null,
+        variant: products.length === 1 ? variantLabelIn(product, language)
+          : products.map((colour) => [productText(colour, language).colour?.trim() || colour.colour,
+              sizes.size > 1 ? colour.variantSize : null].filter(Boolean).join(' · ')).filter(Boolean).join(', '),
+        dimensions: [products.length > 1 ? size : null,
+          dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null].filter(Boolean).join(' · ') || null,
+        photoUrl: photo?.smallUrl || photo?.url || null,
+        ean: products.length === 1 ? product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null : null,
+        /* The PDF joins the HS codes its colours have; a colour without one adds nothing. */
+        hsCode: [...new Set(products.map((colour) => colour.hsCode?.trim()).filter(Boolean))].join(' / ') || null,
+      };
     });
   });
+  /** The selected colours the preview leaves out. */
+  readonly compactHidden = computed(() => this.selectedProducts().length
+    - this.compactRows().reduce((sum, row) => sum + row.colourCount, 0));
   readonly targetKnown = computed(() => this.customers().some((customer) => customer.id === this.customerId()));
   /** The stored customer's id while prices are on: their prices load for it. */
   private readonly targetCustomerId = computed(() => this.includePrices() ? this.customerId() : null);

@@ -514,13 +514,16 @@ interface IssueGroup { key: string; label: string; action: string; link: unknown
       <ng-template #cartonCard>
         <section class="pdk-card" id="pd-carton" aria-labelledby="pd-carton-title">
           <div class="pdk-card__head">
-            <div><h2 id="pd-carton-title">Omdoos &amp; logistiek</h2><p>Karton, inhoud en wat er in een container gaat</p></div>
+            <div><h2 id="pd-carton-title">Omdoos &amp; logistiek</h2><p>Karton, inhoud en wat er op een pallet, een Deense kar en in een container gaat</p></div>
           </div>
           <dl class="desk-facts pd-facts">
             <div><dt>Karton</dt><dd>{{ size(product.carton) }}<small>B × D × H</small></dd></div>
             <div><dt>Inhoud</dt><dd>{{ product.carton.piecesPerCarton | num }} {{ salesUnit(product).plural }}<small>{{ cartonPiecesAuto(product) ? 'berekend uit de maten' : 'per omdoos' }}</small>@if (quantityDetail(product, product.carton.piecesPerCarton ?? 0); as detail) { <small>{{ detail }}</small> }</dd></div>
             <div><dt>Gewicht</dt><dd>@if (product.carton.weightKg) { {{ product.carton.weightKg | kg }} } @else { — }<small>{{ product.carton.weightKg && cartonWeightAuto(product) ? 'berekend uit de stuks' : 'per omdoos' }}</small></dd></div>
             <div><dt>Volume</dt><dd>@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }@if (product.pieceCbm) { <small>{{ product.pieceCbm | cbm: 5 }} per {{ salesUnit(product).singular }}</small> }</dd></div>
+            @for (load of carrierLoads(); track load.label) {
+              <div><dt>{{ load.label }}</dt><dd>@if (load.units !== null) { {{ load.units | num }} {{ salesUnit(product).plural }}<small>{{ load.cartons }}</small> } @else { —<small>{{ load.problem }}</small> }</dd></div>
+            }
             <div><dt>Per 20ft GP</dt><dd>@if (gpCapacity().value !== null) { {{ gpCapacity().value | num }} {{ salesUnit(product).plural }}<small [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig bevestigd' }}</small> } @else { —<small>onvoldoende gegevens</small> }</dd></div>
             <div><dt>Per 40' HC</dt><dd>@if (product.carton.hcCapacity; as hc) { {{ hc | num }} {{ salesUnit(product).plural }} } @else { — }@if (product.carton.hcCapacity) { <small>{{ product.carton.piecesPerHc ? 'handmatig geteld' : 'volle dozen op volume' }}</small> }</dd></div>
             <div><dt>Omdoosbarcode</dt><dd class="mono">

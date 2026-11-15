@@ -4944,6 +4944,15 @@ settings view ends with its own "Alle instellingen ›" row (settings-page,
 
 ## Palletberekening (2026-11-04)
 
+**Deense kar elsewhere (2026-11-15):** the product page's Omdoos & logistiek (desk
+`product-desk.ts`, phone `product-view.ts`, shared `carrierLoads`) shows "Per europallet"
+and "Per Deense kar" next to 20ft/40ft: `palletFit` upright at the standard heights
+(260 / 230 cm), as the catalogue PDF prints them, with the omdozen and the loaded height
+under it, or why nothing fits. The catalogue studio's Compact overzicht preview
+(`catalog-export.ts` `compactRows`) groups like the PDF: one row per family and printed
+figures (unit, carton, pallet, kar, 20ft, 40ft, price), colours listed, kar in the
+logistics line (`COMPACT_PREVIEW_COPY.kar`).
+
 Emre (2026-11-04): a Verkoop item to see at the fair how much of one product, or of
 several together, fits on a pallet and in a 20ft or 40ft, in omdozen, displays and
 pieces. `/palletberekening` (`features/sales/pallet-calculator-page.ts`), the second
