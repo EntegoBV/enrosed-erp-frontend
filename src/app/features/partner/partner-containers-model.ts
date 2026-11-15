@@ -109,6 +109,9 @@ export function isLate(container: PartnerContainer, today: string): boolean {
 function arrivalKey(container: PartnerContainer, today: string): string {
   const state = stateOf(container, today);
   if (state === 'AANGEKOMEN') return '0';
+  /* A planned warehouse day still to come is the day the row shows ("In Zaltbommel vr 27 nov"): it sorts on it. */
+  const stock = warehouseDay(container);
+  if (stock && stock >= today) return `1${stock}${RANK[state]}`;
   const date = isDay(container.expectedArrival) ? day10(container.expectedArrival) : null;
   const due = container.due !== undefined ? container.due : date && (date >= today || state === 'BINNENKORT') ? date : null;
   return due ? `1${due}${RANK[state]}` : `2${RANK[state]}${date ?? '9'}`;
@@ -193,6 +196,55 @@ export function arrivalLine(container: PartnerContainer, today: string): string 
   const words = arrivalWords(container, today);
   if (words.warehouse) return `In ${container.locationName || 'het magazijn'} ${words.warehouse}`;
   return words.sub && !isReceived(container) ? `${words.main} · ${words.sub}` : words.main;
+}
+
+/** One desk table cell: the day in bold, the hour and the words below it, so a long date never cuts off the hour. */
+export interface ArrivalCell {
+  /** "± do 20 nov", "do 20 nov" (an hour below it), "nog niet gepland", "—". */
+  main: string;
+  /** "14:00 · over 9 dagen", "verschoven (was 12/11)", "aangekomen". */
+  sub: string;
+  /** Not received while this day has passed: amber. */
+  late: boolean;
+  /** Nothing (or nothing more) to plan here: the cell reads quieter. */
+  muted: boolean;
+}
+
+/**
+ * Column "Aankomst haven": the day at the port (an hour set by hand drops the ±). A received container keeps,
+ * quietly, the day it was expected there. With a warehouse day planned, the port day is no longer what turns
+ * amber: the row's lateness belongs to that day.
+ */
+export function portCell(container: PartnerContainer, today: string): ArrivalCell {
+  const date = isDay(container.expectedArrival) ? day10(container.expectedArrival) : null;
+  if (isReceived(container)) return { main: date ? dayText(date, today) : '—', sub: '', late: false, muted: true };
+  if (!date) return { main: 'datum nog open', sub: '', late: false, muted: true };
+  const hour = hourText(container.expectedArrivalTime);
+  const planned = warehouseDay(container);
+  const moved = isDay(container.arrivalMovedFrom) ? `verschoven (was ${shortDay(container.arrivalMovedFrom)})` : null;
+  const past = date < today;
+  const words = moved ?? (past ? (planned ? '' : 'nog niet binnen') : relative(date, today));
+  return { main: hour ? dayText(date, today) : `± ${dayText(date, today)}`, sub: [hour, words].filter(Boolean).join(' · '),
+    late: past && !planned && !moved, muted: false };
+}
+
+/**
+ * Column "In {warehouse}": the day and hour set by hand in the ERP; once received, the day it came in there.
+ * "—" where the place may not be named (another partner's place), "nog niet gepland" while nothing is set.
+ */
+export function stockCell(container: PartnerContainer, today: string, warehouseName: string): ArrivalCell {
+  const place = container.locationName?.trim() || null;
+  if (!place) return { main: '—', sub: '', late: false, muted: true };
+  const elsewhere = place !== warehouseName ? `in ${place}` : '';
+  if (isReceived(container)) {
+    const day = isDay(container.receivedOn) ? dayText(container.receivedOn, today) : null;
+    return { main: day ?? 'aangekomen', sub: [elsewhere, day ? 'aangekomen' : ''].filter(Boolean).join(' · '), late: false, muted: false };
+  }
+  const day = warehouseDay(container);
+  if (!day) return { main: 'nog niet gepland', sub: elsewhere, late: false, muted: true };
+  const late = day < today;
+  return { main: dayText(day, today), sub: [hourText(container.warehouseArrivalTime), elsewhere, late ? 'nog niet binnen' : relative(day, today)].filter(Boolean).join(' · '),
+    late, muted: false };
 }
 
 /** "Haven Rotterdam ± do 20 nov" beside a planned warehouse arrival; null without both. */

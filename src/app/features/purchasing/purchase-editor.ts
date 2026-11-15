@@ -1093,6 +1093,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
       }
       @if (arrivalOpen()) {
         <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          [savedTrackingReference]="savedTrackingReference()" [partnerSees]="arrivalPartnerSees(data.order)"
           (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
       }
       @if (paying(); as pay) {
@@ -3707,6 +3708,21 @@ export class PurchaseEditor {
     const data = this.view();
     if (!data?.order.id || data.order.status === 'ONTVANGEN') return;
     this.arrivalOpen.set(true);
+  }
+
+  /**
+   * The track & trace reference as saved: the draft may hold a typed one the server does not know yet, and the
+   * server decides "by hand" from the stored one (the Aankomst sheet follows it).
+   */
+  readonly savedTrackingReference = computed<string | null>(() => {
+    const baseline = this.savedOrder();
+    if (!baseline) return this.view()?.order.trackingReference ?? null;
+    try { return (JSON.parse(baseline) as PurchaseOrder).trackingReference ?? null; } catch { return this.view()?.order.trackingReference ?? null; }
+  });
+
+  /** The partner portal names the warehouse arrival for the main warehouse and for a partner's own container. */
+  arrivalPartnerSees(order: PurchaseOrder): boolean {
+    return order.receivingLocationId == null || order.receivingLocationId === this.mainLocationId() || order.partnerCustomerId != null;
   }
 
   /**

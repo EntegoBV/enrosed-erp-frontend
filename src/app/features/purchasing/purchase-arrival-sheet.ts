@@ -40,7 +40,7 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
   imports: [Sheet, DateField, DateNlPipe],
   template: `
     @let order = view().order;
-    <app-sheet title="Aankomst" variant="ios" (closed)="closed.emit()">
+    <app-sheet title="Aankomst" variant="ios" (closed)="close()">
       <div body class="arr" [attr.inert]="busy() ? '' : null">
         <section class="arr__part" aria-labelledby="arr-container">
           <div class="arr__head">
@@ -71,6 +71,8 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
               <p class="arr__note">Track &amp; trace past deze datum niet meer aan.
                 @if (sourceArrival(); as source) { Track &amp; trace meldt {{ source | dateNl }}. }
                 <button class="linklike" type="button" (click)="setByHand(false)">Track &amp; trace volgen</button></p>
+            } @else if (unsavedTracking()) {
+              <p class="arr__note">Het track &amp; trace-nummer is nog niet opgeslagen: sla het eerst op om deze datum met de hand vast te zetten.</p>
             }
           }
         </section>
@@ -89,13 +91,13 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
             </div>
           </div>
           @if (beforePort()) { <p class="arr__note arr__note--warn">Let op: dat is vóór de aankomst van de container in {{ port() }}.</p> }
-          <p class="arr__note">Verhoeven ziet dit in het partnerportaal.</p>
+          @if (partnerSees()) { <p class="arr__note">Verhoeven ziet dit in het partnerportaal.</p> }
         </section>
 
         @if (problem(); as text) { <p class="arr__problem" role="alert">{{ text }}</p> }
       </div>
       <div foot style="display:contents">
-        <button class="btn" type="button" (click)="closed.emit()">Annuleren</button>
+        <button class="btn" type="button" [disabled]="busy()" (click)="close()">Annuleren</button>
         <button class="btn btn--primary" type="button" [disabled]="busy() || !!problem() || !changed()" (click)="save(order.id)">
           {{ busy() ? 'Bezig…' : 'Opslaan' }}
         </button>
@@ -132,6 +134,14 @@ export class PurchaseArrivalSheet implements OnInit {
   readonly placeName = input('Zaltbommel');
   /** The order's tracking row, when the page has it: names the source's date beside a date by hand. */
   readonly trackingRow = input<ContainerTracking | null>(null);
+  /**
+   * The track & trace reference as SAVED (an editor's draft may hold one that is not): the server decides "by hand"
+   * from the stored reference, so the sheet does too. Undefined: the view's own reference (the phone view saves
+   * nothing else).
+   */
+  readonly savedTrackingReference = input<string | null | undefined>(undefined);
+  /** Whether the partner portal shows this place (the main warehouse, or the partner's own container). */
+  readonly partnerSees = input(true);
   readonly saved = output<PurchaseOrderView>();
   readonly closed = output<void>();
 
@@ -155,7 +165,12 @@ export class PurchaseArrivalSheet implements OnInit {
   readonly warehouseAt = signal('');
   readonly busy = signal(false);
 
-  readonly tracked = computed(() => !!this.view().order.trackingReference?.trim());
+  readonly tracked = computed(() => {
+    const saved = this.savedTrackingReference();
+    return !!(saved === undefined ? this.view().order.trackingReference : saved)?.trim();
+  });
+  /** The draft has a reference the server does not have yet. */
+  readonly unsavedTracking = computed(() => !this.tracked() && !!this.view().order.trackingReference?.trim());
   readonly port = computed(() => this.view().order.destinationPort?.trim() || 'Rotterdam');
   readonly sourceArrival = computed(() => {
     const row = this.trackingRow();
@@ -199,6 +214,11 @@ export class PurchaseArrivalSheet implements OnInit {
     return arrivalText(day, hour, empty);
   }
 
+  /** No closing while the save runs: its answer must still reach the page (the draft and its baseline). */
+  close(): void {
+    if (!this.busy()) this.closed.emit();
+  }
+
   setByHand(value: boolean): void {
     this.byHand.set(value);
     if (!value) {
@@ -214,7 +234,8 @@ export class PurchaseArrivalSheet implements OnInit {
     try {
       const following = this.tracked() && !this.byHand();
       const fresh = await this.sourcing.setArrival(id, {
-        containerOn: this.containerOn() || null,
+        /* Following: the day the sheet opened with (the server keeps its stored day anyway). */
+        containerOn: (following ? this.start().containerOn : this.containerOn()) || null,
         containerAt: following ? null : this.hour(this.containerAt()) || null,
         containerByHand: this.tracked() && this.byHand(),
         warehouseOn: this.warehouseOn() || null,

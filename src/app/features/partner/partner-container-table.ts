@@ -5,7 +5,8 @@ import { Icon } from '../../shared/icon';
 import { count } from './partner-format';
 import { PartnerContainerLines } from './partner-container-lines';
 import {
-  ArrivalWords, STATE_TONE, STATE_WORD, arrivalLine, arrivalWords, cargoLine, dayText, isReceived, loadLines, portLine, stateOf,
+  ArrivalCell, ArrivalWords, STATE_TONE, STATE_WORD, arrivalLine, arrivalWords, cargoLine, dayText, isReceived, loadLines, portCell,
+  portLine, stateOf, stockCell,
 } from './partner-containers-model';
 
 interface Row {
@@ -24,9 +25,10 @@ interface Row {
   cargo: string;
   when: string;
   /** Phone, beside a planned warehouse arrival: "Haven Rotterdam ± do 20 nov". */
-  port: string | null;
-  /** Desk: "in Tica Brussel" when it is unloaded somewhere else than the main warehouse. */
-  elsewhere: string | null;
+  portLine: string | null;
+  /** Desk columns Aankomst haven and In {warehouse}. */
+  portCell: ArrivalCell;
+  stockCell: ArrivalCell;
 }
 
 /**
@@ -79,16 +81,15 @@ interface Row {
                 @if (row.departureMuted) { <span class="ct-muted">{{ row.departure }}</span> } @else { <b>{{ row.departure }}</b> }
                 @if (row.departureSub) { <small>{{ row.departureSub }}</small> }
               </span>
-              <span class="wk-td ct-cell" role="cell">
-                <b [class.is-late]="row.arrival.late && !row.arrival.warehouse">{{ row.arrival.main }}</b>
-                @if (row.arrival.moved || row.arrival.sub) { <small [class.is-late]="row.arrival.late && !row.arrival.moved && !row.arrival.warehouse">{{ row.arrival.moved || row.arrival.sub }}</small> }
-              </span>
-              <span class="wk-td ct-cell" role="cell">
-                @if (row.arrival.warehouse) {
-                  <b [class.is-late]="row.arrival.late">{{ row.arrival.warehouse }}</b>
-                  <small [class.is-late]="row.arrival.late">{{ row.elsewhere ? row.elsewhere + ' · ' : '' }}{{ row.arrival.warehouseSub }}</small>
-                } @else { <span class="ct-muted">{{ isReceived(c) ? '—' : 'nog niet gepland' }}</span> }
-              </span>
+              @for (cell of [row.portCell, row.stockCell]; track $index) {
+                <span class="wk-td ct-cell" role="cell" [attr.title]="cell.sub ? cell.main + ' · ' + cell.sub : null">
+                  @if (cell.muted && !cell.sub) { <span class="ct-muted">{{ cell.main }}</span> }
+                  @else {
+                    <b [class.is-late]="cell.late" [class.ct-muted]="cell.muted">{{ cell.main }}</b>
+                    @if (cell.sub) { <small [class.is-late]="cell.late">{{ cell.sub }}</small> }
+                  }
+                </span>
+              }
               <span class="wk-td ct-status" role="cell"><span class="wk-pill {{ row.tone }}">{{ row.word }}</span></span>
             </div>
             @if (open) {
@@ -115,7 +116,7 @@ interface Row {
               @if (c.own) { <span class="ct-item__own">Samen met jou</span> }
               <span class="ct-item__sub">{{ row.cargo }}</span>
               <span class="ct-item__when" [class.is-late]="row.arrival.late">{{ row.when }}</span>
-              @if (row.port) { <span class="ct-item__sub">{{ row.port }}</span> }
+              @if (row.portLine) { <span class="ct-item__sub">{{ row.portLine }}</span> }
               @if (row.arrival.moved) { <span class="ct-item__sub">{{ row.arrival.moved }}</span> }
               <app-icon class="ct-item__chev" name="chevron-down" [size]="18" />
             </button>
@@ -202,17 +203,14 @@ export class PartnerContainerTable {
         cargo: cargoLine(container),
         when: isReceived(container) ? (container.receivedOn ? `Aangekomen ${arrival.main}` : 'Aangekomen')
           : arrival.warehouse ? arrivalLine(container, today) : `Aankomst ${arrivalLine(container, today)}`,
-        port: portLine(container, today),
-        elsewhere: arrival.warehouse && container.locationName && container.locationName !== this.warehouseName() ? `in ${container.locationName}` : null,
+        portLine: portLine(container, today),
+        portCell: portCell(container, today),
+        stockCell: stockCell(container, today, this.warehouseName()),
       };
     });
   });
 
   isOpen(id: number): boolean {
     return this.expanded().has(id);
-  }
-
-  isReceived(container: PartnerContainer): boolean {
-    return isReceived(container);
   }
 }

@@ -578,7 +578,7 @@ export class PurchaseDeskStyles {}
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                         @else {
                           @let arrival = orderArrival(data);
-                          <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, arrival.containerAt, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
+                          <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, trackedOrder.expectedArrival === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
                           <div><dt>Aankomst {{ receivingLocationName(data.order.receivingLocationId) }}</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }} ›</button></dd></div>
                         }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
@@ -1228,8 +1228,9 @@ export class PurchaseDeskStyles {}
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
       @if (arrivalOpen()) {
-        <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
-          [trackingRow]="trackingPanel()?.row() ?? lastTrackingRow()" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
+        <app-purchase-arrival-sheet [view]="arrivalView() ?? data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          [trackingRow]="trackingPanel()?.row() ?? lastTrackingRow()" [savedTrackingReference]="savedTrackingReference()"
+          [partnerSees]="arrivalPartnerSees(data.order)" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
@@ -1633,11 +1634,24 @@ export class PurchaseDesk extends PurchaseEditor {
         if (order === data.order) return;
         // Both edit and read-mode status saves submit the full order. Keep its clean baseline
         // aligned with confirmed tracking dates without marking them as an unsaved user edit.
-        this.view.set({ ...data, order });
+        // Tracking moved the day: the server dropped the hour typed for the day before, so does the page.
+        const moved = order.expectedArrival !== data.order.expectedArrival && !!data.arrival?.containerAt;
+        this.view.set({ ...data, order, arrival: moved && data.arrival ? { ...data.arrival, containerAt: null } : data.arrival });
         this.savedOrder.set(JSON.stringify(order));
       });
     });
   }
+
+  /** The Aankomst sheet opens on the day the page shows: the tracking row's when it is fresher than the order. */
+  readonly arrivalView = computed(() => {
+    const data = this.view();
+    if (!data) return null;
+    const order = purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? this.lastTrackingRow());
+    if (order === data.order) return data;
+    /* The hour belonged to the day before tracking moved it (the server dropped it too). */
+    const arrival = order.expectedArrival !== data.order.expectedArrival && data.arrival ? { ...data.arrival, containerAt: null } : data.arrival;
+    return { ...data, order, arrival };
+  });
 
   /** The Aankomst sheet saved: the tracking row shows the day and the hand mark the server has now. */
   protected override afterArrivalSaved(fresh: PurchaseOrderView): void {

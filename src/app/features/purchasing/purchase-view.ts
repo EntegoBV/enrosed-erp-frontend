@@ -281,7 +281,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   @let tracked = trackedArrival();
                   <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Aankomst container</span>
-                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, arrival.containerAt, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
+                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, tracked === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
                       @if (data.order.trackingReference && arrival.containerByHand && trackingPanel()?.row()?.sourceArrival; as source) { <span class="ios-cell__sub mpo-wrap">Track &amp; trace meldt {{ source | dateNl }}</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
@@ -657,8 +657,9 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
         <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
       }
       @if (arrivalOpen()) {
-        <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
-          [trackingRow]="trackingPanel()?.row() ?? null" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
+        <app-purchase-arrival-sheet [view]="arrivalView() ?? data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          [trackingRow]="trackingPanel()?.row() ?? null" [partnerSees]="arrivalPartnerSees(data.order)"
+          (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
       }
       @if (kostenPayeeOpen(); as item) {
         <!-- A payee tapped in the Nacalculatie opens on top of Kosten, read-only; a payment row goes to its detail on Betalingen. -->
@@ -1056,6 +1057,24 @@ export class PurchaseView {
     const data = this.view();
     if (!data?.order.id || data.order.status === 'ONTVANGEN') return;
     this.arrivalOpen.set(true);
+  }
+
+  /** The sheet opens on the day the cell shows: the tracking row's when it is fresher than the order loaded. */
+  readonly arrivalView = computed(() => {
+    const data = this.view();
+    if (!data) return null;
+    const order = purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? null);
+    if (order === data.order) return data;
+    /* The hour belonged to the day before tracking moved it (the server dropped it too). */
+    const arrival = order.expectedArrival !== data.order.expectedArrival && data.arrival ? { ...data.arrival, containerAt: null } : data.arrival;
+    return { ...data, order, arrival };
+  });
+
+  /** The partner portal names the warehouse arrival for the main warehouse and for a partner's own container. */
+  arrivalPartnerSees(order: PurchaseOrder): boolean {
+    const locations = this.stockLocations();
+    const main = locations.find((location) => location.code === 'MAIN') ?? locations[0];
+    return order.receivingLocationId == null || order.receivingLocationId === main?.id || order.partnerCustomerId != null;
   }
 
   /** The sheet saved: the order as it stands now, and the tracking row read again for the day and the hand mark. */
