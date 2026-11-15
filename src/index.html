@@ -25,6 +25,41 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="icon" type="image/png" sizes="512x512" href="icons/icon-512.png">
   <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <!-- A build file the browser keeps as the app's page leaves the app blank: a host asked for a file it has not got yet
+       answers with this page (200, text/html), and vercel.json marks every main-/chunk-/styles- file immutable for a year,
+       so that answer stays (seen 2026-11-15 after a release). When such a file fails to load, it is fetched again past
+       the cache, which replaces the stored answer, and the page loads once more; at most once per file and session, and
+       only when the host now gives the real file. -->
+  <script>
+    (function () {
+      var BUILD_FILE = /\/(?:main|polyfills|styles|chunk)-[\w-]+\.(?:js|css)(?:[?#].*)?$/;
+      var KEY = 'enrosed.buildFileRescue';
+      var busy = false;
+      function rescued(url) {
+        try { return (sessionStorage.getItem(KEY) || '').split(' ').indexOf(url) >= 0; } catch (e) { return true; }
+      }
+      function remember(url) {
+        try { sessionStorage.setItem(KEY, ((sessionStorage.getItem(KEY) || '') + ' ' + url).trim()); } catch (e) { /* no session storage: no rescue */ }
+      }
+      function rescue(url, tries) {
+        fetch(url, { cache: 'reload' }).then(function (response) {
+          var type = response.headers.get('content-type') || '';
+          if (response.ok && /javascript|ecmascript|css/i.test(type)) { remember(url); location.reload(); return; }
+          if (tries > 1) setTimeout(function () { rescue(url, tries - 1); }, 4000);
+        }, function () {
+          if (tries > 1) setTimeout(function () { rescue(url, tries - 1); }, 4000);
+        });
+      }
+      window.addEventListener('error', function (event) {
+        var element = event.target;
+        if (busy || !element || (element.tagName !== 'SCRIPT' && element.tagName !== 'LINK')) return;
+        var url = element.src || element.href || '';
+        if (!BUILD_FILE.test(url) || rescued(url) || typeof fetch !== 'function') return;
+        busy = true;
+        rescue(url, 5);
+      }, true);
+    })();
+  </script>
 </head>
 <body>
   <app-root></app-root>

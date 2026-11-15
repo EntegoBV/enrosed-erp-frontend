@@ -412,10 +412,18 @@ export class FreshBuild {
     const timer = setTimeout(() => control.abort(), BUILD_PREFETCH_TIMEOUT_MS);
     try {
       const arrived = await Promise.all(files.map(async (file) => {
-        const response = await fetch(new URL(file, this.document.baseURI).href, { signal: control.signal });
-        /* A host that answers a missing file with the app's page (200, text/html) has not got the build yet. */
-        const type = response.headers.get('content-type') ?? '';
-        if (!response.ok || !(/\.css(?:[?#]|$)/.test(file) ? /css/i : /javascript|ecmascript/i).test(type)) return false;
+        const url = new URL(file, this.document.baseURI).href;
+        const expected = /\.css(?:[?#]|$)/.test(file) ? /css/i : /javascript|ecmascript/i;
+        /*
+         * A host that answers a missing file with the app's page (200, text/html) has not got the build yet. Asked
+         * first without storing anything: stored, that answer would keep the file's year-long immutable caching
+         * (vercel.json) and the next load of the page would stay blank (2026-11-15). Then fetched past the cache, so a
+         * wrong answer stored by an older build of this check is replaced as soon as the host has the real file.
+         */
+        const probe = await fetch(url, { method: 'HEAD', cache: 'no-store', signal: control.signal });
+        if (!probe.ok || !expected.test(probe.headers.get('content-type') ?? '')) return false;
+        const response = await fetch(url, { cache: 'reload', signal: control.signal });
+        if (!response.ok || !expected.test(response.headers.get('content-type') ?? '')) return false;
         await response.arrayBuffer();
         return true;
       }));
