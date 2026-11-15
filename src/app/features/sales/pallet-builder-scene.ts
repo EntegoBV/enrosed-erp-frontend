@@ -6,7 +6,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { CartonUp, PalletSpec } from './pallet-calculator-model';
-import { extentOf, type BuilderBox, type BuilderItem, type Deck, type Extent, type Solid } from './pallet-builder-model';
+import { extentOf, type BuilderBox, type BuilderItem, type Deck, type Extent, type Solid, type SpillLevel } from './pallet-builder-model';
 
 /**
  * The three.js side of 3D laden: the pallet or the Deense kar, the omdozen
@@ -15,8 +15,9 @@ import { extentOf, type BuilderBox, type BuilderItem, type Deck, type Extent, ty
  * floor. Everything is in cm; the floor's corner is at (-length/2, base,
  * -width/2), so the carrier stands in the middle. A product can be put in
  * focus (the others fade) and marked (its boxes get edges in its colour);
- * the box under the mouse gets a light shell. It renders only when
- * something changed.
+ * the box under the mouse gets a light shell; a box that sticks out over the
+ * floor's edge or the loading height an orange shell (a little) or a red one
+ * (too much). It renders only when something changed.
  */
 
 const X_AXIS = new Vector3(1, 0, 0);
@@ -41,6 +42,8 @@ interface Look {
 }
 
 const EDGE = new Color(0x5b3c20);
+/** The ghost and the spill shells: fits, sticks out a little, sticks out too much. */
+const LEVEL_COLOUR: Readonly<Record<SpillLevel, number>> = { none: 0x2e9b62, little: 0xe08a1e, much: 0xd2453c };
 const BLACK = new Color(0x000000);
 const EDGE_OPACITY = 0.42;
 
@@ -63,6 +66,15 @@ export class BuilderScene {
   private readonly ghostLine = new LineBasicMaterial({ transparent: true, opacity: 0.95 });
   private readonly pickedFill: MeshBasicMaterial;
   private readonly hoverFill = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false });
+  private readonly spillFill: Readonly<Record<'little' | 'much', MeshBasicMaterial>> = {
+    little: new MeshBasicMaterial({ color: LEVEL_COLOUR.little, transparent: true, opacity: 0.34, depthWrite: false }),
+    much: new MeshBasicMaterial({ color: LEVEL_COLOUR.much, transparent: true, opacity: 0.42, depthWrite: false }),
+  };
+  private readonly spillLine: Readonly<Record<'little' | 'much', LineBasicMaterial>> = {
+    little: new LineBasicMaterial({ color: LEVEL_COLOUR.little }),
+    much: new LineBasicMaterial({ color: LEVEL_COLOUR.much }),
+  };
+  private spillLevels: ReadonlyMap<number, SpillLevel> = new Map();
   private readonly pickedLine: LineBasicMaterial;
   private readonly accent: Color;
   private readonly inkLogo: HTMLCanvasElement | null;
@@ -261,9 +273,32 @@ export class BuilderScene {
       mesh.visible = box.id !== this.hiddenId;
     }
     for (const id of [...this.meshes.keys()]) if (!present.has(id)) this.dropMesh(id);
+    this.paintSpill();
     this.markPicked(this.pickedId);
     if (this.hoveredId !== null && !this.meshes.has(this.hoveredId)) this.setHover(null);
     this.render();
+  }
+
+  /** How far each box sticks out: an orange or red shell where it does. */
+  setSpill(levels: ReadonlyMap<number, SpillLevel>): void {
+    this.spillLevels = levels;
+    this.paintSpill();
+    this.render();
+  }
+
+  private paintSpill(): void {
+    for (const [id, mesh] of this.meshes) {
+      const level = this.spillLevels.get(id) ?? 'none';
+      const current = mesh.userData['spill'] as { level: SpillLevel; shell: Group } | undefined;
+      if ((current?.level ?? 'none') === level) continue;
+      if (current) { current.shell.removeFromParent(); disposeTree(current.shell, false); mesh.userData['spill'] = undefined; }
+      const look = this.looks.get(mesh.userData['key'] as number);
+      if (level === 'none' || !look) continue;
+      /* Just outside the chosen box's ring, so the orange or red reads even on the chosen box. */
+      const box = shell(look.geometry, this.spillFill[level], this.spillLine[level], 1.6);
+      mesh.add(box);
+      mesh.userData['spill'] = { level, shell: box };
+    }
   }
 
   /** The ring around the chosen box. */
@@ -287,8 +322,8 @@ export class BuilderScene {
     this.render();
   }
 
-  /** The ghost of a box on its way: green where it can go, red where it cannot; null hides it. */
-  showGhost(item: BuilderItem | null, at: { x: number; y: number; z: number; up: CartonUp; turned: boolean } | null, fits: boolean): void {
+  /** The ghost of a box on its way: green where it fits, orange where it sticks out a little, red where too much; null hides it. */
+  showGhost(item: BuilderItem | null, at: { x: number; y: number; z: number; up: CartonUp; turned: boolean } | null, level: SpillLevel): void {
     if (!item || !at) {
       if (this.ghost) this.ghost.visible = false;
       this.render();
@@ -303,7 +338,7 @@ export class BuilderScene {
       this.ghostKey = look.signature;
       this.scene.add(this.ghost);
     }
-    const colour = fits ? 0x2e9b62 : 0xd2453c;
+    const colour = LEVEL_COLOUR[level];
     this.ghostFill.color.setHex(colour);
     this.ghostLine.color.setHex(colour);
     this.ghost.visible = true;
@@ -392,7 +427,8 @@ export class BuilderScene {
     if (this.hovered) disposeTree(this.hovered, false);
     this.ground.geometry.dispose();
     (this.ground.material as Material).dispose();
-    [this.ghostFill, this.ghostLine, this.pickedFill, this.pickedLine, this.hoverFill].forEach((material) => material.dispose());
+    [this.ghostFill, this.ghostLine, this.pickedFill, this.pickedLine, this.hoverFill, this.spillFill.little, this.spillFill.much,
+      this.spillLine.little, this.spillLine.much].forEach((material) => material.dispose());
     this.woodTexture.dispose();
     this.renderer.dispose();
     this.canvas.remove();
@@ -459,6 +495,8 @@ export class BuilderScene {
     if (!mesh) return;
     if (this.pickedId === id && this.picked) { this.picked.removeFromParent(); disposeTree(this.picked, false); this.picked = null; }
     if (this.hoveredId === id && this.hovered) { this.hovered.removeFromParent(); disposeTree(this.hovered, false); this.hovered = null; this.hoveredId = null; }
+    const spill = mesh.userData['spill'] as { shell: Group } | undefined;
+    if (spill) disposeTree(spill.shell, false);
     mesh.removeFromParent();
     this.meshes.delete(id);
   }
@@ -792,10 +830,10 @@ function heightFrame(deck: Deck, base: number, accent: Color): LineSegments {
   return lines;
 }
 
-/** A shell a little larger than the box, drawn with these materials. */
-function shell(geometry: BoxGeometry, fill: Material, line: LineBasicMaterial): Group {
+/** A shell a little larger than the box (margin in cm), drawn with these materials. */
+function shell(geometry: BoxGeometry, fill: Material, line: LineBasicMaterial, margin = 0.8): Group {
   const { width, height, depth } = geometry.parameters;
-  const outer = new BoxGeometry(width + 0.8, height + 0.8, depth + 0.8);
+  const outer = new BoxGeometry(width + margin, height + margin, depth + margin);
   const group = new Group();
   group.add(new Mesh(outer, fill), new LineSegments(new EdgesGeometry(outer), line));
   return group;

@@ -715,6 +715,7 @@ export class PalletCalculatorPage {
    */
   readonly builderItems = computed<BuilderItem[]>(() => {
     const lines = this.lines();
+    const sectionNames = new Map(this.sections().map((section) => [section.key, section.name]));
     const perTile = new Map<string, number>();
     for (const line of lines) if (line.tile) perTile.set(line.tile.key, (perTile.get(line.tile.key) ?? 0) + 1);
     const seen = new Set<number>();
@@ -728,9 +729,11 @@ export class PalletCalculatorPage {
         const colourName = variant.colour?.trim() || null;
         return {
           key: variant.id as number, group: line.row.productId, groupTitle,
+          section: line.tile ? sectionNames.get(line.tile.sectionKey) ?? null : null,
           title: colourName && !twin ? `${groupTitle} · ${colourName}` : groupTitle,
           colour: line.colour, colourName, colourHex: variant.colourHex?.trim() || null, sku: variant.sku?.trim() || null,
-          photo: line.photo ?? salesPhotoUrl(variant),
+          /* A colour's own photo where it has one, as the product list shows it; else the product's. */
+          photo: (variants.length > 1 ? salesPhotoUrl(variant) : null) ?? line.photo ?? salesPhotoUrl(variant),
           lengthCm: carton.lengthCm ?? 0, widthCm: carton.widthCm ?? 0, heightCm: carton.heightCm ?? 0,
           weightKg: carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0,
           wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',

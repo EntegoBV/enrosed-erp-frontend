@@ -8,8 +8,8 @@ import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import type { CarrierKind, CartonUp, PalletSpec } from './pallet-calculator-model';
 import {
-  MAX_BUILDER_BOXES, computedFill, deckOf, extentOf, landing, loadBuild, nextSpot, saveBuild, settle, sidesOf, sized, solidsOf,
-  type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid,
+  MAX_BUILDER_BOXES, computedFill, deckOf, extentOf, landing, loadBuild, nextSpot, saveBuild, settle, sidesOf, sized, solidsOf, spillOf,
+  type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid, type Spill, type SpillLevel,
 } from './pallet-builder-model';
 import { BuilderScene } from './pallet-builder-scene';
 
@@ -29,11 +29,23 @@ interface StagePress { id: number | null; pointerId: number; x: number; y: numbe
 interface TrayPress { item: BuilderItem; pointerId: number; x: number; y: number; touch: boolean; active: boolean; timer: ReturnType<typeof setTimeout> | undefined }
 
 /** What a box's card says: the product and colour, its size and weight, how many stand here; the product's colours to switch to. */
-export interface BoxCard { item: BuilderItem; size: string; here: string; colours: readonly BuilderItem[] }
+export interface BoxCard {
+  item: BuilderItem; size: string; here: string; colours: readonly BuilderItem[];
+  /** "Steekt 2 cm uit", "6 cm boven de max. hoogte"; null when it stays within the carrier. */
+  spill: { text: string; much: boolean } | null;
+}
+
+/** "Steekt 2 cm uit · 6 cm te hoog": how a box goes past the carrier. */
+function spillText(spill: Spill): string | null {
+  const side = spill.sideCm > 0.05 ? `Steekt ${cm(Math.ceil(spill.sideCm * 2) / 2)} cm uit` : null;
+  const top = spill.topCm > 0.05 ? `${cm(Math.ceil(spill.topCm * 2) / 2)} cm boven de max. hoogte` : null;
+  return side && top ? `${side} · ${cm(Math.ceil(spill.topCm * 2) / 2)} cm te hoog` : side ?? top;
+}
 
 /** One product in the panel: its colours under it. */
 export interface BuilderGroup {
   key: number;
+  section: string | null;
   title: string;
   colour: string;
   photo: string | null;
@@ -106,6 +118,9 @@ const DRAG_START_PX = 7;
               <span><b>{{ stats().count | num }}</b> {{ stats().count === 1 ? 'omdoos' : 'omdozen' }}</span>
               <span [class.pb3-warn]="stats().tooHigh"><b>{{ stats().topCm | num }}</b> / {{ spec().maxHeightCm | num }} cm</span>
               <span [class.pb3-warn]="stats().tooHeavy"><b>{{ stats().weightKg | num }}</b> / {{ spec().maxWeightKg | num }} kg</span>
+              @if (spillSum().count) {
+                <span class="pb3-warn" [class.pb3-bad]="spillSum().much"><b>{{ spillSum().count | num }}</b> {{ spillSum().count === 1 ? 'steekt uit' : 'steken uit' }}</span>
+              }
             </div>
           </div>
           <button class="pb3-btn pb3-btn--round pb3-view" type="button" (click)="frameView()" aria-label="Beeld terugzetten" title="Beeld terugzetten">
@@ -160,39 +175,46 @@ const DRAG_START_PX = 7;
             <app-icon class="pb3-list__chev" name="chevron-down" [size]="16" />
           </button>
           <div class="pb3-list__body">
-            @for (group of groups(); track group.key) {
-              <section class="pb3-group" [style.--g]="group.colour" [class.pb3-group--on]="pinned() === group.key" [attr.aria-label]="group.title">
-                <button class="pb3-head" type="button" (click)="pin(group.key)" (pointerenter)="lean($event, group.keys)" (pointerleave)="lean($event, null)"
-                        [attr.aria-pressed]="pinned() === group.key" [title]="'Toon ' + group.title + ' op de ' + one()">
-                  @if (group.photo) { <img class="pb3-head__img" [appAuthSrc]="group.photo" alt="" draggable="false" (load)="photoLoaded(group.keys, $event)" /> }
-                  @else { <span class="pb3-head__img pb3-kraft"></span> }
-                  <span class="pb3-head__text">
-                    <b>{{ group.title }}</b>
-                    <span class="pb3-head__sub">
-                      @if (group.items.length > 1) {
-                        <span>{{ group.items.length }} kleuren</span>
-                        <span class="pb3-swatches" aria-hidden="true">@for (item of group.items.slice(0, 6); track item.key) { <i [style.--dot]="item.colourHex || '#e6ddd3'"></i> }</span>
-                      }
-                      <span>{{ group.size }}</span>
-                    </span>
-                  </span>
-                  <span class="pb3-head__count" [class.pb3-head__count--done]="group.wanted && group.count >= group.wanted">
-                    <b>{{ group.count | num }}</b>@if (group.wanted) { <small>van {{ group.wanted | num }}</small> }
-                  </span>
-                </button>
-                <div class="pb3-colours" role="list">
-                  @for (item of group.items; track item.key) {
-                    <div class="pb3-colour" role="listitem" [class.pb3-colour--picked]="selectedItem()?.key === item.key" [class.pb3-colour--off]="!isSized(item)"
-                         (pointerdown)="trayDown($event, item)" (pointerenter)="lean($event, [item.key])" (pointerleave)="lean($event, null)"
-                         (contextmenu)="$event.preventDefault()">
-                      <i class="pb3-dot" [style.--dot]="item.colourHex || '#e6ddd3'" aria-hidden="true"></i>
-                      <span class="pb3-colour__text"><b>{{ item.colourName || 'Zonder kleur' }}</b>@if (item.sku) { <small>{{ item.sku }}</small> }</span>
-                      <span class="pb3-colour__count" [class.pb3-colour__count--zero]="!(counts().get(item.key))">{{ (counts().get(item.key) ?? 0) | num }}</span>
-                      <button type="button" class="pb3-add" [disabled]="!isSized(item)" (click)="trayClick(item)"
-                              [attr.aria-label]="'Zet een omdoos ' + item.title + ' erbij'" [title]="isSized(item) ? 'Eén erbij' : 'Maten ontbreken'">
-                        <app-icon name="plus" [size]="15" />
+            @for (section of sections(); track section.name) {
+              <section class="ios-section">
+                @if (section.name) {
+                  <div class="ios-section__head"><h2>{{ section.name }}</h2><span class="ios-section__trail">{{ section.groups.length }}</span></div>
+                }
+                <div class="ios-group ios-group--thumbs">
+                  @for (group of section.groups; track group.key) {
+                    @if (group.items.length === 1) {
+                      <ng-container *ngTemplateOutlet="row; context: { $implicit: group.items[0], group, nested: false }" />
+                    } @else {
+                      <!-- As in the product list: the series head folds its colours open in place. -->
+                      <button class="plp-row plp-head" type="button" [class.plp-head--open]="isOpen(group)" [attr.aria-expanded]="isOpen(group)"
+                              (click)="toggle(group)" (pointerenter)="lean($event, group.keys)" (pointerleave)="lean($event, null)">
+                        @if (group.photo) { <img class="ios-thumb" [appAuthSrc]="group.photo" alt="" draggable="false" (load)="photoLoaded(group.keys, $event, false)" /> }
+                        @else { <span class="ios-thumb plp-thumb--empty" aria-hidden="true">◈</span> }
+                        <span class="plp-body">
+                          <span class="plp-name">{{ group.title }}</span>
+                          <span class="plp-meta">
+                            <span>{{ group.items.length }} kleuren</span>
+                            <span class="plp-dots" aria-hidden="true">
+                              @for (item of group.items.slice(0, 8); track item.key) {
+                                <i [style.background]="item.colourHex || 'var(--surface-2)'" [class.plp-dot--empty]="!item.colourHex"></i>
+                              }
+                              @if (group.items.length > 8) { <small>+{{ group.items.length - 8 }}</small> }
+                            </span>
+                            <app-icon class="plp-chev" name="chevron-down" [size]="14" />
+                          </span>
+                          <span class="plp-price">{{ group.size }}</span>
+                        </span>
+                        <span class="plp-end">
+                          <strong [class.zero]="!group.count">{{ group.count | num }}</strong>
+                          <small>{{ group.wanted ? 'van ' + group.wanted : 'op de ' + one() }}</small>
+                        </span>
                       </button>
-                    </div>
+                      @if (isOpen(group)) {
+                        @for (item of group.items; track item.key) {
+                          <ng-container *ngTemplateOutlet="row; context: { $implicit: item, group, nested: true }" />
+                        }
+                      }
+                    }
                   }
                 </div>
               </section>
@@ -202,6 +224,42 @@ const DRAG_START_PX = 7;
       </div>
       @if (chip(); as at) { <span class="pb3-chip pb3-kraft" [style.left.px]="at.x" [style.top.px]="at.y" [style.--tape]="at.colour"></span> }
     </div>
+
+    <!-- One colour (or a product with one colour) as a product-list row: a tap adds one omdoos, a drag carries it out. -->
+    <ng-template #row let-item let-group="group" let-nested="nested">
+      <div class="plp-row pb3-row" [class.plp-row--nested]="nested" [class.plp-row--inactive]="!isSized(item)"
+           [class.pb3-row--picked]="selectedItem()?.key === item.key"
+           (pointerdown)="trayDown($event, item)" (pointerenter)="lean($event, [item.key])" (pointerleave)="lean($event, null)"
+           (contextmenu)="$event.preventDefault()">
+        @if (item.photo) {
+          <img class="ios-thumb" [class.ios-thumb--sm]="nested" [appAuthSrc]="item.photo" alt="" draggable="false"
+               (load)="photoLoaded(nested ? [item.key] : group.keys, $event, nested)" />
+        } @else {
+          <span class="ios-thumb plp-thumb--empty" [class.ios-thumb--sm]="nested" aria-hidden="true">◈</span>
+        }
+        <span class="plp-body">
+          @if (nested) {
+            <span class="plp-name plp-name--variant">
+              @if (item.colourHex) { <i class="plp-cdot" [style.background]="item.colourHex" aria-hidden="true"></i> }
+              {{ item.colourName || 'Zonder kleur' }}
+            </span>
+            <span class="plp-meta mono">{{ item.sku || 'Geen SKU' }}</span>
+          } @else {
+            <span class="plp-name">{{ group.title }}</span>
+            <span class="plp-meta">{{ rowMeta(item) }}</span>
+            <span class="plp-price">{{ group.size }}</span>
+          }
+        </span>
+        <span class="plp-end">
+          <strong [class.zero]="!counts().get(item.key)">{{ (counts().get(item.key) ?? 0) | num }}</strong>
+          <small>{{ !nested && group.wanted ? 'van ' + group.wanted : 'op de ' + one() }}</small>
+        </span>
+        <button type="button" class="pb3-add" [disabled]="!isSized(item)" (click)="trayClick(item)"
+                [attr.aria-label]="'Zet een omdoos ' + item.title + ' erbij'" [title]="isSized(item) ? 'Eén erbij' : 'Maten ontbreken'">
+          <app-icon name="plus" [size]="15" />
+        </button>
+      </div>
+    </ng-template>
 
     <ng-template #facts let-card>
       <span class="pb3-card">
@@ -214,6 +272,7 @@ const DRAG_START_PX = 7;
           }
           <span class="pb3-card__size">{{ card.size }}</span>
           <span class="pb3-card__here">{{ card.here }}</span>
+          @if (card.spill; as spill) { <span class="pb3-card__spill" [class.pb3-card__spill--much]="spill.much">{{ spill.text }}</span> }
         </span>
       </span>
     </ng-template>
@@ -238,6 +297,7 @@ const DRAG_START_PX = 7;
     .pb3-stats span,.pb3-note{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
     .pb3-stats b{color:var(--ink);font-weight:750}
     .pb3-stats .pb3-warn,.pb3-stats .pb3-warn b{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+    .pb3-stats .pb3-bad,.pb3-stats .pb3-bad b{color:var(--danger,#b3261e);border-color:color-mix(in srgb,var(--danger,#b3261e) 40%,var(--line))}
     .pb3-view{position:absolute;top:10px;right:12px}
     .pb3-note{position:absolute;top:56px;left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650}
     .pb3-empty{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 32px);margin:0;font-size:13.5px;color:var(--muted);text-align:center;pointer-events:none}
@@ -252,6 +312,7 @@ const DRAG_START_PX = 7;
     .pb3-card__text>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pb3-card__colour{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:650}
     .pb3-card__colour .pb3-dot{width:10px;height:10px}.pb3-card__colour small{font-weight:500;color:var(--muted)}
+    .pb3-card__text .pb3-card__spill{color:#c2701a;font-weight:700}.pb3-card__text .pb3-card__spill--much{color:var(--danger,#b3261e)}
     .pb3-pick{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 20px);padding:6px 6px 6px 8px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 95%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 28px rgb(40 28 18 / 16%);animation:pb3-in .15s ease-out}
     .pb3-pick__info{flex:0 1 auto;min-width:210px;max-width:300px;padding-right:4px}
     .pb3-pick__info .pb3-card__text b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -266,40 +327,44 @@ const DRAG_START_PX = 7;
     .pb3-pick .pb3-pick__out{color:var(--danger,#b3261e)}
     .pb3-pick .pb3-pick__close{min-width:36px;color:var(--muted)}
 
-    /* The products: one card per product, its colours under it, as in the product list. */
-    .pb3-list{display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--line);background:var(--surface)}
-    .pb3-list__bar{display:flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:4px calc(14px + var(--safe-r,0px)) 4px calc(14px + var(--safe-l,0px));border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
+    /* The products: the product list's rows (styles/products/_list.scss), a series folding its colours open under its head. */
+    .pb3-list{--ios-inset:12px;display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--line);background:var(--ios-bg)}
+    .pb3-list__bar{display:flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:4px calc(16px + var(--safe-r,0px)) 4px calc(16px + var(--safe-l,0px));border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
     .pb3-list__grab{position:absolute;top:5px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-strong)}
     .pb3-list__name{font-size:15px;font-weight:750}
     .pb3-list__hint{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pb3-list__chev{color:var(--muted);transition:transform var(--dur-2,.2s) var(--ease-out,ease)}
     .pb3-list--shut .pb3-list__chev{transform:rotate(180deg)}
-    .pb3-list__body{display:flex;flex-direction:column;gap:10px;max-height:min(40vh,360px);overflow-y:auto;overscroll-behavior:contain;padding:2px calc(12px + var(--safe-r,0px)) calc(12px + var(--safe-b,0px)) calc(12px + var(--safe-l,0px));scrollbar-width:thin}
+    .pb3-list__body{max-height:min(42vh,380px);overflow-y:auto;overscroll-behavior:contain;padding:4px 0 calc(8px + var(--safe-b,0px));scrollbar-width:thin}
+    .pb3-list__body .ios-section{margin-bottom:16px}
     .pb3-list--shut .pb3-list__body{display:none}
-    .pb3-group{flex:none;border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden;box-shadow:inset 4px 0 var(--g)}
-    .pb3-group--on{border-color:var(--g);box-shadow:inset 4px 0 var(--g),0 0 0 1px var(--g)}
-    .pb3-head{display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:10px 12px 10px 14px;border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
-    .pb3-head:hover,.pb3-group--on .pb3-head{background:color-mix(in srgb,var(--g) 7%,var(--surface))}
-    .pb3-head__img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:var(--surface-2);pointer-events:none}
-    .pb3-head__text{display:flex;flex-direction:column;gap:2px;min-width:0}
-    .pb3-head__text b{font-size:14px;font-weight:700;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow-wrap:anywhere}
-    .pb3-head__sub{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:12px;color:var(--muted)}
-    .pb3-swatches{display:inline-flex}.pb3-swatches i{width:10px;height:10px;margin-right:-3px;border-radius:50%;background:var(--dot);box-shadow:0 0 0 1.5px var(--surface),inset 0 0 0 1px rgb(26 22 20 / 18%)}
-    .pb3-head__count{display:flex;flex-direction:column;align-items:flex-end;font-variant-numeric:tabular-nums;line-height:1.1}
-    .pb3-head__count b{font-size:18px;font-weight:800}.pb3-head__count small{font-size:11.5px;color:var(--muted)}
-    .pb3-head__count--done b{color:var(--ok,#1b7a4c)}
-    .pb3-colours{margin:0 0 6px 36px;border-left:2px solid var(--line)}
-    .pb3-colour{display:grid;grid-template-columns:12px minmax(0,1fr) auto 36px;align-items:center;gap:10px;min-height:48px;padding:4px 10px 4px 14px;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-y;-webkit-tap-highlight-color:transparent}
-    .pb3-colour+.pb3-colour{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
-    .pb3-colour:hover{background:var(--surface-2)}
-    .pb3-colour--picked{background:color-mix(in srgb,var(--g) 9%,var(--surface))}
-    .pb3-colour--off{opacity:.5;cursor:default}
-    .pb3-colour__text{display:flex;flex-direction:column;min-width:0}
-    .pb3-colour__text b{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .pb3-colour__text small{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .pb3-colour__count{min-width:22px;text-align:right;font-size:15px;font-weight:750;font-variant-numeric:tabular-nums}
-    .pb3-colour__count--zero{color:var(--muted);font-weight:500}
-    .pb3-add{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid var(--line-strong);border-radius:50%;background:var(--surface);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .plp-row{display:flex;align-items:flex-start;gap:12px;width:100%;min-height:64px;padding:10px 14px 10px 16px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .plp-row .ios-thumb{margin-top:2px}
+    .plp-thumb--empty{display:grid;place-items:center;color:var(--muted-2);font-size:16px}
+    .plp-row--inactive>*{opacity:.66}
+    .plp-row--nested{min-height:54px;padding-left:28px;background:var(--surface)}
+    .plp-row--nested::after{content:'';position:absolute;top:0;bottom:0;left:16px;z-index:2;width:2px;border-radius:1px;background:var(--line-strong);pointer-events:none}
+    .plp-head--open{background:color-mix(in srgb,var(--ink) 3%,var(--surface))}
+    .plp-body{display:grid;flex:1;gap:2px;min-width:0}
+    .plp-name{font-size:15px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+    .plp-name--variant{display:flex;align-items:center;gap:6px;font-size:14.5px}
+    .plp-cdot{flex:none;width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(0 0 0 / 14%)}
+    .plp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:13px;line-height:1.3;overflow-wrap:anywhere}
+    .plp-meta.mono{font-family:var(--mono);font-size:12px}
+    .plp-dots{display:inline-flex;align-items:center;gap:3px}
+    .plp-dots i{width:9px;height:9px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(0 0 0 / 14%)}
+    .plp-dots .plp-dot--empty{box-shadow:inset 0 0 0 1px var(--line-strong)}
+    .plp-dots small{color:var(--muted);font-size:11px}
+    .plp-chev{color:var(--muted-2);transition:transform var(--dur-1,.12s) var(--ease-out,ease)}
+    .plp-head--open .plp-chev{transform:rotate(180deg)}
+    .plp-price{color:var(--ink-2);font-size:12.5px;line-height:1.35;font-variant-numeric:tabular-nums}
+    .plp-end{display:grid;flex:none;justify-items:end;align-content:start;min-width:54px;padding-top:1px;text-align:right}
+    .plp-end strong{font-size:17px;font-weight:700;letter-spacing:-.01em;line-height:1.2;font-variant-numeric:tabular-nums}
+    .plp-end strong.zero{color:var(--muted-2);font-weight:550}
+    .plp-end small{color:var(--muted);font-size:11.5px;line-height:1.25}
+    .pb3-row{cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-y}
+    .pb3-row--picked{background:color-mix(in srgb,var(--rose) 8%,var(--surface))}
+    .pb3-add{display:grid;flex:none;place-items:center;align-self:center;width:34px;height:34px;margin-left:2px;padding:0;border:1px solid var(--line-strong);border-radius:50%;background:var(--surface);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
     .pb3-add:hover:not(:disabled){border-color:var(--ink-2);background:var(--surface-2)}.pb3-add:active:not(:disabled){background:var(--line)}
     .pb3-add:disabled{opacity:.4;cursor:default}
     .pb3-kraft{background:#c0905f linear-gradient(transparent 40%,var(--tape,#9a6b3f) 40% 58%,transparent 58%);box-shadow:inset 0 0 0 1px rgb(90 58 28 / 30%)}
@@ -308,14 +373,14 @@ const DRAG_START_PX = 7;
 
     /* Desk: the products as a column on the left, always open. */
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
-      .pb3-main{grid-template-rows:none;grid-template-columns:320px minmax(0,1fr)}
+      .pb3-main{grid-template-rows:none;grid-template-columns:384px minmax(0,1fr)}
       .pb3-list{order:-1;border-top:0;border-right:1px solid var(--line)}
       .pb3-list__bar{cursor:default;pointer-events:none;min-height:0;padding:14px 16px 8px}
       .pb3-list__grab,.pb3-list__chev{display:none}
       .pb3-list__hint{white-space:normal}
       .pb3-list__bar{flex-direction:column;align-items:flex-start;gap:2px}
-      .pb3-list__body,.pb3-list--shut .pb3-list__body{display:flex;flex:1;max-height:none;padding:4px 12px 16px}
-      .pb3-colour{touch-action:none}
+      .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px 0 16px}
+      .pb3-row{touch-action:none}
       .pb3-pick__info .pb3-card__size,.pb3-pick__info .pb3-card__here{display:none}
       .pb3-pick__info .pb3-card__img{width:38px;height:38px}
     }
@@ -342,8 +407,8 @@ const DRAG_START_PX = 7;
       .pb3-list{order:-1;margin-top:0;border-radius:0;border-top:0;border-right:1px solid var(--line);box-shadow:none}
       .pb3-list__bar{pointer-events:none;padding:8px 12px 4px calc(12px + var(--safe-l,0px))}
       .pb3-list__grab,.pb3-list__chev,.pb3-list__hint{display:none}
-      .pb3-list--shut .pb3-list__body{display:flex}
-      .pb3-list__body{flex:1;max-height:none;padding:2px 8px calc(8px + var(--safe-b,0px)) calc(8px + var(--safe-l,0px))}
+      .pb3-list--shut .pb3-list__body{display:block}
+      .pb3-list__body{flex:1;max-height:none;padding:2px 0 calc(8px + var(--safe-b,0px)) var(--safe-l,0px)}
       .pb3-pick{left:50%;right:auto;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;max-width:calc(100% - 20px);padding:4px 6px}
       /* Too low for the card: the panel marks the chosen colour, the bar keeps the colours and the buttons. */
       .pb3-pick__info{display:none}
@@ -381,9 +446,10 @@ export class PalletBuilder {
   /** The box under the mouse and where the mouse is in the view. */
   readonly hoverId = signal<number | null>(null);
   private readonly hoverAt = signal({ x: 0, y: 0, width: 0, height: 0 });
-  /** The colours the mouse rests on in the panel (a product's head: all of them); a product tapped there stays in focus. */
+  /** The colours the mouse rests on in the panel (a product's head: all of them). */
   private readonly leaning = signal<readonly number[] | null>(null);
-  readonly pinned = signal<number | null>(null);
+  /** Series folded shut in the panel; all open at the start. */
+  private readonly shut = signal<ReadonlySet<number>>(new Set());
   /** The panel's photos once loaded: they go on the cartons' labels. */
   private readonly photos = signal<ReadonlyMap<number, HTMLImageElement>>(new Map());
   readonly touch = signal(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
@@ -427,7 +493,7 @@ export class PalletBuilder {
       if (!group) {
         const size = sized(item) ? [`${cm(item.lengthCm)} × ${cm(item.widthCm)} × ${cm(item.heightCm)} cm`] : ['Maten ontbreken'];
         if (sized(item) && item.weightKg > 0) size.push(`${cm(item.weightKg)} kg`);
-        group = { key: item.group, title: item.groupTitle, colour: item.colour, photo: item.photo, size: size.join(' · '),
+        group = { key: item.group, section: item.section, title: item.groupTitle, colour: item.colour, photo: item.photo, size: size.join(' · '),
           wanted: item.wanted, count: 0, items: [], keys: [] };
         groups.set(item.group, group);
       }
@@ -437,13 +503,37 @@ export class PalletBuilder {
     }
     return [...groups.values()];
   });
+  /** The panel's sections: the categories, in the order the products come, as the product list heads them. */
+  readonly sections = computed(() => {
+    const sections = new Map<string, { name: string | null; groups: BuilderGroup[] }>();
+    for (const group of this.groups()) {
+      const key = group.section ?? '';
+      const section = sections.get(key) ?? { name: group.section, groups: [] };
+      section.groups.push(group);
+      sections.set(key, section);
+    }
+    return [...sections.values()];
+  });
   private readonly groupOf = computed(() => new Map(this.groups().flatMap((group) => group.items.map((item) => [item.key, group] as const))));
-  /** The colours in focus: those under the mouse in the panel, else the product tapped there while it stands on the carrier. */
+  /** The colours in focus: those under the mouse in the panel. */
   private readonly focus = computed<ReadonlySet<number> | null>(() => {
     const leaning = this.leaning();
-    if (leaning) return new Set(leaning);
-    const pinned = this.groups().find((group) => group.key === this.pinned());
-    return pinned && pinned.count > 0 ? new Set(pinned.keys) : null;
+    return leaning ? new Set(leaning) : null;
+  });
+  /** How far every box goes past the carrier. */
+  private readonly spills = computed(() => {
+    const deck = this.deck();
+    return new Map(solidsOf(this.boxes(), this.itemMap()).map((solid) => [solid.id, spillOf(solid, deck)] as const));
+  });
+  /** "3 steken uit": orange, red when one of them sticks out too much. */
+  readonly spillSum = computed(() => {
+    let count = 0; let much = false;
+    for (const spill of this.spills().values()) {
+      if (spill.level === 'none') continue;
+      count += 1;
+      much ||= spill.level === 'much';
+    }
+    return { count, much };
   });
   /** The colour whose boxes glow: the one under the mouse, else the chosen one. */
   private readonly marked = computed<ReadonlySet<number> | null>(() => {
@@ -506,6 +596,10 @@ export class PalletBuilder {
       if (!this.sceneReady() || !this.scene) return;
       this.scene.setFocus(focus, marked);
       this.scene.setHover(hovered);
+    });
+    effect(() => {
+      const levels = new Map<number, SpillLevel>([...this.spills()].map(([id, spill]) => [id, spill.level]));
+      if (this.sceneReady()) this.scene?.setSpill(levels);
     });
     effect(() => {
       const boxes = this.boxes();
@@ -599,7 +693,12 @@ export class PalletBuilder {
       const pieces = total * item.units.per;
       here.push(`${pieces.toLocaleString('nl-BE')} ${pieces === 1 ? item.units.one : item.units.other}`);
     }
-    return { item, size: size.join(' · '), here: here.join(' · '), colours: (group?.items ?? [item]).filter(sized) };
+    const spill = this.spills().get(box.id);
+    const text = spill ? spillText(spill) : null;
+    return {
+      item, size: size.join(' · '), here: here.join(' · '), colours: (group?.items ?? [item]).filter(sized),
+      spill: text && spill ? { text, much: spill.level === 'much' } : null,
+    };
   }
 
   /** The mouse over the view: the box under it, once a frame. */
@@ -631,22 +730,41 @@ export class PalletBuilder {
     if (event.pointerType === 'mouse') this.leaning.set(keys);
   }
 
-  /** A tap or click on a product's head keeps it in focus on the carrier; again lets go. */
-  pin(key: number): void {
-    this.pinned.set(this.pinned() === key ? null : key);
-    this.hostBridge.haptic('selection');
+  isOpen(group: BuilderGroup): boolean {
+    return !this.shut().has(group.key);
   }
 
-  /** A product's photo has loaded: it goes on the labels of all its colours (only an image the canvas may read). */
-  photoLoaded(keys: readonly number[], event: Event): void {
+  /** A series head folds its colours open or shut, as in the product list. */
+  toggle(group: BuilderGroup): void {
+    this.shut.update((shut) => {
+      const next = new Set(shut);
+      if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+      return next;
+    });
+  }
+
+  /** "Rood · DOM-12X25-RD": a product with one colour, as the product list writes it. */
+  rowMeta(item: BuilderItem): string {
+    return [item.colourName, item.sku].filter((part): part is string => !!part).join(' · ');
+  }
+
+  /**
+   * A photo has loaded: it goes on the labels (only an image the canvas may
+   * read). A series head's photo serves its colours that have none of their
+   * own; a colour's own photo (own = true) wins.
+   */
+  photoLoaded(keys: readonly number[], event: Event, own: boolean): void {
     const image = event.target as HTMLImageElement;
     const source = image.currentSrc || image.src;
     let readable = source.startsWith('blob:') || source.startsWith('data:');
     try { readable ||= new URL(source, location.href).origin === location.origin; } catch { /* not a URL */ }
-    if (!readable || !image.naturalWidth || keys.every((key) => this.photos().get(key) === image)) return;
-    this.photos.update((photos) => {
-      const next = new Map(photos);
-      for (const key of keys) next.set(key, image);
+    if (!readable || !image.naturalWidth) return;
+    const photos = this.photos();
+    const take = keys.filter((key) => photos.get(key) !== image && (own || !photos.has(key)));
+    if (!take.length) return;
+    this.photos.update((current) => {
+      const next = new Map(current);
+      for (const key of take) next.set(key, image);
       return next;
     });
   }
@@ -750,8 +868,11 @@ export class PalletBuilder {
     const after = extentOf(item, up, turned);
     const others = settle(this.boxes().filter((other) => other.id !== box.id), this.itemMap());
     const land = landing(solidsOf(others, this.itemMap()), after, box.x + before.sx / 2, box.z + before.sz / 2, this.deck(), null);
-    if (!land.fits) { this.say(land.reason === 'maat' ? `Zo past hij niet op de ${this.one()}` : 'Zo komt hij boven de max. hoogte'); return; }
+    /* It always turns: what sticks out shows orange or red, and the card says how far (Emre, 2026-11-15). */
     this.commit(settle([...others, { ...box, x: land.x, y: land.y, z: land.z, up, turned }], this.itemMap()));
+    const lifted = land.y > box.y + 0.5 ? 'Past niet tussen de andere: hij staat er nu op' : null;
+    const text = [lifted, spillText(land.spill)].filter((part): part is string => !!part).join(' · ');
+    if (text) this.say(text);
   }
 
   private say(text: string): void {
@@ -815,14 +936,14 @@ export class PalletBuilder {
     }
     if (!press.moving) return;
     this.scene?.hide(null);
-    this.scene?.showGhost(null, null, false);
+    this.scene?.showGhost(null, null, 'none');
     const target = this.target;
     this.target = null;
     const box = this.boxes().find((candidate) => candidate.id === press.id);
     if (!box || !target) return;
-    if (!target.fits) { this.say(this.refusal(target)); return; }
     this.commit(settle([...this.dragOthers, { ...box, x: target.x, y: target.y, z: target.z }], this.itemMap()));
-    this.hostBridge.haptic('selection');
+    const text = spillText(target.spill);
+    if (text) this.say(text); else this.hostBridge.haptic('selection');
   };
 
   private readonly cancel = (event: PointerEvent): void => {
@@ -835,7 +956,7 @@ export class PalletBuilder {
     if (!this.press) return;
     this.press = null;
     this.target = null;
-    if (this.scene) { this.scene.orbit = true; this.scene.hide(null); this.scene.showGhost(null, null, false); }
+    if (this.scene) { this.scene.orbit = true; this.scene.hide(null); this.scene.showGhost(null, null, 'none'); }
   }
 
   trayDown(event: PointerEvent, item: BuilderItem): void {
@@ -884,7 +1005,7 @@ export class PalletBuilder {
     const over = this.scene.contains(event.clientX, event.clientY);
     this.chip.set(over ? null : { x: event.clientX, y: event.clientY, colour: press.item.colourHex || press.item.colour });
     this.target = over ? this.aimAt(event, press.item, press.item.up, false) : null;
-    if (!over) this.scene.showGhost(null, null, false);
+    if (!over) this.scene.showGhost(null, null, 'none');
   }
 
   private trayUp(event: PointerEvent): void {
@@ -901,12 +1022,12 @@ export class PalletBuilder {
     const target = this.target;
     this.endTrayDrag();
     if (!target || !this.scene?.contains(event.clientX, event.clientY)) return;
-    if (!target.fits) { this.say(this.refusal(target)); return; }
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
     const box: BuilderBox = { id: this.nextId++, key: press.item.key, x: target.x, y: target.y, z: target.z, up: target.up, turned: target.turned };
     this.commit([...this.boxes(), box]);
     this.selected.set(box.id);
-    this.hostBridge.haptic('selection');
+    const text = spillText(target.spill);
+    if (text) this.say(text); else this.hostBridge.haptic('selection');
   }
 
   private endTrayDrag(): void {
@@ -914,7 +1035,7 @@ export class PalletBuilder {
     this.trayPress = null;
     this.target = null;
     this.chip.set(null);
-    this.scene?.showGhost(null, null, false);
+    this.scene?.showGhost(null, null, 'none');
   }
 
   /** The ghost under the pointer: where this box would land, and whether it may. */
@@ -923,16 +1044,13 @@ export class PalletBuilder {
     if (!scene) return null;
     const extent = extentOf(item, up, turned);
     const aim = scene.aim(event.clientX, event.clientY, extent, this.dragSolids, null);
-    if (!aim) { scene.showGhost(null, null, false); return null; }
+    if (!aim) { scene.showGhost(null, null, 'none'); return null; }
     const land = landing(this.dragSolids, extent, aim.centreX, aim.centreZ, this.deck(), null);
     const target: Target = { ...land, up, turned };
-    scene.showGhost(item, target, land.fits);
+    scene.showGhost(item, target, land.spill.level);
     return target;
   }
 
-  private refusal(target: Target): string {
-    return target.reason === 'maat' ? `Te groot voor deze ${this.one()}` : 'Zo komt hij boven de max. hoogte';
-  }
 
   /* --------------------------------------------------------------- keyboard */
 

@@ -17,6 +17,8 @@ export interface BuilderItem {
   key: number;
   /** The product it belongs to: the card's product id in Palletberekening. */
   group: number;
+  /** The product's category, as the product list heads it; null without one. */
+  section: string | null;
   /** The product's name without the colour: "Rose in Dome · 12x25". */
   groupTitle: string;
   /** groupTitle with the colour: "Rose in Dome · 12x25 · Navy". */
@@ -125,24 +127,42 @@ export function settle(boxes: readonly BuilderBox[], items: ReadonlyMap<number, 
   return boxes.filter((box) => result.has(box.id)).map((box) => result.get(box.id) as BuilderBox);
 }
 
-export interface Landing { x: number; y: number; z: number; fits: boolean; reason: 'hoogte' | 'maat' | null }
+/**
+ * How far a box goes past the carrier: over the floor's edge (side) and above
+ * the loading height (top), in cm. A little (up to SPILL_LITTLE_CM, Emre
+ * 2026-11-15: "als het net spilt oranje, te veel in het rood") shows orange,
+ * more shows red; the box stands either way.
+ */
+export interface Spill { sideCm: number; topCm: number; level: SpillLevel }
+export type SpillLevel = 'none' | 'little' | 'much';
+export const SPILL_LITTLE_CM = 5;
+
+export function spillOf(solid: Pick<Solid, 'x' | 'y' | 'z' | 'sx' | 'sy' | 'sz'>, deck: Deck): Spill {
+  const side = Math.max(0, -solid.x, solid.x + solid.sx - deck.lengthCm, -solid.z, solid.z + solid.sz - deck.widthCm);
+  const top = Math.max(0, solid.y + solid.sy - deck.usableCm);
+  const worst = Math.max(side, top);
+  const level: SpillLevel = worst <= 0.05 ? 'none' : worst <= SPILL_LITTLE_CM + EPSILON ? 'little' : 'much';
+  return { sideCm: round(side), topCm: round(top), level };
+}
+
+export interface Landing { x: number; y: number; z: number; spill: Spill }
 
 /**
  * Where a box of this size lands when its middle is aimed at (centreX,
  * centreZ): kept on the floor, pulled onto a nearby edge of the floor or of
  * another box (a few cm, so rows line up by hand), on top of what is under it.
- * It fits while it stays under the loading height.
+ * A box larger than the floor stays centred and sticks out on both sides; its
+ * spill says how far, over the edge and over the height.
  */
 export function landing(solids: readonly Solid[], extent: Extent, centreX: number, centreZ: number, deck: Deck, skip: number | null): Landing {
   const others = solids.filter((solid) => solid.id !== skip);
-  const x = snap(clamp(centreX - extent.sx / 2, 0, deck.lengthCm - extent.sx), extent.sx, deck.lengthCm,
-    others.map((solid) => [solid.x, solid.sx]));
-  const z = snap(clamp(centreZ - extent.sz / 2, 0, deck.widthCm - extent.sz), extent.sz, deck.widthCm,
-    others.map((solid) => [solid.z, solid.sz]));
+  const x = extent.sx > deck.lengthCm + EPSILON ? (deck.lengthCm - extent.sx) / 2
+    : snap(clamp(centreX - extent.sx / 2, 0, deck.lengthCm - extent.sx), extent.sx, deck.lengthCm, others.map((solid) => [solid.x, solid.sx]));
+  const z = extent.sz > deck.widthCm + EPSILON ? (deck.widthCm - extent.sz) / 2
+    : snap(clamp(centreZ - extent.sz / 2, 0, deck.widthCm - extent.sz), extent.sz, deck.widthCm, others.map((solid) => [solid.z, solid.sz]));
   const y = restingHeight(others, x, z, extent.sx, extent.sz);
-  const high = y + extent.sy > deck.usableCm + EPSILON;
-  const wide = extent.sx > deck.lengthCm + EPSILON || extent.sz > deck.widthCm + EPSILON;
-  return { x: round(x), y: round(y), z: round(z), fits: !high && !wide, reason: wide ? 'maat' : high ? 'hoogte' : null };
+  const placed = { x: round(x), y: round(y), z: round(z) };
+  return { ...placed, spill: spillOf({ ...placed, ...extent }, deck) };
 }
 
 const SNAP_CM = 4;
