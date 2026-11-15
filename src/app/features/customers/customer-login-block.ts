@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { HostBridge } from '../../core/platform/host-bridge';
 import { messageOf } from '../../core/api/errors';
 import { CustomerLogin, LoginRequestApi } from '../../core/api/login-request-api';
 import { Skeleton } from '../../shared/skeleton';
@@ -42,9 +43,14 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
             <span class="badge" [class]="badge(login).css">{{ badge(login).label }}</span>
             <span class="cl-line">{{ rowText(login) }}
               @if (login.lastActiveAt || login.lastLoginAt) {
-                <!-- In a new tab: routing away would close this sheet and drop a half-edited customer. -->
-                <a class="cl-visits" routerLink="/analyses/website" [queryParams]="{ source: 'ACCOUNTS', login: login.id, days: 365 }"
-                   target="_blank" rel="noopener">Bezoeken</a>
+                @if (inApp) {
+                  <!-- The iOS app loads a new-tab link in place: ask first, the sheet closes. -->
+                  <button class="cl-visits" type="button" (click)="openVisits(login)">Bezoeken</button>
+                } @else {
+                  <!-- In a new tab: routing away would close this sheet and drop a half-edited customer. -->
+                  <a class="cl-visits" routerLink="/analyses/website" [queryParams]="visitsQuery(login)"
+                     target="_blank" rel="noopener">Bezoeken</a>
+                }
               }
             </span>
           </div>
@@ -85,7 +91,8 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
     .cl-row__main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 13.5px; }
     .cl-email { min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
     .cl-line { flex-basis: 100%; color: var(--ink-2); font-size: 12.5px; }
-    .cl-visits { margin-left: 6px; color: var(--rose); font-weight: 650; text-decoration: none; white-space: nowrap; }
+    .cl-visits { margin-left: 6px; padding: 0; border: 0; background: none; color: var(--rose); font: inherit; font-weight: 650;
+      text-decoration: none; white-space: nowrap; cursor: pointer; }
     .cl-visits::after { content: ' ›'; }
     @media (hover: hover) { .cl-visits:hover { text-decoration: underline; } }
     .cl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -100,6 +107,9 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
 export class CustomerLoginBlock {
   private readonly api = inject(LoginRequestApi);
   private readonly ui = inject(Ui);
+  private readonly router = inject(Router);
+  /** Inside the iOS app a new-tab link replaces the page, so "Bezoeken" asks before it leaves the sheet. */
+  readonly inApp = inject(HostBridge).present;
 
   readonly customerId = input.required<number>();
   readonly customerEmail = input<string | null>(null);
@@ -141,6 +151,19 @@ export class CustomerLoginBlock {
 
   reload(): void {
     void this.load(this.customerId());
+  }
+
+  /** Analyses › Bezoekers › Klantlogins for this one login, over a year. */
+  visitsQuery(login: CustomerLogin): Record<string, string | number> {
+    return { source: 'ACCOUNTS', login: login.id, days: 365 };
+  }
+
+  openVisits(login: CustomerLogin): void {
+    this.ui.confirm({
+      title: 'Bezoeken openen',
+      message: 'De klantfiche sluit. Wat je nog niet opsloeg, gaat verloren.',
+      confirmLabel: 'Bezoeken openen',
+    }, () => void this.router.navigate(['/analyses/website'], { queryParams: this.visitsQuery(login) }));
   }
 
   private async load(customerId: number): Promise<void> {
