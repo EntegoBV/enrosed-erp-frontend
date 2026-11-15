@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, computed, effect, inject, input, output, signal, viewChild,
 } from '@angular/core';
@@ -14,11 +15,21 @@ import { BuilderScene } from './pallet-builder-scene';
 
 interface Target extends Landing { up: CartonUp; turned: boolean }
 
-/** A press on the 3D view: on a box (it may be dragged) or on empty space (the camera turns). */
-interface StagePress { id: number | null; pointerId: number; x: number; y: number; moving: boolean }
+/**
+ * A press on the 3D view: on a box that may be dragged (with a mouse any box,
+ * with a finger only the chosen one), else the camera turns and a tap chooses.
+ */
+interface StagePress { id: number | null; pointerId: number; x: number; y: number; moving: boolean; movable: boolean }
 
 /** A press on a product of the tray: a tap adds one omdoos, a drag carries it onto the carrier. */
-interface TrayPress { item: BuilderItem; pointerId: number; x: number; y: number; touch: boolean; active: boolean }
+interface TrayPress { item: BuilderItem; pointerId: number; x: number; y: number; touch: boolean; column: boolean; active: boolean }
+
+/** What a box's card says: the product, its size and weight, how many stand here. */
+export interface BoxCard { item: BuilderItem; size: string; here: string }
+
+function cm(value: number): string {
+  return value.toLocaleString('nl-BE', { maximumFractionDigits: 1 });
+}
 
 const HISTORY = 60;
 const DRAG_START_PX = 7;
@@ -32,12 +43,18 @@ const DRAG_START_PX = 7;
  * when omdozen may tip), gets a twin (+1) or goes (Weg); drag it to move
  * it, and what stood on it drops down. Automatisch lays the carrier as
  * Palletberekening counts it. The build stays on this device per carrier.
+ * Which product is where: the mouse over a box shows its card and draws the
+ * edges of all its boxes in its colour; a product in the legend (Op de kar)
+ * or on the tray puts it in focus and fades the rest. On a phone a tap on a
+ * box does what the mouse does, and a finger turns the view unless it starts
+ * on the chosen box (Emre, 2026-11-15: see the products, mouse over them,
+ * very good on mobile).
  * three.js loads with this screen only (a @defer on the page).
  */
 @Component({
   selector: 'app-pallet-builder',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, Icon, NumPipe],
+  imports: [AuthImage, Icon, NgTemplateOutlet, NumPipe],
   host: { '(document:keydown)': 'key($event)' },
   template: `
     <div class="pb3" role="dialog" aria-modal="true" aria-labelledby="pb3-title">
@@ -64,11 +81,24 @@ const DRAG_START_PX = 7;
       </header>
 
       <div class="pb3-main">
-        <div class="pb3-stage" #stage>
-          <div class="pb3-stats" aria-live="polite">
-            <span><b>{{ stats().count | num }}</b> {{ stats().count === 1 ? 'omdoos' : 'omdozen' }}</span>
-            <span [class.pb3-warn]="stats().tooHigh"><b>{{ stats().topCm | num }}</b> / {{ spec().maxHeightCm | num }} cm</span>
-            <span [class.pb3-warn]="stats().tooHeavy"><b>{{ stats().weightKg | num }}</b> / {{ spec().maxWeightKg | num }} kg</span>
+        <div class="pb3-stage" #stage [class.pb3-stage--box]="hoverId() !== null" (pointermove)="hover($event)" (pointerleave)="unhover()">
+          <div class="pb3-top">
+            <div class="pb3-stats" aria-live="polite">
+              <span><b>{{ stats().count | num }}</b> {{ stats().count === 1 ? 'omdoos' : 'omdozen' }}</span>
+              <span [class.pb3-warn]="stats().tooHigh"><b>{{ stats().topCm | num }}</b> / {{ spec().maxHeightCm | num }} cm</span>
+              <span [class.pb3-warn]="stats().tooHeavy"><b>{{ stats().weightKg | num }}</b> / {{ spec().maxWeightKg | num }} kg</span>
+            </div>
+            @if (onCarrier().length) {
+              <div class="pb3-legend" role="group" [attr.aria-label]="'Op de ' + one() + ': tik een product om het uit te lichten'">
+                @for (entry of onCarrier(); track entry.item.key) {
+                  <button type="button" class="pb3-tag" [class.pb3-tag--on]="pinned() === entry.item.key" [attr.aria-pressed]="pinned() === entry.item.key"
+                          (click)="pin(entry.item.key)" (pointerenter)="lean($event, entry.item.key)" (pointerleave)="lean($event, null)"
+                          [title]="entry.item.title">
+                    <i [style.background]="entry.item.colour"></i><span>{{ entry.item.title }}</span><b>{{ entry.count | num }}</b>
+                  </button>
+                }
+              </div>
+            }
           </div>
           <button class="pb3-btn pb3-btn--round pb3-view" type="button" (click)="frameView()" aria-label="Beeld terugzetten" title="Beeld terugzetten">
             <app-icon name="expand" [size]="16" />
@@ -78,47 +108,70 @@ const DRAG_START_PX = 7;
             <p class="pb3-empty">3D werkt niet in deze browser.</p>
           } @else if (ready() && !boxes().length) {
             <div class="pb3-empty">
-              <p>Sleep een product op de {{ one() }}, of tik erop.</p>
+              <p>{{ touch() ? 'Sleep een product omhoog op de ' + one() + ', of tik erop.' : 'Sleep een product op de ' + one() + ', of klik erop.' }}</p>
               @if (parts().length) {
                 <button class="btn btn--primary btn--sm" type="button" (click)="autoFill()"><app-icon name="auto" [size]="15" /><span>Automatisch vullen</span></button>
               }
             </div>
           }
-          @if (selectedItem(); as item) {
-            <div class="pb3-pick" role="toolbar" [attr.aria-label]="'Gekozen omdoos: ' + item.title">
-              <span class="pb3-pick__name"><i [style.background]="item.colour"></i><span>{{ item.title }}</span></span>
-              <button type="button" (click)="turn()" title="Draai (R)"><app-icon name="refresh" [size]="16" /><span>Draai</span></button>
-              @if (turnable() && sidesOf(item).length > 1) {
-                <button type="button" (click)="tip()" title="Kantel (T)"><app-icon name="exchange" [size]="16" /><span>Kantel</span></button>
-              }
-              <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="16" /><span>+1</span></button>
-              <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="16" /><span>Weg</span></button>
+          @if (tip(); as info) {
+            <div class="pb3-tip" [style.left.px]="info.x" [style.top.px]="info.y" aria-hidden="true">
+              <ng-container [ngTemplateOutlet]="facts" [ngTemplateOutletContext]="{ $implicit: info.card }" />
+            </div>
+          }
+          @if (selectedCard(); as card) {
+            <div class="pb3-pick" role="toolbar" [attr.aria-label]="'Gekozen omdoos: ' + card.item.title">
+              <div class="pb3-pick__info"><ng-container [ngTemplateOutlet]="facts" [ngTemplateOutletContext]="{ $implicit: card }" /></div>
+              <div class="pb3-pick__actions">
+                <button type="button" (click)="turn()" title="Draai (R)"><app-icon name="refresh" [size]="17" /><span>Draai</span></button>
+                @if (turnable() && sidesOf(card.item).length > 1) {
+                  <button type="button" (click)="tipOver()" title="Kantel (T)"><app-icon name="exchange" [size]="17" /><span>Kantel</span></button>
+                }
+                <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="17" /><span>+1</span></button>
+                <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="17" /><span>Weg</span></button>
+                <button type="button" class="pb3-pick__close" (click)="selected.set(null)" aria-label="Klaar" title="Klaar (Esc)"><app-icon name="close" [size]="15" /></button>
+              </div>
             </div>
           }
         </div>
 
         <aside class="pb3-tray" aria-label="Producten">
           @for (item of items(); track item.key) {
-            <button class="pb3-item" type="button" [disabled]="!isSized(item)" (pointerdown)="trayDown($event, item)" (click)="trayClick(item)"
+            <button class="pb3-item" type="button" [disabled]="!isSized(item)" [class.pb3-item--lit]="focus() === item.key"
+                    (pointerdown)="trayDown($event, item)" (click)="trayClick(item)"
+                    (pointerenter)="lean($event, item.key)" (pointerleave)="lean($event, null)"
                     [attr.aria-label]="'Zet een omdoos ' + item.title + ' erbij'">
               <i class="pb3-item__tape" [style.background]="item.colour"></i>
-              @if (item.photo) { <img class="pb3-item__img" [appAuthSrc]="item.photo" appAuthLazy alt="" draggable="false" /> }
+              @if (item.photo) { <img class="pb3-item__img" [appAuthSrc]="item.photo" alt="" draggable="false" (load)="photoLoaded(item.key, $event)" /> }
               @else { <span class="pb3-item__img pb3-kraft"></span> }
               <span class="pb3-item__text">
                 <b>{{ item.title }}</b>
                 <small>{{ placedText(item) }}</small>
               </span>
+              <span class="pb3-item__add" aria-hidden="true"><app-icon name="plus" [size]="14" /></span>
             </button>
           }
         </aside>
       </div>
       @if (chip(); as at) { <span class="pb3-chip pb3-kraft" [style.left.px]="at.x" [style.top.px]="at.y" [style.--tape]="at.colour"></span> }
     </div>
+
+    <ng-template #facts let-card>
+      <span class="pb3-card">
+        @if (card.item.photo) { <img class="pb3-card__img" [appAuthSrc]="card.item.photo" alt="" /> }
+        @else { <span class="pb3-card__img pb3-kraft"></span> }
+        <span class="pb3-card__text">
+          <b><i [style.background]="card.item.colour"></i>{{ card.item.title }}</b>
+          <span>{{ card.size }}</span>
+          <span>{{ card.here }}</span>
+        </span>
+      </span>
+    </ng-template>
   `,
   styles: [`
     :host{display:contents}
     .pb3{position:fixed;inset:0;z-index:190;display:flex;flex-direction:column;background:var(--surface-2);color:var(--ink);animation:pb3-in .2s var(--ease-out,ease)}
-    @keyframes pb3-in{from{opacity:0;transform:scale(.985)}}
+    @keyframes pb3-in{from{opacity:0}}
     .pb3-bar{display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t,0px)) calc(12px + var(--safe-r,0px)) 8px calc(12px + var(--safe-l,0px));border-bottom:1px solid var(--line);background:var(--surface)}
     .pb3-title{flex:1;min-width:0}
     .pb3-title h2{margin:0;font-size:16px;font-weight:750}
@@ -128,40 +181,80 @@ const DRAG_START_PX = 7;
     .pb3-btn:disabled{opacity:.4;cursor:default}.pb3-btn:active:not(:disabled){background:var(--surface-2)}
     .pb3-btn--round{width:40px;padding:0}
     .pb3-main{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto}
-    .pb3-stage{position:relative;min-height:0;overflow:hidden;touch-action:none;background:radial-gradient(120% 90% at 50% 30%,var(--surface) 0,var(--surface-2) 72%)}
-    .pb3-stats{position:absolute;top:12px;left:12px;right:64px;display:flex;flex-wrap:wrap;gap:6px;pointer-events:none}
+    .pb3-stage{position:relative;min-height:0;overflow:hidden;touch-action:none;cursor:grab;background:radial-gradient(120% 90% at 50% 30%,var(--surface) 0,var(--surface-2) 72%)}
+    .pb3-stage:active{cursor:grabbing}.pb3-stage--box{cursor:move}
+    .pb3-top{position:absolute;top:10px;left:12px;right:62px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;pointer-events:none}
+    .pb3-stats{display:flex;flex-wrap:wrap;gap:6px}
     .pb3-stats span,.pb3-note{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
     .pb3-stats b{color:var(--ink);font-weight:750}
     .pb3-stats .pb3-warn,.pb3-stats .pb3-warn b{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+    .pb3-legend{display:flex;gap:6px;max-width:100%;overflow-x:auto;scrollbar-width:none;pointer-events:auto;padding:2px;margin:-2px}
+    .pb3-tag{display:inline-flex;flex:none;align-items:center;gap:7px;max-width:240px;height:32px;padding:0 11px 0 9px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 92%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .pb3-tag i{flex:none;width:10px;height:10px;border-radius:3px}
+    .pb3-tag span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .pb3-tag b{font-weight:750;color:var(--muted);font-variant-numeric:tabular-nums}
+    .pb3-tag--on{border-color:var(--ink);background:var(--ink);color:var(--surface)}.pb3-tag--on b{color:inherit;opacity:.75}
     .pb3-view{position:absolute;top:10px;right:12px}
-    .pb3-note{position:absolute;top:50px;left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650;animation:pb3-in .15s ease-out}
+    .pb3-note{position:absolute;top:96px;left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650}
     .pb3-empty{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 32px);margin:0;font-size:13.5px;color:var(--muted);text-align:center;pointer-events:none}
     .pb3-empty p{margin:0}.pb3-empty .btn{pointer-events:auto}
-    .pb3-pick{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:2px;max-width:calc(100% - 20px);padding:5px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 94%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 28px rgb(40 28 18 / 16%);animation:pb3-in .15s ease-out}
-    .pb3-pick__name{display:flex;align-items:center;gap:7px;min-width:0;max-width:220px;padding:0 8px 0 6px;font-size:12.5px;font-weight:650}
-    .pb3-pick__name span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-    .pb3-pick__name i{flex:none;width:10px;height:10px;border-radius:3px}
-    .pb3-pick button{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:52px;height:46px;padding:0 6px;border:0;border-radius:12px;background:none;color:var(--ink);font:inherit;font-size:11px;font-weight:650;cursor:pointer;-webkit-tap-highlight-color:transparent}
-    .pb3-pick button:active{background:var(--surface-2)}.pb3-pick .pb3-pick__out{color:var(--danger,#b3261e)}
+    .pb3-tip{position:absolute;z-index:2;width:max-content;max-width:300px;padding:9px 12px 9px 9px;border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--surface) 96%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 30px rgb(40 28 18 / 18%);pointer-events:none}
+    .pb3-card{display:flex;align-items:center;gap:10px;min-width:0}
+    .pb3-card__img{flex:none;width:46px;height:46px;border-radius:10px;object-fit:cover;background:var(--surface-2)}
+    .pb3-card__text{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+    .pb3-card__text b{display:flex;align-items:center;gap:6px;color:var(--ink);font-size:13.5px;font-weight:700;line-height:1.25}
+    .pb3-card__text b i{flex:none;width:10px;height:10px;border-radius:3px}
+    .pb3-card__text span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pb3-pick{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:6px;max-width:calc(100% - 20px);padding:6px 6px 6px 8px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 95%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 28px rgb(40 28 18 / 16%);animation:pb3-in .15s ease-out}
+    .pb3-pick__info{min-width:0;max-width:280px;padding-right:4px}
+    .pb3-pick__actions{display:flex;align-items:center;gap:2px}
+    .pb3-pick__actions button{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:52px;height:48px;padding:0 6px;border:0;border-radius:12px;background:none;color:var(--ink);font:inherit;font-size:11px;font-weight:650;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .pb3-pick__actions button:active,.pb3-pick__actions button:hover{background:var(--surface-2)}
+    .pb3-pick .pb3-pick__out{color:var(--danger,#b3261e)}
+    .pb3-pick .pb3-pick__close{min-width:36px;color:var(--muted)}
     .pb3-tray{display:flex;gap:8px;overflow-x:auto;overscroll-behavior:contain;padding:10px calc(12px + var(--safe-r,0px)) calc(10px + var(--safe-b,0px)) calc(12px + var(--safe-l,0px));border-top:1px solid var(--line);background:var(--surface);scrollbar-width:none}
-    .pb3-item{position:relative;flex:none;display:grid;grid-template-columns:44px minmax(0,1fr);align-items:center;gap:10px;width:184px;padding:8px 10px 8px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:grab;touch-action:pan-x;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+    .pb3-item{position:relative;flex:none;display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:10px;width:208px;padding:8px 10px 8px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:grab;touch-action:pan-x;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
     .pb3-item:disabled{opacity:.5;cursor:default}.pb3-item:active:not(:disabled){background:var(--surface-2)}
+    .pb3-item--lit{border-color:var(--ink-2)}
     .pb3-item__tape{position:absolute;left:-1px;top:10px;bottom:10px;width:4px;border-radius:0 4px 4px 0}
     .pb3-item__img{width:44px;height:44px;border-radius:10px;object-fit:cover;background:var(--surface-2);pointer-events:none}
     .pb3-item__text{display:flex;flex-direction:column;min-width:0}
     .pb3-item__text b{overflow:hidden;font-size:12.5px;font-weight:650;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
     .pb3-item__text small{margin-top:2px;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+    .pb3-item__add{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--surface-2);color:var(--ink-2)}
     .pb3-kraft{background:#c0905f linear-gradient(transparent 40%,var(--tape,#9a6b3f) 40% 58%,transparent 58%);box-shadow:inset 0 0 0 1px rgb(90 58 28 / 30%)}
-    .pb3-chip{position:fixed;z-index:1;width:40px;height:30px;margin:-34px 0 0 -20px;border-radius:3px;pointer-events:none;box-shadow:0 8px 18px rgb(40 28 18 / 28%)}
+    .pb3-chip{position:fixed;z-index:3;width:40px;height:30px;margin:-34px 0 0 -20px;border-radius:3px;pointer-events:none;box-shadow:0 8px 18px rgb(40 28 18 / 28%)}
     .pb3 :is(button):focus-visible{outline:2px solid var(--rose);outline-offset:2px}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
-      .pb3-main{grid-template-rows:none;grid-template-columns:272px minmax(0,1fr)}
+      .pb3-main{grid-template-rows:none;grid-template-columns:280px minmax(0,1fr)}
       .pb3-tray{order:-1;flex-direction:column;overflow:auto;padding:12px;border-top:0;border-right:1px solid var(--line)}
       .pb3-item{width:auto;touch-action:none}
+      .pb3-item__add{opacity:0;transition:opacity .15s}.pb3-item:hover .pb3-item__add{opacity:1}
+      .pb3-pick__info .pb3-card__img{width:36px;height:36px}
+      .pb3-pick__info .pb3-card__text span:nth-child(2){display:none}
     }
+    /* The phone: the chosen box's card spans the width over the tray, its buttons in a row of their own. */
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){
       .pb3-lbl{display:none}.pb3-tools .pb3-btn{width:40px;padding:0}
-      .pb3-pick__name{display:none}
+      .pb3-stats span{padding:4px 8px;font-size:12px}
+      .pb3-tag{height:34px}
+      .pb3-pick{left:10px;right:10px;bottom:10px;transform:none;flex-direction:column;align-items:stretch;gap:4px;max-width:none;padding:10px 10px 6px}
+      .pb3-pick__info{max-width:none;padding:0 2px}
+      .pb3-pick__actions{justify-content:space-between}
+      .pb3-pick__actions button{flex:1;height:52px;font-size:12px}
+      .pb3-pick .pb3-pick__close{flex:none;min-width:44px}
+      .pb3-note{top:auto;bottom:178px}
+    }
+    /* A phone on its side (or the folded Duo): the tray as a column on the left, the 3D as wide as it gets. */
+    @media (hover: none) and (orientation: landscape) and (max-height: 560px){
+      .pb3-bar{padding-top:calc(4px + var(--safe-t,0px));padding-bottom:4px}
+      .pb3-main{grid-template-rows:none;grid-template-columns:calc(220px + var(--safe-l,0px)) minmax(0,1fr)}
+      .pb3-tray{order:-1;flex-direction:column;overflow:auto;padding:8px 8px calc(8px + var(--safe-b,0px)) calc(8px + var(--safe-l,0px));border-top:0;border-right:1px solid var(--line);touch-action:pan-y}
+      .pb3-item{width:auto;touch-action:pan-y}
+      .pb3-pick{left:50%;right:auto;transform:translateX(-50%);flex-direction:row;align-items:center;max-width:calc(100% - 20px);padding:6px}
+      .pb3-pick__info .pb3-card__text span:nth-child(2){display:none}
+      .pb3-pick__actions button{flex:none;min-width:50px;height:46px}
+      .pb3-note{bottom:80px}
     }
   `],
 })
@@ -190,6 +283,15 @@ export class PalletBuilder {
   readonly note = signal('');
   readonly canUndo = signal(false);
   readonly chip = signal<{ x: number; y: number; colour: string } | null>(null);
+  /** The box under the mouse and where the mouse is in the view. */
+  readonly hoverId = signal<number | null>(null);
+  private readonly hoverAt = signal({ x: 0, y: 0, width: 0, height: 0 });
+  /** A product the mouse rests on in the legend or the tray; a product tapped in the legend stays in focus. */
+  private readonly leaning = signal<number | null>(null);
+  readonly pinned = signal<number | null>(null);
+  /** The tray's photos once loaded: they go on the cartons' labels. */
+  private readonly photos = signal<ReadonlyMap<number, HTMLImageElement>>(new Map());
+  readonly touch = signal(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
 
   readonly itemMap = computed(() => new Map(this.items().map((item) => [item.key, item])));
   readonly deck = computed(() => deckOf(this.spec()));
@@ -219,6 +321,41 @@ export class PalletBuilder {
 
   readonly sidesOf = sidesOf;
 
+  /** The products standing on the carrier, in the tray's order: the legend. */
+  readonly onCarrier = computed(() => this.items()
+    .map((item) => ({ item, count: this.counts().get(item.key) ?? 0 }))
+    .filter((entry) => entry.count > 0));
+  /** The product in focus; a pinned product that left the carrier lets go. */
+  readonly focus = computed(() => {
+    const leaning = this.leaning();
+    if (leaning !== null) return leaning;
+    const pinned = this.pinned();
+    return pinned !== null && this.counts().has(pinned) ? pinned : null;
+  });
+  /** The product whose boxes get coloured edges: the one under the mouse, else the chosen one. */
+  private readonly marked = computed(() => {
+    const hovered = this.hoverId();
+    const box = hovered === null ? this.selectedBox() : this.boxes().find((candidate) => candidate.id === hovered) ?? null;
+    return box?.key ?? null;
+  });
+  readonly selectedCard = computed(() => {
+    const box = this.selectedBox();
+    return box ? this.card(box) : null;
+  });
+  /** The card beside the mouse, kept inside the view. */
+  readonly tip = computed(() => {
+    const id = this.hoverId();
+    if (id === null || id === this.selected()) return null;
+    const box = this.boxes().find((candidate) => candidate.id === id);
+    const card = box ? this.card(box) : null;
+    if (!card) return null;
+    const at = this.hoverAt();
+    const width = 300; const height = 70;
+    const x = at.x + 18 + width > at.width ? Math.max(8, at.x - 18 - width) : at.x + 18;
+    const y = at.y + 22 + height > at.height ? Math.max(8, at.y - 18 - height) : at.y + 22;
+    return { x, y, card };
+  });
+
   private scene: BuilderScene | null = null;
   private readonly sceneReady = signal(false);
   private loaded = false;
@@ -232,6 +369,9 @@ export class PalletBuilder {
   private target: Target | null = null;
   private readonly pointers = new Set<number>();
   private suppressClick = false;
+  private hoverFrame = 0;
+  private topObserver: ResizeObserver | null = null;
+  private lastHover: PointerEvent | null = null;
   private noteTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
@@ -241,12 +381,18 @@ export class PalletBuilder {
       const items = this.items(); const map = this.itemMap(); const boxes = this.boxes();
       if (!this.sceneReady() || !this.scene) return;
       this.scene.setCarrier(kind, spec, deck);
-      this.scene.setItems(items);
+      this.scene.setItems(items, this.photos());
       this.scene.setBoxes(boxes, map);
     });
     effect(() => {
       const id = this.selected();
       if (this.sceneReady()) this.scene?.markPicked(id);
+    });
+    effect(() => {
+      const focus = this.focus(); const marked = this.marked(); const hovered = this.hoverId();
+      if (!this.sceneReady() || !this.scene) return;
+      this.scene.setFocus(focus, marked);
+      this.scene.setHover(hovered);
     });
     effect(() => {
       const boxes = this.boxes();
@@ -259,6 +405,8 @@ export class PalletBuilder {
       window.removeEventListener('pointerup', this.up);
       window.removeEventListener('pointercancel', this.cancel);
       clearTimeout(this.noteTimer);
+      cancelAnimationFrame(this.hoverFrame);
+      this.topObserver?.disconnect();
       this.scene?.dispose();
       this.scene = null;
     });
@@ -279,6 +427,14 @@ export class PalletBuilder {
     } catch {
       this.failed.set(true);
       return;
+    }
+    /* The figures and the legend over the top of the view: the picture centres under them. */
+    const top = stage.querySelector<HTMLElement>('.pb3-top');
+    if (top) {
+      const measure = () => this.scene?.setInsetTop(top.offsetTop + top.offsetHeight + 6);
+      measure();
+      this.topObserver = new ResizeObserver(measure);
+      this.topObserver.observe(top);
     }
     stage.addEventListener('pointerdown', this.down, { capture: true });
     window.addEventListener('pointermove', this.move);
@@ -305,6 +461,67 @@ export class PalletBuilder {
 
   frameView(): void {
     this.scene?.frameView();
+  }
+
+  /** "58,5 × 40 × 34 cm · 12 kg · op de zij" and "6 van 6 op de kar · 36 stuks". */
+  private card(box: BuilderBox): BoxCard | null {
+    const item = this.itemMap().get(box.key);
+    if (!item) return null;
+    const size = [`${cm(item.lengthCm)} × ${cm(item.widthCm)} × ${cm(item.heightCm)} cm`];
+    if (item.weightKg > 0) size.push(`${cm(item.weightKg)} kg`);
+    if (box.up !== 'h') size.push(box.up === 'w' ? 'op de zij' : 'op de korte kant');
+    const count = this.counts().get(item.key) ?? 0;
+    const here = [`${count.toLocaleString('nl-BE')}${item.wanted ? ` van ${item.wanted.toLocaleString('nl-BE')}` : ''} op deze ${this.one()}`];
+    if (item.units) {
+      const pieces = count * item.units.per;
+      here.push(`${pieces.toLocaleString('nl-BE')} ${pieces === 1 ? item.units.one : item.units.other}`);
+    }
+    return { item, size: size.join(' · '), here: here.join(' · ') };
+  }
+
+  /** The mouse over the view: the box under it, once a frame. */
+  hover(event: PointerEvent): void {
+    if (event.pointerType !== 'mouse') return;
+    if (event.buttons || this.press || this.trayPress?.active || !this.scene || event.target !== this.scene.canvas) {
+      if (this.hoverId() !== null) this.hoverId.set(null);
+      return;
+    }
+    this.lastHover = event;
+    if (this.hoverFrame) return;
+    this.hoverFrame = requestAnimationFrame(() => {
+      this.hoverFrame = 0;
+      const last = this.lastHover;
+      if (!last || !this.scene) return;
+      const rect = this.stage().nativeElement.getBoundingClientRect();
+      this.hoverAt.set({ x: last.clientX - rect.left, y: last.clientY - rect.top, width: rect.width, height: rect.height });
+      this.hoverId.set(this.scene.boxAt(last.clientX, last.clientY));
+    });
+  }
+
+  unhover(): void {
+    this.lastHover = null;
+    this.hoverId.set(null);
+  }
+
+  /** The mouse on a product in the legend or the tray: that product in focus while it rests there. */
+  lean(event: PointerEvent, key: number | null): void {
+    if (event.pointerType === 'mouse') this.leaning.set(key);
+  }
+
+  /** A tap or click in the legend keeps a product in focus; again lets go. */
+  pin(key: number): void {
+    this.pinned.set(this.pinned() === key ? null : key);
+    this.hostBridge.haptic('selection');
+  }
+
+  /** A tray photo has loaded: it goes on that product's labels (only an image the canvas may read). */
+  photoLoaded(key: number, event: Event): void {
+    const image = event.target as HTMLImageElement;
+    const source = image.currentSrc || image.src;
+    let readable = source.startsWith('blob:') || source.startsWith('data:');
+    try { readable ||= new URL(source, location.href).origin === location.origin; } catch { /* not a URL */ }
+    if (!readable || !image.naturalWidth || this.photos().get(key) === image) return;
+    this.photos.update((photos) => new Map(photos).set(key, image));
   }
 
   /* ------------------------------------------------------------------ edits */
@@ -358,7 +575,7 @@ export class PalletBuilder {
   }
 
   /** The next side the omdoos can stand on. */
-  tip(): void {
+  tipOver(): void {
     const box = this.selectedBox();
     const item = this.selectedItem();
     if (!box || !item || !this.turnable()) return;
@@ -417,9 +634,12 @@ export class PalletBuilder {
     if (this.pointers.size > 1) { this.dropPress(); return; }
     if (!this.scene || this.trayPress?.active) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    this.touch.set(event.pointerType === 'touch');
+    this.hoverId.set(null);
     const id = this.scene.boxAt(event.clientX, event.clientY);
-    this.press = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moving: false };
-    if (id !== null) {
+    const movable = id !== null && (event.pointerType !== 'touch' || id === this.selected());
+    this.press = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, moving: false, movable };
+    if (movable) {
       this.scene.orbit = false;
       this.selected.set(id);
       try { (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); } catch { /* the pointer is already gone */ }
@@ -429,7 +649,7 @@ export class PalletBuilder {
   private readonly move = (event: PointerEvent): void => {
     if (this.trayPress?.pointerId === event.pointerId) { this.trayMove(event); return; }
     const press = this.press;
-    if (!press || press.pointerId !== event.pointerId || press.id === null || !this.scene) return;
+    if (!press || press.pointerId !== event.pointerId || !press.movable || !this.scene) return;
     const box = this.boxes().find((candidate) => candidate.id === press.id);
     const item = box ? this.itemMap().get(box.key) : undefined;
     if (!box || !item) return;
@@ -450,8 +670,12 @@ export class PalletBuilder {
     if (!press || press.pointerId !== event.pointerId) return;
     this.press = null;
     if (this.scene) this.scene.orbit = true;
-    if (press.id === null) {
-      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_START_PX) this.selected.set(null);
+    if (!press.movable) {
+      /* A tap chooses the box under it (nothing: none); a drag turned the view. */
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) < DRAG_START_PX) {
+        this.selected.set(press.id);
+        if (press.id !== null) this.hostBridge.haptic('selection');
+      }
       return;
     }
     if (!press.moving) return;
@@ -481,7 +705,10 @@ export class PalletBuilder {
 
   trayDown(event: PointerEvent, item: BuilderItem): void {
     if (!sized(item) || (event.pointerType === 'mouse' && event.button !== 0) || !this.scene) return;
-    this.trayPress = { item, pointerId: event.pointerId, x: event.clientX, y: event.clientY, touch: event.pointerType !== 'mouse', active: false };
+    const tray = (event.currentTarget as HTMLElement).parentElement;
+    const column = !!tray && getComputedStyle(tray).flexDirection === 'column';
+    this.touch.set(event.pointerType === 'touch');
+    this.trayPress = { item, pointerId: event.pointerId, x: event.clientX, y: event.clientY, touch: event.pointerType !== 'mouse', column, active: false };
   }
 
   trayClick(item: BuilderItem): void {
@@ -495,8 +722,9 @@ export class PalletBuilder {
     if (!press.active) {
       const dx = event.clientX - press.x; const dy = event.clientY - press.y;
       if (Math.hypot(dx, dy) < DRAG_START_PX) return;
-      /* On a phone the tray scrolls sideways: only an upward pull carries a box out. */
-      if (press.touch && !(dy < -DRAG_START_PX && Math.abs(dy) > Math.abs(dx))) { this.trayPress = null; return; }
+      /* With a finger the tray scrolls along itself: only a pull towards the view carries a box out (up, or right from a column). */
+      const out = press.column ? dx > DRAG_START_PX && Math.abs(dx) > Math.abs(dy) : dy < -DRAG_START_PX && Math.abs(dy) > Math.abs(dx);
+      if (press.touch && !out) { this.trayPress = null; return; }
       press.active = true;
       this.dragOthers = this.boxes();
       this.dragSolids = solidsOf(this.dragOthers, this.itemMap());
@@ -564,7 +792,7 @@ export class PalletBuilder {
         else this.closed.emit();
         return;
       case 'r': case 'R': this.turn(); return;
-      case 't': case 'T': case 'k': case 'K': this.tip(); return;
+      case 't': case 'T': case 'k': case 'K': this.tipOver(); return;
       case 'd': case 'D': case '+': this.copy(); return;
       case 'Delete': case 'Backspace':
         if (this.selected() !== null) { event.preventDefault(); this.remove(); }

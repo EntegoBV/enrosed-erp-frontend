@@ -22,6 +22,8 @@ export interface BuilderItem {
   wanted: number | null;
   /** The side Palletberekening stands it on. */
   up: CartonUp;
+  /** Pieces in one omdoos and their word, for "36 stuks"; null when unknown. */
+  units: { per: number; one: string; other: string } | null;
 }
 
 /** One omdoos on the floor or on others. */

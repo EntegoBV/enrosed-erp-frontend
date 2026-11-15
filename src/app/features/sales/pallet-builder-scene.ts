@@ -13,7 +13,9 @@ import { extentOf, type BuilderBox, type BuilderItem, type Deck, type Extent, ty
  * in kraft brown with the ENROSED mark, the shadow on the ground, the camera
  * that turns around the load, and the ray from the pointer to a place on the
  * floor. Everything is in cm; the floor's corner is at (-length/2, base,
- * -width/2), so the carrier stands in the middle. It renders only when
+ * -width/2), so the carrier stands in the middle. A product can be put in
+ * focus (the others fade) and marked (its boxes get edges in its colour);
+ * the box under the mouse gets a light shell. It renders only when
  * something changed.
  */
 
@@ -28,10 +30,19 @@ const INK = '#3a2615';
 
 interface Look {
   signature: string;
+  key: number;
+  colour: Color;
   geometry: BoxGeometry;
   edges: EdgesGeometry;
   materials: MeshStandardMaterial[];
+  /** Each product's own edges, so its boxes can be marked or faded together. */
+  line: LineBasicMaterial;
+  faded: boolean;
 }
+
+const EDGE = new Color(0x5b3c20);
+const BLACK = new Color(0x000000);
+const EDGE_OPACITY = 0.42;
 
 export interface Aim { centreX: number; centreZ: number }
 
@@ -48,10 +59,10 @@ export class BuilderScene {
   private readonly sun: DirectionalLight;
   private readonly looks = new Map<number, Look>();
   private readonly meshes = new Map<number, Mesh>();
-  private readonly edgeMaterial = new LineBasicMaterial({ color: 0x5b3c20, transparent: true, opacity: 0.42 });
   private readonly ghostFill = new MeshBasicMaterial({ transparent: true, opacity: 0.38, depthWrite: false });
   private readonly ghostLine = new LineBasicMaterial({ transparent: true, opacity: 0.95 });
   private readonly pickedFill: MeshBasicMaterial;
+  private readonly hoverFill = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false });
   private readonly pickedLine: LineBasicMaterial;
   private readonly accent: Color;
   private readonly inkLogo: HTMLCanvasElement | null;
@@ -60,6 +71,13 @@ export class BuilderScene {
   private ghostKey: string | null = null;
   private picked: Group | null = null;
   private pickedId: number | null = null;
+  private hovered: Group | null = null;
+  private hoveredId: number | null = null;
+  private focusKey: number | null = null;
+  private insetTop = 0;
+  /** The user turned or zoomed the view: a change of the inset no longer reframes it. */
+  private moved = false;
+  private markedKey: number | null = null;
   private hiddenId: number | null = null;
   private deck: Deck = { lengthCm: 120, widthCm: 80, usableCm: 240 };
   private base = 14.4;
@@ -108,6 +126,7 @@ export class BuilderScene {
     this.controls.maxDistance = 1400;
     this.controls.screenSpacePanning = true;
     this.controls.addEventListener('change', () => this.render());
+    this.controls.addEventListener('start', () => { this.moved = true; });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(host);
@@ -141,20 +160,75 @@ export class BuilderScene {
   }
 
   /** The look of each product's omdoos: geometry, edges and the six printed faces. */
-  setItems(items: readonly BuilderItem[]): void {
+  setItems(items: readonly BuilderItem[], photos: ReadonlyMap<number, HTMLImageElement>): void {
     const keep = new Set<number>();
     for (const item of items) {
       if (!(item.lengthCm > 0 && item.widthCm > 0 && item.heightCm > 0)) continue;
       keep.add(item.key);
-      const signature = `${item.lengthCm}x${item.widthCm}x${item.heightCm}|${item.colour}|${item.title}`;
+      const photo = photos.get(item.key) ?? null;
+      const signature = `${item.lengthCm}x${item.widthCm}x${item.heightCm}|${item.colour}|${item.title}|${photo ? photo.src : ''}`;
       const known = this.looks.get(item.key);
       if (known?.signature === signature) continue;
       if (known) disposeLook(known);
-      this.looks.set(item.key, this.look(item, signature));
+      this.looks.set(item.key, this.look(item, signature, photo));
       for (const mesh of this.meshes.values()) if (mesh.userData['key'] === item.key) mesh.userData['signature'] = null;
     }
     for (const [key, look] of this.looks) if (!keep.has(key)) { disposeLook(look); this.looks.delete(key); }
+    this.paintFocus();
     this.render();
+  }
+
+  /**
+   * One product in focus (the others fade to a shadow of themselves) and one
+   * marked (its boxes' edges in its own colour); null for neither.
+   */
+  setFocus(focus: number | null, marked: number | null): void {
+    if (this.focusKey === focus && this.markedKey === marked) return;
+    this.focusKey = focus;
+    this.markedKey = marked;
+    this.paintFocus();
+    this.render();
+  }
+
+  /** A light shell around the box under the mouse. */
+  setHover(id: number | null): void {
+    if (this.hoveredId === id) return;
+    if (this.hovered) { this.hovered.removeFromParent(); disposeTree(this.hovered, false); this.hovered = null; }
+    this.hoveredId = id;
+    const mesh = id === null || id === this.pickedId ? undefined : this.meshes.get(id);
+    const look = mesh ? this.looks.get(mesh.userData['key'] as number) : undefined;
+    if (mesh && look) {
+      this.hovered = shell(look.geometry, this.hoverFill, look.line);
+      mesh.add(this.hovered);
+    }
+    this.render();
+  }
+
+  private paintFocus(): void {
+    for (const look of this.looks.values()) {
+      const faded = this.focusKey !== null && look.key !== this.focusKey;
+      if (faded !== look.faded) {
+        look.faded = faded;
+        for (const material of new Set(look.materials)) {
+          material.transparent = faded;
+          material.opacity = faded ? 0.14 : 1;
+          material.depthWrite = !faded;
+          material.needsUpdate = true;
+        }
+      }
+      const marked = !faded && (look.key === this.markedKey || look.key === this.focusKey);
+      look.line.color.copy(marked ? look.colour : EDGE);
+      look.line.opacity = faded ? 0.1 : marked ? 1 : EDGE_OPACITY;
+      /* A marked product's cartons glow faintly in its colour, so all of them read at a glance. */
+      for (const material of new Set(look.materials)) {
+        material.emissive.copy(marked ? look.colour : BLACK);
+        material.emissiveIntensity = marked ? 0.28 : 0;
+      }
+    }
+    for (const mesh of this.meshes.values()) {
+      const look = this.looks.get(mesh.userData['key'] as number);
+      mesh.castShadow = !look?.faded;
+    }
   }
 
   /** The boxes as they stand now: meshes come, go and move to match. */
@@ -171,7 +245,8 @@ export class BuilderScene {
         mesh = new Mesh(look.geometry, look.materials);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        mesh.add(new LineSegments(look.edges, this.edgeMaterial));
+        mesh.add(new LineSegments(look.edges, look.line));
+        mesh.castShadow = !look.faded;
         mesh.userData['id'] = box.id;
         mesh.userData['key'] = box.key;
         mesh.userData['signature'] = look.signature;
@@ -183,6 +258,7 @@ export class BuilderScene {
     }
     for (const id of [...this.meshes.keys()]) if (!present.has(id)) this.dropMesh(id);
     this.markPicked(this.pickedId);
+    if (this.hoveredId !== null && !this.meshes.has(this.hoveredId)) this.setHover(null);
     this.render();
   }
 
@@ -193,11 +269,9 @@ export class BuilderScene {
     const mesh = id === null ? undefined : this.meshes.get(id);
     const look = mesh ? this.looks.get(mesh.userData['key'] as number) : undefined;
     if (mesh && look) {
-      const params = look.geometry.parameters;
-      const shell = new BoxGeometry(params.width + 0.8, params.height + 0.8, params.depth + 0.8);
-      this.picked = new Group();
-      this.picked.add(new Mesh(shell, this.pickedFill), new LineSegments(new EdgesGeometry(shell), this.pickedLine));
+      this.picked = shell(look.geometry, this.pickedFill, this.pickedLine);
       mesh.add(this.picked);
+      if (this.hoveredId === id) this.setHover(null);
     }
     this.render();
   }
@@ -282,13 +356,18 @@ export class BuilderScene {
     const target = new Vector3(0, top * 0.47, 0);
     /* Height and floor are fitted apart, so a tall phone screen shows the load as large as a wide desk does. */
     const footprint = Math.sqrt(lengthCm * lengthCm + widthCm * widthCm) / 2;
-    const vertical = Math.tan(((this.camera.fov * Math.PI) / 180) / 2);
-    const horizontal = vertical * this.camera.aspect;
-    const distance = Math.max(top / 2 / vertical, footprint / horizontal) * 1.18 + footprint * 0.5;
+    /* Fitted into the free part under the figures: the virtual image is taller than the canvas by the inset. */
+    const height = Math.max(1, this.host.clientHeight);
+    const inset = Math.min(this.insetTop, height * 0.4);
+    const half = Math.tan(((this.camera.fov * Math.PI) / 180) / 2);
+    const vertical = (half * (height - inset)) / (height + inset);
+    const horizontal = half * this.camera.aspect;
+    const distance = Math.max(top / 2 / vertical, footprint / horizontal) * 1.08 + footprint * 0.5;
     const direction = new Vector3(0.82, 0.52, 1).normalize();
     this.camera.position.copy(target).addScaledVector(direction, distance);
     this.controls.target.copy(target);
     this.controls.update();
+    this.moved = false;
     this.render();
   }
 
@@ -306,9 +385,10 @@ export class BuilderScene {
     this.looks.clear();
     disposeTree(this.carrier);
     if (this.picked) disposeTree(this.picked, false);
+    if (this.hovered) disposeTree(this.hovered, false);
     this.ground.geometry.dispose();
     (this.ground.material as Material).dispose();
-    [this.edgeMaterial, this.ghostFill, this.ghostLine, this.pickedFill, this.pickedLine].forEach((material) => material.dispose());
+    [this.ghostFill, this.ghostLine, this.pickedFill, this.pickedLine, this.hoverFill].forEach((material) => material.dispose());
     this.woodTexture.dispose();
     this.renderer.dispose();
     this.canvas.remove();
@@ -326,10 +406,29 @@ export class BuilderScene {
   };
 
   private resize(): void {
+    this.renderer.setSize(Math.max(1, this.host.clientWidth), Math.max(1, this.host.clientHeight), false);
+    this.applyView();
+  }
+
+  /**
+   * The figures and the legend lie over the top of the view: the picture's
+   * middle moves down by their height (a taller virtual image of which the
+   * canvas shows the top), so the load centres in the free part below them.
+   */
+  setInsetTop(pixels: number): void {
+    if (Math.abs(pixels - this.insetTop) < 1) return;
+    this.insetTop = pixels;
+    this.applyView();
+    if (!this.moved) this.frameView();
+  }
+
+  private applyView(): void {
     const width = Math.max(1, this.host.clientWidth);
     const height = Math.max(1, this.host.clientHeight);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
+    const inset = Math.min(this.insetTop, height * 0.4);
+    this.camera.aspect = width / (height + inset);
+    if (inset > 0) this.camera.setViewOffset(width, height + inset, 0, 0, width, height);
+    else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
     this.render();
   }
@@ -355,6 +454,7 @@ export class BuilderScene {
     const mesh = this.meshes.get(id);
     if (!mesh) return;
     if (this.pickedId === id && this.picked) { this.picked.removeFromParent(); disposeTree(this.picked, false); this.picked = null; }
+    if (this.hoveredId === id && this.hovered) { this.hovered.removeFromParent(); disposeTree(this.hovered, false); this.hovered = null; this.hoveredId = null; }
     mesh.removeFromParent();
     this.meshes.delete(id);
   }
@@ -363,7 +463,7 @@ export class BuilderScene {
    * The omdoos in its own axes: x its length, y its height, z its width.
    * Faces in BoxGeometry's order: the two ends, top, bottom, the two long sides.
    */
-  private look(item: BuilderItem, signature: string): Look {
+  private look(item: BuilderItem, signature: string, photo: HTMLImageElement | null): Look {
     const geometry = new BoxGeometry(item.lengthCm, item.heightCm, item.widthCm);
     const anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
     const material = (canvas: HTMLCanvasElement) => {
@@ -373,11 +473,15 @@ export class BuilderScene {
       return new MeshStandardMaterial({ map: texture, roughness: 0.9, metalness: 0 });
     };
     const seed = item.key * 7919;
-    const end = material(face(item.widthCm, item.heightCm, 'end', this.inkLogo, item, seed + 1));
-    const top = material(face(item.lengthCm, item.widthCm, 'top', this.inkLogo, item, seed + 2));
-    const bottom = material(face(item.lengthCm, item.widthCm, 'bottom', this.inkLogo, item, seed + 3));
-    const side = material(face(item.lengthCm, item.heightCm, 'side', this.inkLogo, item, seed + 4));
-    return { signature, geometry, edges: new EdgesGeometry(geometry), materials: [end, end, top, bottom, side, side] };
+    const end = material(face(item.widthCm, item.heightCm, 'end', this.inkLogo, item, photo, seed + 1));
+    const top = material(face(item.lengthCm, item.widthCm, 'top', this.inkLogo, item, photo, seed + 2));
+    const bottom = material(face(item.lengthCm, item.widthCm, 'bottom', this.inkLogo, item, photo, seed + 3));
+    const side = material(face(item.lengthCm, item.heightCm, 'side', this.inkLogo, item, photo, seed + 4));
+    return {
+      signature, key: item.key, colour: new Color(item.colour), geometry, edges: new EdgesGeometry(geometry),
+      materials: [end, end, top, bottom, side, side],
+      line: new LineBasicMaterial({ color: EDGE, transparent: true, opacity: EDGE_OPACITY }), faded: false,
+    };
   }
 }
 
@@ -417,7 +521,9 @@ type FaceKind = 'side' | 'end' | 'top' | 'bottom';
  * smaller mark and a label with the product's colour and name, the top a
  * strip of tape in the product's colour.
  */
-function face(widthCm: number, heightCm: number, kind: FaceKind, logo: HTMLCanvasElement | null, item: BuilderItem, seed: number): HTMLCanvasElement {
+function face(
+  widthCm: number, heightCm: number, kind: FaceKind, logo: HTMLCanvasElement | null, item: BuilderItem, photo: HTMLImageElement | null, seed: number,
+): HTMLCanvasElement {
   const perCm = Math.min(10, Math.max(3, 512 / Math.max(widthCm, heightCm)));
   const width = Math.max(16, Math.round(widthCm * perCm));
   const height = Math.max(16, Math.round(heightCm * perCm));
@@ -468,44 +574,59 @@ function face(widthCm: number, heightCm: number, kind: FaceKind, logo: HTMLCanva
     return canvas;
   }
 
+  /* The mark in the upper part, the label under it: the product's colour, photo and name. */
+  const logoCentre = height * (kind === 'side' ? 0.3 : 0.2);
   if (logo) {
-    const share = kind === 'side' ? 0.62 : 0.74;
-    let logoWidth = width * share;
+    let logoWidth = width * (kind === 'side' ? 0.58 : 0.72);
     let logoHeight = logoWidth * (logo.height / logo.width);
-    const maxHeight = height * (kind === 'side' ? 0.24 : 0.16);
+    const maxHeight = height * (kind === 'side' ? 0.2 : 0.14);
     if (logoHeight > maxHeight) { logoHeight = maxHeight; logoWidth = logoHeight * (logo.width / logo.height); }
     context.globalAlpha = 0.88;
-    context.drawImage(logo, (width - logoWidth) / 2, height * (kind === 'side' ? 0.42 : 0.26) - logoHeight / 2, logoWidth, logoHeight);
+    context.drawImage(logo, (width - logoWidth) / 2, logoCentre - logoHeight / 2, logoWidth, logoHeight);
     context.globalAlpha = 1;
   } else {
     context.fillStyle = INK;
     context.textAlign = 'center';
     context.textBaseline = 'middle';
-    context.font = `600 ${Math.round(height * 0.14)}px Georgia, serif`;
-    context.fillText('ENROSED', width / 2, height * 0.42, width * 0.8);
+    context.font = `600 ${Math.round(height * 0.12)}px Georgia, serif`;
+    context.fillText('ENROSED', width / 2, logoCentre, width * 0.8);
   }
-
-  if (kind === 'end') {
-    /* The label: a white sticker with the product's colour and name. */
-    const labelWidth = width * 0.8; const labelHeight = Math.min(height * 0.3, labelWidth * 0.55);
-    const x = (width - labelWidth) / 2; const y = height * 0.5;
-    context.fillStyle = '#fbf8f2';
-    context.shadowColor = 'rgb(60 40 20 / 25%)';
-    context.shadowBlur = perCm * 0.4;
-    context.fillRect(x, y, labelWidth, labelHeight);
-    context.shadowBlur = 0;
-    context.fillStyle = item.colour;
-    context.fillRect(x, y, labelWidth * 0.08, labelHeight);
-    writeLabel(context, item.title, x + labelWidth * 0.13, y, labelWidth * 0.82, labelHeight);
-  }
+  const labelWidth = width * (kind === 'side' ? 0.7 : 0.86);
+  const labelHeight = Math.min(height * (kind === 'side' ? 0.42 : 0.48), labelWidth * 0.62);
+  drawLabel(context, item, photo, (width - labelWidth) / 2, height * (kind === 'side' ? 0.47 : 0.36), labelWidth, labelHeight, perCm);
   return canvas;
+}
+
+/** A white sticker: a band in the product's colour, its photo when there is one, its name as large as it fits. */
+function drawLabel(
+  context: CanvasRenderingContext2D, item: BuilderItem, photo: HTMLImageElement | null, x: number, y: number, width: number, height: number, perCm: number,
+): void {
+  context.fillStyle = '#fcfaf6';
+  context.shadowColor = 'rgb(60 40 20 / 28%)';
+  context.shadowBlur = perCm * 0.5;
+  context.fillRect(x, y, width, height);
+  context.shadowBlur = 0;
+  const band = Math.max(3, width * 0.06);
+  context.fillStyle = item.colour;
+  context.fillRect(x, y, band, height);
+  let textX = x + band + width * 0.04;
+  if (photo && photo.naturalWidth && photo.naturalHeight && width > height * 1.6) {
+    const size = height * 0.84;
+    const top = y + (height - size) / 2;
+    const crop = Math.min(photo.naturalWidth, photo.naturalHeight);
+    try {
+      context.drawImage(photo, (photo.naturalWidth - crop) / 2, (photo.naturalHeight - crop) / 2, crop, crop, textX, top, size, size);
+      textX += size + width * 0.04;
+    } catch { /* a photo the canvas may not read: the name alone */ }
+  }
+  writeLabel(context, item.title, textX, y, x + width - textX - width * 0.03, height);
 }
 
 /** The product's name on the label, on at most three lines, as large as it fits. */
 function writeLabel(context: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, height: number): void {
   const words = text.split(/\s+/).filter(Boolean);
-  for (let size = Math.floor(height * 0.34); size >= 6; size--) {
-    context.font = `600 ${size}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+  for (let size = Math.floor(height * 0.36); size >= 6; size--) {
+    context.font = `700 ${size}px -apple-system, "Segoe UI", system-ui, sans-serif`;
     const lines: string[] = [];
     let line = '';
     for (const word of words) {
@@ -648,9 +769,19 @@ function heightFrame(deck: Deck, base: number, accent: Color): LineSegments {
   return lines;
 }
 
+/** A shell a little larger than the box, drawn with these materials. */
+function shell(geometry: BoxGeometry, fill: Material, line: LineBasicMaterial): Group {
+  const { width, height, depth } = geometry.parameters;
+  const outer = new BoxGeometry(width + 0.8, height + 0.8, depth + 0.8);
+  const group = new Group();
+  group.add(new Mesh(outer, fill), new LineSegments(new EdgesGeometry(outer), line));
+  return group;
+}
+
 function disposeLook(look: Look): void {
   look.geometry.dispose();
   look.edges.dispose();
+  look.line.dispose();
   for (const material of new Set(look.materials)) { material.map?.dispose(); material.dispose(); }
 }
 

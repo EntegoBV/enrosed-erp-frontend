@@ -708,11 +708,15 @@ export class PalletCalculatorPage {
   });
 
   /** The cards as 3D laden's tray: one omdoos size per product, on the side the count stands it on. */
-  readonly builderItems = computed<BuilderItem[]>(() => this.lines().map((line) => ({
-    key: line.row.productId, title: line.title, colour: line.colour, photo: line.photo,
-    lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0, heightCm: line.product.carton.heightCm ?? 0,
-    weightKg: line.weightKg, wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',
-  })));
+  readonly builderItems = computed<BuilderItem[]>(() => this.lines().map((line) => {
+    const piece = productSalesUnit(line.product).piece;
+    return {
+      key: line.row.productId, title: line.title, colour: line.colour, photo: line.photo,
+      lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0, heightCm: line.product.carton.heightCm ?? 0,
+      weightKg: line.weightKg, wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',
+      units: line.units.piecesPerCarton ? { per: line.units.piecesPerCarton, one: piece.one, other: piece.other } : null,
+    };
+  }));
 
   /** Each pallet type and the kar keep a build of their own on this device. */
   readonly builderKey = computed(() => (this.carrier() === 'kar' ? 'kar' : this.profile()));
