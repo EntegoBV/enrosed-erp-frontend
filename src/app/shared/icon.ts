@@ -183,6 +183,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
         @case ('order') { <path d="M8 5v14M5 8l3-3 3 3M16 19V5M13 16l3 3 3-3" /> }
         @case ('tag') { <path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.7 6.7a1.4 1.4 0 0 1-2 0z" /><circle cx="8" cy="8" r="1.4" /> }
         @case ('copy') { <rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2" /><path d="M15.5 8.5v-3A1.5 1.5 0 0 0 14 4H5.5A1.5 1.5 0 0 0 4 5.5V14a1.5 1.5 0 0 0 1.5 1.5h3" /> }
+        @case ('cube') {
+          <!-- One carton in 3D: 3D laden in Palletberekening. -->
+          <path d="M12 3.2 19.8 7.6v8.8L12 20.8l-7.8-4.4V7.6z" /><path d="M4.4 7.7 12 12l7.6-4.3M12 12v8.6" />
+        }
         @case ('pallet') {
           <!-- Three cartons on a pallet: Palletberekening. -->
           <rect x="8.5" y="3.5" width="7" height="7" rx="1" />

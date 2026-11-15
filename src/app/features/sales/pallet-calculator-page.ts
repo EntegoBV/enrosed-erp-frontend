@@ -21,14 +21,16 @@ import { Sheet, Ui } from '../../shared/ui';
 import { effectiveOrderStep } from '../products/product-order-step';
 import { capitalize, productSalesUnit } from '../products/product-sales-unit';
 import { PalletBrowser } from './pallet-browser';
+import { PalletBuilder } from './pallet-builder';
+import type { BuilderItem, BuilderPart } from './pallet-builder-model';
 import {
   palletBrowserSections, rememberRecent, tilesByProduct, type PalletBrowserColour, type PalletBrowserTile,
 } from './pallet-browser-model';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
-  CONTAINERS, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_WIDTH_CM, MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM,
-  PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight, containerCapacity, containerFill, karSpec, palletFit,
-  palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
+  MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
+  containerCapacity, containerFill, karSpec, palletFit, palletFitTurnable, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -151,7 +153,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
   selector: 'app-pallet-calculator-page',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    AuthImage, CbmPipe, Icon, LoadError, NgTemplateOutlet, NumPipe, PageHeader, PalletBrowser, RouterLink, Segmented, Sheet, Skeleton,
+    AuthImage, CbmPipe, Icon, LoadError, NgTemplateOutlet, NumPipe, PageHeader, PalletBrowser, PalletBuilder, RouterLink, Segmented, Sheet, Skeleton,
   ],
   template: `
     <app-page-header title="Palletberekening" [subtitle]="desktop.active() ? 'Pallet, Deense kar, 20ft en 40ft' : palletLabel()">
@@ -170,6 +172,11 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
           <app-icon name="pallet" [size]="18" />
         </button>
       }
+      @if (lines().length) {
+        <button class="btn btn--sm btn--icon-mobile" type="button" (click)="builderOpen.set(true)" aria-label="3D laden" title="Zelf laden in 3D">
+          <app-icon name="cube" [size]="16" /><span class="pc-desk-label">3D laden</span>
+        </button>
+      }
       @if (rows().length) {
         <button class="btn btn--sm btn--icon-mobile" type="button" (click)="clear()" aria-label="Alles wissen" title="Alles wissen">
           <app-icon name="trash" [size]="16" /><span class="pc-desk-label">Wissen</span>
@@ -183,7 +190,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
       <div class="pc-grid">
         <div class="pc-find">
           @if (products() || loading()) {
-            <app-pallet-browser [sections]="sections()" [recent]="recentTiles()" [picked]="pickedTiles()" [pallet]="pallet()" [carrier]="carrier()"
+            <app-pallet-browser [sections]="sections()" [recent]="recentTiles()" [picked]="pickedTiles()" [pallet]="pallet()" [carrier]="carrier()" [turnable]="turnable()"
                                 [variant]="segVariant()" [loading]="!products()" [full]="full()" [maxRows]="maxRows"
                                 [hint]="!rows().length" [foldable]="rows().length > 0" [(open)]="browserOpen" [(query)]="query"
                                 (chosen)="choose($event)" />
@@ -404,10 +411,14 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
         <span class="pc-set__hint">cm</span>
       </div>
       @if (carrier() === 'kar') {
-        <p class="pc-set__hint">{{ karSize }} cm binnen de stijlen · max {{ karMaxWeight | num }} kg per kar · zonder legborden</p>
+        <p class="pc-set__hint">{{ karSize }} cm binnen de stijlen ({{ karPosts }} cm hoog) · max {{ karMaxWeight | num }} kg · zonder legborden</p>
       } @else {
         <p class="pc-set__hint">max {{ pallet().maxWeightKg | num }} kg per pallet</p>
       }
+      <label class="pc-set__row pc-set__switch">
+        <span class="pc-set__label">Omdozen mogen kantelen<small class="pc-set__hint">ook op de zij of de korte kant</small></span>
+        <input class="ios-switch" type="checkbox" role="switch" [checked]="turnable()" (change)="turnable.set(checked($event))" />
+      </label>
     </ng-template>
 
     @if (palletSheet() && !desktop.active()) {
@@ -454,6 +465,17 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
       </button>
     }
     <p class="sr-only" aria-live="polite">{{ status() }}</p>
+
+    @if (builderOpen()) {
+      @defer (on immediate) {
+        <app-pallet-builder [items]="builderItems()" [carrier]="carrier()" [spec]="pallet()" [storeKey]="builderKey()" [label]="palletLabel()"
+                            [turnable]="turnable()" [parts]="builderParts()" (closed)="builderOpen.set(false)" />
+      } @loading (after 120ms; minimum 300ms) {
+        <div class="pc-3d-wait" role="status">3D laden…</div>
+      } @error {
+        <div class="pc-3d-wait" role="alert">3D kon niet laden. <button class="btn btn--sm" type="button" (click)="builderOpen.set(false)">Sluiten</button></div>
+      }
+    }
   `,
   styles: [`
     :host{display:block}
@@ -472,7 +494,8 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
     .pc-panel{border:1px solid var(--line);border-radius:18px;background:var(--surface);padding:16px 18px}
     .pc-set{display:flex;flex-direction:column;gap:12px}
     .pc-set__row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
-    .pc-set__label{font-size:13px;font-weight:600}.pc-set__hint{margin:0;font-size:12px;color:var(--muted)}
+    .pc-set__label{font-size:13px;font-weight:600}
+    .pc-set__switch{justify-content:space-between;flex-wrap:nowrap;cursor:pointer}.pc-set__switch .pc-set__label small{display:block;font-weight:400}.pc-set__hint{margin:0;font-size:12px;color:var(--muted)}
     .pc-step{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);overflow:hidden}
     .pc-step:focus-within{border-color:var(--rose-mid);box-shadow:0 0 0 3px rgb(209 74 103 / 14%)}
     .pc-step button{display:grid;place-items:center;width:42px;height:42px;border:0;background:none;color:var(--ink);font-size:20px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -558,6 +581,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
     .pc-float b{font-size:14px;font-weight:750;white-space:nowrap}
     .pc-float__more{color:var(--muted)}
     .pc :is(button,a,input):focus-visible{outline:2px solid var(--rose);outline-offset:2px}
+    .pc-3d-wait{position:fixed;inset:0;z-index:190;display:grid;place-content:center;gap:12px;justify-items:center;background:var(--surface-2);color:var(--muted);font-size:14px}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
       .pc-search{width:300px}.pc-search input::-webkit-search-cancel-button{display:none}
       .pc-card{container:pc-card / inline-size}
@@ -599,8 +623,10 @@ export class PalletCalculatorPage {
   private readonly pickedHeight = signal(PALLET_MAX_HEIGHT_CM);
   /** The kar's own loading height, so a switch back to the pallet finds the pallet's height unchanged. */
   private readonly karHeight = signal(KAR_MAX_HEIGHT_CM);
+  /** Omdozen may lie on their side or end (Emre, 2026-11-15): every count takes the side that fits the most. */
+  readonly turnable = signal(true);
   private readonly palletHeight = computed(() => Math.min(this.pickedHeight(), palletHeightLimit(this.profile())));
-  readonly heightLimit = computed(() => (this.carrier() === 'kar' ? KAR_MAX_HEIGHT_CM : palletHeightLimit(this.profile())));
+  readonly heightLimit = computed(() => (this.carrier() === 'kar' ? KAR_HEIGHT_LIMIT_CM : palletHeightLimit(this.profile())));
   readonly maxHeight = computed(() => (this.carrier() === 'kar' ? this.karHeight() : this.palletHeight()));
   readonly words = computed(() => CARRIER_WORDS[this.carrier()]);
   readonly rows = signal<CalcRow[]>([]);
@@ -608,6 +634,8 @@ export class PalletCalculatorPage {
   private readonly recentIds = signal<number[]>([]);
   readonly browserOpen = signal(true);
   readonly palletSheet = signal(false);
+  /** 3D laden is open (pallet-builder.ts, loaded on first use). */
+  readonly builderOpen = signal(false);
   /** The product id whose facts sheet is open. */
   readonly info = signal<number | null>(null);
   /** The card that just came in (its rise) and the card a tile pointed to (its ring). */
@@ -626,6 +654,7 @@ export class PalletCalculatorPage {
   readonly carrierOptions: SegmentOption[] = CARRIERS.map((id) => ({ id, label: CARRIER_WORDS[id].title }));
   readonly karSize = `${cm(KAR_LENGTH_CM)} × ${cm(KAR_WIDTH_CM)}`;
   readonly karMaxWeight = KAR_MAX_WEIGHT_KG;
+  readonly karPosts = KAR_POST_HEIGHT_CM;
   readonly segVariant = computed<'desk' | 'ios'>(() => (this.desktop.active() ? 'desk' : 'ios'));
   readonly pallet = computed(() => (this.carrier() === 'kar' ? karSpec(this.karHeight()) : palletSpec(this.profile(), this.palletHeight())));
   readonly palletLabel = computed(() => {
@@ -657,6 +686,7 @@ export class PalletCalculatorPage {
     const tiles = this.tileOf();
     const pallet = this.pallet();
     const words = this.words();
+    const turnable = this.turnable();
     const perTile = new Map<string, number>();
     for (const row of this.rows()) {
       const key = tiles.get(row.productId)?.key;
@@ -666,7 +696,7 @@ export class PalletCalculatorPage {
       const product = products.get(row.productId);
       if (!product) return [];
       const tile = tiles.get(row.productId) ?? null;
-      return [this.line(row, product, tile, !!tile && (perTile.get(tile.key) ?? 0) > 1, pallet, words)];
+      return [this.line(row, product, tile, !!tile && (perTile.get(tile.key) ?? 0) > 1, pallet, words, turnable)];
     });
   });
 
@@ -676,6 +706,16 @@ export class PalletCalculatorPage {
     for (const line of this.lines()) if (line.tile && !picked.has(line.tile.key)) picked.set(line.tile.key, line.colour);
     return picked;
   });
+
+  /** The cards as 3D laden's tray: one omdoos size per product, on the side the count stands it on. */
+  readonly builderItems = computed<BuilderItem[]>(() => this.lines().map((line) => ({
+    key: line.row.productId, title: line.title, colour: line.colour, photo: line.photo,
+    lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0, heightCm: line.product.carton.heightCm ?? 0,
+    weightKg: line.weightKg, wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',
+  })));
+
+  /** Each pallet type and the kar keep a build of their own on this device. */
+  readonly builderKey = computed(() => (this.carrier() === 'kar' ? 'kar' : this.profile()));
 
   readonly infoLine = computed(() => this.lines().find((line) => line.row.productId === this.info()) ?? null);
 
@@ -743,6 +783,21 @@ export class PalletCalculatorPage {
       .filter((entry) => entry.cartons > 0);
   });
 
+  /**
+   * What Automatisch lays in 3D: the plan's first pallet or kar, bottom to
+   * top; without quantities one carrier shared out as Verdeel does it.
+   */
+  readonly builderParts = computed<BuilderPart[]>(() => {
+    const first = this.plan()[0];
+    if (first) return first.parts.map((part) => ({ key: part.key, cartons: part.cartons }));
+    const lines = this.lines().filter((line) => line.fit.cartonsPerPallet > 0);
+    if (!lines.length) return [];
+    const shared = shareOnePallet(lines.map((line) => line.plan), this.pallet());
+    return [...lines].sort((left, right) => right.plan.cartonHeightCm - left.plan.cartonHeightCm)
+      .map((line) => ({ key: line.row.productId, cartons: shared.get(line.row.productId) ?? 0 }))
+      .filter((part) => part.cartons > 0);
+  });
+
   readonly containerFills = computed(() => CONTAINERS.map((container, index) =>
     containerFill(this.lines().map((line) => ({ cartons: line.cartons, capacity: line.containers[index].capacity })), container)));
 
@@ -769,7 +824,7 @@ export class PalletCalculatorPage {
          one and follows a later standard (restore). */
       const state = {
         carrier: this.carrier(), profile: this.profile(), heightCm: this.palletHeight(), standardCm: PALLET_MAX_HEIGHT_CM,
-        karHeightCm: this.karHeight(), rows: this.rows(), recent: this.recentIds(),
+        karHeightCm: this.karHeight(), karStandardCm: KAR_MAX_HEIGHT_CM, turnable: this.turnable(), rows: this.rows(), recent: this.recentIds(),
       };
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode: the picks live as long as the page */ }
     });
@@ -964,6 +1019,10 @@ export class PalletCalculatorPage {
     return (event.target as HTMLInputElement).value;
   }
 
+  checked(event: Event): boolean {
+    return (event.target as HTMLInputElement).checked;
+  }
+
   blur(event: Event): void {
     (event.target as HTMLInputElement).blur();
   }
@@ -997,6 +1056,7 @@ export class PalletCalculatorPage {
 
   fitFacts(fit: PalletFit, weightKg: number): string {
     const facts = [`${fit.perLayer} per laag × ${fit.layers} ${fit.layers === 1 ? 'laag' : 'lagen'}`, `${Math.round(fit.heightCm)} cm`];
+    if (fit.up !== 'h') facts.unshift(fit.up === 'w' ? 'Op de zij' : 'Op de korte kant');
     if (weightKg > 0) facts.push(`${Math.round(weightKg).toLocaleString('nl-BE')} kg`);
     if (fit.limitedBy === 'gewicht') facts.push('gewicht bepaalt');
     return facts.join(' · ');
@@ -1097,6 +1157,7 @@ export class PalletCalculatorPage {
 
   private line(
     row: CalcRow, product: Product, tile: PalletBrowserTile | null, twin: boolean, pallet: ReturnType<typeof palletSpec>, words: CarrierWords,
+    turnable: boolean,
   ): CalcLine {
     const units = productUnits(product);
     const piece = productSalesUnit(product).piece;
@@ -1105,7 +1166,7 @@ export class PalletCalculatorPage {
     if (units.piecesPerCarton) unitOptions.push({ id: 'piece', label: capitalize(piece.one) });
     const unit = unitOptions.some((option) => option.id === row.unit) ? row.unit : 'carton';
     const carton = product.carton;
-    const fit = palletFit(carton, pallet);
+    const fit = turnable ? palletFitTurnable(carton, pallet) : palletFit(carton, pallet);
     const cartons = cartonsFor(row.quantity, unit, units);
     const weightKg = carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0;
     const problem = fit.problem ? problemText(fit.problem, words) : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;
@@ -1118,7 +1179,8 @@ export class PalletCalculatorPage {
       photo: tile?.photo ?? salesPhotoUrl(product),
       pieceLabel: capitalize(piece.other),
       containers: CONTAINERS.map((container) => ({ container, capacity: containerCapacity(product, units, container) })),
-      plan: { key: product.id as number, cartons, fit, cartonHeightCm: carton.heightCm ?? 0, cartonWeightKg: weightKg },
+      /* The layers stand as high as the side the fit chose. */
+      plan: { key: product.id as number, cartons, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : carton.heightCm ?? 0, cartonWeightKg: weightKg },
       cbm: (product.cartonCbm && product.cartonCbm > 0 ? product.cartonCbm : null) ?? cartonCbm(carton),
     };
   }
@@ -1128,10 +1190,14 @@ export class PalletCalculatorPage {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const stored = JSON.parse(raw) as {
-        carrier?: unknown; profile?: unknown; heightCm?: unknown; standardCm?: unknown; karHeightCm?: unknown; rows?: unknown; recent?: unknown;
+        carrier?: unknown; profile?: unknown; heightCm?: unknown; standardCm?: unknown; karHeightCm?: unknown; karStandardCm?: unknown;
+        turnable?: unknown; rows?: unknown; recent?: unknown;
       };
       if (CARRIERS.includes(stored.carrier as CarrierKind)) this.carrier.set(stored.carrier as CarrierKind);
-      if (typeof stored.karHeightCm === 'number') this.karHeight.set(clampKarHeight(stored.karHeightCm));
+      /* A kar height equal to the standard it was saved under was never picked and follows today's (190 cm before 15 November). */
+      const karSavedUnder = typeof stored.karStandardCm === 'number' ? stored.karStandardCm : KAR_FORMER_STANDARD_CM;
+      if (typeof stored.karHeightCm === 'number' && stored.karHeightCm !== karSavedUnder) this.karHeight.set(clampKarHeight(stored.karHeightCm));
+      if (typeof stored.turnable === 'boolean') this.turnable.set(stored.turnable);
       const profile = PALLET_CHOICES.find((choice) => choice.id === stored.profile);
       if (profile) this.profile.set(profile.id);
       /* A height equal to the standard it was saved under was never picked: the device follows today's

@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { AuthImage } from '../../core/api/auth-image';
 import { Icon } from '../../shared/icon';
-import { palletFit, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
+import { palletFit, palletFitTurnable, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
 import { matchPalletTiles, type PalletBrowserSection, type PalletBrowserTile } from './pallet-browser-model';
 
 /** One cell of the grid: a section heading (Alle) or a tile with what it shows. */
@@ -152,6 +152,8 @@ export class PalletBrowser {
   readonly pallet = input.required<PalletSpec>();
   /** What the pallet spec is: a tile reads "per pallet" or "per kar". */
   readonly carrier = input<CarrierKind>('pallet');
+  /** Omdozen may lie on their side, as the cards count them. */
+  readonly turnable = input(false);
   readonly variant = input<'ios' | 'desk'>('ios');
   readonly loading = input(false);
   readonly full = input(false);
@@ -193,10 +195,11 @@ export class PalletBrowser {
   /** A tile's answer for the pallet or kar in use: the same figure as the card's Pallet or Deense kar row. */
   private readonly figures = computed(() => {
     const pallet = this.pallet();
+    const fitOf = this.turnable() ? palletFitTurnable : palletFit;
     const figures = new Map<string, { text: string; warn: boolean }>();
     for (const section of this.sections()) {
       for (const tile of section.tiles) {
-        const fit = palletFit(tile.lead.carton, pallet);
+        const fit = fitOf(tile.lead.carton, pallet);
         const count = fit.cartonsPerPallet;
         figures.set(tile.key, count > 0
           ? { text: `${count.toLocaleString('nl-BE')} ${count === 1 ? 'omdoos' : 'omdozen'}`, warn: false }

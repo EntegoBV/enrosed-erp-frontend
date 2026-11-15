@@ -17,6 +17,9 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   needs more pallets than every product on pallets of its own.
  * - A Deense kar (karSpec) is counted as a pallet with its own floor, height
  *   and weight, so every pallet rule below holds for it too.
+ * - Palletberekening may also lay an omdoos on its side (palletFitTurnable):
+ *   the best of the three standing sides, upright on a tie. The backend and
+ *   a quote count upright only (palletFit).
  * - A container takes loose cartons: each product's own capacity (the hand
  *   count where one was confirmed, else full cartons on the practical
  *   volumes of the backend's ContainerType), a mix as the sum of the shares.
@@ -99,15 +102,23 @@ export type CarrierKind = 'pallet' | 'kar';
  * pot-plant trolley. Its product sheet (CC_Feb25EN) gives 1350 × 565 ×
  * 1900 mm outside, 1270 × 545 × 1735 mm inside, and 450 kg UDL in total
  * with 60 kg per shelf. The omdozen are stacked on the base plate between
- * the posts: 127 × 54,5 cm, up to the top of the posts at 190 cm from the
- * floor. The 16,5 cm under the inside height counts as the pallet's wood
- * does, so a height reads the same way for both. The load is at most 450 kg.
- * Shelves are not counted, because one shelf carries only 60 kg.
+ * the posts: 127 × 54,5 cm. The 16,5 cm under the inside height counts as
+ * the pallet's wood does, so a height reads the same way for both. The load
+ * is at most 450 kg. Shelves are not counted, because one shelf carries only
+ * 60 kg. The standard loading height is 230 cm from the floor, above the
+ * posts' 190 cm, and it can be set higher or lower (Emre, 2026-11-15; from
+ * 12 to 15 November it was 190 cm and could not go higher).
  */
 export const KAR_LENGTH_CM = 127;
 export const KAR_WIDTH_CM = 54.5;
 export const KAR_BASE_HEIGHT_CM = 16.5;
-export const KAR_MAX_HEIGHT_CM = 190;
+/** The top of the posts. */
+export const KAR_POST_HEIGHT_CM = 190;
+export const KAR_MAX_HEIGHT_CM = 230;
+/** The standard of 12 to 15 November 2026: a device that still holds it never picked a height. */
+export const KAR_FORMER_STANDARD_CM = 190;
+/** The highest pick, as for a blokpallet. */
+export const KAR_HEIGHT_LIMIT_CM = 300;
 export const KAR_MAX_WEIGHT_KG = 450;
 
 export function karSpec(maxHeightCm: number): PalletSpec {
@@ -117,10 +128,10 @@ export function karSpec(maxHeightCm: number): PalletSpec {
   };
 }
 
-/** A picked loading height for the kar: above the base plate, at most the top of the posts, whole centimetres. */
+/** A picked loading height for the kar: above the base plate, at most the limit, whole centimetres. */
 export function clampKarHeight(value: number): number {
   if (!Number.isFinite(value)) return KAR_MAX_HEIGHT_CM;
-  return Math.min(KAR_MAX_HEIGHT_CM, Math.max(Math.ceil(KAR_BASE_HEIGHT_CM + 1), Math.round(value)));
+  return Math.min(KAR_HEIGHT_LIMIT_CM, Math.max(Math.ceil(KAR_BASE_HEIGHT_CM + 1), Math.round(value)));
 }
 
 export type ContainerId = '20GP' | '40GP' | '40HQ';
@@ -151,10 +162,17 @@ export interface PalletFit {
   limitedBy: 'hoogte' | 'gewicht' | null;
   /** Why nothing fits, in the backend's words; null when something does. */
   problem: string | null;
+  /** The omdoos's size that stands up: its height, or on its side its width or length. */
+  upCm: number;
+  /** Which side stands up: 'h' upright, 'w' on its long side, 'l' on its end. */
+  up: CartonUp;
 }
 
+/** Which of the omdoos's sizes stands up. */
+export type CartonUp = 'h' | 'w' | 'l';
+
 function none(problem: string): PalletFit {
-  return { perLayer: 0, layers: 0, cartonsPerPallet: 0, heightCm: 0, limitedBy: null, problem };
+  return { perLayer: 0, layers: 0, cartonsPerPallet: 0, heightCm: 0, limitedBy: null, problem, upCm: 0, up: 'h' };
 }
 
 function positive(value: number | null | undefined): value is number {
@@ -208,7 +226,81 @@ export function palletFit(carton: CartonSize, pallet: PalletSpec): PalletFit {
     heightCm: round(pallet.baseHeightCm + heightCm * layers, 1),
     limitedBy: weightCapacity < heightCapacity ? 'gewicht' : 'hoogte',
     problem: null,
+    upCm: heightCm,
+    up: 'h',
   };
+}
+
+/**
+ * The omdoos's footprint and standing size for a side: upright (h), on its
+ * long side (w: the width stands, the height lies across), on its end (l).
+ */
+export function cartonStanding(carton: Pick<CartonDto, 'lengthCm' | 'widthCm' | 'heightCm'>, up: CartonUp):
+  { lengthCm: number; widthCm: number; heightCm: number } {
+  const length = carton.lengthCm ?? 0; const width = carton.widthCm ?? 0; const height = carton.heightCm ?? 0;
+  return up === 'w' ? { lengthCm: length, widthCm: height, heightCm: width }
+    : up === 'l' ? { lengthCm: height, widthCm: width, heightCm: length }
+      : { lengthCm: length, widthCm: width, heightCm: height };
+}
+
+/**
+ * palletFit with the omdoos also on its side: the side that takes the most
+ * omdozen, the lower load on a tie, upright before a side. Palletberekening
+ * counts so when omdozen may be laid down; a quote does not.
+ */
+export function palletFitTurnable(carton: CartonSize, pallet: PalletSpec): PalletFit {
+  let best = palletFit(carton, pallet);
+  for (const up of ['w', 'l'] as const) {
+    const standing = cartonStanding(carton, up);
+    if (standing.lengthCm === carton.lengthCm && standing.widthCm === carton.widthCm) continue;
+    const fit = palletFit({ ...standing, weightKg: carton.weightKg }, pallet);
+    const more = fit.cartonsPerPallet > best.cartonsPerPallet
+      || (fit.cartonsPerPallet === best.cartonsPerPallet && fit.cartonsPerPallet > 0 && fit.heightCm < best.heightCm - EPSILON);
+    if (more) best = { ...fit, up };
+  }
+  return best;
+}
+
+/** One omdoos's place in a layer: from the pallet's corner, along its length (x) and its width (z). */
+export interface LayerSlot { x: number; z: number; lengthCm: number; widthCm: number }
+
+/**
+ * Where the perLayer omdozen of palletFit lie: the rows of bestRows in the
+ * direction that gave the most, centred on the floor. The 3D view lays a
+ * computed layer with it.
+ */
+export function layerSlots(footprint: { lengthCm: number; widthCm: number }, pallet: Pick<PalletSpec, 'lengthCm' | 'widthCm'>): LayerSlot[] {
+  const build = (primary: number, secondary: number, along: boolean): LayerSlot[] => {
+    const box = footprint.lengthCm; const side = footprint.widthCm;
+    let best = -1; let bestStraight = 0;
+    const maxStraightRows = floorDiv(secondary, side);
+    for (let straightRows = 0; straightRows <= maxStraightRows; straightRows++) {
+      const remaining = secondary - side * straightRows;
+      const rotatedRows = remaining < 0 ? 0 : floorDiv(remaining, box);
+      const total = straightRows * floorDiv(primary, box) + rotatedRows * floorDiv(primary, side);
+      if (total > best) { best = total; bestStraight = straightRows; }
+    }
+    const slots: LayerSlot[] = [];
+    const push = (a: number, b: number, alongA: number, alongB: number) => slots.push(along
+      ? { x: a, z: b, lengthCm: alongA, widthCm: alongB } : { x: b, z: a, lengthCm: alongB, widthCm: alongA });
+    for (let row = 0; row < bestStraight; row++) {
+      for (let at = 0; at < floorDiv(primary, box); at++) push(at * box, row * side, box, side);
+    }
+    const rotatedRows = Math.max(0, floorDiv(secondary - side * bestStraight, box));
+    for (let row = 0; row < rotatedRows; row++) {
+      for (let at = 0; at < floorDiv(primary, side); at++) push(at * side, bestStraight * side + row * box, side, box);
+    }
+    return slots;
+  };
+  const alongLength = build(pallet.lengthCm, pallet.widthCm, true);
+  const alongWidth = build(pallet.widthCm, pallet.lengthCm, false);
+  const slots = alongWidth.length > alongLength.length ? alongWidth : alongLength;
+  if (!slots.length) return slots;
+  const usedX = Math.max(...slots.map((slot) => slot.x + slot.lengthCm));
+  const usedZ = Math.max(...slots.map((slot) => slot.z + slot.widthCm));
+  const offsetX = Math.max(0, (pallet.lengthCm - usedX) / 2);
+  const offsetZ = Math.max(0, (pallet.widthCm - usedZ) / 2);
+  return slots.map((slot) => ({ ...slot, x: slot.x + offsetX, z: slot.z + offsetZ }));
 }
 
 function round(value: number, decimals: number): number {

@@ -310,7 +310,8 @@ function planLines(lines: readonly PlannerLine[], spec: PlannerSpec): PlanLine[]
   return fitting.map((line) => ({
     key: line.productId, cartons: line.cartons, cartonHeightCm: line.cartonHeightCm!, cartonWeightKg: line.cartonWeightKg,
     fit: { perLayer: line.perLayer, layers: line.fullLayers, cartonsPerPallet: line.perPallet,
-      heightCm: spec.baseHeightCm + line.cartonHeightCm! * line.fullLayers, limitedBy: null, problem: null },
+      heightCm: spec.baseHeightCm + line.cartonHeightCm! * line.fullLayers, limitedBy: null, problem: null,
+      upCm: line.cartonHeightCm!, up: 'h' },
   }));
 }
 
