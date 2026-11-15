@@ -4957,6 +4957,46 @@ navItemActive rule for a bare `/settings`). Until it lands, every phone
 settings view ends with its own "Alle instellingen ›" row (settings-page,
 `.set-all`); drop that row once Meer has one.
 
+## Voorraadradar (back 2026-11-15)
+
+A personal screen for Emre at `/voorraadradar` (`features/stock-radar/stock-radar-page.ts`,
+`core/api/stock-radar-api.ts`): the backend's stock radar (see the backend
+AI-CONTEXT; no browser there any more) for the products he wants: the iPhone Duo
+in white and blue, 256 and 512 GB, and the PS5 Pro. The feed comes in
+`families`, one per product, each with its `items` (columns), `shops` (rows) and
+`manual` shops (refuse automatic reads); `watches` carry `family`, `shop`, `item`.
+
+One responsive component: a hero with the verdict over all products ("Nu te
+krijgen" with an order button per shop and item, or "Nergens binnen 3 dagen te
+krijgen" with the earliest promised date and how many pages gave no answer yet),
+the radar's pace, push/mail state, Testpush / Testmail, and "Mail ook naar":
+the extra mail addresses as chips (× removes) with a field to add one (at most
+five; `PUT /api/stock-radar/mail-recipients` with the whole list). Then per product
+a heading and one table, shops by variants (an iPhone column head carries a white
+or blue dot). A cell is a button with a short state: ok-coloured "Nu" / "Morgen" /
+"Winkel" / date only when the backend says available AND its latest read agrees
+(the backend keeps "available" for a second read before "weer weg"), the promised
+date when later ("≥ 6 dec" when the shop says "minstens"), "Niet"; "Wacht"
+(dashed, muted) while no good answer is known yet (a refusal or a first failure);
+amber "Fout" only when a page fails three times in a row for another reason
+(layout changed). A cell whose shop has failed for three of its rhythms keeps its
+last good state, faded, and stays out of "Nu te krijgen". A cell opens its details under its own table (status, price,
+date, last check, next check and rhythm or the wait after a refusal, last
+notification or "niet aangekomen" with its push/mail statuses, "Open winkel", and
+"Nu opnieuw proberen" only after a failure or when the page is overdue for its own
+rhythm: Coolblue's and Amazon's pages take turns, and a page whose shop was just
+asked goes next instead). The first load opens what is to be had; a closed panel
+stays closed. The screen reloads when the tab becomes visible again. Under each table the shops that refuse
+automatic reads, with links, for the shops' own alerts. Refreshes itself every
+minute while visible.
+
+Navigation: a row in the Bedrijf group (Emre, 2026-10-31: under Bedrijf on Meer
+and on the desk). The row carries `onlyUser: 'emre'`; `navItemVisible(item, username)`
+hides it from everyone else in the desk sidebar, on Meer and in the native host's
+menu mirror. The backend answers 404 to other users anyway. No `[host]` descriptor:
+the native shell relies on the mirror, as on Logboek. Push needs the installed web
+app (no web push in the native shell).
+
 ## Palletberekening (2026-11-04)
 
 **Deense kar elsewhere (2026-11-15):** the product page's Omdoos & logistiek (desk
