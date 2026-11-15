@@ -2,6 +2,7 @@ import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { purchaseTrackedOrder } from './purchase-tracking-model';
 import { trackingMove } from './container-tracking-model';
+import { PurchaseArrivalSheet, arrivalText, orderArrival } from './purchase-arrival-sheet';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -96,7 +97,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseTracking, PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
-            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard],
+            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard, PurchaseArrivalSheet],
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
@@ -275,6 +276,21 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <span class="ios-cell__trail"><span class="ios-cell__value mpo-value">{{ creatorName(data) }}</span></span></div>
                 <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Betaalplan</span>
                   <span class="ios-cell__sub mpo-wrap">{{ planLabel() }}</span></span></div>
+                @if (data.order.status !== 'ONTVANGEN') {
+                  @let arrival = orderArrival(data);
+                  @let tracked = trackedArrival();
+                  <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Aankomst container</span>
+                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, arrival.containerAt, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
+                      @if (data.order.trackingReference && arrival.containerByHand && trackingPanel()?.row()?.sourceArrival; as source) { <span class="ios-cell__sub mpo-wrap">Track &amp; trace meldt {{ source | dateNl }}</span> }</span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                  <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Aankomst {{ receivingLocationName(data.order.receivingLocationId) }}</span>
+                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!arrival.warehouseOn">{{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }}</span></span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                }
                 @if (data.order.trackingReference) {
                   <button class="ios-cell" type="button" (click)="trackingPanel()?.showDetails()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span>
@@ -639,6 +655,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
       <!-- Sheets and menus at host level: never inside the sticky nav, the tabs or a pane. -->
       @if (data.order.trackingReference) {
         <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
+      }
+      @if (arrivalOpen()) {
+        <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          [trackingRow]="trackingPanel()?.row() ?? null" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
       }
       @if (kostenPayeeOpen(); as item) {
         <!-- A payee tapped in the Nacalculatie opens on top of Kosten, read-only; a payment row goes to its detail on Betalingen. -->
@@ -1020,6 +1040,37 @@ export class PurchaseView {
         partnerCustomerId: fresh.order.partnerCustomerId ?? null, partnerCostPct: fresh.order.partnerCostPct ?? null, partnerSharePct: fresh.order.partnerSharePct ?? null } } : current);
       this.loadPartnerFinancing();
     }).catch(() => undefined);
+  }
+
+  /* ---- the arrival by hand (Aankomst sheet) -------------------------------- */
+  readonly arrivalOpen = signal(false);
+  readonly arrivalText = arrivalText;
+  readonly orderArrival = orderArrival;
+  /** The container's day as tracking last stored it (the row is fresher than the order loaded with the page). */
+  readonly trackedArrival = computed(() => {
+    const data = this.view();
+    return data ? purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? null).expectedArrival ?? null : null;
+  });
+
+  openArrival(): void {
+    const data = this.view();
+    if (!data?.order.id || data.order.status === 'ONTVANGEN') return;
+    this.arrivalOpen.set(true);
+  }
+
+  /** The sheet saved: the order as it stands now, and the tracking row read again for the day and the hand mark. */
+  onArrivalSaved(fresh: PurchaseOrderView): void {
+    this.arrivalOpen.set(false);
+    this.view.update((current) => current ? { ...current, order: fresh.order, arrival: fresh.arrival ?? null } : fresh);
+    const panel = this.trackingPanel();
+    const row = panel?.row() ?? null;
+    if (!panel) return;
+    const moved = row && row.orderExpectedArrival !== (fresh.order.expectedArrival ?? null);
+    panel.reloadNow(row ? {
+      ...row, orderExpectedArrival: fresh.order.expectedArrival ?? null, orderShippedOn: fresh.order.shippedOn ?? null,
+      arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
+      ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
+    } : undefined);
   }
 
   /** The panel saved the partner: the fresh view replaces the old one, the documents and the financing follow. */

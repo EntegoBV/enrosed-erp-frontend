@@ -49,7 +49,8 @@ import { PartnerHead } from './partner-head';
         @if (shown().length) {
           <div class="pc-card pc-card--table">
             <app-partner-container-table [containers]="shown()" [specs]="data.specs()" [order]="data.order()" [today]="p.serverDate"
-                                         [selectedId]="selected()" [expanded]="expanded()" [palletTitle]="palletTitle()" (toggled)="toggle($event)" />
+                                         [selectedId]="selected()" [expanded]="expanded()" [palletTitle]="palletTitle()"
+                                         [warehouseName]="p.warehouseName || 'Zaltbommel'" (toggled)="toggle($event)" />
           </div>
           @if (palletNote()) { <p class="pc-note">{{ palletNote() }}</p> }
         } @else {

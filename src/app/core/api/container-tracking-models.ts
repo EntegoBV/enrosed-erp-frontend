@@ -79,6 +79,10 @@ export interface ContainerTracking {
   manualCheckAt?: string | null;
   /** Only on the answer of a manual check. */
   refreshOutcome?: 'CHECKED' | 'COOLDOWN' | 'BUSY' | 'OFF' | 'NO_SOURCE' | null;
+  /** The arrival was set by hand in the Aankomst sheet: tracking leaves it alone. */
+  arrivalByHand?: boolean;
+  /** The date the source gives now, while it differs from the date kept by hand. */
+  sourceArrival?: string | null;
 }
 
 export interface ContainerTrackingFeed {

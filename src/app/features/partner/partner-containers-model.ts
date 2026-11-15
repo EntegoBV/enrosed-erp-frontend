@@ -79,15 +79,30 @@ export function isOld(container: PartnerContainer, today: string): boolean {
   return !isDay(container.receivedOn) || day10(container.receivedOn) < addDaysIso(today, -OLD_DAYS);
 }
 
-/** The day the calendar puts it on: the receipt once received, else the expected arrival. */
+/** The day it is planned at the warehouse (Zaltbommel), set by hand in the ERP; null when not planned or received. */
+export function warehouseDay(container: PartnerContainer): string | null {
+  return !isReceived(container) && isDay(container.warehouseArrivalOn) ? day10(container.warehouseArrivalOn) : null;
+}
+
+/** "08:30" from "08:30" or "08:30:00"; null without an hour. */
+export function hourText(value: string | null | undefined): string | null {
+  return value && /^\d{2}:\d{2}/.test(value) ? value.slice(0, 5) : null;
+}
+
+/**
+ * The day the calendar puts it on: the receipt once received, else the day it is planned at the warehouse
+ * (Zaltbommel, what he unloads), else the expected arrival at the port.
+ */
 export function calendarDay(container: PartnerContainer): string | null {
-  const value = isReceived(container) ? container.receivedOn : container.expectedArrival;
+  const value = isReceived(container) ? container.receivedOn : warehouseDay(container) ?? container.expectedArrival;
   return isDay(value) ? day10(value) : null;
 }
 
-/** Not received and its expected day has passed. */
+/** Not received and its planned day (at the warehouse, else at the port) has passed. */
 export function isLate(container: PartnerContainer, today: string): boolean {
-  return !isReceived(container) && isDay(container.expectedArrival) && day10(container.expectedArrival) < today;
+  if (isReceived(container)) return false;
+  const day = warehouseDay(container) ?? (isDay(container.expectedArrival) ? day10(container.expectedArrival) : null);
+  return !!day && day < today;
 }
 
 /** Comes first in "Komt eraan": a date that can still hold, the earliest first; then the ones without, longest overdue first. */
@@ -138,31 +153,53 @@ function relative(iso: string, today: string): string {
 }
 
 export interface ArrivalWords {
-  /** "± do 20 nov", "ma 3 nov" (received), "datum nog open". */
+  /** At the port: "± do 20 nov", "do 20 nov · 14:00" (an hour set by hand), "ma 3 nov" (received), "datum nog open". */
   main: string;
   /** "over 8 dagen", "nog niet binnen", "aangekomen". */
   sub: string;
-  /** Not received while its day has passed: amber. */
+  /** Not received while its planned day has passed: amber. */
   late: boolean;
   /** "verschoven (was 12/11)" when tracking moved it. */
   moved: string | null;
+  /** At the warehouse, set by hand in the ERP: "vr 21 nov · 08:30"; null when not planned (or received). */
+  warehouse: string | null;
+  /** "morgen", "over 3 dagen", "nog niet binnen" for that day. */
+  warehouseSub: string;
 }
 
 export function arrivalWords(container: PartnerContainer, today: string): ArrivalWords {
   const moved = !isReceived(container) && isDay(container.arrivalMovedFrom) ? `verschoven (was ${shortDay(container.arrivalMovedFrom)})` : null;
   if (isReceived(container)) {
-    return { main: isDay(container.receivedOn) ? dayText(container.receivedOn, today) : 'aangekomen', sub: isDay(container.receivedOn) ? 'aangekomen' : '', late: false, moved: null };
+    return { main: isDay(container.receivedOn) ? dayText(container.receivedOn, today) : 'aangekomen', sub: isDay(container.receivedOn) ? 'aangekomen' : '', late: false, moved: null,
+      warehouse: null, warehouseSub: '' };
   }
-  if (!isDay(container.expectedArrival)) return { main: 'datum nog open', sub: '', late: false, moved };
+  const stock = warehouseDay(container);
+  const stockHour = stock ? hourText(container.warehouseArrivalTime) : null;
+  const warehouse = stock ? (stockHour ? `${dayText(stock, today)} · ${stockHour}` : dayText(stock, today)) : null;
+  const warehouseSub = stock ? (stock < today ? 'nog niet binnen' : relative(stock, today)) : '';
+  if (!isDay(container.expectedArrival)) return { main: 'datum nog open', sub: '', late: isLate(container, today), moved, warehouse, warehouseSub };
   const date = day10(container.expectedArrival);
-  const late = date < today;
-  return { main: `± ${dayText(date, today)}`, sub: late ? 'nog niet binnen' : relative(date, today), late, moved };
+  const hour = hourText(container.expectedArrivalTime);
+  /* An hour set by hand is a planned moment, not an estimate: no ±. */
+  const main = hour ? `${dayText(date, today)} · ${hour}` : `± ${dayText(date, today)}`;
+  return { main, sub: date < today ? 'nog niet binnen' : relative(date, today), late: isLate(container, today), moved, warehouse, warehouseSub };
 }
 
-/** "± do 20 nov · over 8 dagen" in one line (Komt eraan). */
+/**
+ * One line for Komt eraan and the calendar: "In Zaltbommel vr 21 nov · 08:30" once the warehouse arrival is
+ * planned (what he unloads), else "± do 20 nov · over 8 dagen" at the port.
+ */
 export function arrivalLine(container: PartnerContainer, today: string): string {
   const words = arrivalWords(container, today);
+  if (words.warehouse) return `In ${container.locationName || 'het magazijn'} ${words.warehouse}`;
   return words.sub && !isReceived(container) ? `${words.main} · ${words.sub}` : words.main;
+}
+
+/** "Haven Rotterdam ± do 20 nov" beside a planned warehouse arrival; null without both. */
+export function portLine(container: PartnerContainer, today: string): string | null {
+  const words = arrivalWords(container, today);
+  if (!words.warehouse || !isDay(container.expectedArrival)) return null;
+  return `Haven${container.destinationPort ? ' ' + container.destinationPort : ''} ${words.main}`;
 }
 
 /**
@@ -344,6 +381,8 @@ export interface CalendarChip {
   word: string;
   own: boolean;
   late: boolean;
+  /** "08:30 in Zaltbommel" when the chip stands on the planned warehouse day; null otherwise. */
+  at: string | null;
 }
 
 export interface CalendarCell {
@@ -363,8 +402,11 @@ export function calendarCells(month: string, containers: readonly PartnerContain
     const date = calendarDay(container);
     if (!date) continue;
     const state = stateOf(container, today);
+    const stock = warehouseDay(container);
+    const hour = stock ? hourText(container.warehouseArrivalTime) : null;
+    const place = container.locationName || 'het magazijn';
     const chip: CalendarChip = { id: container.id, name: container.name, short: shortName(container.name, today), tone: STATE_TONE[state], word: STATE_WORD[state],
-      own: container.own, late: isLate(container, today) };
+      own: container.own, late: isLate(container, today), at: stock ? (hour ? `${hour} in ${place}` : `in ${place}`) : null };
     const list = byDay.get(date);
     if (list) list.push(chip); else byDay.set(date, [chip]);
   }

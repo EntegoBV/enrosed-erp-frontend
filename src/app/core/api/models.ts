@@ -1792,6 +1792,32 @@ export interface PurchaseOrderView {
   invoices?: PurchaseInvoice[];
   /** Invoice files of the container that have no invoice data yet. */
   invoiceFiles?: PurchaseInvoiceFile[];
+  /** The arrival set by hand (Aankomst sheet); missing on an older server. */
+  arrival?: PurchaseArrival | null;
+}
+
+/**
+ * The arrival set by hand. The container's day is order.expectedArrival; containerAt its hour at the port
+ * ("08:30"). containerByHand: set by hand while the order has track & trace, so tracking leaves it alone.
+ * warehouseOn / warehouseAt: when it is expected at the place it is unloaded at ("Lossen op", Zaltbommel).
+ */
+export interface PurchaseArrival {
+  containerAt: string | null;
+  containerByHand: boolean;
+  warehouseOn: string | null;
+  warehouseAt: string | null;
+}
+
+/**
+ * The Aankomst sheet's save. containerByHand counts while the order has track & trace: true keeps the day and
+ * hour sent (Zelf instellen), false lets track & trace follow (the hour goes).
+ */
+export interface PurchaseArrivalRequest {
+  containerOn: string | null;
+  containerAt: string | null;
+  containerByHand: boolean;
+  warehouseOn: string | null;
+  warehouseAt: string | null;
 }
 
 export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';

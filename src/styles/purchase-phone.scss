@@ -142,6 +142,9 @@ app-purchase-view .mpo-costs__foot{display:block;margin-top:24px}
 .mpo-amount{color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mpo-accent{color:var(--rose-dark)}
 .mpo-value{color:var(--ink);overflow-wrap:anywhere;text-align:right;white-space:normal}
+/* Aankomst: the day and hour read as a value under the title; not planned yet reads quieter. */
+.mpo-arrival{color:var(--ink);font-variant-numeric:tabular-nums}
+.mpo-arrival.mpo-arrival--empty{color:var(--muted)}
 .mpo-link{color:var(--rose-dark)}
 .mpo-thumb--empty{display:grid;place-items:center;color:var(--muted);font-size:18px}
 .mpo-loading{display:grid;gap:12px;padding:8px 16px}

@@ -7,7 +7,7 @@ import type { ContainerTracking } from '../../core/api/container-tracking-models
 import { TrackingReferenceHint } from './tracking-reference-hint';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { LandedCostLine, Payee, Product } from '../../core/api/models';
+import { LandedCostLine, Payee, Product, PurchaseOrderView } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -27,6 +27,7 @@ import { PurchaseInvoiceSheet } from './purchase-invoice-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
+import { PurchaseArrivalSheet } from './purchase-arrival-sheet';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { keyContext } from '../../shared/key-context';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
@@ -112,7 +113,7 @@ export class PurchaseDeskStyles {}
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -575,7 +576,11 @@ export class PurchaseDeskStyles {}
                         <div><dt>Ordernummer</dt><dd>{{ data.order.number }}</dd></div>
                         <div><dt>Orderdatum</dt><dd>{{ data.order.orderDate | dateNl }}</dd></div>
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
-                        @else { <div><dt>Verwacht op</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" aria-haspopup="dialog" (click)="showTracking()">{{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : 'Datum onbekend' }} ›</button> } @else { {{ trackedOrder.expectedArrival ? (trackedOrder.expectedArrival | dateNl) : '—' }} }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div> }
+                        @else {
+                          @let arrival = orderArrival(data);
+                          <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, arrival.containerAt, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
+                          <div><dt>Aankomst {{ receivingLocationName(data.order.receivingLocationId) }}</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }} ›</button></dd></div>
+                        }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
                         @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
@@ -609,18 +614,21 @@ export class PurchaseDeskStyles {}
                         <label for="dk-date">Orderdatum</label>
                         <app-date-field fieldId="dk-date" [value]="data.order.orderDate" (valueChange)="patch({ orderDate: $event })" />
                       </div>
-                      @if (!isReceived()) {
-                        <div class="field">
-                          <label for="dk-expected">Verwacht op <span class="opt"></span></label>
-                          <app-date-field fieldId="dk-expected" [value]="data.order.expectedArrival ?? ''" (valueChange)="patch({ expectedArrival: $event || null })" />
-                        </div>
-                      } @else {
+                      @if (isReceived()) {
                         <div class="field">
                           <label for="dk-received">Ontvangen op</label>
                           <app-date-field fieldId="dk-received" [value]="data.order.receivedOn ?? ''" (valueChange)="$event && patch({ receivedOn: $event })" />
                         </div>
                       }
                     </div>
+                    @if (!isReceived()) {
+                      @let arrival = orderArrival(data);
+                      <div class="field">
+                        <label for="dk-arrival">Aankomst</label>
+                        <button class="btn purchase-payment-plan-trigger" id="dk-arrival" type="button" [disabled]="saving()" (click)="openArrival()">Container {{ arrivalText(data.order.expectedArrival, arrival.containerAt) }} <span>Wijzigen</span></button>
+                        <span class="hint">{{ receivingLocationName(data.order.receivingLocationId) }}: {{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }}@if (data.order.trackingReference && arrival.containerByHand) { · container met de hand }</span>
+                      </div>
+                    }
                     <div class="field">
                       <label for="dk-terms">Betaalplan</label>
                       <button class="btn purchase-payment-plan-trigger" id="dk-terms" type="button" [disabled]="saving() || payingBusy() || paymentPlanBusy()" (click)="openPaymentPlan()">{{ planLabel(data.order) }} <span>Wijzigen</span></button>
@@ -1219,6 +1227,10 @@ export class PurchaseDeskStyles {}
           [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
       }
+      @if (arrivalOpen()) {
+        <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          [trackingRow]="trackingPanel()?.row() ?? lastTrackingRow()" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
+      }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
           [openHint]="payingOpenHint()" [overageEur]="payingOverage()" [draftEur]="paymentDraftEur()" [rateEur]="paymentRateEur()"
@@ -1587,7 +1599,7 @@ export class PurchaseDesk extends PurchaseEditor {
   /** Tracking moved the expected arrival: the date that stood and the difference, for the step and the fact. */
   readonly arrivalMove = computed(() => this.editing() ? null : trackingMove(this.trackingPanel()?.row() ?? null));
   /** The tracking row read last, kept while the desk edits: the panel that reads it is not there then. */
-  private readonly lastTrackingRow = signal<ContainerTracking | null>(null);
+  protected readonly lastTrackingRow = signal<ContainerTracking | null>(null);
 
   /* ---- the panel: docked beside the products, or a drawer (Inkoop redesign I3) */
   readonly hostWidth = elementWidth(() => this.host.nativeElement);
@@ -1625,6 +1637,19 @@ export class PurchaseDesk extends PurchaseEditor {
         this.savedOrder.set(JSON.stringify(order));
       });
     });
+  }
+
+  /** The Aankomst sheet saved: the tracking row shows the day and the hand mark the server has now. */
+  protected override afterArrivalSaved(fresh: PurchaseOrderView): void {
+    const panel = this.trackingPanel();
+    const row = panel?.row() ?? null;
+    if (!panel) return;
+    const moved = row && row.orderExpectedArrival !== (fresh.order.expectedArrival ?? null);
+    panel.reloadNow(row ? {
+      ...row, orderExpectedArrival: fresh.order.expectedArrival ?? null, orderShippedOn: fresh.order.shippedOn ?? null,
+      arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
+      ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
+    } : undefined);
   }
 
   showTracking(): void {

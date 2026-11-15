@@ -133,6 +133,13 @@ export class PurchaseTracking {
     } : feed);
   }
 
+  /** The order's dates changed elsewhere (the Aankomst sheet): an answer already on its way is from before. */
+  reloadNow(row?: ContainerTracking): void {
+    if (row) this.rowUpdated(row);
+    else this.invalidateRequest();
+    void this.reload();
+  }
+
   async reload(): Promise<void> {
     const scope = this.scope();
     if (this.destroyed || !scope || !this.active() || this.panelBusy() || this.loading() || document.visibilityState !== 'visible') return;

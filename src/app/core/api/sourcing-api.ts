@@ -3,7 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
-  FreightRate, LandedCost, MarketSourceStatus, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
+  FreightRate, LandedCost, MarketSourceStatus, PurchaseArrivalRequest, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
   PartnerAdvanceSchedule, PartnerAdvanceScheduleRequest, PartnerSettlementAvailability, SalesOrderView,
@@ -98,6 +98,11 @@ export class SourcingApi {
   previewPurchaseOrder(id: number, order: PurchaseOrder): Promise<PurchaseOrderView> {
     return firstValueFrom(
       this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${id}/preview`), order));
+  }
+
+  /** The arrival by hand: the container's day and hour at the port, the warehouse's day and hour. */
+  setArrival(id: number, request: PurchaseArrivalRequest): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}/arrival`), request));
   }
 
   /** A partner comes in, the deal changes, or the partner leaves; a null customer ends the deal. */

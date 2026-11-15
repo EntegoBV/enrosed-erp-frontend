@@ -5,7 +5,7 @@ import { Icon } from '../../shared/icon';
 import { count } from './partner-format';
 import { PartnerContainerLines } from './partner-container-lines';
 import {
-  ArrivalWords, STATE_TONE, STATE_WORD, arrivalLine, arrivalWords, cargoLine, dayText, isReceived, loadLines, stateOf,
+  ArrivalWords, STATE_TONE, STATE_WORD, arrivalLine, arrivalWords, cargoLine, dayText, isReceived, loadLines, portLine, stateOf,
 } from './partner-containers-model';
 
 interface Row {
@@ -23,12 +23,17 @@ interface Row {
   /** Phone: "40HQ · ± 2 pallets · 1,29 m³" and "Aankomst ± do 20 nov · over 8 dagen". */
   cargo: string;
   when: string;
+  /** Phone, beside a planned warehouse arrival: "Haven Rotterdam ± do 20 nov". */
+  port: string | null;
+  /** Desk: "in Tica Brussel" when it is unloaded somewhere else than the main warehouse. */
+  elsewhere: string | null;
 }
 
 /**
  * Enrosed's containers as one table, desk first: Container (PO number, "Samen
  * met jou" on his own) · Type · Lading (producten · dozen · m³ · % vol) ·
- * ± Pallets · Vertrek · Aankomst · Status; a row opens what is in it (the
+ * ± Pallets · Vertrek · Aankomst (haven) · In Zaltbommel (day and hour set by
+ * hand in the ERP) · Status; a row opens what is in it (the
  * products grouped by category and family). The selected container is
  * highlighted. Columns fold with the table's own width (Type and Vertrek
  * under 900 px). On the phone every container is a row that opens the same
@@ -49,7 +54,8 @@ interface Row {
             <span class="wk-th" role="columnheader">Lading</span>
             <span class="wk-th wk-th--num" role="columnheader" [attr.title]="palletTitle()">± Pallets</span>
             <span class="wk-th ct-wide" role="columnheader">Vertrek</span>
-            <span class="wk-th" role="columnheader">Aankomst</span>
+            <span class="wk-th" role="columnheader">Aankomst haven</span>
+            <span class="wk-th" role="columnheader">In {{ warehouseName() }}</span>
             <span class="wk-th" role="columnheader">Status</span>
           </div>
           @for (row of rows(); track row.container.id) {
@@ -74,8 +80,14 @@ interface Row {
                 @if (row.departureSub) { <small>{{ row.departureSub }}</small> }
               </span>
               <span class="wk-td ct-cell" role="cell">
-                <b [class.is-late]="row.arrival.late">{{ row.arrival.main }}</b>
-                @if (row.arrival.moved || row.arrival.sub) { <small [class.is-late]="row.arrival.late && !row.arrival.moved">{{ row.arrival.moved || row.arrival.sub }}</small> }
+                <b [class.is-late]="row.arrival.late && !row.arrival.warehouse">{{ row.arrival.main }}</b>
+                @if (row.arrival.moved || row.arrival.sub) { <small [class.is-late]="row.arrival.late && !row.arrival.moved && !row.arrival.warehouse">{{ row.arrival.moved || row.arrival.sub }}</small> }
+              </span>
+              <span class="wk-td ct-cell" role="cell">
+                @if (row.arrival.warehouse) {
+                  <b [class.is-late]="row.arrival.late">{{ row.arrival.warehouse }}</b>
+                  <small [class.is-late]="row.arrival.late">{{ row.elsewhere ? row.elsewhere + ' · ' : '' }}{{ row.arrival.warehouseSub }}</small>
+                } @else { <span class="ct-muted">{{ isReceived(c) ? '—' : 'nog niet gepland' }}</span> }
               </span>
               <span class="wk-td ct-status" role="cell"><span class="wk-pill {{ row.tone }}">{{ row.word }}</span></span>
             </div>
@@ -103,6 +115,7 @@ interface Row {
               @if (c.own) { <span class="ct-item__own">Samen met jou</span> }
               <span class="ct-item__sub">{{ row.cargo }}</span>
               <span class="ct-item__when" [class.is-late]="row.arrival.late">{{ row.when }}</span>
+              @if (row.port) { <span class="ct-item__sub">{{ row.port }}</span> }
               @if (row.arrival.moved) { <span class="ct-item__sub">{{ row.arrival.moved }}</span> }
               <app-icon class="ct-item__chev" name="chevron-down" [size]="18" />
             </button>
@@ -117,10 +130,11 @@ interface Row {
   styles: `
     :host{display:block;min-width:0}
     .ct{container:ct / inline-size}
-    .ct-table{--wk-cols:28px minmax(150px,1fr) 92px minmax(180px,1fr) 80px 104px 136px 108px;--wk-pad-x:12px;--wk-gap:10px}
+    .ct-table{--wk-cols:28px minmax(140px,1fr) 88px minmax(170px,1fr) 76px 100px 128px 136px 104px;--wk-pad-x:12px;--wk-gap:10px}
     .ct-narrow{display:none}
-    @container ct (max-width: 899.98px){
-      .ct-table{--wk-cols:28px minmax(0,1fr) minmax(0,1.3fr) 70px 124px 104px}
+    /* Type and Vertrek fold away until every column has its room (the In Zaltbommel column came 2026-11-15). */
+    @container ct (max-width: 1099.98px){
+      .ct-table{--wk-cols:28px minmax(0,1fr) minmax(0,1.3fr) 64px 118px 128px 100px}
       .ct-wide{display:none!important}
       .ct-narrow{display:inline}
     }
@@ -163,6 +177,8 @@ export class PartnerContainerTable {
   readonly expanded = input<ReadonlySet<number>>(new Set());
   /** "Europallet 120 × 80 cm, tot 260 cm hoog". */
   readonly palletTitle = input<string | null>(null);
+  /** The main warehouse's name (Zaltbommel): the column of the arrival set by hand in the ERP. */
+  readonly warehouseName = input('Zaltbommel');
   readonly toggled = output<number>();
 
   readonly desk = inject(DesktopViewport);
@@ -184,12 +200,19 @@ export class PartnerContainerTable {
         departureSub: container.departurePort ?? '',
         arrival,
         cargo: cargoLine(container),
-        when: isReceived(container) ? (container.receivedOn ? `Aangekomen ${arrival.main}` : 'Aangekomen') : `Aankomst ${arrivalLine(container, today)}`,
+        when: isReceived(container) ? (container.receivedOn ? `Aangekomen ${arrival.main}` : 'Aangekomen')
+          : arrival.warehouse ? arrivalLine(container, today) : `Aankomst ${arrivalLine(container, today)}`,
+        port: portLine(container, today),
+        elsewhere: arrival.warehouse && container.locationName && container.locationName !== this.warehouseName() ? `in ${container.locationName}` : null,
       };
     });
   });
 
   isOpen(id: number): boolean {
     return this.expanded().has(id);
+  }
+
+  isReceived(container: PartnerContainer): boolean {
+    return isReceived(container);
   }
 }

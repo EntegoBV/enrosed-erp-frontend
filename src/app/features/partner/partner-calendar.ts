@@ -61,7 +61,7 @@ interface ComingRow {
                     <span class="pk-num">{{ cell.label }}</span>
                     @for (chip of cell.chips.slice(0, 2); track chip.id) {
                       <button class="pk-chip {{ chip.tone }}" type="button" [class.is-on]="chip.id === selectedId()" [class.is-late]="chip.late"
-                              [title]="chip.name + ' · ' + chip.word + (chip.own ? ' · samen met jou' : '')" (click)="picked.emit(chip.id)">
+                              [title]="chip.name + ' · ' + chip.word + (chip.at ? ' · ' + chip.at : '') + (chip.own ? ' · samen met jou' : '')" (click)="picked.emit(chip.id)">
                         <i class="pk-chip__dot" aria-hidden="true"></i><span class="pk-chip__text pk-chip__full">{{ chip.name }}</span><span class="pk-chip__text pk-chip__short">{{ chip.short }}</span>
                       </button>
                     }
@@ -242,6 +242,6 @@ export class PartnerCalendar {
   dayLabel(cell: CalendarCell): string {
     const day = `${cell.label} ${monthTitle(cell.key.slice(0, 7)).split(' ')[0].toLowerCase()}`;
     if (!cell.chips.length) return day;
-    return `${day}: ${cell.chips.map((chip) => `${chip.name} ${chip.word.toLowerCase()}`).join(', ')}`;
+    return `${day}: ${cell.chips.map((chip) => `${chip.name} ${chip.word.toLowerCase()}${chip.at ? ' ' + chip.at : ''}`).join(', ')}`;
   }
 }

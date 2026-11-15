@@ -4,7 +4,7 @@ import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Sheet } from '../../shared/ui';
 import { count } from './partner-format';
 import {
-  LineGroup, LineRow, cartonContentText, cartonsText, cbmNumber, cbmText, dayText, isReceived, kgText, lineFigure, lineGroups,
+  LineGroup, LineRow, arrivalWords, cartonContentText, cartonsText, cbmNumber, cbmText, dayText, isReceived, kgText, lineFigure, lineGroups,
   packagingText, palletsText, perPalletText, productSpecText, sizeText,
 } from './partner-containers-model';
 import { PartnerPhoto, safeColour } from './partner-photo';
@@ -250,7 +250,9 @@ export class PartnerContainerLines {
     const c = this.container();
     const today = this.today();
     const route = c.departurePort && c.destinationPort ? `${c.departurePort} → ${c.destinationPort}` : c.departurePort || c.destinationPort || '';
-    const place = c.locationName ? `${isReceived(c) ? 'gelost in' : 'lost in'} ${c.locationName}` : '';
+    const words = arrivalWords(c, today);
+    /* The arrival set by hand in the ERP: "lost in Zaltbommel op vr 21 nov · 08:30". */
+    const place = c.locationName ? `${isReceived(c) ? 'gelost in' : 'lost in'} ${c.locationName}${words.warehouse ? ' op ' + words.warehouse : ''}` : '';
     const ordered = c.orderDate ? `besteld ${dayText(c.orderDate, today)}` : '';
     const weight = c.totals?.weightKg != null ? `${c.totals.weightUnknown ? '± ' : ''}${kgText(c.totals.weightKg)}` : '';
     return [c.containerLabel && c.containerLabel !== c.containerType ? c.containerLabel : '', route, place, ordered, weight].filter(Boolean).join(' · ');

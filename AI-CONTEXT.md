@@ -5629,3 +5629,38 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
 - **Address**: a pick writes `?container=` with `Location.replaceState` (a router navigation would
   scroll to the top: `scrollPositionRestoration: 'top'`); arriving with it, the row is opened and
   scrolled to after the router's `Scroll` event.
+
+## Aankomst met de hand: container en Zaltbommel, op dag en uur (2026-11-15)
+
+Emre: "aankomst container ook manueel kunnen zetten en aankomst Zaltbommel manueel op dag en uur van de
+inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its AI-CONTEXT (same date).
+
+- **`features/purchasing/purchase-arrival-sheet.ts`** (`app-purchase-arrival-sheet`, title Aankomst) saves
+  itself through `SourcingApi.setArrival` (PUT `/api/purchase-orders/{id}/arrival`) and emits the order as it
+  stands. Two parts: "Container in {aankomsthaven}" (day = `order.expectedArrival`, optional hour) and
+  "Aankomst {Lossen op}" (Zaltbommel for the main warehouse; day and hour). With a track & trace reference the
+  container part has two modes: **Track & trace** (the day shown read-only, "Zelf instellen") and **Met de
+  hand** (day and hour editable, "Track & trace volgen", and the source's own date when the tracking row names
+  one, `sourceArrival`). Without a reference there is no mode: the day is planning that tracking may replace
+  later, as it always was. A warehouse day before the port day is said, not refused.
+- `PurchaseOrderView.arrival` (`PurchaseArrival`: containerAt, containerByHand, warehouseOn, warehouseAt; hours
+  "08:30") is optional; `orderArrival()` reads it also from an older server. `arrivalText()` writes
+  "do 26/11/2026 · 09:15" or "Nog niet gepland".
+- **Where it opens**: desk Order facts (Aankomst container and Aankomst {plaats}, both links; the old "Verwacht
+  op" fact is gone), desk edit form (a full-width Aankomst button; the form no longer edits the day), phone
+  view (two pressable rows under Betaalplan, the value under the title), phone editor (one Aankomst row). Not
+  for a received order (Ontvangen op stays).
+- **Draft safety**: `PurchaseEditor.onArrivalSaved` moves only the day (and shippedOn) and the arrival block
+  into the draft AND its clean baseline (`savedOrder`), so the sheet never marks the form dirty and the next
+  Opslaan carries the new day. The desk and the phone view refresh the tracking row (`PurchaseTracking.reloadNow`
+  with a patched row) because `trackingOrder` reads the day from it.
+- The tracking panel says "met de hand gezet · track & trace meldt …" under Verwachte aankomst container.
+- **Partnerportaal**: `PartnerContainer.expectedArrivalTime`, `warehouseArrivalOn`, `warehouseArrivalTime`,
+  `PartnerContainerPage.warehouseName`. `partner-containers-model`: `warehouseDay`, `hourText`; `calendarDay`
+  puts a container on its warehouse day first; `isLate` uses that day; `arrivalWords` gives `warehouse` /
+  `warehouseSub`; `arrivalLine` reads "In Zaltbommel vr 27 nov · 13:45" once planned; `portLine` "Haven
+  Rotterdam ± do 26 nov" beside it. An hour at the port drops the "±". The container table has a column "In
+  {warehouseName}" (Type and Vertrek fold under 1100 px table width now), the phone row a Haven line, the chip
+  title the hour, the detail "lost in Zaltbommel op …".
+- Checked locally on a dev jar (desk 1280/1070, phone 375; portal desk and phone; edit-mode draft with an
+  unsaved name, then the sheet, then Opslaan).

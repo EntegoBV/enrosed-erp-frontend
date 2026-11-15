@@ -400,6 +400,11 @@ export interface PartnerContainer {
   locationName: string | null;
   totals: PartnerContainerTotals;
   lines: PartnerContainerLine[];
+  /** Set by hand in the ERP, not received yet: the hour at the port ("08:30") beside expectedArrival. */
+  expectedArrivalTime?: string | null;
+  /** Set by hand in the ERP, not received yet: the day and hour it is expected at the warehouse (Zaltbommel). */
+  warehouseArrivalOn?: string | null;
+  warehouseArrivalTime?: string | null;
 }
 
 /** A product as the container screen shows it: the tile plus the product card's sizes and packaging. */
@@ -422,6 +427,8 @@ export interface PartnerProductSpec extends PartnerProductTile {
 export interface PartnerContainerPage {
   /** Today in Europe/Brussels (yyyy-mm-dd). */
   serverDate: string;
+  /** The main warehouse's name (Zaltbommel); absent on an older server. */
+  warehouseName?: string | null;
   pallet: PartnerPallet | null;
   /** Open ones by arrival, then received ones newest first. */
   containers: PartnerContainer[];

@@ -56,6 +56,7 @@ import { applyShare, shareBody, shareNewPart, sharePartsOf, shareStatus, shareTo
 import { receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
+import { PurchaseArrivalSheet, arrivalText, orderArrival } from './purchase-arrival-sheet';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
@@ -173,7 +174,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
             PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
             IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet, TrackingReferenceHint],
@@ -277,11 +278,13 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                     <span class="mpo-date"><app-date-field fieldId="po-date" [value]="data.order.orderDate" (valueChange)="patch({ orderDate: $event })" /></span>
                   </div>
                   @if (!isReceived()) {
-                    <div class="ios-cell mpo-field-row">
-                      <span class="ios-cell__body"><label class="ios-cell__title" for="po-expected">Verwacht op</label>
-                        <span class="ios-cell__sub mpo-wrap">Producten tonen dit als ‘te verwachten’</span></span>
-                      <span class="mpo-date"><app-date-field fieldId="po-expected" [value]="data.order.expectedArrival ?? ''" (valueChange)="patch({ expectedArrival: $event || null })" /></span>
-                    </div>
+                    @let arrival = orderArrival(data);
+                    <button class="ios-cell" id="po-arrival" type="button" [disabled]="saving()" (click)="openArrival()">
+                      <span class="ios-cell__body"><span class="ios-cell__title">Aankomst</span>
+                        <span class="ios-cell__sub mpo-wrap mpo-arrival">Container: {{ arrivalText(data.order.expectedArrival, arrival.containerAt) }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
+                        <span class="ios-cell__sub mpo-wrap mpo-arrival">{{ receivingLocationName(data.order.receivingLocationId) }}: {{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }}</span></span>
+                      <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                    </button>
                   } @else {
                     <div class="ios-cell mpo-field-row">
                       <span class="ios-cell__body"><label class="ios-cell__title" for="po-received">Ontvangen op</label>
@@ -1087,6 +1090,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-purchase-payment-plan-sheet [order]="agreement" [busy]="paymentPlanBusy()" [error]="paymentPlanFailure()"
           [agreedEur]="planAgreedEur()" [paidEur]="paidTotalEur()" [scopedDues]="scopedSupplierDues()"
           (saved)="savePaymentPlan($event)" (closed)="paymentPlanOrder.set(null)" />
+      }
+      @if (arrivalOpen()) {
+        <app-purchase-arrival-sheet [view]="data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
+          (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
@@ -3690,6 +3697,36 @@ export class PurchaseEditor {
     this.carryPartner(fresh);
     void this.loadPartnerDocs(fresh.order.id);
   }
+
+  /* ---- the arrival by hand (Aankomst sheet) -------------------------------- */
+  readonly arrivalOpen = signal(false);
+  readonly arrivalText = arrivalText;
+  readonly orderArrival = orderArrival;
+
+  openArrival(): void {
+    const data = this.view();
+    if (!data?.order.id || data.order.status === 'ONTVANGEN') return;
+    this.arrivalOpen.set(true);
+  }
+
+  /**
+   * The sheet saved through its own call: the container's day (and the departure tracking may have applied with
+   * it) and the arrival block move into the draft and into its clean baseline, so they read as saved, not as an
+   * edit, and the next Opslaan carries them instead of the day from before.
+   */
+  onArrivalSaved(fresh: PurchaseOrderView): void {
+    this.arrivalOpen.set(false);
+    const dates = { expectedArrival: fresh.order.expectedArrival ?? null, shippedOn: fresh.order.shippedOn ?? null };
+    this.view.update((current) => current ? { ...current, arrival: fresh.arrival ?? null, order: { ...current.order, ...dates } } : current);
+    const baseline = this.savedOrder();
+    if (baseline) {
+      try { this.savedOrder.set(JSON.stringify({ ...(JSON.parse(baseline) as PurchaseOrder), ...dates })); } catch { /* the draft stays as it was */ }
+    }
+    this.afterArrivalSaved(fresh);
+  }
+
+  /** The desk and the phone editor refresh what reads the tracking row. */
+  protected afterArrivalSaved(_fresh: PurchaseOrderView): void { /* nothing by default */ }
 
   private carryPartner(fresh: PurchaseOrderView): void {
     this.view.update((current) => current ? { ...current, order: { ...current.order,
