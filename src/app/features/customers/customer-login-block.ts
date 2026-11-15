@@ -42,7 +42,9 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
             <span class="badge" [class]="badge(login).css">{{ badge(login).label }}</span>
             <span class="cl-line">{{ rowText(login) }}
               @if (login.lastActiveAt || login.lastLoginAt) {
-                <a class="cl-visits" routerLink="/analyses/website" [queryParams]="{ source: 'ACCOUNTS', login: login.id, days: 365 }">Bezoeken</a>
+                <!-- In a new tab: routing away would close this sheet and drop a half-edited customer. -->
+                <a class="cl-visits" routerLink="/analyses/website" [queryParams]="{ source: 'ACCOUNTS', login: login.id, days: 365 }"
+                   target="_blank" rel="noopener">Bezoeken</a>
               }
             </span>
           </div>

@@ -115,6 +115,8 @@ export interface LoginActivityLogin {
   orderIds: number[];
   kinds: LoginActivityKind[];
   device: LoginDevice | null;
+  /** The visits of an earlier customer of a login that was withdrawn and given to another customer (status DISABLED). */
+  moved?: boolean;
 }
 
 /** One visit: rows of one login with less than 30 minutes between them. seconds is null when only its moment is known. */

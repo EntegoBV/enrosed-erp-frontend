@@ -29,13 +29,15 @@ export function loginVisitsView(visits: readonly LoginActivityVisit[], context: 
   single: boolean;
   note?: string | null;
 }): DrillView {
+  /* Without one measured visit the total has no length to show ("—", never "< 1 min"). */
+  const measured = visits.some((visit) => visit.seconds !== null);
   const columns: DrillColumn[] = [
     ...(context.single ? [] : [{ key: 'company', label: 'Klant', format: 'text', phone: 'title' } satisfies DrillColumn]),
     { key: 'when', label: 'Begin', format: 'moment', phone: context.single ? 'title' : 'sub' },
     { key: 'what', label: 'Deed', format: 'text', phone: 'sub' },
     { key: 'device', label: 'Toestel', format: 'text', phone: 'none', width: '96px' },
     { key: 'how', label: 'Hoe', format: 'text', phone: 'none', width: '132px' },
-    { key: 'minutes', label: 'Duur', format: 'minutes', phone: 'value', sum: true, width: '96px' },
+    { key: 'minutes', label: 'Duur', format: 'minutes', phone: 'value', sum: measured, width: '96px' },
   ];
   return {
     id: 'logins.visits',
@@ -79,7 +81,7 @@ export function loginTimeView(logins: readonly LoginActivityLogin[], context: { 
       { key: 'minutes', label: 'Tijd', format: 'minutes', phone: 'value', width: '96px' },
     ],
     rows: rows.map((login): DrillRow => ({
-      key: `login-${login.accountId}`,
+      key: `login-${login.accountId}-${login.customerId}`,
       cells: {
         company: login.company ?? login.email, email: login.email, visits: login.measuredVisits,
         last: login.lastActiveAt, minutes: login.seconds / 60,
@@ -113,6 +115,7 @@ export function loginCustomersView(logins: readonly LoginActivityLogin[], contex
       orders: (known?.orders ?? 0) + login.orderIds.length,
     });
   }
+  const measured = [...byCustomer.values()].some((row) => row.measured > 0);
   return {
     id: 'logins.customers',
     title: 'Ingelogde klanten',
@@ -121,7 +124,7 @@ export function loginCustomersView(logins: readonly LoginActivityLogin[], contex
       { key: 'company', label: 'Klant', format: 'text', phone: 'title' },
       { key: 'last', label: 'Laatst', format: 'moment', phone: 'sub' },
       { key: 'visits', label: 'Bezoeken', format: 'int', phone: 'value', sum: true, width: '96px' },
-      { key: 'minutes', label: 'Tijd', format: 'minutes', phone: 'none', sum: true, width: '96px' },
+      { key: 'minutes', label: 'Tijd', format: 'minutes', phone: 'none', sum: measured, width: '96px' },
       { key: 'orders', label: 'Besteld', format: 'int', phone: 'none', sum: true, width: '84px' },
     ],
     rows: [...byCustomer.entries()].map(([customerId, row]): DrillRow => ({
@@ -162,7 +165,7 @@ export function loginUnusedView(logins: readonly LoginActivityLogin[], context: 
       };
     }),
     valueKey: null,
-    total: { value: rows.length, format: 'int', of: 'rows', label: 'Logins' },
+    total: { value: rows.length, format: 'int', of: 'rows', label: 'Link niet gebruikt' },
     sort: { key: 'sent', dir: 'desc' },
     empty: 'Elke login werd al gebruikt.',
     note: 'Een nieuwe link stuur je vanaf de klantfiche (Websitelogin).',

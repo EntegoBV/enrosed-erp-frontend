@@ -69,9 +69,10 @@ const SHOWN = 8;
           <span class="an-kpi__sub">{{ r.totals.ordersPlaced || r.previous.ordersPlaced ? delta(r.totals.ordersPlaced, r.previous.ordersPlaced) : 'via een login' }}</span><span class="an-kpi__foot"></span></div>
         @if (r.accountId === null) {
           @if (unused().length) {
+            <!-- The figure is what the dialog lists (rows add up to it): the logins whose link waits. -->
             <button type="button" class="an-kpi an-kpi--drill" aria-haspopup="dialog" (click)="openUnused()">
-              <span class="an-kpi__label">Logins</span><span class="an-kpi__value">{{ r.totals.loginsActive | num }}<small>actief</small></span>
-              <span class="an-kpi__sub">{{ unused().length | num }} link nog niet gebruikt</span><span class="an-kpi__foot"></span></button>
+              <span class="an-kpi__label">Link niet gebruikt</span><span class="an-kpi__value">{{ unused().length | num }}</span>
+              <span class="an-kpi__sub">{{ r.totals.loginsActive | num }} {{ r.totals.loginsActive === 1 ? 'login' : 'logins' }} actief</span><span class="an-kpi__foot"></span></button>
           } @else {
             <div class="an-kpi"><span class="an-kpi__label">Logins</span><span class="an-kpi__value">{{ r.totals.loginsActive | num }}<small>actief</small></span>
               <span class="an-kpi__sub">elke link gebruikt</span><span class="an-kpi__foot"></span></div>
@@ -106,7 +107,7 @@ const SHOWN = 8;
             <header class="an-card__head"><h3 class="an-card__title" id="kl-logins-title">Per klant</h3>
               <span class="an-card__trail">tijd op de site</span></header>
             <div class="an-card__body">
-              @for (login of usedLogins().slice(0, shownLogins()); track login.accountId) {
+              @for (login of usedLogins().slice(0, shownLogins()); track login.accountId + ':' + login.customerId) {
                 <button class="an-row an-row--nolead an-row--chev" type="button" aria-haspopup="dialog" (click)="openLogin(login)">
                   <span class="an-row__body"><span class="an-row__title">{{ login.company ?? login.email }}</span>
                     <span class="an-row__sub">{{ loginSub(login) }}</span></span>
@@ -217,10 +218,12 @@ export class CustomerLoginAnalytics {
   readonly moment = (iso: string) => momentText(iso);
   readonly recent = (iso: string) => recentText(iso);
 
-  /** The one login of a filtered report. */
+  /** The one login of a filtered report (its present customer, not an earlier one it moved from). */
   readonly single = computed(() => {
     const report = this.report();
-    return report && report.accountId !== null ? report.logins.find((login) => login.accountId === report.accountId) ?? null : null;
+    if (!report || report.accountId === null) return null;
+    const own = report.logins.filter((login) => login.accountId === report.accountId);
+    return own.find((login) => !login.moved) ?? own[0] ?? null;
   });
   /** Logins that were ever used, most recent first (the server's order). */
   readonly usedLogins = computed(() => (this.report()?.logins ?? []).filter((login) => !!login.lastActiveAt));
@@ -306,6 +309,7 @@ export class CustomerLoginAnalytics {
     if (!login.visits) return [last ? 'laatst ' + last : null, login.status === 'DISABLED' ? 'ingetrokken' : null].filter(Boolean).join(' · ');
     const parts = [
       last,
+      login.moved ? 'login verplaatst' : null,
       login.orderIds.length ? plural(login.orderIds.length, 'bestelling', 'bestellingen') : mainKindText(login.kinds) || null,
       login.measuredVisits ? (this.desk.active() ? deviceText(login.device) || null : null) : 'zonder duur',
     ];
@@ -351,7 +355,7 @@ export class CustomerLoginAnalytics {
   openLogin(login: LoginActivityLogin): void {
     const report = this.report();
     if (!report) return;
-    const visits = report.visits.filter((visit) => visit.accountId === login.accountId);
+    const visits = report.visits.filter((visit) => visit.accountId === login.accountId && visit.customerId === login.customerId);
     this.drill.open([loginVisitsView(visits, {
       scope: this.scope(),
       title: `Bezoeken · ${login.company ?? login.email}`,
@@ -366,7 +370,7 @@ export class CustomerLoginAnalytics {
     const report = this.report();
     if (!report) return;
     if (report.accountId !== null) { this.openVisits(); return; }
-    const login = report.logins.find((row) => row.accountId === visit.accountId);
+    const login = report.logins.find((row) => row.accountId === visit.accountId && row.customerId === visit.customerId);
     if (login) this.openLogin(login);
   }
 

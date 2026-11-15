@@ -62,21 +62,30 @@ export function lengthText(seconds: number | null | undefined): string {
 }
 
 const KIND_WORDS: Partial<Record<LoginActivityKind, string>> = {
-  PRICES: 'Prijzen', ORDER_PAGE: 'Bestelpagina', ORDER: 'Besteld', ORDER_CHANGE: 'Gewijzigd',
-  ORDER_CANCEL: 'Geannuleerd', ORDERS: 'Bestellingen', PDF: 'PDF',
+  ORDER_PAGE: 'Bestelpagina', PRICES: 'Prijzen', ORDERS: 'Bestellingen', PDF: 'PDF',
 };
+/**
+ * Sending, changing or cancelling an order is recorded when the call arrives, before the server
+ * decides: it reads as the page it happened on. "Besteld" comes only from a placed order (orderIds).
+ */
+const AS_PAGE: Partial<Record<LoginActivityKind, LoginActivityKind>> = { ORDER: 'ORDER_PAGE', ORDER_CHANGE: 'ORDERS', ORDER_CANCEL: 'ORDERS' };
 /** The order the "what" words stand in, most telling first. */
-const KIND_ORDER: readonly LoginActivityKind[] = ['ORDER', 'ORDER_CHANGE', 'ORDER_CANCEL', 'ORDER_PAGE', 'PRICES', 'ORDERS', 'PDF'];
+const KIND_ORDER: readonly LoginActivityKind[] = ['ORDER_PAGE', 'PRICES', 'ORDERS', 'PDF'];
 
-/** "Besteld · Bestelpagina · Prijzen": what a visit or a login did; empty when it only logged in or browsed. */
+function pages(kinds: readonly LoginActivityKind[]): LoginActivityKind[] {
+  const seen = new Set(kinds.map((kind) => AS_PAGE[kind] ?? kind));
+  return KIND_ORDER.filter((kind) => seen.has(kind));
+}
+
+/** "Bestelpagina · Prijzen · Bestellingen": where a visit or a login went; empty when it only logged in or browsed. */
 export function kindsText(kinds: readonly LoginActivityKind[], max = 3): string {
-  const words = KIND_ORDER.filter((kind) => kinds.includes(kind)).map((kind) => KIND_WORDS[kind] as string);
+  const words = pages(kinds).map((kind) => KIND_WORDS[kind] as string);
   return words.length > max ? `${words.slice(0, max).join(' · ')} +${words.length - max}` : words.join(' · ');
 }
 
-/** The one most telling thing a visit or a login did ("Besteld" before "Prijzen"); empty when nothing stands out. */
+/** The one most telling place a visit or a login went ("Bestelpagina" before "Prijzen"); empty when nothing stands out. */
 export function mainKindText(kinds: readonly LoginActivityKind[]): string {
-  const kind = KIND_ORDER.find((candidate) => kinds.includes(candidate));
+  const kind = pages(kinds)[0];
   return kind ? KIND_WORDS[kind] as string : '';
 }
 
