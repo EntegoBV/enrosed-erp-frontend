@@ -70,7 +70,7 @@ export const DEFAULT_GAP_LABEL = 'Niet toe te wijzen';
 
 /** Text and dates sit left; money, counts, rates and day counts right. */
 export function isNumericFormat(format: DrillFormat): boolean {
-  return format !== 'text' && format !== 'day';
+  return format !== 'text' && format !== 'day' && format !== 'moment';
 }
 
 /**
@@ -100,6 +100,7 @@ export function columnTrack(column: DrillColumn, index: number): string {
   if (index === 0) return 'minmax(0,1.6fr)';
   if (column.format === 'text') return 'minmax(0,1fr)';
   if (column.format === 'day' || column.format === 'days') return fixed(84);
+  if (column.format === 'moment') return fixed(124);
   return fixed(112);
 }
 

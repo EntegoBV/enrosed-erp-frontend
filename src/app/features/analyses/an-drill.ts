@@ -8,6 +8,7 @@ import { Icon } from '../../shared/icon';
 import { Segmented } from '../../shared/segmented';
 import { Sheet } from '../../shared/ui';
 import { eur, eurWhole } from '../finance/cash-format';
+import { minutesText, momentText } from './login-activity-words';
 import { dayMonth } from './analyses-words';
 import { AnDrillHost } from './drill-host';
 import type { DrillCell, DrillColumn, DrillFormat, DrillLink, DrillRow, DrillView } from './drill-model';
@@ -311,7 +312,10 @@ export class AnDrill {
   /** A cell as the dialog writes it; strings pass through, an empty cell is "—". */
   text(cell: DrillCell | undefined, format: DrillFormat): string {
     if (cell === null || cell === undefined || cell === '') return '—';
-    if (typeof cell === 'string') return format === 'day' ? dayMonth(cell, this.year) || cell : cell;
+    if (typeof cell === 'string') {
+      if (format === 'moment') return momentText(cell, this.year);
+      return format === 'day' ? dayMonth(cell, this.year) || cell : cell;
+    }
     return this.format(cell, format);
   }
 
@@ -334,6 +338,7 @@ export class AnDrill {
       case 'rate': return RATE.format(value);
       case 'pct': return `${PCT.format(value).replace('-', MINUS)}${NBSP}%`;
       case 'days': return `${INT.format(value)}${NBSP}d`;
+      case 'minutes': return minutesText(value);
       case 'day':
       case 'text':
       default: return String(value);

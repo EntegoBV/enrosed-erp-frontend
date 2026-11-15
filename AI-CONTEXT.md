@@ -2777,6 +2777,21 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
   through the esbuild bundle its header names; in the plain node run it is
   one of the known failing files.
 
+### Klantlogins: who used their website login, when and how long (2026-11-15)
+- The Websitelogin block on the customer sheet reads "Laatst ingelogd <date> om
+  <time> · N bezoeken in 30 dagen" for an active login (`loginRowText`: the last
+  activity, else the last login, else the moment the password was chosen); an active
+  login can no longer read "Nog niet ingelogd". "Bezoeken ›" opens the analysis of
+  that one login (`/analyses/website?source=ACCOUNTS&login=<id>&days=365`).
+- Analyses › Bezoekers has a fourth source, Klantlogins (`?source=ACCOUNTS`,
+  `customer-login-analytics.ts`, data `LoginRequestApi.activity`): tiles Ingelogde
+  klanten / Bezoeken / Tijd op de site / Bestellingen / Logins, Per dag, Per klant,
+  Laatste bezoeken, Link nog niet gebruikt. Every figure opens the one Analyses
+  drill-down (`drill-logins.ts`); the drill gained the formats `moment` (an ISO
+  instant, Belgian time) and `minutes`. Words live in `login-activity-words.ts`.
+- A visit without a length (from before the measuring started) shows "—"; one moment
+  of measured use reads "< 1 min". Phone rows leave the device out (the popup has it).
+
 ### Klantprijzen on the customer (round 3, 2026-11-06)
 One agreed price per customer and product: EUR excl. VAT on the product's
 own sales unit (per display when sold per display), like the catalogue

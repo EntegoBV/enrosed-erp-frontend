@@ -22,7 +22,9 @@ export type DrillFormat =
   | 'rate'      // 7,4993 (four decimals)
   | 'pct'       // 31,2 %
   | 'day'       // 3 nov (with the year when it is not this year)
-  | 'days';     // 12 d
+  | 'days'      // 12 d
+  | 'moment'    // 14 nov · 12:20, Belgian time (the cell is an ISO instant, which sorts as text)
+  | 'minutes';  // 1 u 05 min (a number of minutes, may be fractional)
 
 export type DrillTone = 'ok' | 'warn' | 'danger' | 'muted';
 export type DrillCell = string | number | null;
@@ -65,7 +67,7 @@ export interface DrillGroup {
 /** The figure the rows add up to: a sum of the valueKey column, or a number of rows. */
 export interface DrillTotal {
   value: number;
-  format: 'eur' | 'eur2' | 'eurSigned' | 'usd' | 'int';
+  format: 'eur' | 'eur2' | 'eurSigned' | 'usd' | 'int' | 'minutes';
   of: 'sum' | 'rows';
   /** Label of the total row; default 'Totaal'. */
   label?: string;

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { messageOf } from '../../core/api/errors';
 import { CustomerLogin, LoginRequestApi } from '../../core/api/login-request-api';
 import { Skeleton } from '../../shared/skeleton';
@@ -17,7 +18,7 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
 @Component({
   selector: 'app-customer-login-block',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule, Skeleton],
+  imports: [FormsModule, RouterLink, Skeleton],
   template: `
     <div class="cl-head">
       <b>Websitelogin</b>
@@ -39,7 +40,11 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
           <div class="cl-row__main">
             <span class="cl-email">{{ login.email }}</span>
             <span class="badge" [class]="badge(login).css">{{ badge(login).label }}</span>
-            <span class="cl-line">{{ rowText(login) }}</span>
+            <span class="cl-line">{{ rowText(login) }}
+              @if (login.lastActiveAt || login.lastLoginAt) {
+                <a class="cl-visits" routerLink="/analyses/website" [queryParams]="{ source: 'ACCOUNTS', login: login.id, days: 365 }">Bezoeken</a>
+              }
+            </span>
           </div>
           @if (login.lastLinkError) {
             <div class="alert alert--warn">
@@ -78,6 +83,9 @@ import { LoginAction, linkToast, loginActions, loginBadge, loginHints, loginRowT
     .cl-row__main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; font-size: 13.5px; }
     .cl-email { min-width: 0; font-weight: 650; overflow-wrap: anywhere; }
     .cl-line { flex-basis: 100%; color: var(--ink-2); font-size: 12.5px; }
+    .cl-visits { margin-left: 6px; color: var(--rose); font-weight: 650; text-decoration: none; white-space: nowrap; }
+    .cl-visits::after { content: ' ›'; }
+    @media (hover: hover) { .cl-visits:hover { text-decoration: underline; } }
     .cl-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .cl-none { font-size: 13.5px; }
     .cl-grant { margin-bottom: 0; }

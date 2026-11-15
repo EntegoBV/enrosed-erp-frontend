@@ -23,6 +23,7 @@ import { dayMonth, plural, rangeLabel as periodRange, wholeNumber } from './anal
 import { AnDrillHost } from './drill-host';
 import { websiteProductsView, websiteRequestsView } from './drill-website';
 import { GoogleWebsiteAnalytics } from './google-website-analytics';
+import { CustomerLoginAnalytics } from './customer-login-analytics';
 import { websiteAnalyticsQuery, websiteAnalyticsRouteState, WebsiteAnalyticsSource } from './website-analytics-route';
 
 const KIND_LABEL: Record<WebsitePageKind, string> = {
@@ -67,7 +68,7 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
 @Component({
   selector: 'app-website-analytics',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NumPipe, GoogleWebsiteAnalytics, Segmented, Icon, Sheet],
+  imports: [NumPipe, GoogleWebsiteAnalytics, CustomerLoginAnalytics, Segmented, Icon, Sheet],
   template: `
     <!-- The tab's tool row (critique N10, design §3.8): source and period; Vernieuwen is the page's. Round 2 (analyses2 §C.10):
          the compare basis is said once here, with the report's time, Hoe gerekend ([how], projected by the page) and the opt-out. -->
@@ -77,14 +78,18 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
         <app-segmented label="Periode" [options]="rangeOptions()" [value]="'' + days()" (changed)="setDays(+$event)" />
         @if (source() === 'INTERNAL') { @if (report(); as r) {
           <span class="an-bar__text">{{ compare() }} · bijgewerkt {{ timeLabel(r.generatedAt) }}</span>
-        } }
+        } } @else if (source() === 'ACCOUNTS') {
+          <span class="an-bar__text">{{ compare() }}</span>
+        }
         <div class="an-bar__end">
           @if (source() === 'INTERNAL') { @if (report(); as r) {
             <span class="wa__live" [class.wa__live--on]="r.totals.activeNow > 0" [title]="'Bezoekers gezien in het laatste half uur'">
               <i aria-hidden="true"></i>{{ r.totals.activeNow | num }} nu op de site</span>
           } }
           <ng-content select="[how]" />
-          <button class="wk-btn wk-btn--ghost" type="button" (click)="excludeThisDevice()">Dit toestel uitsluiten</button>
+          @if (source() !== 'ACCOUNTS') {
+            <button class="wk-btn wk-btn--ghost" type="button" (click)="excludeThisDevice()">Dit toestel uitsluiten</button>
+          }
         </div>
       } @else {
         <!-- Phone: tinted capsules that open a sheet each (design §3.8); Hoe gerekend and the opt-out are in the page's ⋯. -->
@@ -102,9 +107,14 @@ const requestStatus = (row: WebsiteRequestRow): string => isWebsiteQuoteRequest(
     <!-- Phone: the tiles' ▲/▼ need their basis and the report's time too (the desk says it in the tool row). -->
     @if (!desk.active() && source() === 'INTERNAL') { @if (report(); as r) {
       <p class="ios-caption wa__basis">{{ compare() }} · bijgewerkt {{ timeLabel(r.generatedAt) }}</p>
-    } }
+    } } @else if (!desk.active() && source() === 'ACCOUNTS') {
+      <p class="ios-caption wa__basis">{{ compare() }}</p>
+    }
 
-    @if (source() !== 'INTERNAL') {
+    @if (source() === 'ACCOUNTS') {
+      <app-customer-login-analytics [days]="days()" [login]="login()" [refreshKey]="googleRefresh()"
+                                    (loadingChanged)="googleBusy.set($event)" (loginChange)="setLogin($event)" />
+    } @else if (source() !== 'INTERNAL') {
       <app-google-website-analytics [source]="source() === 'GA4' ? 'GA4' : 'SEARCH_CONSOLE'" [days]="days()" [refreshKey]="googleRefresh()" (loadingChanged)="googleBusy.set($event)" />
     } @else {
     @if (loading() && !report()) {
@@ -430,9 +440,11 @@ export class WebsiteAnalytics {
   readonly ranges = RANGES;
   readonly sources = [
     { id: 'INTERNAL', label: 'Eigen meting' }, { id: 'GA4', label: 'Google Analytics' },
-    { id: 'SEARCH_CONSOLE', label: 'Google zoeken' },
+    { id: 'SEARCH_CONSOLE', label: 'Google zoeken' }, { id: 'ACCOUNTS', label: 'Klantlogins' },
   ] as const;
   readonly source = signal<WebsiteAnalyticsSource>(this.initialRouteState.source);
+  /** Klantlogins of one login (?login=, from the customer sheet), or null for all. */
+  readonly login = signal<number | null>(this.initialRouteState.login);
   readonly desk = inject(DesktopViewport);
   private readonly router = inject(Router);
   readonly sourceOptions: SegmentOption[] = this.sources.map((choice) => ({ id: choice.id, label: choice.label }));
@@ -530,11 +542,19 @@ export class WebsiteAnalytics {
     const selection = websiteAnalyticsRouteState(params);
     this.source.set(selection.source);
     this.days.set(selection.days);
+    this.login.set(selection.login);
   }
 
   /** Every choice goes into the address (?source=&days=, replaceUrl) and reads back through applyRouteQuery. */
   setSource(source: WebsiteAnalyticsSource): void {
     this.source.set(source);
+    if (source !== 'ACCOUNTS') this.login.set(null);
+    this.writeQuery();
+  }
+
+  /** Klantlogins: one login, or back to all of them. */
+  setLogin(login: number | null): void {
+    this.login.set(login);
     this.writeQuery();
   }
 
@@ -558,7 +578,7 @@ export class WebsiteAnalytics {
   half(value: number): number { return Math.round(value / 2); }
 
   private writeQuery(): void {
-    void this.router.navigate([], { relativeTo: this.route, queryParams: websiteAnalyticsQuery(this.source(), this.days()), queryParamsHandling: 'merge', replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: websiteAnalyticsQuery(this.source(), this.days(), this.login()), queryParamsHandling: 'merge', replaceUrl: true });
   }
 
   /** The page's Vernieuwen: past the report's one-minute memory (D-W13), the sales documents too. */

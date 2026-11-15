@@ -83,6 +83,8 @@ export const HOW_TEXTS: Record<HowKey, readonly string[]> = {
     'Niet meegeteld: robots, bezoeken vanuit het ERP en previews, onze eigen gemeenten, toestellen die zich uitsloten, en de eerste pagina van een bezoek dat in een AI-assistent begon.',
     'Aanvragen: offerte- en webaanvragen in het ERP met de website als herkomst, op hun documentdatum.',
     'Google Analytics en Google zoeken meten met hun eigen regels; tel ze niet bij de eigen meting op.',
+    'Klantlogins: elke vraag van een ingelogde klant (prijzen, bestelpagina, bestellingen, pdf) is activiteit. Een bezoek: activiteit met minder dan 30 minuten ertussen; de duur loopt van de eerste tot de laatste, de tijd op de laatste pagina telt niet mee.',
+    'Van vóór 15 november 2026 kennen we enkel het moment (wachtwoord gekozen, laatste login, laatst gezien), geen duur.',
   ],
 };
 

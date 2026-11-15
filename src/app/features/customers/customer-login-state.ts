@@ -32,6 +32,16 @@ export function loginDate(value: string | null | undefined): string {
   return new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
 }
 
+/** 14/11/2026 om 12:20, Belgian time: when a login was last in use. */
+export function loginMoment(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (isNaN(date.getTime())) return value;
+  const day = new Intl.DateTimeFormat(LOCALE, { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Brussels' }).format(date);
+  const time = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Brussels' }).format(date);
+  return day + ' om ' + time;
+}
+
 export function loginBadge(status: CustomerLoginStatus): { label: string; css: string } {
   if (status === 'ACTIVE') return { label: 'Actief', css: 'badge--ok' };
   if (status === 'INVITED') return { label: 'Uitgenodigd', css: 'badge--gold' };
@@ -40,11 +50,16 @@ export function loginBadge(status: CustomerLoginStatus): { label: string; css: s
 
 /** The one fact under the login e-mail; the expiry comes from the server, never from a fixed lifetime. */
 export function loginRowText(
-  login: Pick<CustomerLogin, 'status' | 'lastLinkSentAt' | 'linkExpiresAt' | 'lastLoginAt' | 'disabledAt' | 'disabledBy'>,
+  login: Pick<CustomerLogin, 'status' | 'lastLinkSentAt' | 'linkExpiresAt' | 'lastLoginAt' | 'disabledAt' | 'disabledBy'
+    | 'passwordSetAt' | 'lastActiveAt' | 'recentVisits'>,
   now: Date,
 ): string {
   if (login.status === 'ACTIVE') {
-    return login.lastLoginAt ? 'Laatst ingelogd ' + loginDate(login.lastLoginAt) : 'Nog niet ingelogd';
+    /* An active login has chosen its password, and choosing it logs the customer in: never "Nog niet ingelogd". */
+    const last = login.lastActiveAt ?? login.lastLoginAt ?? login.passwordSetAt;
+    const visits = login.recentVisits ?? 0;
+    const recent = visits > 0 ? ' · ' + visits + (visits === 1 ? ' bezoek' : ' bezoeken') + ' in 30 dagen' : '';
+    return last ? 'Laatst ingelogd ' + loginMoment(last) + recent : 'Wachtwoord gekozen';
   }
   if (login.status === 'DISABLED') {
     return 'Ingetrokken door ' + (login.disabledBy || 'onbekend') + ' op ' + loginDate(login.disabledAt);

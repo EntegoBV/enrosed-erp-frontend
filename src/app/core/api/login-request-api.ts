@@ -81,6 +81,85 @@ export interface CustomerLogin {
   disabledAt: string | null;
   disabledBy: string | null;
   activeSessions: number;
+  /** The latest moment the login was in use (activity, login, session); null when never. */
+  lastActiveAt?: string | null;
+  /** Visits in the last 30 days. */
+  recentVisits?: number;
+}
+
+/**
+ * What a logged-in customer did (CustomerLoginActivity.Kind on the server): ACTIVATION = password chosen with
+ * the link (logs in), LOGIN, LOGOUT, PAGE = a page restored the login, PRICES = own prices on a product page,
+ * ORDER_PAGE = order page, ORDER / ORDER_CHANGE / ORDER_CANCEL, ORDERS = Mijn bestellingen, PDF, SEEN = a
+ * moment of use known from before the measuring started.
+ */
+export type LoginActivityKind = 'ACTIVATION' | 'LOGIN' | 'LOGOUT' | 'PAGE' | 'PRICES' | 'ORDER_PAGE' | 'ORDER'
+  | 'ORDER_CHANGE' | 'ORDER_CANCEL' | 'ORDERS' | 'PDF' | 'SEEN' | 'OTHER';
+export type LoginDevice = 'MOBILE' | 'TABLET' | 'DESKTOP';
+
+/** One login and its use in the period; lastActiveAt is of any age. */
+export interface LoginActivityLogin {
+  accountId: number;
+  customerId: number;
+  company: string | null;
+  email: string;
+  status: CustomerLoginStatus;
+  createdAt: string | null;
+  activatedAt: string | null;
+  lastActiveAt: string | null;
+  linkSentAt: string | null;
+  linkExpiresAt: string | null;
+  visits: number;
+  seconds: number;
+  measuredVisits: number;
+  orderIds: number[];
+  kinds: LoginActivityKind[];
+  device: LoginDevice | null;
+}
+
+/** One visit: rows of one login with less than 30 minutes between them. seconds is null when only its moment is known. */
+export interface LoginActivityVisit {
+  accountId: number;
+  customerId: number;
+  company: string | null;
+  email: string | null;
+  start: string;
+  end: string;
+  seconds: number | null;
+  actions: number;
+  startKind: 'ACTIVATION' | 'LOGIN' | 'RETURN';
+  kinds: LoginActivityKind[];
+  device: LoginDevice | null;
+  history: boolean;
+  loggedOut: boolean;
+  orderIds: number[];
+}
+
+/** Analyses › Bezoekers › Klantlogins for days 1, 7, 30, 90 or 365 (Belgian days, ending now). */
+export interface LoginActivityReport {
+  days: number;
+  from: string;
+  to: string;
+  generatedAt: string;
+  accountId: number | null;
+  /** The first measured row: visits before it have no length. */
+  measuredSince: string | null;
+  totals: {
+    customers: number;
+    visits: number;
+    seconds: number;
+    measuredVisits: number;
+    ordersPlaced: number;
+    activeNow: number;
+    loginsActive: number;
+    loginsInvited: number;
+    loginsWithdrawn: number;
+  };
+  previous: { customers: number; visits: number; seconds: number; ordersPlaced: number };
+  perDay: { date: string; customers: number; visits: number }[];
+  logins: LoginActivityLogin[];
+  visits: LoginActivityVisit[];
+  visitsCut: boolean;
 }
 
 /** What happened to the mail with the one-time link. */
@@ -170,5 +249,14 @@ export class LoginRequestApi {
 
   withdraw(accountId: number): Promise<CustomerLogin> {
     return firstValueFrom(this.http.post<CustomerLogin>(api(`/api/customer-logins/${accountId}/withdraw`), null));
+  }
+
+  /* ----------------------------------------------------------- gebruik */
+
+  /** Who used their login when, and for how long; one login with accountId. */
+  activity(days: number, accountId: number | null): Promise<LoginActivityReport> {
+    const params: Record<string, number> = { days };
+    if (accountId !== null) params['accountId'] = accountId;
+    return firstValueFrom(this.http.get<LoginActivityReport>(api('/api/customer-logins/activity'), { params }));
   }
 }
