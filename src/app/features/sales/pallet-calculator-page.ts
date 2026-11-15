@@ -707,16 +707,38 @@ export class PalletCalculatorPage {
     return picked;
   });
 
-  /** The cards as 3D laden's tray: one omdoos size per product, on the side the count stands it on. */
-  readonly builderItems = computed<BuilderItem[]>(() => this.lines().map((line) => {
-    const piece = productSalesUnit(line.product).piece;
-    return {
-      key: line.row.productId, title: line.title, colour: line.colour, photo: line.photo,
-      lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0, heightCm: line.product.carton.heightCm ?? 0,
-      weightKg: line.weightKg, wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',
-      units: line.units.piecesPerCarton ? { per: line.units.piecesPerCarton, one: piece.one, other: piece.other } : null,
-    };
-  }));
+  /**
+   * The cards as 3D laden's panel: per card (one product, one omdoos) each of
+   * its colours, on the side the count stands it on; the card's quantity
+   * belongs to the product, not to one colour. Two cards on one tile keep
+   * their own colour only.
+   */
+  readonly builderItems = computed<BuilderItem[]>(() => {
+    const lines = this.lines();
+    const perTile = new Map<string, number>();
+    for (const line of lines) if (line.tile) perTile.set(line.tile.key, (perTile.get(line.tile.key) ?? 0) + 1);
+    const seen = new Set<number>();
+    return lines.flatMap((line) => {
+      const piece = productSalesUnit(line.product).piece;
+      const twin = !!line.tile && (perTile.get(line.tile.key) ?? 0) > 1;
+      const groupTitle = twin ? line.title : [line.tile?.name ?? line.product.name, line.tile?.label].filter(Boolean).join(' · ');
+      const variants = twin || !line.tile ? [line.product] : line.tile.products;
+      return variants.filter((variant) => variant.id !== null && !seen.has(variant.id) && !!seen.add(variant.id)).map((variant) => {
+        const carton = variant.carton;
+        const colourName = variant.colour?.trim() || null;
+        return {
+          key: variant.id as number, group: line.row.productId, groupTitle,
+          title: colourName && !twin ? `${groupTitle} · ${colourName}` : groupTitle,
+          colour: line.colour, colourName, colourHex: variant.colourHex?.trim() || null, sku: variant.sku?.trim() || null,
+          photo: line.photo ?? salesPhotoUrl(variant),
+          lengthCm: carton.lengthCm ?? 0, widthCm: carton.widthCm ?? 0, heightCm: carton.heightCm ?? 0,
+          weightKg: carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0,
+          wanted: line.cartons || null, up: line.fit.cartonsPerPallet > 0 ? line.fit.up : 'h',
+          units: line.units.piecesPerCarton ? { per: line.units.piecesPerCarton, one: piece.one, other: piece.other } : null,
+        } satisfies BuilderItem;
+      });
+    });
+  });
 
   /** Each pallet type and the kar keep a build of their own on this device. */
   readonly builderKey = computed(() => (this.carrier() === 'kar' ? 'kar' : this.profile()));

@@ -7,18 +7,32 @@ import { cartonStanding, layerSlots, type CartonUp, type PalletSpec } from './pa
  * plate: x runs along its length, z along its width, y up from the floor.
  */
 
-/** A product on the tray: one omdoos size and what Palletberekening asks for. */
+/**
+ * One colour of a product on the panel: its omdoos and what Palletberekening
+ * asks for. The colours of one product (one card in Palletberekening) share
+ * its group, its card colour, its omdoos and its quantity.
+ */
 export interface BuilderItem {
+  /** The colour's product id. */
   key: number;
+  /** The product it belongs to: the card's product id in Palletberekening. */
+  group: number;
+  /** The product's name without the colour: "Rose in Dome · 12x25". */
+  groupTitle: string;
+  /** groupTitle with the colour: "Rose in Dome · 12x25 · Navy". */
   title: string;
-  /** The card's colour in Palletberekening. */
+  /** The card's colour in Palletberekening: the product's mark in 3D. */
   colour: string;
+  /** The colour's own name, swatch and SKU; null where the product has none. */
+  colourName: string | null;
+  colourHex: string | null;
+  sku: string | null;
   photo: string | null;
   lengthCm: number;
   widthCm: number;
   heightCm: number;
   weightKg: number;
-  /** Omdozen on the card; null without a quantity. */
+  /** Omdozen on the product's card (all its colours together); null without a quantity. */
   wanted: number | null;
   /** The side Palletberekening stands it on. */
   up: CartonUp;

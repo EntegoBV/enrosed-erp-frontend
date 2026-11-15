@@ -73,11 +73,12 @@ export class BuilderScene {
   private pickedId: number | null = null;
   private hovered: Group | null = null;
   private hoveredId: number | null = null;
-  private focusKey: number | null = null;
+  private focusKeys: ReadonlySet<number> | null = null;
+  private focusSignature = '';
   private insetTop = 0;
   /** The user turned or zoomed the view: a change of the inset no longer reframes it. */
   private moved = false;
-  private markedKey: number | null = null;
+  private markedKeys: ReadonlySet<number> | null = null;
   private hiddenId: number | null = null;
   private deck: Deck = { lengthCm: 120, widthCm: 80, usableCm: 240 };
   private base = 14.4;
@@ -166,7 +167,7 @@ export class BuilderScene {
       if (!(item.lengthCm > 0 && item.widthCm > 0 && item.heightCm > 0)) continue;
       keep.add(item.key);
       const photo = photos.get(item.key) ?? null;
-      const signature = `${item.lengthCm}x${item.widthCm}x${item.heightCm}|${item.colour}|${item.title}|${photo ? photo.src : ''}`;
+      const signature = [item.lengthCm, item.widthCm, item.heightCm, item.colour, item.groupTitle, item.colourName, item.colourHex, photo?.src ?? ''].join('|');
       const known = this.looks.get(item.key);
       if (known?.signature === signature) continue;
       if (known) disposeLook(known);
@@ -179,13 +180,16 @@ export class BuilderScene {
   }
 
   /**
-   * One product in focus (the others fade to a shadow of themselves) and one
-   * marked (its boxes' edges in its own colour); null for neither.
+   * Colours in focus (the rest fades to a shadow of itself) and colours
+   * marked (their boxes glow, edges in the product's colour); null for none.
+   * A whole product is all its colours.
    */
-  setFocus(focus: number | null, marked: number | null): void {
-    if (this.focusKey === focus && this.markedKey === marked) return;
-    this.focusKey = focus;
-    this.markedKey = marked;
+  setFocus(focus: ReadonlySet<number> | null, marked: ReadonlySet<number> | null): void {
+    const signature = `${focus ? [...focus].join(',') : '-'}|${marked ? [...marked].join(',') : '-'}`;
+    if (signature === this.focusSignature) return;
+    this.focusSignature = signature;
+    this.focusKeys = focus;
+    this.markedKeys = marked;
     this.paintFocus();
     this.render();
   }
@@ -206,7 +210,7 @@ export class BuilderScene {
 
   private paintFocus(): void {
     for (const look of this.looks.values()) {
-      const faded = this.focusKey !== null && look.key !== this.focusKey;
+      const faded = !!this.focusKeys && !this.focusKeys.has(look.key);
       if (faded !== look.faded) {
         look.faded = faded;
         for (const material of new Set(look.materials)) {
@@ -216,7 +220,7 @@ export class BuilderScene {
           material.needsUpdate = true;
         }
       }
-      const marked = !faded && (look.key === this.markedKey || look.key === this.focusKey);
+      const marked = !faded && (!!this.markedKeys?.has(look.key) || !!this.focusKeys?.has(look.key));
       look.line.color.copy(marked ? look.colour : EDGE);
       look.line.opacity = faded ? 0.1 : marked ? 1 : EDGE_OPACITY;
       /* A marked product's cartons glow faintly in its colour, so all of them read at a glance. */
@@ -559,7 +563,8 @@ function face(
     const tape = Math.max(perCm * 4.5, height * 0.2);
     const y = (height - tape) / 2;
     if (kind === 'top') {
-      context.fillStyle = item.colour;
+      /* The tape in the colour inside, the product's own mark where the colour has no swatch. */
+      context.fillStyle = item.colourHex || item.colour;
       context.globalAlpha = 0.82;
       context.fillRect(0, y, width, tape);
       context.globalAlpha = 1;
@@ -619,7 +624,25 @@ function drawLabel(
       textX += size + width * 0.04;
     } catch { /* a photo the canvas may not read: the name alone */ }
   }
-  writeLabel(context, item.title, textX, y, x + width - textX - width * 0.03, height);
+  const textWidth = x + width - textX - width * 0.03;
+  if (!item.colourName) { writeLabel(context, item.groupTitle, textX, y, textWidth, height); return; }
+  /* The name above, the colour under it: a swatch and its name. */
+  writeLabel(context, item.groupTitle, textX, y, textWidth, height * 0.64);
+  const size = Math.max(6, Math.min(height * 0.2, textWidth / 6));
+  const lineY = y + height * 0.62;
+  const dot = size * 0.8;
+  context.fillStyle = item.colourHex || '#d9cfc4';
+  context.beginPath();
+  context.arc(textX + dot / 2, lineY + size * 0.55, dot / 2, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = 'rgb(0 0 0 / 25%)';
+  context.lineWidth = Math.max(1, size * 0.06);
+  context.stroke();
+  context.fillStyle = '#4a3b30';
+  context.textBaseline = 'top';
+  context.textAlign = 'left';
+  context.font = `600 ${Math.round(size)}px -apple-system, "Segoe UI", system-ui, sans-serif`;
+  context.fillText(item.colourName, textX + dot + size * 0.4, lineY, textWidth - dot - size * 0.4);
 }
 
 /** The product's name on the label, on at most three lines, as large as it fits. */
