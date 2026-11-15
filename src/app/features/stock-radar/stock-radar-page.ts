@@ -174,7 +174,7 @@ interface Cell {
               <div><dt>Prijs</dt><dd>{{ watch.priceEur === null ? '–' : euro(watch.priceEur) }}</dd></div>
               <div><dt>Levering</dt><dd>{{ watch.deliveryBy ? longDay(watch.deliveryBy) : (watch.inStock ? 'geen datum' : '–') }}</dd></div>
               <div><dt>Gecontroleerd</dt><dd>{{ ago(watch.checkedAt) }} · {{ watch.checkCount }} keer</dd></div>
-              <div><dt>Volgende</dt><dd>@if (feed()?.enabled) { {{ until(watch.nextCheckAt) }} · @if (watch.errorCount > 0) { {{ watch.refused ? 'de winkel wacht na een weigering' : 'wacht na een fout' }} } @else { {{ rhythm(watch) }} } } @else { radar staat uit }</dd></div>
+              <div><dt>Volgende</dt><dd>@if (feed()?.enabled) { {{ until(watch.nextCheckAt) }} · @if (waitingLonger(watch)) { {{ watch.refused ? 'de winkel wacht na een weigering' : 'wacht na een fout' }} } @else { {{ rhythm(watch) }} } } @else { radar staat uit }</dd></div>
               <div><dt>Laatste melding</dt><dd>
                 @if (alertFailed(watch)) { <span class="sr-warn">niet aangekomen</span> }
                 @else { {{ watch.notifiedAt ? ago(watch.notifiedAt) : '–' }} }
@@ -377,6 +377,12 @@ export class StockRadarPage {
     if (opening) setTimeout(() => document.getElementById('sr-detail-' + watch.key)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 0);
   }
 
+  /** The page waits longer than its own rhythm (a refusal or a failure), not just for its turn. */
+  waitingLonger(watch: StockRadarWatch): boolean {
+    if (!watch.nextCheckAt || watch.errorCount === 0 && !watch.refused) return false;
+    return new Date(watch.nextCheckAt).getTime() - this.clock() > watch.rhythmSeconds * 1000 + 5_000;
+  }
+
   /** The last alert of this page did not get out (no door answered); its statuses say why. */
   alertFailed(watch: StockRadarWatch): boolean {
     if (watch.lastPushStatus === null && watch.lastMailStatus === null) return false;
@@ -404,6 +410,10 @@ export class StockRadarPage {
         this.ui.toast(`Controle gestart (${result.started} ${result.started === 1 ? 'pagina' : "pagina's"}); het antwoord volgt binnen een halve minuut.`);
         this.followUps.forEach(clearTimeout);
         this.followUps = [8_000, 20_000].map((wait) => setTimeout(() => { if (!this.busy()) void this.load(); }, wait));
+      } else if (result.queuedSeconds > 90) {
+        this.ui.toast(`De winkel wacht na een weigering; deze pagina komt over ${Math.round(result.queuedSeconds / 60)} min.`);
+        this.followUps.forEach(clearTimeout);
+        this.followUps = [(result.queuedSeconds + 15) * 1000].map((wait) => setTimeout(() => { if (!this.busy()) void this.load(); }, wait));
       } else if (result.queuedSeconds > 0) {
         this.ui.toast(`Deze winkel is net gevraagd; deze pagina komt als volgende, binnen ${result.queuedSeconds} s.`);
         this.followUps.forEach(clearTimeout);
@@ -533,6 +543,8 @@ export class StockRadarPage {
    * confirms it is gone (one alert, one "weer weg"); the screen shows the read.
    */
   private readSaysOpen(watch: StockRadarWatch): boolean {
+    // The backend's own verdict on the latest read (an undated delivery text is never "now"); older rows lack it.
+    if (watch.readAvailable === true || watch.readAvailable === false) return watch.readAvailable;
     if (!watch.inStock) return false;
     if (!watch.deliveryBy) return true;
     const limit = new Date();

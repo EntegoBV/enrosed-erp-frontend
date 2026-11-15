@@ -35,6 +35,8 @@ export interface StockRadarWatch {
   /** How often this page is read: 60, or 60 per page for a shop whose pages take turns (Coolblue: 300 for five pages). */
   rhythmSeconds: number;
   available: boolean | null;
+  /** What the latest good read itself says (available waits a second read before "weer weg"). */
+  readAvailable: boolean | null;
   inStock: boolean | null;
   statusText: string | null;
   deliveryBy: string | null;
