@@ -884,11 +884,18 @@ export class PalletBuilder {
 
   /* ---------------------------------------------------------------- pointer */
 
-  /** A press on the 3D view, before the camera sees it: on a box the camera stays put. */
+  /**
+   * A press on the 3D view, before the camera sees it: on a box the camera
+   * stays put. Only a press on the canvas itself: the bar, its buttons and
+   * the figures lie over the view, and a press there is theirs (taken as a
+   * tap on the view, it chose the box behind or none before the button's
+   * click came, so Draai, Kantel and the rest did nothing; 2026-11-15).
+   */
   private readonly down = (event: PointerEvent): void => {
+    if (!this.scene || event.target !== this.scene.canvas) return;
     this.pointers.add(event.pointerId);
     if (this.pointers.size > 1) { this.dropPress(); return; }
-    if (!this.scene || this.trayPress?.active) return;
+    if (this.trayPress?.active) return;
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     this.touch.set(event.pointerType === 'touch');
     this.hoverId.set(null);

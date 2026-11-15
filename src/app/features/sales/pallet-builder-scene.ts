@@ -474,6 +474,9 @@ export class BuilderScene {
   }
 
   private ray(clientX: number, clientY: number): void {
+    /* The camera's and the boxes' matrices are fresh even when no frame was drawn yet (a page in the background draws none). */
+    this.scene.updateMatrixWorld();
+    this.camera.updateMatrixWorld();
     const rect = this.canvas.getBoundingClientRect();
     const pointer = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(pointer, this.camera);
