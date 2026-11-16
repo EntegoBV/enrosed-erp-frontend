@@ -8,11 +8,31 @@ export function trackingArrived(row: Pick<ContainerTracking, 'orderStatus' | 'st
   return row.orderStatus === 'ONTVANGEN' || ['ARRIVED', 'DISCHARGED', 'DELIVERED', 'GATE_OUT', 'EMPTY_RETURN'].includes(row.status);
 }
 
+/**
+ * The day the linked ship arrived at the port of destination (the server reads it from the ship's port calls), while
+ * the container is not received; null otherwise and on an older server. A fact about the ship, not "container
+ * gelost": the checks go on, so trackingArrived does not count it.
+ */
+export function trackingShipArrived(row: Pick<ContainerTracking, 'orderStatus' | 'portArrivedOn'>): string | null {
+  const day = row.portArrivedOn;
+  return row.orderStatus !== 'ONTVANGEN' && !!day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/** "Aangekomen" in the overview's filter: the container itself, or the ship it sails on. */
+export function trackingInPort(row: Pick<ContainerTracking, 'orderStatus' | 'status' | 'portArrivedOn'>): boolean {
+  return trackingArrived(row) || !!trackingShipArrived(row);
+}
+
+/** The bill of lading can be taken over for an ordered or departed container only: the server refuses the rest. */
+export function billOffered(orderStatus: string | null | undefined): boolean {
+  return orderStatus === 'BESTELD' || orderStatus === 'ONDERWEG';
+}
+
 export function trackingRows(rows: readonly ContainerTracking[], filter: TrackingFilter, query: string): ContainerTracking[] {
   const words = query.trim().toLocaleLowerCase('nl').split(/\s+/).filter(Boolean);
   return rows.filter((row) => {
-    if (filter === 'active' && trackingArrived(row)) return false;
-    if (filter === 'arrived' && !trackingArrived(row)) return false;
+    if (filter === 'active' && trackingInPort(row)) return false;
+    if (filter === 'arrived' && !trackingInPort(row)) return false;
     const haystack = [row.containerName, row.orderNumber, row.trackingReference, row.carrier, row.vessel, row.vesselImo, row.location]
       .filter(Boolean).join(' ').toLocaleLowerCase('nl');
     return words.every((word) => haystack.includes(word));
@@ -134,6 +154,8 @@ export interface TrackingStatusView { text: string; tone: 'ok' | 'warn' | 'muted
 export function trackingStatus(row: ContainerTracking, configured = true): TrackingStatusView {
   if (row.orderStatus === 'ONTVANGEN') return { text: 'Ontvangen', tone: 'ok' };
   if (trackingArrived(row)) return { text: row.statusLabel, tone: 'ok' };
+  /* The server's status stays "Schip gekoppeld" after the ship came in; the arrival is the news. */
+  if (trackingShipArrived(row)) return { text: 'Schip aangekomen', tone: 'ok' };
   const failed = configured && !!trackingFailure(row);
   if (row.source || row.dateSource) return { text: row.statusLabel, tone: failed ? 'warn' : 'muted' };
   if (failed) return { text: 'Controle niet gelukt', tone: 'warn' };
@@ -209,6 +231,8 @@ export interface TrackingListLine {
   status: TrackingStatusView;
   /** "15 nov", or "12 → 15 nov" while a move is news. */
   arrival: string | null;
+  /** What that day is: "Verwachte aankomst", or "Aankomst" once the ship is in (with the ship's own day when the day shown is another). */
+  arrivalTitle: string;
   /** Set only while the move is news. */
   move: TrackingMove | null;
   reference: string;
@@ -228,8 +252,10 @@ export function trackingListLine(row: ContainerTracking, configured: boolean, in
   const was = move ? trackingDay(move.from) : null;
   /* "12 → 15 nov" within one month, "28 okt → 2 nov" across two. */
   const from = was && day && was.split(' ')[1] === day.split(' ')[1] ? was.split(' ')[0] : was;
+  const shipDay = trackingShipArrived(row);
   return {
     status: trackingStatus(row, configured), arrival: day && from ? `${from} → ${day}` : day, move,
+    arrivalTitle: !shipDay ? 'Verwachte aankomst' : shipDay === date ? 'Aankomst' : `Aankomst · schip aangekomen ${trackingDay(shipDay)}`,
     reference: validatedContainerReference(row.trackingReference) ?? recognisedOf(row).number ?? row.trackingReference,
     age: done ? null : trackingAge(failed ? row.failureAt ?? row.checkedAt : row.checkedAt, now),
     ageWarn: failed || (configured && !done && row.automatic && trackingStale(row, now, intervalHours)),

@@ -23,7 +23,20 @@ export function orderArrival(view: Pick<PurchaseOrderView, 'arrival'> | null | u
     containerByHand: view?.arrival?.containerByHand === true,
     warehouseOn: view?.arrival?.warehouseOn ?? null,
     warehouseAt: view?.arrival?.warehouseAt ?? null,
+    portArrivedOn: view?.arrival?.portArrivedOn ?? null,
   };
+}
+
+/**
+ * The words beside the container's day once its ship is in (portArrivedOn): "schip aangekomen", and with the
+ * ship's own day when the day shown is another one (a date by hand): "schip aangekomen zo 15/11 · met de hand".
+ * The day of these words is always the ship's. Null while no ship arrived.
+ */
+export function shipArrivedText(portArrivedOn: string | null | undefined, shownDay: string | null | undefined, byHand: boolean): string | null {
+  if (!portArrivedOn || !/^\d{4}-\d{2}-\d{2}$/.test(portArrivedOn)) return null;
+  /* "zo 15/11": the day without its year, beside a date that carries it. */
+  const own = portArrivedOn === shownDay ? '' : ` ${arrivalText(portArrivedOn, null).slice(0, -5)}`;
+  return `schip aangekomen${own}${byHand ? ' · met de hand' : ''}`;
 }
 
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -52,7 +65,7 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
           @if (tracked() && !byHand()) {
             <div class="arr__follow">
               <strong>{{ text(containerOn(), null, 'Datum nog onbekend') }}</strong>
-              <span>Track &amp; trace zet deze datum.</span>
+              @if (shipArrivedOn(); as day) { <span>Schip aangekomen op {{ text(day, null) }}.</span> } @else { <span>Track &amp; trace zet deze datum.</span> }
             </div>
             <button class="btn arr__switch" type="button" (click)="setByHand(true)">Zelf instellen</button>
           } @else {
@@ -67,6 +80,7 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
                        (input)="containerAt.set($any($event.target).value)" (change)="containerAt.set($any($event.target).value)" />
               </div>
             </div>
+            @if (shipArrivedOn(); as day) { <p class="arr__note">Schip aangekomen op {{ text(day, null) }}.</p> }
             @if (tracked()) {
               <p class="arr__note">Track &amp; trace past deze datum niet meer aan.
                 @if (sourceArrival(); as source) { Track &amp; trace meldt {{ source | dateNl }}. }
@@ -176,6 +190,19 @@ export class PurchaseArrivalSheet implements OnInit {
     const row = this.trackingRow();
     return row?.sourceArrival && row.sourceArrival !== this.containerOn() ? row.sourceArrival : null;
   });
+  /**
+   * The day the linked ship arrived at the port: from the tracking row when the page has this order's (it is read
+   * every minute, the order only when the page opened), else from the order. A row kept from another reference
+   * (the desk keeps its last one while editing) does not count.
+   */
+  readonly shipArrivedOn = computed(() => {
+    const view = this.view();
+    const row = this.trackingRow();
+    const saved = this.savedTrackingReference();
+    const own = row && row.orderId === view.order.id && row.trackingReference === (saved === undefined ? view.order.trackingReference : saved);
+    const day = own && row.portArrivedOn !== undefined ? row.portArrivedOn : orderArrival(view).portArrivedOn;
+    return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+  });
 
   /** The warehouse day lies before the day at the port: allowed (a hand slip is likelier), said quietly. */
   readonly beforePort = computed(() => {
@@ -222,8 +249,9 @@ export class PurchaseArrivalSheet implements OnInit {
   setByHand(value: boolean): void {
     this.byHand.set(value);
     if (!value) {
-      /* Following again: the day stays until the source's date replaces it, an hour does not come along. */
-      this.containerOn.set(this.start().containerOn);
+      /* Following again: the day stays until the source's date replaces it, an hour does not come along. Once
+         the ship is in, the server puts the container on that day at once, so the sheet shows it. */
+      this.containerOn.set(this.shipArrivedOn() ?? this.start().containerOn);
       this.containerAt.set('');
     }
   }

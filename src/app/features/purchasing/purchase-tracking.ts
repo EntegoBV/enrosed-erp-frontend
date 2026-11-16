@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { ContainerTrackingApi } from '../../core/api/container-tracking-api';
 import type { ContainerTracking, ContainerTrackingFeed } from '../../core/api/container-tracking-models';
 import { messageOf } from '../../core/api/errors';
@@ -27,7 +27,7 @@ import { purchaseTrackingRow, purchaseTrackingScope } from './purchase-tracking-
             @for (key of [scope()]; track key) {
               <app-container-tracking-panel [row]="item" [configured]="feed()?.configured ?? false"
                 [intervalHours]="feed()?.intervalHours ?? 6" [showOrderLink]="false"
-                (busyChange)="panelBusyChanged($event)" (rowUpdated)="rowUpdated($event)" />
+                (busyChange)="panelBusyChanged($event)" (rowUpdated)="rowUpdated($event)" (bill)="bill.emit()" />
             }
           } @else if (loading()) {
             <app-skeleton kind="card" [rows]="3" />
@@ -60,6 +60,8 @@ export class PurchaseTracking {
   readonly orderId = input<number | null>(null);
   readonly trackingReference = input<string | null>(null);
   readonly active = input(true);
+  /** The panel's "Uit de bill of lading": the order page opens its bill sheet (on top of this one). */
+  readonly bill = output<void>();
   readonly scope = computed(() => purchaseTrackingScope(this.orderId(), this.trackingReference()));
   readonly feed = signal<ContainerTrackingFeed | null>(null);
   readonly row = computed(() => purchaseTrackingRow(this.feed(), this.orderId(), this.trackingReference()));
