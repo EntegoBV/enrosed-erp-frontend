@@ -4984,8 +4984,9 @@ last good state, faded, and stays out of "Nu te krijgen". A cell opens its detai
 date, last check, next check and rhythm or the wait after a refusal, last
 notification or "niet aangekomen" with its push/mail statuses, "Open winkel", and
 "Nu opnieuw proberen" only after a failure or when the page is overdue for its own
-rhythm: Coolblue's and Amazon's pages take turns, and a page whose shop was just
-asked goes next instead). The first load opens what is to be had; a closed panel
+rhythm: Amazon's pages take turns, and a page whose shop was just asked goes next
+instead; Coolblue's cells come from its iPhone Duo list and the PS5 Pro page, every
+minute since 2026-11-16). The first load opens what is to be had; a closed panel
 stays closed. The screen reloads when the tab becomes visible again. Under each table the shops that refuse
 automatic reads, with links, for the shops' own alerts. Refreshes itself every
 minute while visible.

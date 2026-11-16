@@ -32,7 +32,7 @@ export interface StockRadarWatch {
   item: string;
   url: string;
   orderUrl: string;
-  /** How often this page is read: 60, or 60 per page for a shop whose pages take turns (Coolblue: 300 for five pages). */
+  /** How often this page is read: 60, or 60 per page for a shop whose pages take turns (Amazon: 240 for four pages). Coolblue: 60, its iPhone list holds all four. */
   rhythmSeconds: number;
   available: boolean | null;
   /** What the latest good read itself says (available waits a second read before "weer weg"). */
