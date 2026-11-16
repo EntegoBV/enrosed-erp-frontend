@@ -1710,10 +1710,16 @@ export class PurchaseDesk extends PurchaseEditor {
       shippedOn: fresh.order.shippedOn ?? null,
       expectedArrival: fresh.order.expectedArrival ?? null,
     };
+    /* The sheet only opens on a clean page (openBill). A clean page stays clean by taking the new order as its
+       baseline; were there a draft after all, only the three fields move into the baseline, so the draft stays one. */
+    const clean = !this.dirty();
     this.view.update((current) => current
       ? { ...current, arrival: fresh.arrival ?? null, attention: fresh.attention, order: { ...current.order, ...fields } } : current);
+    const order = this.view()?.order;
     const baseline = this.savedOrder();
-    if (baseline) {
+    if (clean && order) {
+      this.savedOrder.set(JSON.stringify(order));
+    } else if (baseline) {
       try { this.savedOrder.set(JSON.stringify({ ...(JSON.parse(baseline) as PurchaseOrder), ...fields })); } catch { /* the baseline stays as it was */ }
     }
     void this.loadDocuments(fresh.order.id);

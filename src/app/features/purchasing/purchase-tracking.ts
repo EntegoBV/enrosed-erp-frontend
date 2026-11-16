@@ -135,7 +135,7 @@ export class PurchaseTracking {
     } : feed);
   }
 
-  /** The order's dates changed elsewhere (the Aankomst sheet): an answer already on its way is from before. */
+  /** The order's dates changed elsewhere (the Aankomst sheet, the Bill of lading sheet): an answer already on its way is from before. */
   reloadNow(row?: ContainerTracking): void {
     if (row) this.rowUpdated(row);
     else this.invalidateRequest();
