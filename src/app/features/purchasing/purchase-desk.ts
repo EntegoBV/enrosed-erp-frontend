@@ -1,13 +1,13 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
-import { purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
-import { trackingMove } from './container-tracking-model';
+import { billAppliedRow, purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
+import { billOffered, trackingMove } from './container-tracking-model';
 import { stepTrackingReference } from './tracking-reference';
 import type { ContainerTracking } from '../../core/api/container-tracking-models';
 import { TrackingReferenceHint } from './tracking-reference-hint';
 import { ChangeDetectionStrategy, Component, ElementRef, HostListener, ViewEncapsulation, computed, effect, inject, input, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
-import { LandedCostLine, Payee, Product, PurchaseOrderView } from '../../core/api/models';
+import { LandedCostLine, Payee, Product, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
 import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { PageHeader } from '../../shared/page-header';
@@ -27,7 +27,8 @@ import { PurchaseInvoiceSheet } from './purchase-invoice-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
-import { PurchaseArrivalSheet } from './purchase-arrival-sheet';
+import { PurchaseArrivalSheet, orderShipArrivedOn, shipArrivedText } from './purchase-arrival-sheet';
+import { PurchaseBillSheet } from './purchase-bill-sheet';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { keyContext } from '../../shared/key-context';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
@@ -113,7 +114,7 @@ export class PurchaseDeskStyles {}
 @Component({
   selector: 'app-purchase-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
+  imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, PurchaseBillSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
             PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
@@ -578,11 +579,11 @@ export class PurchaseDeskStyles {}
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                         @else {
                           @let arrival = orderArrival(data);
-                          <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, trackedOrder.expectedArrival === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
+                          <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, trackedOrder.expectedArrival === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (shipArrivedText(shipArrivedOn(), trackedOrder.expectedArrival, !!data.order.trackingReference && arrival.containerByHand); as shipText) { <small>{{ shipText }}</small> } @else if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
                           <div><dt>Aankomst {{ receivingLocationName(data.order.receivingLocationId) }}</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }} ›</button></dd></div>
                         }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — @if (billOffered(data.order.status)) { <button class="linklike" type="button" aria-haspopup="dialog" [disabled]="saving()" (click)="openBill()">Uit de bill of lading ›</button> } }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
                     </section>
                     <section class="pdk-sec" aria-labelledby="pdk-sec-route">
@@ -1018,7 +1019,7 @@ export class PurchaseDeskStyles {}
       </div>
 
       @if (!editing() && data.order.trackingReference) {
-        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" [active]="!dirty() && !saving()" />
+        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" [active]="!dirty() && !saving()" (bill)="openBill()" />
       }
 
       @if (drawerShown()) {
@@ -1231,6 +1232,11 @@ export class PurchaseDeskStyles {}
         <app-purchase-arrival-sheet [view]="arrivalView() ?? data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
           [trackingRow]="trackingPanel()?.row() ?? lastTrackingRow()" [savedTrackingReference]="savedTrackingReference()"
           [partnerSees]="arrivalPartnerSees(data.order)" (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
+      }
+      <!-- After app-purchase-tracking in this template: every overlay has the same z-index, so the later element is on
+           top, and this sheet opens from inside the Track & trace sheet. -->
+      @if (billFor() === data.order.id) {
+        <app-purchase-bill-sheet [orderId]="data.order.id" (applied)="onBillApplied($event)" (uploaded)="onBillUploaded()" (closed)="billFor.set(null)" />
       }
       @if (paying(); as pay) {
         <app-purchase-payment-sheet [draft]="pay" [chips]="payChips()" [instalmentOptions]="paymentInstalmentOptions()"
@@ -1664,6 +1670,63 @@ export class PurchaseDesk extends PurchaseEditor {
       arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
       ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
     } : undefined);
+  }
+
+  /* ---- track & trace from the bill of lading (2026-11-16) ---- */
+  readonly billOffered = billOffered;
+  readonly shipArrivedText = shipArrivedText;
+  /** The order whose Bill of lading sheet is open; by id, so the sheet never opens on another order. */
+  readonly billFor = signal<number | null>(null);
+  /**
+   * The day the linked ship arrived at the port of destination ("schip aangekomen"): the tracking row's when one is
+   * loaded (read every minute), else the order's own arrival block.
+   */
+  readonly shipArrivedOn = computed(() => {
+    const data = this.view();
+    return data ? orderShipArrivedOn(data, this.editing() ? null : this.trackingPanel()?.row() ?? null) : null;
+  });
+
+  /** "Uit de bill of lading", from the Track & trace panel or the Order facts. Not while the desk edits or saves: the apply writes the stored order. */
+  openBill(): void {
+    const data = this.view();
+    if (this.editing() || this.dirty() || this.saving() || !data?.order.id || !billOffered(data.order.status)) return;
+    this.billFor.set(data.order.id);
+  }
+
+  /**
+   * The bill was taken over on the server (reference, departure, ship), and the tracking check that follows may have
+   * moved the arrival. No load(): that would empty the page. The reference and the two dates move into the order and
+   * into its clean baseline, as onArrivalSaved does, so they read as saved and the next Opslaan carries them; the
+   * arrival block and the attention list ("Track & trace ontbreekt") come from the answer.
+   */
+  onBillApplied(fresh: PurchaseOrderView): void {
+    this.billFor.set(null);
+    if (this.view()?.order.id !== fresh.order.id) return;
+    const panel = this.trackingPanel();
+    /* Read before the view changes: with another reference the panel drops this row. */
+    const row = panel?.row() ?? null;
+    const fields = {
+      trackingReference: fresh.order.trackingReference ?? null,
+      shippedOn: fresh.order.shippedOn ?? null,
+      expectedArrival: fresh.order.expectedArrival ?? null,
+    };
+    this.view.update((current) => current
+      ? { ...current, arrival: fresh.arrival ?? null, attention: fresh.attention, order: { ...current.order, ...fields } } : current);
+    const baseline = this.savedOrder();
+    if (baseline) {
+      try { this.savedOrder.set(JSON.stringify({ ...(JSON.parse(baseline) as PurchaseOrder), ...fields })); } catch { /* the baseline stays as it was */ }
+    }
+    void this.loadDocuments(fresh.order.id);
+    /* The Track & trace sheet under the bill sheet goes too, and no row from before the apply survives: the page
+       reads its dates from the row. With another reference the panel starts over by itself. */
+    panel?.closeDetails();
+    panel?.reloadNow(row ? billAppliedRow(row, fresh) : undefined);
+  }
+
+  /** A file was added from the bill sheet: the Dossier shows it. */
+  onBillUploaded(): void {
+    const id = this.view()?.order.id;
+    if (id) void this.loadDocuments(id);
   }
 
   showTracking(): void {

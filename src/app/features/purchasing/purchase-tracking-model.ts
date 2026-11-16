@@ -1,5 +1,5 @@
 import type { ContainerTracking, ContainerTrackingFeed } from '../../core/api/container-tracking-models';
-import type { PurchaseOrder } from '../../core/api/models';
+import type { PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
 
 /** A saved order and its exact saved reference define the tracking snapshot. */
 export function purchaseTrackingScope(orderId: number | null, trackingReference: string | null): string | null {
@@ -24,6 +24,23 @@ export function purchaseTrackedOrder<T extends Pick<PurchaseOrder, 'id' | 'track
   const shippedOn = canonicalDate(row.orderShippedOn, order.shippedOn);
   if (expectedArrival === order.expectedArrival && shippedOn === order.shippedOn) return order;
   return { ...order, expectedArrival, shippedOn };
+}
+
+/**
+ * The tracking row right after the bill of lading was taken over, until the read that follows answers: the order's
+ * two dates and the ship's arrival as the answer has them. The order pages read their dates from the row
+ * (purchaseTrackedOrder), so a row from before the apply would show the old departure and arrival again. A move
+ * noted for another day is dropped; the read brings the real one.
+ */
+export function billAppliedRow(row: ContainerTracking, fresh: Pick<PurchaseOrderView, 'order' | 'arrival'>): ContainerTracking {
+  const expectedArrival = fresh.order.expectedArrival ?? null;
+  const moved = (row.orderExpectedArrival ?? null) !== expectedArrival;
+  const portArrivedOn = fresh.arrival?.portArrivedOn;
+  return {
+    ...row, orderExpectedArrival: expectedArrival, orderShippedOn: fresh.order.shippedOn ?? null,
+    ...(portArrivedOn !== undefined ? { portArrivedOn } : {}),
+    ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
+  };
 }
 
 /** Consume each fetched row once, so an old snapshot cannot undo a later manual save. */

@@ -28,6 +28,20 @@ export function orderArrival(view: Pick<PurchaseOrderView, 'arrival'> | null | u
 }
 
 /**
+ * The day the linked ship arrived at the port of destination, for an order page: from the order's own tracking row
+ * when the page has one (it is read every minute, the order only when the page opened), else from the order. A row
+ * of another reference does not count (the desk keeps its last row while it edits; savedReference is the reference
+ * as saved when the view holds a draft). Null while no ship arrived, and on a server from before 2026-11-16.
+ */
+export function orderShipArrivedOn(view: Pick<PurchaseOrderView, 'order' | 'arrival'>, row: ContainerTracking | null | undefined,
+    savedReference?: string | null): string | null {
+  const reference = savedReference === undefined ? view.order.trackingReference ?? null : savedReference;
+  const own = !!row && row.orderId === view.order.id && row.trackingReference === reference;
+  const day = own && row.portArrivedOn !== undefined ? row.portArrivedOn : orderArrival(view).portArrivedOn;
+  return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/**
  * The words beside the container's day once its ship is in (portArrivedOn): "schip aangekomen", and with the
  * ship's own day when the day shown is another one (a date by hand): "schip aangekomen zo 15/11 · met de hand".
  * The day of these words is always the ship's. Null while no ship arrived.
@@ -190,19 +204,8 @@ export class PurchaseArrivalSheet implements OnInit {
     const row = this.trackingRow();
     return row?.sourceArrival && row.sourceArrival !== this.containerOn() ? row.sourceArrival : null;
   });
-  /**
-   * The day the linked ship arrived at the port: from the tracking row when the page has this order's (it is read
-   * every minute, the order only when the page opened), else from the order. A row kept from another reference
-   * (the desk keeps its last one while editing) does not count.
-   */
-  readonly shipArrivedOn = computed(() => {
-    const view = this.view();
-    const row = this.trackingRow();
-    const saved = this.savedTrackingReference();
-    const own = row && row.orderId === view.order.id && row.trackingReference === (saved === undefined ? view.order.trackingReference : saved);
-    const day = own && row.portArrivedOn !== undefined ? row.portArrivedOn : orderArrival(view).portArrivedOn;
-    return day && /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
-  });
+  /** The day the linked ship arrived at the port: the tracking row's when the page has this order's, else the order's. */
+  readonly shipArrivedOn = computed(() => orderShipArrivedOn(this.view(), this.trackingRow(), this.savedTrackingReference()));
 
   /** The warehouse day lies before the day at the port: allowed (a hand slip is likelier), said quietly. */
   readonly beforePort = computed(() => {

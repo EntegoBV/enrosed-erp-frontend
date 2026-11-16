@@ -1,8 +1,9 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
-import { purchaseTrackedOrder } from './purchase-tracking-model';
-import { trackingMove } from './container-tracking-model';
-import { PurchaseArrivalSheet, arrivalText, orderArrival } from './purchase-arrival-sheet';
+import { billAppliedRow, purchaseTrackedOrder } from './purchase-tracking-model';
+import { billOffered, trackingMove } from './container-tracking-model';
+import { PurchaseArrivalSheet, arrivalText, orderArrival, orderShipArrivedOn, shipArrivedText } from './purchase-arrival-sheet';
+import { PurchaseBillSheet } from './purchase-bill-sheet';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
@@ -97,7 +98,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseTracking, PurchaseSalesLinks, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchaseNacalcFooter, RouterLink, AuthImage, Skeleton, LoadError, CbmPipe, DateNlPipe,
             EurPipe, EurUpPipe, NumPipe, PctPipe, Diary, PurchasePdfSheet, PurchaseActivity, Sheet,
-            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard, PurchaseArrivalSheet],
+            IosNav, Icon, Segmented, ContextMenu, PurchaseNacalcGlance, PurchaseStepConfirmSheet, PurchasePayeeSheet, NgTemplateOutlet, PurchaseBatchesCard, PurchaseArrivalSheet, PurchaseBillSheet],
   template: `
     @if (view(); as data) {
       <div class="mpo-phone mpo-phone--view">
@@ -281,7 +282,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   @let tracked = trackedArrival();
                   <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Aankomst container</span>
-                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, tracked === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
+                      <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, tracked === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (shipArrivedText(shipArrivedOn(), tracked, !!data.order.trackingReference && arrival.containerByHand); as shipText) { · {{ shipText }} } @else if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
                       @if (data.order.trackingReference && arrival.containerByHand && trackingPanel()?.row()?.sourceArrival; as source) { <span class="ios-cell__sub mpo-wrap">Track &amp; trace meldt {{ source | dateNl }}</span> }</span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
@@ -295,6 +296,12 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                   <button class="ios-cell" type="button" (click)="trackingPanel()?.showDetails()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap mono">{{ data.order.trackingReference }}</span>
                       @if (arrivalMove(); as move) { <span class="ios-cell__sub mpo-wrap mpo-moved" [class.mpo-moved--later]="move.news && move.later" [class.mpo-moved--earlier]="move.news && !move.later">Aankomst was {{ move.from | dateNl }} · {{ move.text }}</span> }</span>
+                    <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                  </button>
+                } @else if (billOffered(data.order.status)) {
+                  <!-- No reference yet: the Track & trace sheet does not exist, the bill of lading can give the reference. -->
+                  <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openBill()">
+                    <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span><span class="ios-cell__sub mpo-wrap">Uit de bill of lading</span></span>
                     <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
                   </button>
                 }
@@ -654,12 +661,17 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
 
       <!-- Sheets and menus at host level: never inside the sticky nav, the tabs or a pane. -->
       @if (data.order.trackingReference) {
-        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" />
+        <app-purchase-tracking [orderId]="data.order.id" [trackingReference]="data.order.trackingReference" (bill)="openBill()" />
       }
       @if (arrivalOpen()) {
         <app-purchase-arrival-sheet [view]="arrivalView() ?? data" [placeName]="receivingLocationName(data.order.receivingLocationId)"
           [trackingRow]="trackingPanel()?.row() ?? null" [partnerSees]="arrivalPartnerSees(data.order)"
           (saved)="onArrivalSaved($event)" (closed)="arrivalOpen.set(false)" />
+      }
+      <!-- After app-purchase-tracking: overlays share one z-index, the later element is on top, and this sheet opens
+           from inside the Track & trace sheet. -->
+      @if (billFor() === data.order.id) {
+        <app-purchase-bill-sheet [orderId]="data.order.id" (applied)="onBillApplied($event)" (uploaded)="reloadDocuments(data.order.id)" (closed)="billFor.set(null)" />
       }
       @if (kostenPayeeOpen(); as item) {
         <!-- A payee tapped in the Nacalculatie opens on top of Kosten, read-only; a payment row goes to its detail on Betalingen. -->
@@ -1090,6 +1102,55 @@ export class PurchaseView {
       arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
       ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
     } : undefined);
+  }
+
+  /* ---- track & trace from the bill of lading (2026-11-16) ---- */
+  readonly billOffered = billOffered;
+  readonly shipArrivedText = shipArrivedText;
+  /** The order whose Bill of lading sheet is open; by id, so the sheet never opens on another order. */
+  readonly billFor = signal<number | null>(null);
+  /**
+   * The day the linked ship arrived at the port of destination ("schip aangekomen"): the tracking row's when one is
+   * loaded (read every minute), else the order's own arrival block.
+   */
+  readonly shipArrivedOn = computed(() => {
+    const data = this.view();
+    return data ? orderShipArrivedOn(data, this.trackingPanel()?.row() ?? null) : null;
+  });
+
+  /** "Uit de bill of lading": from the Track & trace panel, or from the Order rows while there is no reference. */
+  openBill(): void {
+    const data = this.view();
+    if (!data?.order.id || !billOffered(data.order.status)) return;
+    this.billFor.set(data.order.id);
+  }
+
+  /**
+   * The bill was taken over on the server and the tracking check that follows may have moved the arrival: the order,
+   * its arrival block and the attention list ("Track & trace ontbreekt") come from the answer, the rest of the page
+   * stays as onArrivalSaved keeps it. No load(): that would empty the screen and close every sheet.
+   */
+  onBillApplied(fresh: PurchaseOrderView): void {
+    this.billFor.set(null);
+    if (this.view()?.order.id !== fresh.order.id) return;
+    const panel = this.trackingPanel();
+    /* Read before the view changes: with another reference the panel drops this row. */
+    const row = panel?.row() ?? null;
+    this.view.update((current) => current ? { ...current, order: fresh.order, arrival: fresh.arrival ?? null, attention: fresh.attention } : current);
+    this.reloadDocuments(fresh.order.id);
+    /* The Track & trace sheet under the bill sheet goes too, and no row from before the apply survives: the page
+       reads its dates from the row. With another reference the panel starts over by itself. */
+    panel?.closeDetails();
+    panel?.reloadNow(row ? billAppliedRow(row, fresh) : undefined);
+  }
+
+  /** The dossier read again, without emptying the list first (a file was added from the bill sheet). */
+  reloadDocuments(id: number): void {
+    void this.sourcing.documents(id).then((list) => {
+      if (Number(this.id()) !== id) return;
+      this.documents.set(list);
+      this.documentsFailed.set(false);
+    }).catch(() => undefined);
   }
 
   /** The panel saved the partner: the fresh view replaces the old one, the documents and the financing follow. */
