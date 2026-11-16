@@ -5772,7 +5772,10 @@ screens live. Backend side: its AI-CONTEXT (same title) and `docs/integrations/c
   `purchase-arrival-sheet.ts`; the day of the words is always the ship's, so beside a date by hand they carry it:
   "schip aangekomen zo 15/11 · met de hand" (desk fact, phone cell). The Aankomst sheet says "Schip aangekomen op
   …" instead of "Track & trace zet deze datum.", and as an extra line in hand mode; "Track & trace volgen" then
-  shows that day at once (the server puts the container on it).
+  shows that day at once (the server puts the container on it). The progress strip (desk and phone) says "schip
+  aangekomen" before the day under Ontvangen once the ship is in on that day (`shipIsIn`); a day by hand that is
+  another day stays "verwacht". On the desk the words stand on their own line (`.pdk-step__lead`) so the step keeps
+  its width; the phone's step lets the date take a third line.
 - **Partnerportaal** (`partner-containers-model.ts`): `shipInDay(container)`; for such a container the port day is
   that day, not `expectedArrival`: `portCell` and `arrivalWords` give the day without ± and hour and "schip is
   binnen", never late for the port (`isLate` still counts a passed warehouse day), `arrivalLine` "za 15 nov · schip
@@ -5781,5 +5784,6 @@ screens live. Backend side: its AI-CONTEXT (same title) and `docs/integrations/c
 - **Older backend**: every new field is optional and reads as absent (no "schip aangekomen", no "Uit B/L"). The
   buttons show; without the endpoint the sheet shows its load error with the server's message and nothing else
   changes. **Native app**: untouched (it reads the feed with its own port of the rules).
-- Checked by `ng build` only (this round ran without a dev server): look at the panel in both states, the sheet on
-  a desk of 1070 px and a phone of 375 px, and the order pages after Overnemen on the first deploy.
+- Looked at on 2026-11-16 against a local backend with the real documents of PO-2026-004, -006, -007 and -011
+  (same references and dates): the sheet in every state, Overnemen from the order page (desk, phone) and from the
+  tracking page, the partner portal with a ship that is in; desk 1280 and 1070 px, phone 375 and 390 px.
