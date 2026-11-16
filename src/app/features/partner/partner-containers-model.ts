@@ -90,18 +90,35 @@ export function hourText(value: string | null | undefined): string | null {
 }
 
 /**
- * The day the calendar puts it on: the receipt once received, else the day it is planned at the warehouse
- * (Zaltbommel, what he unloads), else the expected arrival at the port.
+ * The day its ship arrived at the port of destination (the ERP reads it from the ship's port calls), while the
+ * container is not received; null otherwise and on an older server. The ship is in ("schip is binnen"): that does
+ * not say the container is unloaded.
  */
-export function calendarDay(container: PartnerContainer): string | null {
-  const value = isReceived(container) ? container.receivedOn : warehouseDay(container) ?? container.expectedArrival;
-  return isDay(value) ? day10(value) : null;
+export function shipInDay(container: PartnerContainer): string | null {
+  return !isReceived(container) && isDay(container.portArrivedOn) ? day10(container.portArrivedOn) : null;
 }
 
-/** Not received and its planned day (at the warehouse, else at the port) has passed. */
+/** Its day at the port: the day its ship came in once it has, else the expected arrival. */
+function portDay(container: PartnerContainer): string | null {
+  return shipInDay(container) ?? (isDay(container.expectedArrival) ? day10(container.expectedArrival) : null);
+}
+
+/**
+ * The day the calendar puts it on: the receipt once received, else the day it is planned at the warehouse
+ * (Zaltbommel, what he unloads), else its day at the port (the day the ship came in, else the expected arrival).
+ */
+export function calendarDay(container: PartnerContainer): string | null {
+  if (isReceived(container)) return isDay(container.receivedOn) ? day10(container.receivedOn) : null;
+  return warehouseDay(container) ?? portDay(container);
+}
+
+/**
+ * Not received and its planned day (at the warehouse, else at the port) has passed. Once the ship is in, the day
+ * at the port is no longer one to be late for; a planned warehouse day that passed still is.
+ */
 export function isLate(container: PartnerContainer, today: string): boolean {
   if (isReceived(container)) return false;
-  const day = warehouseDay(container) ?? (isDay(container.expectedArrival) ? day10(container.expectedArrival) : null);
+  const day = warehouseDay(container) ?? (shipInDay(container) ? null : portDay(container));
   return !!day && day < today;
 }
 
@@ -112,6 +129,9 @@ function arrivalKey(container: PartnerContainer, today: string): string {
   /* A planned warehouse day still to come is the day the row shows ("In Zaltbommel vr 27 nov"): it sorts on it. */
   const stock = warehouseDay(container);
   if (stock && stock >= today) return `1${stock}${RANK[state]}`;
+  /* The ship is in: the row shows that day ("za 15 nov · schip is binnen") and sorts on it, never with the overdue ones. */
+  const shipIn = shipInDay(container);
+  if (shipIn) return `1${shipIn}${RANK[state]}`;
   const date = isDay(container.expectedArrival) ? day10(container.expectedArrival) : null;
   const due = container.due !== undefined ? container.due : date && (date >= today || state === 'BINNENKORT') ? date : null;
   return due ? `1${due}${RANK[state]}` : `2${RANK[state]}${date ?? '9'}`;
@@ -155,10 +175,16 @@ function relative(iso: string, today: string): string {
   return `over ${days} dagen`;
 }
 
+/** The ship reached the port of destination; the container itself is not received yet. */
+const SHIP_IN = 'schip is binnen';
+
 export interface ArrivalWords {
-  /** At the port: "± do 20 nov", "do 20 nov · 14:00" (an hour set by hand), "ma 3 nov" (received), "datum nog open". */
+  /**
+   * At the port: "± do 20 nov", "do 20 nov · 14:00" (an hour set by hand), "za 15 nov" (the day its ship came in),
+   * "ma 3 nov" (received), "datum nog open".
+   */
   main: string;
-  /** "over 8 dagen", "nog niet binnen", "aangekomen". */
+  /** "over 8 dagen", "nog niet binnen", "schip is binnen", "aangekomen". */
   sub: string;
   /** Not received while its planned day has passed: amber. */
   late: boolean;
@@ -180,6 +206,9 @@ export function arrivalWords(container: PartnerContainer, today: string): Arriva
   const stockHour = stock ? hourText(container.warehouseArrivalTime) : null;
   const warehouse = stock ? (stockHour ? `${dayText(stock, today)} · ${stockHour}` : dayText(stock, today)) : null;
   const warehouseSub = stock ? (stock < today ? 'nog niet binnen' : relative(stock, today)) : '';
+  /* The ship is in: its own day, a fact (no ±, and no hour: that belonged to the planning), whatever day was expected. */
+  const shipIn = shipInDay(container);
+  if (shipIn) return { main: dayText(shipIn, today), sub: SHIP_IN, late: isLate(container, today), moved, warehouse, warehouseSub };
   if (!isDay(container.expectedArrival)) return { main: 'datum nog open', sub: '', late: isLate(container, today), moved, warehouse, warehouseSub };
   const date = day10(container.expectedArrival);
   const hour = hourText(container.expectedArrivalTime);
@@ -190,7 +219,7 @@ export function arrivalWords(container: PartnerContainer, today: string): Arriva
 
 /**
  * One line for Komt eraan and the calendar: "In Zaltbommel vr 21 nov · 08:30" once the warehouse arrival is
- * planned (what he unloads), else "± do 20 nov · over 8 dagen" at the port.
+ * planned (what he unloads), else "± do 20 nov · over 8 dagen" at the port, or "za 15 nov · schip is binnen".
  */
 export function arrivalLine(container: PartnerContainer, today: string): string {
   const words = arrivalWords(container, today);
@@ -213,11 +242,13 @@ export interface ArrivalCell {
 /**
  * Column "Aankomst haven": the day at the port (an hour set by hand drops the ±). A received container keeps,
  * quietly, the day it was expected there. With a warehouse day planned, the port day is no longer what turns
- * amber: the row's lateness belongs to that day.
+ * amber: the row's lateness belongs to that day. Once its ship is in: that day, "schip is binnen", never amber.
  */
 export function portCell(container: PartnerContainer, today: string): ArrivalCell {
   const date = isDay(container.expectedArrival) ? day10(container.expectedArrival) : null;
   if (isReceived(container)) return { main: date ? dayText(date, today) : '—', sub: '', late: false, muted: true };
+  const shipIn = shipInDay(container);
+  if (shipIn) return { main: dayText(shipIn, today), sub: SHIP_IN, late: false, muted: false };
   if (!date) return { main: 'datum nog open', sub: '', late: false, muted: true };
   const hour = hourText(container.expectedArrivalTime);
   const planned = warehouseDay(container);
@@ -247,11 +278,16 @@ export function stockCell(container: PartnerContainer, today: string, warehouseN
     late, muted: false };
 }
 
-/** "Haven Rotterdam ± do 20 nov" beside a planned warehouse arrival; null without both. */
+/**
+ * "Haven Rotterdam ± do 20 nov" beside a planned warehouse arrival, "Haven Rotterdam za 15 nov · schip is binnen"
+ * once the ship is in (the row itself then names the warehouse day, so this line is where it is said); null
+ * without both days.
+ */
 export function portLine(container: PartnerContainer, today: string): string | null {
   const words = arrivalWords(container, today);
-  if (!words.warehouse || !isDay(container.expectedArrival)) return null;
-  return `Haven${container.destinationPort ? ' ' + container.destinationPort : ''} ${words.main}`;
+  if (!words.warehouse || !portDay(container)) return null;
+  const port = `Haven${container.destinationPort ? ' ' + container.destinationPort : ''} ${words.main}`;
+  return shipInDay(container) ? `${port} · ${words.sub}` : port;
 }
 
 /**
@@ -260,8 +296,8 @@ export function portLine(container: PartnerContainer, today: string): string | n
  */
 export function progressOf(container: PartnerContainer, today: string): number | null {
   if (isReceived(container)) return 100;
-  if (!isDay(container.expectedArrival)) return null;
-  const end = day10(container.expectedArrival);
+  const end = portDay(container);
+  if (!end) return null;
   if (end <= today) return 100;
   const startValue = isDay(container.shippedOn) ? container.shippedOn : isDay(container.orderDate) ? container.orderDate : null;
   if (!startValue) return 0;
