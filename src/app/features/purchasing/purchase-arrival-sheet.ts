@@ -53,6 +53,14 @@ export function shipArrivedText(portArrivedOn: string | null | undefined, shownD
   return `schip aangekomen${own}${byHand ? ' · met de hand' : ''}`;
 }
 
+/**
+ * The progress strip says "verwacht" before the container's day until the linked ship came in on that day; from
+ * then on it says "schip aangekomen". A day by hand that is another day than the ship's stays "verwacht".
+ */
+export function shipIsIn(portArrivedOn: string | null | undefined, shownDay: string | null | undefined): boolean {
+  return !!portArrivedOn && !!shownDay && portArrivedOn === shownDay;
+}
+
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**

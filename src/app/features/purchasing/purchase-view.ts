@@ -2,7 +2,7 @@ import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { billAppliedRow, purchaseTrackedOrder } from './purchase-tracking-model';
 import { billOffered, trackingMove } from './container-tracking-model';
-import { PurchaseArrivalSheet, arrivalText, orderArrival, orderShipArrivedOn, shipArrivedText } from './purchase-arrival-sheet';
+import { PurchaseArrivalSheet, arrivalText, orderArrival, orderShipArrivedOn, shipArrivedText, shipIsIn } from './purchase-arrival-sheet';
 import { PurchaseBillSheet } from './purchase-bill-sheet';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -127,9 +127,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="mpo-progress__bar" aria-hidden="true"></span>
                   @if (data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
-                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
+                    @let shipIn = shipIsIn(shipArrivedOn(), step.date);
+                    <button class="mpo-progress__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="(shipIn ? 'Schip aangekomen: ' : 'Verwachte aankomst: ') + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="trackingPanel()?.showDetails()">
                       <span class="mpo-progress__label">{{ step.label }}</span>
-                      <span class="mpo-progress__date" [class.mpo-moved--later]="arrivalMove()?.news && arrivalMove()?.later" [class.mpo-moved--earlier]="arrivalMove()?.news && arrivalMove()?.later === false">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                      <span class="mpo-progress__date" [class.mpo-progress__date--in]="shipIn" [class.mpo-moved--later]="arrivalMove()?.news && arrivalMove()?.later" [class.mpo-moved--earlier]="arrivalMove()?.news && arrivalMove()?.later === false">{{ step.date ? (shipIn ? 'schip aangekomen ' : 'verwacht ') : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
                     </button>
                   } @else {
                     <span class="mpo-progress__label">{{ step.label }}</span>
@@ -844,6 +845,8 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
     .mpo-track-link{padding:4px 0;min-height:36px;text-decoration:underline;text-underline-offset:3px}
     .mpo-progress__tracking{display:grid;gap:3px;padding:0;min-height:44px;align-content:start;text-align:left}
     .mpo-progress__tracking .mpo-progress__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
+    /* "schip aangekomen" takes two lines in the narrow step: the day stays in view on the third. */
+    .mpo-progress__tracking .mpo-progress__date--in{-webkit-line-clamp:3}
     .mpo-track-link:focus-visible,.mpo-progress__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
     .mpo-progress__tracking .mpo-progress__date.mpo-moved--later,.ios-cell__sub.mpo-moved--later{color:var(--warn);font-weight:650}
     .mpo-progress__tracking .mpo-progress__date.mpo-moved--earlier,.ios-cell__sub.mpo-moved--earlier{color:var(--ok);font-weight:650}
@@ -1107,6 +1110,7 @@ export class PurchaseView {
   /* ---- track & trace from the bill of lading (2026-11-16) ---- */
   readonly billOffered = billOffered;
   readonly shipArrivedText = shipArrivedText;
+  readonly shipIsIn = shipIsIn;
   /** The order whose Bill of lading sheet is open; by id, so the sheet never opens on another order. */
   readonly billFor = signal<number | null>(null);
   /**

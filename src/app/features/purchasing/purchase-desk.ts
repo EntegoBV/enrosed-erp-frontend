@@ -27,7 +27,7 @@ import { PurchaseInvoiceSheet } from './purchase-invoice-sheet';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseSupplierCreditSheet } from './purchase-supplier-credit-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
-import { PurchaseArrivalSheet, orderShipArrivedOn, shipArrivedText } from './purchase-arrival-sheet';
+import { PurchaseArrivalSheet, orderShipArrivedOn, shipArrivedText, shipIsIn } from './purchase-arrival-sheet';
 import { PurchaseBillSheet } from './purchase-bill-sheet';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { keyContext } from '../../shared/key-context';
@@ -154,9 +154,10 @@ export class PurchaseDeskStyles {}
                     [attr.aria-current]="step.state === 'now' ? 'step' : null">
                   <span class="pdk-step__bar" aria-hidden="true"></span>
                   @if (!editing() && data.order.trackingReference && step.label === 'Ontvangen' && data.order.status !== 'ONTVANGEN') {
-                    <button class="pdk-step__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="'Verwachte aankomst: ' + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="showTracking()">
+                    @let shipIn = shipIsIn(shipArrivedOn(), step.date);
+                    <button class="pdk-step__tracking" type="button" aria-haspopup="dialog" [attr.aria-label]="(shipIn ? 'Schip aangekomen: ' : 'Verwachte aankomst: ') + (step.date ? (step.date | dateNl) : 'datum onbekend') + (arrivalMove() ? ', ' + arrivalMove()!.text : '') + '. Track & trace openen'" (click)="showTracking()">
                       <span class="pdk-step__label">{{ step.label }}</span>
-                      <span class="pdk-step__date">{{ step.date ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
+                      <span class="pdk-step__date">@if (shipIn) { <span class="pdk-step__lead">schip aangekomen</span> }{{ step.date && !shipIn ? 'verwacht ' : '' }}{{ step.date ? (step.date | dateNl) : 'Datum onbekend' }}</span>
                       @if (arrivalMove(); as move) { <span class="pdk-step__moved" [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later" [title]="'was ' + (move.from | dateNl)">{{ move.text }}</span> }
                     </button>
                   } @else {
@@ -1387,6 +1388,8 @@ export class PurchaseDeskStyles {}
     .pdk-track-link{padding:2px 0;font-weight:650;text-decoration:underline;text-underline-offset:3px}
     .pdk-step__tracking{display:grid;gap:3px;padding:0;min-height:38px;align-content:start}
     .pdk-step__tracking .pdk-step__date{color:var(--rose);text-decoration:underline;text-underline-offset:3px}
+    /* "schip aangekomen" on its own line above the day: the step keeps its width, the day is never cut. */
+    .pdk-step__lead{display:block}.pdk-step__date:has(.pdk-step__lead){-webkit-line-clamp:3}
     .pdk-track-link:focus-visible,.pdk-step__tracking:focus-visible{outline:2px solid var(--rose);outline-offset:3px;border-radius:3px}
     .pdk-step__moved{color:var(--muted);font-size:11px;line-height:1.3;white-space:nowrap}
     .pdk-step__moved.pdk-moved--later,.desk-facts dd small.pdk-moved--later{color:var(--warn)}.pdk-step__moved.pdk-moved--earlier,.desk-facts dd small.pdk-moved--earlier{color:var(--ok)}
@@ -1675,6 +1678,7 @@ export class PurchaseDesk extends PurchaseEditor {
   /* ---- track & trace from the bill of lading (2026-11-16) ---- */
   readonly billOffered = billOffered;
   readonly shipArrivedText = shipArrivedText;
+  readonly shipIsIn = shipIsIn;
   /** The order whose Bill of lading sheet is open; by id, so the sheet never opens on another order. */
   readonly billFor = signal<number | null>(null);
   /**
