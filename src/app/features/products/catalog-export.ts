@@ -51,7 +51,7 @@ import {
 import { applyCatalogProductOrder, orderCatalogProducts, reorderCatalogSelection } from './catalog-product-order';
 import { deselectProductIds, selectProductIds } from './catalog-product-selection-state';
 import { catalogOrderChanged, initialCatalogOrderIds, normalizedCatalogOrderIds } from './catalog-saved-order';
-import { productText, variantLabelIn } from './product-translation-adapter';
+import { productText } from './product-translation-adapter';
 import { productSalesUnit } from './product-sales-unit';
 import { StaffContactPhones } from '../../shared/staff-contact-phones';
 
@@ -122,22 +122,22 @@ const DEFAULT_BROCHURE: CatalogBrochureDraft = {
 
 /* The preview's own words per document language; the PDF takes its copy from the catalogue texts. */
 const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
-  title: string; product: string; logistics: string; perBox: string; onRequest: string; empty: string;
-  pallet: string; priceListFor: string;
-  /** The PDF's catalog.simple.kar, shortened as the pallet is. */
-  kar: string;
+  title: string; onRequest: string; empty: string;
+  /** The ribbon's labels, as the PDF's catalogue texts say them (catalog.common.carton, .simple.pallet, .kar, .short20ft, .short40ft), shortened. */
+  carton: string; pallet: string; kar: string; gp: string; hc: string;
+  priceListFor: string;
   /** After a price, as the PDF's catalog.simple.perpiece and its display word say it; NL names the product's own unit. */
   perPiece: string; perDisplay: string;
 }> = {
-  NL: { title: 'Compact overzicht', product: 'Product · SKU', logistics: 'Verpakking · EAN', perBox: 'st./omdoos', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', pallet: 'Pallet', kar: 'Deense kar', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
-  EN: { title: 'Compact overview', product: 'Product · SKU', logistics: 'Packing · EAN', perBox: 'pcs/carton', onRequest: 'Price on request', empty: 'Select products for your overview.', pallet: 'Pallet', kar: 'Danish trolley', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
-  FR: { title: 'Aperçu compact', product: 'Produit · SKU', logistics: 'Emballage · EAN', perBox: 'pcs/carton', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', pallet: 'Palette', kar: 'Chariot danois', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
-  DE: { title: 'Kompakte Übersicht', product: 'Produkt · SKU', logistics: 'Verpackung · EAN', perBox: 'Stk./Karton', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', pallet: 'Palette', kar: 'CC-Container', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
-  ES: { title: 'Resumen compacto', product: 'Producto · SKU', logistics: 'Embalaje · EAN', perBox: 'ud./caja', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', pallet: 'Palé', kar: 'Carro danés', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
-  PL: { title: 'Skrócony przegląd', product: 'Produkt · SKU', logistics: 'Opakowanie · EAN', perBox: 'szt./karton', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', pallet: 'Paleta', kar: 'Wózek duński', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
-  PT: { title: 'Resumo compacto', product: 'Produto · SKU', logistics: 'Embalagem · EAN', perBox: 'un./caixa', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', pallet: 'Palete', kar: 'Carro dinamarquês', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
-  TR: { title: 'Kompakt genel bakış', product: 'Ürün · SKU', logistics: 'Ambalaj · EAN', perBox: 'adet/koli', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', pallet: 'Palet', kar: 'Danimarka arabası', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
-  EL: { title: 'Συνοπτική επισκόπηση', product: 'Προϊόν · SKU', logistics: 'Συσκευασία · EAN', perBox: 'τεμ./κιβώτιο', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', pallet: 'Παλέτα', kar: 'Δανέζικο καρότσι', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
+  NL: { title: 'Compact overzicht', onRequest: 'Prijs op aanvraag', empty: 'Kies producten voor uw overzicht.', carton: 'Omdoos', pallet: 'Pallet', kar: 'Deense kar', gp: '20ft GP', hc: '40ft HC', priceListFor: 'Prijslijst voor {name}', perPiece: 'per stuk', perDisplay: 'per display' },
+  EN: { title: 'Compact overview', onRequest: 'Price on request', empty: 'Select products for your overview.', carton: 'Carton', pallet: 'Pallet', kar: 'Danish trolley', gp: '20ft GP', hc: '40ft HC', priceListFor: 'Price list for {name}', perPiece: 'per piece', perDisplay: 'per display' },
+  FR: { title: 'Aperçu compact', onRequest: 'Prix sur demande', empty: 'Sélectionnez les produits à présenter.', carton: 'Carton', pallet: 'Palette', kar: 'Chariot danois', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Liste de prix pour {name}', perPiece: 'par pièce', perDisplay: 'par présentoir' },
+  DE: { title: 'Kompakte Übersicht', onRequest: 'Preis auf Anfrage', empty: 'Wählen Sie Produkte für Ihre Übersicht.', carton: 'Umkarton', pallet: 'Palette', kar: 'CC-Container', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Preisliste für {name}', perPiece: 'pro Stück', perDisplay: 'pro Display' },
+  ES: { title: 'Resumen compacto', onRequest: 'Precio a consultar', empty: 'Seleccione los productos del resumen.', carton: 'Caja', pallet: 'Palé', kar: 'Carro danés', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Lista de precios para {name}', perPiece: 'por unidad', perDisplay: 'por expositor' },
+  PL: { title: 'Skrócony przegląd', onRequest: 'Cena na zapytanie', empty: 'Wybierz produkty do zestawienia.', carton: 'Karton', pallet: 'Paleta', kar: 'Wózek duński', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Cennik dla {name}', perPiece: 'za sztukę', perDisplay: 'za ekspozytor' },
+  PT: { title: 'Resumo compacto', onRequest: 'Preço sob consulta', empty: 'Selecione os produtos para o resumo.', carton: 'Caixa', pallet: 'Palete', kar: 'Carro dinamarquês', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Tabela de preços para {name}', perPiece: 'por unidade', perDisplay: 'por expositor' },
+  TR: { title: 'Kompakt genel bakış', onRequest: 'Fiyat için iletişime geçin', empty: 'Özet için ürünleri seçin.', carton: 'Koli', pallet: 'Palet', kar: 'Danimarka arabası', gp: '20\' GP', hc: '40\' HC', priceListFor: '{name} için fiyat listesi', perPiece: 'adet başına', perDisplay: 'stand başına' },
+  EL: { title: 'Συνοπτική επισκόπηση', onRequest: 'Τιμή κατόπιν αιτήματος', empty: 'Επιλέξτε προϊόντα για την επισκόπηση.', carton: 'Κιβώτιο', pallet: 'Παλέτα', kar: 'Δανέζικο καρότσι', gp: '20\' GP', hc: '40\' HC', priceListFor: 'Τιμοκατάλογος για {name}', perPiece: 'ανά τεμάχιο', perDisplay: 'ανά σταντ' },
 };
 
 @Component({
@@ -189,38 +189,43 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
               <div class="cover-sheet__foot"><span>ENROSED.COM</span><span>{{ language() }}</span></div>
             </div>
             } @else {
-              <div class="compact-sheet" [class.compact-sheet--without-photos]="!includePhotos()">
+              <div class="compact-sheet">
                 <header class="compact-sheet__head">
-                  <img src="/logo-ui.png" alt="ENROSED" />
+                  <img src="/catalog-logo-gold.png" alt="ENROSED" />
                   <h2 id="studio-preview-title">{{ compactCopy().title }}</h2>
                   @if (recipientLine()) { <span class="compact-sheet__recipient">{{ recipientLine() }}</span> }
                   <span>{{ languageLabel() }}</span>
                 </header>
-                <div class="compact-sheet__columns" aria-hidden="true">
-                  <b>{{ compactCopy().product }}</b><b>{{ compactCopy().logistics }}</b>
-                </div>
                 <div class="compact-sheet__rows">
                   @for (row of compactRows(); track row.id) {
-                    <div class="compact-sheet__row">
-                      @if (includePhotos()) {
-                        <div class="compact-sheet__photo">
-                          @if (row.photoUrl) { <img [appAuthSrc]="row.photoUrl" [alt]="row.name" /> }
-                        </div>
-                      }
-                      <div class="compact-sheet__identity">
+                    <!-- One card per product, as the PDF: its colours as the picture, then pallet, kar, 20ft and 40ft together. -->
+                    <div class="compact-card">
+                      <div class="compact-card__head">
                         <b>{{ row.name }}</b>
-                        @if (row.sku) { <span class="compact-sheet__sku">{{ row.sku }}</span> }
-                        @if (row.variant) { <span>{{ row.variant }}</span> }
-                        @if (row.dimensions) { <span>{{ row.dimensions }}</span> }
-                      </div>
-                      <div class="compact-sheet__logistics">
-                        @if (row.perBox) { <span>{{ row.perBox }} {{ compactCopy().perBox }}</span> }
-                        @if (row.ean) { <span class="compact-sheet__ean">EAN {{ row.ean }}</span> }
-                        <span>HS {{ row.hsCode ?? '-' }}</span>
-                        <!-- Pallet, kar, 20ft and 40ft always together, in that order, as in the PDF. -->
-                        <span>{{ compactCopy().pallet }}: {{ row.perPallet ?? '-' }} · {{ compactCopy().kar }}: {{ row.perKar ?? '-' }} · 20ft: {{ row.per20Ft ?? '-' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> } · 40ft HC: {{ row.per40Ft ?? '-' }}</span>
                         @if (includePrices()) { <strong [class.is-stale]="row.priceStale">{{ row.price }}</strong> }
                       </div>
+                      <span class="compact-card__meta">@if (row.dimensions) { {{ row.dimensions }} · }HS {{ row.hsCode ?? '–' }}@if (row.ean) { · EAN {{ row.ean }} }</span>
+                      <div class="compact-card__colours">
+                        @for (colour of row.colours; track colour.id) {
+                          <span class="compact-card__colour">
+                            @if (includePhotos() && colour.photoUrl) {
+                              <img [appAuthSrc]="colour.photoUrl" [alt]="colour.name" />
+                            } @else {
+                              <i [style.background]="colour.hex ?? 'transparent'"></i>
+                            }
+                            <em>{{ colour.name }}</em>
+                            <small>{{ colour.sku }}</small>
+                          </span>
+                        }
+                        @if (row.moreColours) { <span class="compact-card__more">+ {{ row.moreColours }}</span> }
+                      </div>
+                      <dl class="compact-card__ribbon">
+                        <div><dt>{{ compactCopy().carton }}</dt><dd>{{ row.perBox ?? '–' }}</dd></div>
+                        <div><dt>{{ compactCopy().pallet }}</dt><dd>{{ row.perPallet ?? '–' }}</dd></div>
+                        <div><dt>{{ compactCopy().kar }}</dt><dd>{{ row.perKar ?? '–' }}</dd></div>
+                        <div><dt>{{ compactCopy().gp }}</dt><dd>{{ row.per20Ft ?? '–' }}@if (row.per20FtAuto) { <small [title]="row.per20FtHint">Auto</small> }</dd></div>
+                        <div><dt>{{ compactCopy().hc }}</dt><dd>{{ row.per40Ft ?? '–' }}</dd></div>
+                      </dl>
                     </div>
                   } @empty {
                     <p class="compact-sheet__empty">{{ compactCopy().empty }}</p>
@@ -554,25 +559,33 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .cover-sheet:not(.cover-sheet--simple) .cover-sheet__foot { position: absolute; bottom: 10%; left: 12%; width: 76%; padding: 0; color: #d6b783; }
     .cover-sheet__recipient { position: absolute; top: 40.8%; left: 10%; width: 80%; overflow: hidden; color: #d6b783; font-size: clamp(5px, .7vw, 8px); letter-spacing: .14em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
     .cover-stage.cover-stage--compact { padding: 22px 0; }
-    .compact-sheet { display: flex; flex-direction: column; box-sizing: border-box; width: min(100%, 360px); min-width: 0; aspect-ratio: 210 / 297; padding: 7%; background: #fff; color: #39282d; box-shadow: 0 12px 26px -12px rgb(45 17 22 / 28%); }
-    .compact-sheet__head { padding-bottom: 12px; }
-    .compact-sheet__head img { width: 77px; height: 27px; object-fit: contain; object-position: left; }
-    .compact-sheet__head h2 { margin: 8px 0 4px; color: var(--studio-bordeaux); font-family: Georgia, 'Times New Roman', serif; font-size: clamp(16px, 2.3vw, 22px); font-weight: 400; line-height: 1.15; overflow-wrap: anywhere; }
-    .compact-sheet__head > span { font-size: 8px; color: #80676d; }
-    .compact-sheet__head .compact-sheet__recipient { display: block; margin-bottom: 2px; color: var(--studio-bordeaux); font-weight: 650; overflow-wrap: anywhere; }
-    .compact-sheet__columns { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 8px; border-block: 1px solid #cbb4ba; padding: 6px 0; color: var(--studio-bordeaux); font-size: 7px; }
-    .compact-sheet__rows { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-    .compact-sheet__row { display: grid; grid-template-columns: 38px minmax(0, 1fr) minmax(0, .85fr); gap: 7px; align-items: center; min-height: 46px; padding: 7px 0; border-bottom: 1px solid #e9dfe2; }
-    .compact-sheet__photo { width: 38px; height: 48px; }
-    .compact-sheet__photo img { width: 100%; height: 100%; object-fit: contain; }
-    .compact-sheet__identity, .compact-sheet__logistics { display: grid; min-width: 0; gap: 3px; font-size: 7px; line-height: 1.3; overflow-wrap: anywhere; }
-    .compact-sheet__identity b { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 8px; font-weight: 650; }
-    .compact-sheet__sku, .compact-sheet__ean { font-size: 6px; color: #745c63; }
-    .compact-sheet__logistics strong { color: var(--studio-bordeaux); font-size: 8px; }
-    .compact-sheet__logistics .is-stale { color: var(--warn); }
-    .compact-sheet--without-photos .compact-sheet__row { grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); }
+    .compact-sheet { display: flex; flex-direction: column; box-sizing: border-box; width: min(100%, 360px); min-width: 0; aspect-ratio: 210 / 297; padding: 5.5%; background: #f6f1eb; color: #39282d; box-shadow: 0 12px 26px -12px rgb(45 17 22 / 28%); }
+    .compact-sheet__head { padding: 8px 11px 7px; border-radius: 7px; background: #4b1024; }
+    .compact-sheet__head img { display: block; width: 56px; height: auto; }
+    .compact-sheet__head h2 { margin: 3px 0 1px; color: #fffaf3; font-family: Georgia, serif; font-size: clamp(13px, 1.7vw, 15px); font-weight: 400; line-height: 1.15; overflow-wrap: anywhere; }
+    .compact-sheet__head > span { font-size: 7px; color: #e1c590; }
+    .compact-sheet__head .compact-sheet__recipient { display: block; margin-bottom: 2px; color: #fffaf3; font-family: Georgia, serif; font-size: 9px; font-style: italic; overflow-wrap: anywhere; }
+    .compact-sheet__rows { flex: 1; display: flex; flex-direction: column; gap: 5px; margin-top: 7px; overflow: hidden; }
+    .compact-card { display: grid; gap: 2px; min-width: 0; padding: 6px 9px 5px; border: 1px solid #e5d9d2; border-radius: 7px; background: #fff; }
+    .compact-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .compact-card__head b { min-width: 0; color: var(--studio-bordeaux); font-family: Georgia, serif; font-size: 9.5px; font-weight: 400; line-height: 1.2; }
+    .compact-card__head strong { flex: none; color: var(--studio-bordeaux); font-size: 8px; white-space: nowrap; }
+    .compact-card__head .is-stale { color: var(--warn); }
+    .compact-card__meta { color: #80676d; font-size: 6px; line-height: 1.3; }
+    .compact-card__colours { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 2px 0 1px; }
+    .compact-card__colour { display: grid; justify-items: center; gap: 1px; min-width: 0; text-align: center; }
+    .compact-card__colour img { width: 100%; max-width: 38px; aspect-ratio: 1; object-fit: contain; }
+    .compact-card__colour i { width: 15px; height: 15px; margin: 2px 0 1px; border: 1px solid #d8c8bb; border-radius: 50%; }
+    .compact-card__colour em { max-width: 100%; font-size: 6.5px; font-style: normal; font-weight: 650; line-height: 1.25; }
+    .compact-card__colour small { max-width: 100%; color: #745c63; font-size: 5.5px; line-height: 1.2; }
+    .compact-card__more { color: #80676d; font-size: 7px; }
+    .compact-card__ribbon { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0; padding-top: 4px; border-top: 1px solid #efe6df; }
+    .compact-card__ribbon dt { color: #7b3145; font-size: 5.3px; line-height: 1.3; }
+    .compact-card__head b, .compact-card__meta, .compact-card__colour em, .compact-card__colour small, .compact-card__ribbon dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .compact-card__ribbon dd { margin: 0; font-size: 7.5px; font-weight: 650; line-height: 1.25; }
+    .compact-card__ribbon dd small { margin-left: 2px; color: #80676d; font-size: 5px; font-weight: 400; }
     .compact-sheet__empty { margin: 18px 0; font-size: 10px; color: #80676d; line-height: 1.5; }
-    .compact-sheet__foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 14px; color: #80676d; font-size: 6px; letter-spacing: .08em; }
+    .compact-sheet__foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; color: #80676d; font-size: 6px; letter-spacing: .08em; }
     .preview-caption { margin: 0; color: var(--muted); font-size: 11px; text-align: center; line-height: 1.5; }
     .studio-totals { display: grid; grid-template-columns: repeat(3, 1fr); margin: 22px 0 18px; }
     .studio-totals > span { display: grid; gap: 3px; text-align: center; border-right: 1px solid var(--line); }
@@ -850,7 +863,7 @@ export class CatalogExport {
   readonly previewProducts = computed(() => catalogueFamilies(this.selectedProducts(), this.families()).filter((family) => family.photo).slice(0, 4));
   readonly compactCopy = computed(() => COMPACT_PREVIEW_COPY[this.language()]);
   /**
-   * The first products of the PDF as it prints them: a family's colours together on one row while
+   * The first three cards of the PDF as it prints them: a family's colours together on one card while
    * they share carton, pallet, kar, 20ft, 40ft and price (the server's compactProducts), in its order.
    */
   readonly compactRows = computed(() => {
@@ -907,12 +920,11 @@ export class CatalogExport {
       const key = `${product.familyId ?? `p${product.id}`}|${JSON.stringify(signature)}`;
       const row = rows.get(key);
       if (row) row.products.push(product);
-      else if (rows.size < 4) rows.set(key, { ...printed, products: [product] });
+      else if (rows.size < 3) rows.set(key, { ...printed, products: [product] });
     }
     return [...rows.values()].map(({ products, ...printed }) => {
       const product = products[0];
       const text = product.texts.find(row => row.language === language);
-      const photo = cataloguePhoto(product);
       const dimensions = [product.dimensions.lengthCm, product.dimensions.widthCm, product.dimensions.heightCm];
       /* The Maat is not translated. One Maat stands once, as in the PDF's heading; several stand with their colour. */
       const sizes = new Set(products.map((colour) => colour.variantSize?.trim()).filter((size): size is string => !!size));
@@ -922,14 +934,23 @@ export class CatalogExport {
         id: product.id,
         colourCount: products.length,
         name: (product.familyId !== null ? familyNames.get(product.familyId) : null) || text?.name?.trim() || product.name,
-        /* One colour names its SKU, as its PDF row does; several colours are listed. */
-        sku: products.length === 1 ? product.sku : null,
-        variant: products.length === 1 ? variantLabelIn(product, language)
-          : products.map((colour) => [productText(colour, language).colour?.trim() || colour.colour,
-              sizes.size > 1 ? colour.variantSize : null].filter(Boolean).join(' · ')).filter(Boolean).join(', '),
-        dimensions: [products.length > 1 ? size : null,
-          dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null].filter(Boolean).join(' · ') || null,
-        photoUrl: photo?.smallUrl || photo?.url || null,
+        perBox: printed.perBox ? count.format(printed.perBox) : null,
+        /* The colours are the card's picture: the first four with their photo (a swatch without photos), SKU under each. */
+        colours: products.slice(0, 4).map((colour) => {
+          const photo = cataloguePhoto(colour);
+          return {
+            id: colour.id,
+            name: [productText(colour, language).colour?.trim() || colour.colour,
+              sizes.size > 1 ? colour.variantSize : null].filter(Boolean).join(' · ') || colour.sku,
+            sku: colour.sku,
+            photoUrl: photo?.smallUrl || photo?.url || null,
+            hex: colour.colourHex,
+          };
+        }),
+        moreColours: Math.max(0, products.length - 4),
+        dimensions: [size, dimensions.every(value => value !== null && value > 0) ? `${dimensions.join(' × ')} cm` : null]
+          .filter(Boolean).join(' · ') || null,
+        /* One colour names its EAN in the heading line; several carry theirs under each photo in the PDF. */
         ean: products.length === 1 ? product.barcodeInner?.trim() || product.canonicalBarcode?.trim() || null : null,
         /* The PDF joins the HS codes its colours have; a colour without one adds nothing. */
         hsCode: [...new Set(products.map((colour) => colour.hsCode?.trim()).filter(Boolean))].join(' / ') || null,

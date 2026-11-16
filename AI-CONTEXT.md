@@ -5005,9 +5005,12 @@ app (no web push in the native shell).
 and "Per Deense kar" next to 20ft/40ft: `palletFit` upright at the standard heights
 (260 / 230 cm), as the catalogue PDF prints them, with the omdozen and the loaded height
 under it, or why nothing fits. The catalogue studio's Compact overzicht preview
-(`catalog-export.ts` `compactRows`) groups like the PDF: one row per family and printed
-figures (unit, carton, pallet, kar, 20ft, 40ft, price), colours listed, kar in the
-logistics line (`COMPACT_PREVIEW_COPY.kar`).
+(`catalog-export.ts` `compactRows`) groups like the PDF: one card per family and printed
+figures (unit, carton and its size, pallet, kar, 20ft, 40ft, and the price while prices
+are on). Since 2026-11-16 it also looks like the PDF's card design: a bordeaux masthead
+on the page tint, the first three cards with up to four colours as photos (swatch discs
+without photos) and a five-figure ribbon (`COMPACT_PREVIEW_COPY`: carton, pallet, kar,
+gp, hc).
 
 Emre (2026-11-04): a Verkoop item to see at the fair how much of one product, or of
 several together, fits on a pallet and in a 20ft or 40ft, in omdozen, displays and
