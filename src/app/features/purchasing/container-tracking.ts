@@ -4,6 +4,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ContainerTrackingApi } from '../../core/api/container-tracking-api';
 import type { ContainerTracking, ContainerTrackingFeed } from '../../core/api/container-tracking-models';
 import { messageOf } from '../../core/api/errors';
+import type { PurchaseOrderView } from '../../core/api/models';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Icon } from '../../shared/icon';
 import { LoadError } from '../../shared/load-error';
@@ -11,12 +12,13 @@ import { PageHeader } from '../../shared/page-header';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Skeleton } from '../../shared/skeleton';
 import { ContainerTrackingPanel } from './container-tracking-panel';
-import { trackingArrived, trackingListLine, trackingProblems, trackingRows, type TrackingFilter } from './container-tracking-model';
+import { trackingInPort, trackingListLine, trackingProblems, trackingRows, type TrackingFilter } from './container-tracking-model';
+import { PurchaseBillSheet } from './purchase-bill-sheet';
 
 @Component({
   selector: 'app-container-tracking',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, LoadError, PageHeader, Segmented, Skeleton, ContainerTrackingPanel],
+  imports: [RouterLink, Icon, LoadError, PageHeader, Segmented, Skeleton, ContainerTrackingPanel, PurchaseBillSheet],
   template: `
     <!-- No "Vernieuwen" here: it only re-read stored rows and looked like a check. The page re-reads every minute and
          when it comes back into view; each row shows how old its last check is; the real check is on the panel. -->
@@ -52,7 +54,7 @@ import { trackingArrived, trackingListLine, trackingProblems, trackingRows, type
                   @let view = line.view;
                   <button class="ct-container" type="button" [class.ct-container--selected]="selected()?.orderId === row.orderId" [attr.aria-pressed]="selected()?.orderId === row.orderId" aria-controls="ct-detail" (click)="select(row)">
                     <span class="ct-row"><span class="ct-container-name">{{ row.containerName || row.orderNumber }}</span>
-                      @if (view.arrival) { <span class="ct-arrival" [class.ct-arrival--later]="view.move?.later === true" [class.ct-arrival--earlier]="view.move?.later === false" [attr.title]="view.move ? 'Verwachte aankomst · ' + view.move.text : 'Verwachte aankomst'">{{ view.arrival }}</span> }</span>
+                      @if (view.arrival) { <span class="ct-arrival" [class.ct-arrival--later]="view.move?.later === true" [class.ct-arrival--earlier]="view.move?.later === false" [attr.title]="view.move ? view.arrivalTitle + ' · ' + view.move.text : view.arrivalTitle">{{ view.arrival }}</span> }</span>
                     <span class="ct-row"><span class="ct-status" [class.ct-status--ok]="view.status.tone === 'ok'" [class.ct-status--warn]="view.status.tone === 'warn'">{{ view.status.text }}</span>
                       @if (view.move; as move) { <span class="ct-delta" [class.ct-delta--later]="move.later" [class.ct-delta--earlier]="!move.later" [attr.title]="move.text">{{ move.short }}</span> }</span>
                     <span class="ct-row"><span class="ct-reference">{{ view.reference }}</span>
@@ -63,13 +65,17 @@ import { trackingArrived, trackingListLine, trackingProblems, trackingRows, type
             </details>
             <section id="ct-detail" class="ct-detail" #detail tabindex="-1" aria-label="Geselecteerde container">
               @for (row of selectedRows(); track row.orderId + ':' + row.trackingReference) {
-                <app-container-tracking-panel [row]="row" [configured]="data.configured" [intervalHours]="data.intervalHours" [showOrderLink]="true" (busyChange)="panelBusyChanged(row, $event)" (rowUpdated)="rowUpdated($event)" />
+                <app-container-tracking-panel [row]="row" [configured]="data.configured" [intervalHours]="data.intervalHours" [showOrderLink]="true" (busyChange)="panelBusyChanged(row, $event)" (rowUpdated)="rowUpdated($event)" (bill)="openBill(row)" />
               }
             </section>
           </div>
         }
       }
     </div>
+    <!-- "Uit de bill of lading" of the panel. A file added in the sheet (uploaded) changes nothing on this page. -->
+    @if (billOrderId(); as orderId) {
+      <app-purchase-bill-sheet [orderId]="orderId" (applied)="onBillApplied($event)" (closed)="billOrderId.set(null)" />
+    }
   `,
   styles: [`
     :host{display:block}.ct{max-width:1540px}.ct-panel{border:1px solid var(--line);border-radius:16px;background:var(--surface);padding:22px;margin-bottom:18px}.ct-toolbar{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:18px}.ct-search{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 12px;min-width:230px;color:var(--muted)}.ct-search input{border:0;outline:none;background:none;color:var(--ink);font-size:13px;min-height:42px;min-width:0;width:100%}.ct-search:focus-within{outline:2px solid var(--rose);outline-offset:2px}
@@ -95,6 +101,8 @@ export class ContainerTrackingPage {
   readonly selectedId = signal<number | null>(null);
   readonly pickerOpen = signal(false);
   readonly panelBusy = signal(false);
+  /** The order whose Bill of lading sheet is open. Its own signal: the selected row can change under the sheet (the minute read, the search). */
+  readonly billOrderId = signal<number | null>(null);
   private request = 0;
   readonly visible = computed(() => trackingRows(this.feed()?.containers ?? [], this.filter(), this.query()));
   readonly selected = computed(() => this.visible().find(row => row.orderId === this.selectedId()) ?? this.visible()[0] ?? null);
@@ -103,7 +111,8 @@ export class ContainerTrackingPage {
   readonly automaticCount = computed(() => this.feed()?.containers.filter(row => row.automatic).length ?? 0);
   readonly filters = computed<SegmentOption[]>(() => {
     const rows = this.feed()?.containers ?? [];
-    const arrived = rows.filter(trackingArrived).length;
+    /* The same rule as the filter itself: a container whose ship is in counts with the arrived ones. */
+    const arrived = rows.filter(trackingInPort).length;
     return [{ id: 'all', label: 'Alles', count: rows.length }, { id: 'active', label: 'Actief', count: rows.length - arrived }, { id: 'arrived', label: 'Aangekomen', count: arrived }];
   });
   /** Every visible row with its three lines: name and expected arrival, status, reference and check age. */
@@ -180,6 +189,31 @@ export class ContainerTrackingPage {
     if (`${row.orderId}:${row.trackingReference}` !== this.selectedKey()) return;
     this.panelBusy.set(busy);
     if (busy) { this.request++; this.loading.set(false); }
+  }
+
+  /** The panel's "Uit de bill of lading": the sheet is for this row's order, which stays the selected one. */
+  openBill(row: ContainerTracking): void {
+    this.selectedId.set(row.orderId);
+    this.billOrderId.set(row.orderId);
+  }
+
+  /**
+   * The bill was taken over: the reference, the dates, the ship and the status of this row may all be different now,
+   * so the feed is read again, past a read already on its way (that answer is from before). The order stays the
+   * selected one: when its new reference no longer matches the search, or its ship turned out to be in and the
+   * filter shows the active ones, the search or the filter gives way.
+   */
+  async onBillApplied(fresh: PurchaseOrderView): Promise<void> {
+    const orderId = fresh.order.id;
+    this.billOrderId.set(null);
+    this.selectedId.set(orderId);
+    this.request++; this.loading.set(false);
+    await this.load();
+    if (this.destroyRef.destroyed || this.selectedId() !== orderId) return;
+    const rows = this.feed()?.containers ?? [];
+    const shown = (filter: TrackingFilter, query: string) => trackingRows(rows, filter, query).some(row => row.orderId === orderId);
+    if (!rows.some(row => row.orderId === orderId) || shown(this.filter(), this.query())) return;
+    if (shown(this.filter(), '')) this.query.set(''); else this.resetFilters();
   }
 
   rowUpdated(row: ContainerTracking): void {
