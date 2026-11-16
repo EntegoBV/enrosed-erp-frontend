@@ -5720,3 +5720,66 @@ inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its A
   title the hour, the detail "lost in Zaltbommel op …".
 - Checked locally on a dev jar (desk 1280/1070, phone 375; portal desk and phone; edit-mode draft with an
   unsaved name, then the sheet, then Opslaan).
+
+## Track & trace uit de bill of lading (2026-11-16)
+
+Emre, with the "Schip koppelen" block of the panel (IMO number only): "Moet ook met bill of lading kunnen, bekijk
+onze documenten en pas alles fatsoenlijk aan zodat alle track traces nu wel correct zijn." The server reads the B/L
+PDFs in the order's dossier, proposes what to take over and stores a linked ship's own arrival; this is where the
+screens live. Backend side: its AI-CONTEXT (same title) and `docs/integrations/container-tracking.md`.
+
+- **API** (`core/api/models.ts`, `sourcing-api.ts`): `SourcingApi.billOfLading(orderId)` (GET
+  `/api/purchase-orders/{id}/bill-of-lading` → `BillOverview`: `current`, `documents` (`BillDocumentReading`, one
+  per listed document; `readable` or a Dutch `note`), `proposals` (`BillProposal`, one per readable bill) and
+  `bestDocumentId`) and `applyBillOfLading(orderId, { documentId, imo, expectedReference })` (POST → the
+  `PurchaseOrderView` after the tracking check that follows). The server works every proposal out, and again on the
+  apply; the client only shows it. Never change these names without the backend.
+- **`features/purchasing/purchase-bill-sheet.ts`** (`app-purchase-bill-sheet`, title Bill of lading; input
+  `orderId`, outputs `applied`, `uploaded`, `closed`) loads and saves itself, as the Aankomst sheet does. It shows
+  one bill (starts on `bestDocumentId`; a chooser when several read): B/L, Container, Schip, Route, Aan boord /
+  Uitgegeven; then "Wat verandert" with only what changes (Referentie, Vertrek, Schip "wordt gekoppeld · IMO",
+  Schip op de B/L), the server's `portNote` and `warnings` in amber, documents without a reading as quiet lines
+  (name · note), and "Andere B/L toevoegen" (uploads as kind BILL_OF_LADING, emits `uploaded`, reads again).
+  A ship the ERP never linked has no IMO number (there is no keyless lookup by name): one optional field
+  "IMO-nummer van {schip}" with a VesselFinder search link, typed once per ship. Overnemen is enabled when the
+  proposal changes something or a valid IMO is typed that is not the linked one; text that is no IMO number blocks
+  it until put right or emptied. The request sends `expectedReference` (the reference the sheet read; the server
+  refuses when it changed) and the IMO as the seven digits of `normalizedVesselImo`.
+- **Where it opens**: the tracking panel has an output `bill` and the button "Uit de bill of lading" in the call to
+  action "Je schip op de kaart" and above the IMO form in BOTH states of the section (unlinked and "Schip en bron"),
+  only for `orderStatus` BESTELD or ONDERWEG (`billOffered`; the server refuses the rest). `purchase-tracking.ts`
+  passes it on. The desk and the phone view host the sheet AFTER `<app-purchase-tracking>` in their template: every
+  overlay has the same z-index, the later element is on top, and the sheet opens from inside the Track & trace
+  sheet. An order without a reference has no Track & trace sheet: the desk's Order fact "Track & trace" shows
+  "— Uit de bill of lading ›" and the phone view a row "Track & trace / Uit de bill of lading". Not while the desk
+  edits or saves; the phone editor has none. `/purchasing/tracking` hosts it for the selected row (`billOrderId`).
+- **After Overnemen** the hosts never call `load()` (it empties the page). Desk `onBillApplied`: the reference and
+  the two dates go into the order AND into the clean baseline `savedOrder` (as `onArrivalSaved`), `arrival` and
+  `attention` come from the answer, then `loadDocuments`. Phone view: order, `arrival` and `attention` from the
+  answer, documents read again (`reloadDocuments`, without emptying the list). Both close the Track & trace sheet
+  and call `trackingPanel().reloadNow(billAppliedRow(row, fresh))` (`purchase-tracking-model.ts`): the pages read
+  their dates from the tracking row, so a row from before the apply would show the old departure and arrival.
+  The tracking page reads the feed again past a read in flight and keeps the order selected: the search is
+  cleared when the new reference no longer matches it, the filter goes back to Alles when the row left it.
+- **The ship's arrival** (`portArrivedOn`: the day the linked ship reached the port of destination, from its port
+  calls; "schip aangekomen", never "gelost"). `container-tracking-model.ts`: `trackingShipArrived(row)` (null once
+  received), `trackingInPort` (the list filter and its counts), `trackingStatus` answers "Schip aangekomen" (ok
+  tone), `trackingListLine.arrivalTitle` ("Aankomst"). `trackingArrived` is NOT changed: checks, failure notices
+  and the check age go on until the container is received. Panel: the fact reads "Aankomst container" with
+  "schip aangekomen", a note above the map, "Uit B/L: {schip} · reis {reis}" under the ship's name and an amber
+  line when `vesselDiffers` (then the server takes no arrival over). Order pages: `orderShipArrivedOn(view, row)`
+  (the tracking row's day when one is loaded, else `view.arrival.portArrivedOn`) and `shipArrivedText` in
+  `purchase-arrival-sheet.ts`; the day of the words is always the ship's, so beside a date by hand they carry it:
+  "schip aangekomen zo 15/11 · met de hand" (desk fact, phone cell). The Aankomst sheet says "Schip aangekomen op
+  …" instead of "Track & trace zet deze datum.", and as an extra line in hand mode; "Track & trace volgen" then
+  shows that day at once (the server puts the container on it).
+- **Partnerportaal** (`partner-containers-model.ts`): `shipInDay(container)`; for such a container the port day is
+  that day, not `expectedArrival`: `portCell` and `arrivalWords` give the day without ± and hour and "schip is
+  binnen", never late for the port (`isLate` still counts a passed warehouse day), `arrivalLine` "za 15 nov · schip
+  is binnen", `portLine` adds the words beside a planned warehouse day, Komt eraan sorts on that day, the bar is
+  full, the calendar puts it on the warehouse day first, else that day.
+- **Older backend**: every new field is optional and reads as absent (no "schip aangekomen", no "Uit B/L"). The
+  buttons show; without the endpoint the sheet shows its load error with the server's message and nothing else
+  changes. **Native app**: untouched (it reads the feed with its own port of the rules).
+- Checked by `ng build` only (this round ran without a dev server): look at the panel in both states, the sheet on
+  a desk of 1070 px and a phone of 375 px, and the order pages after Overnemen on the first deploy.
