@@ -405,6 +405,8 @@ export interface PartnerContainer {
   /** Set by hand in the ERP, not received yet: the day and hour it is expected at the warehouse (Zaltbommel). */
   warehouseArrivalOn?: string | null;
   warehouseArrivalTime?: string | null;
+  /** The day its ship arrived at the port of destination; null once received, absent on an older server. */
+  portArrivedOn?: string | null;
 }
 
 /** A product as the container screen shows it: the tile plus the product card's sizes and packaging. */

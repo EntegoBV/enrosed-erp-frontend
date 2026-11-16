@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { api } from './api.config';
 import {
+  BillApplyRequest, BillOverview,
   FreightRate, LandedCost, MarketSourceStatus, PurchaseArrivalRequest, PurchaseOrder, PurchaseOrderView, Supplier, Receipt,
   ReceiptVarianceFilters, ReceiptVarianceReport, ReceiptIssue, ExpectedStock, PurchasePayment, Currency, Payee,
   PurchaseDocument, DocumentKind, PartnerFinancing, PurchasePaymentRow, PurchaseReconciliation,
@@ -103,6 +104,19 @@ export class SourcingApi {
   /** The arrival by hand: the container's day and hour at the port, the warehouse's day and hour. */
   setArrival(id: number, request: PurchaseArrivalRequest): Promise<PurchaseOrderView> {
     return firstValueFrom(this.http.put<PurchaseOrderView>(api(`/api/purchase-orders/${id}/arrival`), request));
+  }
+
+  /**
+   * The bills of lading in the order's dossier as the server reads them, and what taking one over would change.
+   * Reads stored documents only. A server before 2026-11-16 has no such endpoint and answers 404.
+   */
+  billOfLading(orderId: number): Promise<BillOverview> {
+    return firstValueFrom(this.http.get<BillOverview>(api(`/api/purchase-orders/${orderId}/bill-of-lading`)));
+  }
+
+  /** Takes one bill over (reference, departure, ship) and answers the order as it stands after the tracking check. */
+  applyBillOfLading(orderId: number, body: BillApplyRequest): Promise<PurchaseOrderView> {
+    return firstValueFrom(this.http.post<PurchaseOrderView>(api(`/api/purchase-orders/${orderId}/bill-of-lading`), body));
   }
 
   /** A partner comes in, the deal changes, or the partner leaves; a null customer ends the deal. */

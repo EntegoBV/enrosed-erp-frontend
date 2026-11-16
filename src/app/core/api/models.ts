@@ -1806,6 +1806,11 @@ export interface PurchaseArrival {
   containerByHand: boolean;
   warehouseOn: string | null;
   warehouseAt: string | null;
+  /**
+   * The day the linked ship arrived at the port of destination, from its port calls ("schip aangekomen", never
+   * "container gelost"); missing on a server before 2026-11-16.
+   */
+  portArrivedOn?: string | null;
 }
 
 /**
@@ -1818,6 +1823,91 @@ export interface PurchaseArrivalRequest {
   containerByHand: boolean;
   warehouseOn: string | null;
   warehouseAt: string | null;
+}
+
+/* ---- track & trace from the bill of lading (2026-11-16): GET/POST /api/purchase-orders/{id}/bill-of-lading ---- */
+
+/**
+ * One document of the dossier as the server read it. readable: it counts as a bill of lading and its facts
+ * are filled; otherwise note says in Dutch why not (no PDF, a scan without text, no bill recognised).
+ */
+export interface BillDocumentReading {
+  documentId: number;
+  filename: string;
+  label: string | null;
+  kind: DocumentKind;
+  kindLabel: string;
+  addedAt: string;
+  readable: boolean;
+  note: string | null;
+  /** A draft bill: its ship can still change. */
+  draft: boolean;
+  carrier: string | null;
+  billNumber: string | null;
+  containers: string[];
+  vessel: string | null;
+  voyage: string | null;
+  portOfLoading: string | null;
+  portOfDischarge: string | null;
+  /** "Laden on board" (yyyy-mm-dd); only a final bill has it. */
+  onBoard: string | null;
+  issuedOn: string | null;
+}
+
+/**
+ * What taking over one readable bill would change, worked out by the server (the apply works it out again and
+ * never trusts these values). imo: the ship's IMO when the ERP knows it, from the order's own link ('LINKED') or
+ * from a ship linked before under this name ('KNOWN'); null when the user has to type it once.
+ */
+export interface BillProposal {
+  documentId: number;
+  reference: string | null;
+  referenceChanges: boolean;
+  vessel: string | null;
+  voyage: string | null;
+  imo: string | null;
+  imoFrom: 'LINKED' | 'KNOWN' | null;
+  shipChanges: boolean;
+  /** The ship and voyage stored with the order as "what the B/L names" would change (a draft stores none). */
+  billShipChanges: boolean;
+  shippedOn: string | null;
+  shippedOnChanges: boolean;
+  /** The bill's ports and the order's are not the same places, in words; null when they agree. */
+  portNote: string | null;
+  warnings: string[];
+}
+
+/** The order as it stands, beside the proposals. vesselName: null while no feed named the linked ship. */
+export interface BillCurrent {
+  trackingReference: string | null;
+  shippedOn: string | null;
+  status: PurchaseOrder['status'];
+  vesselImo: string | null;
+  vesselName: string | null;
+  departurePort: string | null;
+  destinationPort: string | null;
+  billVessel: string | null;
+  billVoyage: string | null;
+}
+
+export interface BillOverview {
+  orderId: number;
+  current: BillCurrent;
+  documents: BillDocumentReading[];
+  /** One per readable bill. */
+  proposals: BillProposal[];
+  /** The bill to start on: final with an on-board day first, then other final bills, then drafts. */
+  bestDocumentId: number | null;
+}
+
+/**
+ * Take one bill over. imo: seven digits typed for a ship the ERP does not know yet, else null.
+ * expectedReference: the reference the sheet was opened with (null = none); the server refuses when it changed.
+ */
+export interface BillApplyRequest {
+  documentId: number;
+  imo: string | null;
+  expectedReference: string | null;
 }
 
 export type ReconciliationStatus = 'PLANNED' | 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID' | 'SETTLED_LOWER' | 'NOT_APPLICABLE' | 'ADDITIONAL';

@@ -83,6 +83,14 @@ export interface ContainerTracking {
   arrivalByHand?: boolean;
   /** The date the source gives now, while it differs from the date kept by hand. */
   sourceArrival?: string | null;
+  /* Since 2026-11-16 (track & trace from the bill of lading); absent on older servers. */
+  /** The day the linked ship arrived at the port of destination, from its port calls; not "container gelost". */
+  portArrivedOn?: string | null;
+  /** The ship and voyage the final bill of lading named when it was taken over. */
+  billVessel?: string | null;
+  billVoyage?: string | null;
+  /** The linked ship's own name is known and is not billVessel: its arrival is not taken over. */
+  vesselDiffers?: boolean;
 }
 
 export interface ContainerTrackingFeed {
