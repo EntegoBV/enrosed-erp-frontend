@@ -566,9 +566,9 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .compact-sheet__head > span { font-size: 7px; color: #e1c590; }
     .compact-sheet__head .compact-sheet__recipient { display: block; margin-bottom: 2px; color: #fffaf3; font-family: Georgia, serif; font-size: 9px; font-style: italic; overflow-wrap: anywhere; }
     .compact-sheet__rows { flex: 1; display: flex; flex-direction: column; gap: 5px; margin-top: 7px; overflow: hidden; }
-    .compact-card { display: grid; gap: 2px; min-width: 0; padding: 6px 9px 5px; border: 1px solid #e5d9d2; border-radius: 7px; background: #fff; }
+    .compact-card { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 6px 9px 5px; border: 1px solid #e5d9d2; border-radius: 7px; background: #fff; }
     .compact-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-    .compact-card__head b { min-width: 0; color: var(--studio-bordeaux); font-family: Georgia, serif; font-size: 9.5px; font-weight: 400; line-height: 1.2; }
+    .compact-card__head b { overflow-wrap: anywhere; color: var(--studio-bordeaux); font-family: Georgia, serif; font-size: 9.5px; font-weight: 400; line-height: 1.2; }
     .compact-card__head strong { flex: none; color: var(--studio-bordeaux); font-size: 8px; white-space: nowrap; }
     .compact-card__head .is-stale { color: var(--warn); }
     .compact-card__meta { color: #80676d; font-size: 6px; line-height: 1.3; }
@@ -581,7 +581,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
     .compact-card__more { color: #80676d; font-size: 7px; }
     .compact-card__ribbon { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0; padding-top: 4px; border-top: 1px solid #efe6df; }
     .compact-card__ribbon dt { color: #7b3145; font-size: 5.3px; line-height: 1.3; }
-    .compact-card__head b, .compact-card__meta, .compact-card__colour em, .compact-card__colour small, .compact-card__ribbon dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .compact-card__meta, .compact-card__colour em, .compact-card__colour small, .compact-card__ribbon dt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .compact-card__ribbon dd { margin: 0; font-size: 7.5px; font-weight: 650; line-height: 1.25; }
     .compact-card__ribbon dd small { margin-left: 2px; color: #80676d; font-size: 5px; font-weight: 400; }
     .compact-sheet__empty { margin: 18px 0; font-size: 10px; color: #80676d; line-height: 1.5; }
