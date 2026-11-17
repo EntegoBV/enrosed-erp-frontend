@@ -1,6 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
-import { billAppliedRow, purchaseTrackedOrder } from './purchase-tracking-model';
+import { arrivalSavedRow, billAppliedRow, purchaseTrackedOrder } from './purchase-tracking-model';
 import { billOffered, trackingMove } from './container-tracking-model';
 import { PurchaseArrivalSheet, arrivalText, orderArrival, orderShipArrivedOn, shipArrivedText, shipIsIn } from './purchase-arrival-sheet';
 import { PurchaseBillSheet } from './purchase-bill-sheet';
@@ -1092,19 +1092,17 @@ export class PurchaseView {
     return order.receivingLocationId == null || order.receivingLocationId === main?.id || order.partnerCustomerId != null;
   }
 
-  /** The sheet saved: the order as it stands now, and the tracking row read again for the day and the hand mark. */
+  /**
+   * The sheet saved: the order as it stands now, and the tracking row patched (the days, the ship's arrival a new
+   * departure may have taken back, the hand mark) and read again; the cells read their days from the row.
+   */
   onArrivalSaved(fresh: PurchaseOrderView): void {
     this.arrivalOpen.set(false);
     this.view.update((current) => current ? { ...current, order: fresh.order, arrival: fresh.arrival ?? null } : fresh);
     const panel = this.trackingPanel();
     const row = panel?.row() ?? null;
     if (!panel) return;
-    const moved = row && row.orderExpectedArrival !== (fresh.order.expectedArrival ?? null);
-    panel.reloadNow(row ? {
-      ...row, orderExpectedArrival: fresh.order.expectedArrival ?? null, orderShippedOn: fresh.order.shippedOn ?? null,
-      arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
-      ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
-    } : undefined);
+    panel.reloadNow(row ? arrivalSavedRow(row, fresh) : undefined);
   }
 
   /* ---- track & trace from the bill of lading (2026-11-16) ---- */

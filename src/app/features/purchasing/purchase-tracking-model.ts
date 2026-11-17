@@ -43,6 +43,16 @@ export function billAppliedRow(row: ContainerTracking, fresh: Pick<PurchaseOrder
   };
 }
 
+/**
+ * The tracking row right after the Aankomst sheet saved, until the read that follows answers (and on the desk while
+ * it edits, where no read follows): what billAppliedRow takes from the answer (the departure, the arrival, the ship's
+ * arrival a new departure may have taken back, a dropped move), the container's hand mark, and no source date
+ * beside it until the read names one again. One helper for every host, so none keeps a day from before the save.
+ */
+export function arrivalSavedRow(row: ContainerTracking, fresh: Pick<PurchaseOrderView, 'order' | 'arrival'>): ContainerTracking {
+  return { ...billAppliedRow(row, fresh), arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null };
+}
+
 /** Consume each fetched row once, so an old snapshot cannot undo a later manual save. */
 export class PurchaseTrackingBaseline {
   private readonly seen = new WeakSet<ContainerTracking>();

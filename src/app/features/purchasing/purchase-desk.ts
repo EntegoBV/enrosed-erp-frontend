@@ -1,6 +1,6 @@
 import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
-import { billAppliedRow, purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
+import { arrivalSavedRow, billAppliedRow, purchaseTrackedOrder, PurchaseTrackingBaseline } from './purchase-tracking-model';
 import { billOffered, trackingMove } from './container-tracking-model';
 import { stepTrackingReference } from './tracking-reference';
 import type { ContainerTracking } from '../../core/api/container-tracking-models';
@@ -1662,17 +1662,19 @@ export class PurchaseDesk extends PurchaseEditor {
     return { ...data, order, arrival };
   });
 
-  /** The Aankomst sheet saved: the tracking row shows the day and the hand mark the server has now. */
+  /**
+   * The Aankomst sheet saved: the tracking row shows the days and the hand mark the server has now. Also while the
+   * desk edits: there is no panel then, and arrivalView() lays lastTrackingRow over the draft, so a row from before
+   * the save reopened the sheet on the old days (and in hand mode wrote them back). Only this order's row, under the
+   * reference the server has, is patched.
+   */
   protected override afterArrivalSaved(fresh: PurchaseOrderView): void {
     const panel = this.trackingPanel();
-    const row = panel?.row() ?? null;
-    if (!panel) return;
-    const moved = row && row.orderExpectedArrival !== (fresh.order.expectedArrival ?? null);
-    panel.reloadNow(row ? {
-      ...row, orderExpectedArrival: fresh.order.expectedArrival ?? null, orderShippedOn: fresh.order.shippedOn ?? null,
-      arrivalByHand: fresh.arrival?.containerByHand === true, sourceArrival: null,
-      ...(moved ? { arrivalMovedFrom: null, arrivalMovedAt: null, arrivalMovedDays: null } : {}),
-    } : undefined);
+    const row = panel?.row() ?? this.lastTrackingRow();
+    const patched = row && row.orderId === fresh.order.id && row.trackingReference === fresh.order.trackingReference
+      ? arrivalSavedRow(row, fresh) : null;
+    if (patched) this.lastTrackingRow.set(patched);
+    panel?.reloadNow(patched ?? undefined);
   }
 
   /* ---- track & trace from the bill of lading (2026-11-16) ---- */
