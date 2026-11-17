@@ -5694,9 +5694,10 @@ Emre's round 2 (design `BRIEF-R2.md`, contract `CONTRACT-R2.md` v2). The backend
 Emre: "aankomst container ook manueel kunnen zetten en aankomst Zaltbommel manueel op dag en uur van de
 inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its AI-CONTEXT (same date).
 
-- **`features/purchasing/purchase-arrival-sheet.ts`** (`app-purchase-arrival-sheet`, title Aankomst) saves
-  itself through `SourcingApi.setArrival` (PUT `/api/purchase-orders/{id}/arrival`) and emits the order as it
-  stands. Two parts: "Container in {aankomsthaven}" (day = `order.expectedArrival`, optional hour) and
+- **`features/purchasing/purchase-arrival-sheet.ts`** (`app-purchase-arrival-sheet`, title Aankomst, "Vertrek en
+  aankomst" while the departure shows, see below) saves itself through `SourcingApi.setArrival` (PUT
+  `/api/purchase-orders/{id}/arrival`) and emits the order as it stands. Two arrival parts: "Container in
+  {aankomsthaven}" (day = `order.expectedArrival`, optional hour) and
   "Aankomst {Lossen op}" (Zaltbommel for the main warehouse; day and hour). With a track & trace reference the
   container part has two modes: **Track & trace** (the day shown read-only, "Zelf instellen") and **Met de
   hand** (day and hour editable, "Track & trace volgen", and the source's own date when the tracking row names
@@ -5708,12 +5709,63 @@ inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its A
 - **Where it opens**: desk Order facts (Aankomst container and Aankomst {plaats}, both links; the old "Verwacht
   op" fact is gone), desk edit form (a full-width Aankomst button; the form no longer edits the day), phone
   view (two pressable rows under Betaalplan, the value under the title), phone editor (one Aankomst row). Not
-  for a received order (Ontvangen op stays).
+  for a received order (Ontvangen op stays). Since 2026-11-16 also the Vertrek row / cell (below).
 - **Draft safety**: `PurchaseEditor.onArrivalSaved` moves only the day (and shippedOn) and the arrival block
   into the draft AND its clean baseline (`savedOrder`), so the sheet never marks the form dirty and the next
-  Opslaan carries the new day. The desk and the phone view refresh the tracking row (`PurchaseTracking.reloadNow`
-  with a patched row) because `trackingOrder` reads the day from it.
+  Opslaan carries the new day (also after a departure-only save). The desk and the phone view patch the tracking
+  row because the pages read their days from it: one helper, `arrivalSavedRow(row, fresh)` in
+  `purchase-tracking-model.ts` (= `billAppliedRow` + the container's `arrivalByHand`, `sourceArrival: null`: the
+  departure, the arrival, the ship's `portArrivedOn` and a dropped move come from the answer). Desk
+  `afterArrivalSaved` takes `trackingPanel()?.row() ?? lastTrackingRow()`, and for this order's row (same
+  `orderId` and the reference the server has) ALWAYS sets `lastTrackingRow` to the patched row, then
+  `panel.reloadNow(patched)` when a panel exists. **Edit-mode repair (2026-11-16)**: while the desk edits there
+  is no `<app-purchase-tracking>`, the method used to return there, and `arrivalView()` laid the row read before
+  Bewerken over the fresh draft: the sheet opened a second time showed the days from before the save and, in
+  hand mode, wrote them back. The phone view's `onArrivalSaved` uses the same helper.
 - The tracking panel says "met de hand gezet · track & trace meldt …" under Verwachte aankomst container.
+- **Vertrek met de hand (2026-11-16)**. Emre, asked "Zal ik een vertrekdag met de hand toevoegen aan het
+  Aankomst-venster?": "Ja, voeg toe". The server rules (a day by hand stays until a bill of lading's day or a
+  status step back; an arrival outside the new voyage goes) are in the backend AI-CONTEXT; the contract and its
+  critiques in `work/arrivals/departure/` (CONTRACT.md v2, CRITIQUES.md).
+  - **The one rule**, in `purchase-arrival-sheet.ts`: `orderDepartureDay(view, order)` = `order.shippedOn` when
+    `departureOnServer(view)` (`typeof view.arrival.departureByHand === 'boolean'`, read raw: `orderArrival()`
+    copies `=== true`), `order.status === 'ONDERWEG'` and the day is a real yyyy-mm-dd; else null. It alone
+    decides the sheet's section and title, the desk's Vertrek row, the phone's Vertrek cell, the desk's
+    "vertrokken …" small it replaces and the editors' label. On a server without the release (it ignores an
+    unknown `shippedOn` and answers the old day) it answers null and every screen is as before, so no
+    "Vertrek opgeslagen" for a day that was not stored.
+  - **The sheet**: a first section "Vertrek uit {`costLabels.loadingPort`, else `order.departurePort`}" (just
+    "Vertrek" without either) with one Dag field (`arr-departure-day`; no `data-initial-focus`, the close button
+    keeps the first focus so the phone keyboard stays shut). `departureTyped` (null until the field's
+    `valueChange`) is the only draft: NO copy in ngOnInit and none in `start`, because `start` follows the live
+    view the hosts re-emit when the minute's tracking read brings another day; a copy compared with it would send
+    a stale day and pin it by hand. The field shows `departureTyped() ?? stored`; the departure is **changed**
+    only when the section shows and the typed day differs from the stored one. Only a changed departure lights
+    Opslaan, is sent as `shippedOn` (else the property is left out; a request carrying it means "by hand" to the
+    server), shows the tag "Met de hand" early, blocks ("Kies de vertrekdag.", "De vertrekdag kan niet in de
+    toekomst liggen." against `brusselsToday()` read in the computed; the order date is the server's rule, its
+    refusal shows in the toast), warns and is named in the toast ("Vertrek opgeslagen", "Vertrek en aankomst
+    opgeslagen", else "Aankomst opgeslagen"; failure fallback "Opslaan mislukt"). The tag (`arr__tag--hand`)
+    shows only with a saved reference (`tracked()`), for a stored day by hand or a changed one; no "Track &
+    trace" tag, no explaining line and no way back (a day by hand nobody trusts is typed again; a final B/L
+    taken over replaces it). One quiet warning (`arr__note--warn`) for a changed valid day D while the ship is
+    in and that day lies before D + 7 or after D + 180: "Let op: met deze vertrekdag vervalt 'schip aangekomen'
+    (…)" (`ARRIVAL_EARLIEST_DAYS` / `ARRIVAL_LATEST_DAYS`, the server's `TrackingDateSync` pair: change both
+    sides or neither). A save that changed the departure runs the tracking check on the server, so Opslaan can
+    say "Bezig…" a few seconds.
+  - **Where it shows**: desk Order facts (read mode) `@let departureDay = orderDepartureDay(data, trackedOrder)`
+    under `@let trackedOrder`; a row "Vertrek" above Aankomst container (the day as a link to the sheet,
+    `<small>met de hand</small>` when `trackingReference && arrival.departureByHand`); the Track & trace row's
+    small only `@if (trackedOrder.shippedOn && !departureDay)`, so the day is said once and every other order
+    (Besteld with a bill's day, received, older server) keeps it. Phone view: `trackedDeparture` (the rule on
+    `purchaseTrackedOrder(order, row)`, as the progress strip) and a pressable cell "Vertrek" above Aankomst
+    container (" · met de hand" on the same condition). Both hosts hand the sheet `arrivalView()` (the order with
+    the row's fresher dates); the phone editor hands it its draft, which is what it shows (it has no row). The
+    editors (desk `dk-arrival`, phone `po-arrival`) read "Vertrek en aankomst" while the rule answers a day, and
+    their "Vertrokken op …" line ends with " · met de hand" (`PurchaseEditor.departureMarked`: the rule, a
+    reference and the stored flag). No viewChild of the sheet anywhere (its `view` input is required: NG0950).
+  - Not changed: the progress strip, the tracking panel ("Vertrokken volgens order" reads the patched row), the
+    bill sheet, the partner portal, the native app. Checked by build and by reading only; not looked at live.
 - **Partnerportaal**: `PartnerContainer.expectedArrivalTime`, `warehouseArrivalOn`, `warehouseArrivalTime`,
   `PartnerContainerPage.warehouseName`. `partner-containers-model`: `warehouseDay`, `hourText`; `calendarDay`
   puts a container on its warehouse day first; `isLate` uses that day; `arrivalWords` gives `warehouse` /
