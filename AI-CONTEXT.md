@@ -5721,7 +5721,11 @@ inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its A
   `panel.reloadNow(patched)` when a panel exists. **Edit-mode repair (2026-11-16)**: while the desk edits there
   is no `<app-purchase-tracking>`, the method used to return there, and `arrivalView()` laid the row read before
   Bewerken over the fresh draft: the sheet opened a second time showed the days from before the save and, in
-  hand mode, wrote them back. The phone view's `onArrivalSaved` uses the same helper.
+  hand mode, wrote them back. The phone view's `onArrivalSaved` uses the same helper. The desk's "Container
+  vertrokken" (`confirmAdvance`, also offered while the desk edits) patches the same kept row after its save,
+  with `billAppliedRow` (the step changes no hand mark or source date), and the panel's when there is one: the
+  step writes the departure day, and a row from before Bewerken without it opened the sheet without its Vertrek
+  part while the form already read "Vertrek en aankomst" (2026-11-17).
 - The tracking panel says "met de hand gezet · track & trace meldt …" under Verwachte aankomst container.
 - **Vertrek met de hand (2026-11-16)**. Emre, asked "Zal ik een vertrekdag met de hand toevoegen aan het
   Aankomst-venster?": "Ja, voeg toe". The server rules (a day by hand stays until a bill of lading's day or a

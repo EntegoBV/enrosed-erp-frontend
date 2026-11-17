@@ -2042,7 +2042,19 @@ export class PurchaseDesk extends PurchaseEditor {
       const tracking = this.stepReference(prompt);
       this.stepPrompt.set(null);
       /* One save: the tracking with the status. The B/L goes to the dossier only once that save went through (F9). */
-      this.enqueue((order) => ({ ...order, trackingReference: tracking, status: 'ONDERWEG' }), () => {
+      this.enqueue((order) => ({ ...order, trackingReference: tracking, status: 'ONDERWEG' }), (saved) => {
+        /* The step wrote the departure day, and arrivalView() lays the kept tracking row over the order. While the
+           desk edits no panel reads that row again: a row from before Bewerken, without the day, opened the sheet
+           without its Vertrek part under the label "Vertrek en aankomst". billAppliedRow takes the two days and the
+           ship's arrival from the answer (the step changes no hand mark or source date); in read mode the panel's
+           row gets it too until its next read. Only this order's row, under the reference the server has. */
+        const panel = this.trackingPanel();
+        const row = panel?.row() ?? this.lastTrackingRow();
+        if (row && row.orderId === saved.order.id && row.trackingReference === saved.order.trackingReference) {
+          const patched = billAppliedRow(row, saved);
+          this.lastTrackingRow.set(patched);
+          panel?.reloadNow(patched);
+        }
         this.statusCelebration.set('SHIPPED');
         if (file) void this.attachBillOfLading(data.order.id, file, bill);
       });
