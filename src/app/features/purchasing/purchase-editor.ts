@@ -56,7 +56,7 @@ import { applyShare, shareBody, shareNewPart, sharePartsOf, shareStatus, shareTo
 import { receiptLocalParts } from '../../shared/received-at';
 import { PurchaseSettleSheet } from './purchase-settle-sheet';
 import { PurchaseFirstInstalmentSheet } from './purchase-first-instalment-sheet';
-import { PurchaseArrivalSheet, arrivalText, orderArrival } from './purchase-arrival-sheet';
+import { PurchaseArrivalSheet, arrivalText, orderArrival, orderDepartureDay } from './purchase-arrival-sheet';
 import { ContextMenu, type ContextMenuItem } from '../../shared/context-menu';
 import { SwipeActions } from '../../shared/swipe-actions';
 import { PurchasePaymentPlanSheet } from './purchase-payment-plan-sheet';
@@ -280,7 +280,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   @if (!isReceived()) {
                     @let arrival = orderArrival(data);
                     <button class="ios-cell" id="po-arrival" type="button" [disabled]="saving()" (click)="openArrival()">
-                      <span class="ios-cell__body"><span class="ios-cell__title">Aankomst</span>
+                      <span class="ios-cell__body"><span class="ios-cell__title">{{ orderDepartureDay(data, data.order) ? 'Vertrek en aankomst' : 'Aankomst' }}</span>
                         <span class="ios-cell__sub mpo-wrap mpo-arrival">Container: {{ arrivalText(data.order.expectedArrival, arrival.containerAt) }}@if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
                         <span class="ios-cell__sub mpo-wrap mpo-arrival">{{ receivingLocationName(data.order.receivingLocationId) }}: {{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }}</span></span>
                       <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
@@ -301,7 +301,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                   @if (data.order.status !== 'CONCEPT') {
                     <label class="ios-cell mpo-field-row mpo-field-row--stack" for="mpo-tracking">
                       <span class="ios-cell__body"><span class="ios-cell__title">Track &amp; trace</span>
-                        @if (data.order.shippedOn) { <span class="ios-cell__sub">Vertrokken op {{ data.order.shippedOn | dateNl }}</span> }</span>
+                        @if (data.order.shippedOn) { <span class="ios-cell__sub">Vertrokken op {{ data.order.shippedOn | dateNl }}{{ departureMarked(data) ? ' · met de hand' : '' }}</span> }</span>
                       <input class="mpo-input mpo-input--wide" id="mpo-tracking" type="text" autocomplete="off" placeholder="Containernummer of BL: nummer"
                              [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
                       <app-tracking-reference-hint variant="ios" [value]="data.order.trackingReference" [quiet]="data.order.status === 'ONTVANGEN'" (rewrite)="patch({ trackingReference: $event })" />
@@ -3703,6 +3703,16 @@ export class PurchaseEditor {
   readonly arrivalOpen = signal(false);
   readonly arrivalText = arrivalText;
   readonly orderArrival = orderArrival;
+  /** The one rule for where the departure shows (the editors' label; on the desk also the Vertrek row). */
+  readonly orderDepartureDay = orderDepartureDay;
+
+  /**
+   * The departure carries "met de hand" where the read page does: while it shows, and, as the container's mark, only
+   * with a track & trace reference.
+   */
+  departureMarked(view: PurchaseOrderView): boolean {
+    return !!orderDepartureDay(view, view.order) && !!view.order.trackingReference && orderArrival(view).departureByHand === true;
+  }
 
   openArrival(): void {
     const data = this.view();

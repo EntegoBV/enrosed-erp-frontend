@@ -2,7 +2,7 @@ import { PurchaseSalesLinks } from './purchase-sales-links';
 import { PurchaseTracking } from './purchase-tracking';
 import { arrivalSavedRow, billAppliedRow, purchaseTrackedOrder } from './purchase-tracking-model';
 import { billOffered, trackingMove } from './container-tracking-model';
-import { PurchaseArrivalSheet, arrivalText, orderArrival, orderShipArrivedOn, shipArrivedText, shipIsIn } from './purchase-arrival-sheet';
+import { PurchaseArrivalSheet, arrivalText, orderArrival, orderDepartureDay, orderShipArrivedOn, shipArrivedText, shipIsIn } from './purchase-arrival-sheet';
 import { PurchaseBillSheet } from './purchase-bill-sheet';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Location, NgTemplateOutlet } from '@angular/common';
@@ -281,6 +281,13 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                 @if (data.order.status !== 'ONTVANGEN') {
                   @let arrival = orderArrival(data);
                   @let tracked = trackedArrival();
+                  @if (trackedDeparture(); as departure) {
+                    <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
+                      <span class="ios-cell__body"><span class="ios-cell__title">Vertrek</span>
+                        <span class="ios-cell__sub mpo-wrap mpo-arrival">{{ arrivalText(departure, null) }}@if (data.order.trackingReference && arrival.departureByHand) { · met de hand }</span></span>
+                      <app-icon class="ios-cell__chev" name="chevron-right" [size]="16" />
+                    </button>
+                  }
                   <button class="ios-cell" type="button" aria-haspopup="dialog" (click)="openArrival()">
                     <span class="ios-cell__body"><span class="ios-cell__title">Aankomst container</span>
                       <span class="ios-cell__sub mpo-wrap mpo-arrival" [class.mpo-arrival--empty]="!tracked">{{ arrivalText(tracked, tracked === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }}@if (shipArrivedText(shipArrivedOn(), tracked, !!data.order.trackingReference && arrival.containerByHand); as shipText) { · {{ shipText }} } @else if (data.order.trackingReference && arrival.containerByHand) { · met de hand }</span>
@@ -1066,6 +1073,14 @@ export class PurchaseView {
   readonly trackedArrival = computed(() => {
     const data = this.view();
     return data ? purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? null).expectedArrival ?? null : null;
+  });
+  /**
+   * The departure the Vertrek cell shows: the tracking row's day when it is fresher (as the progress strip and the
+   * sheet it opens), on the one rule of orderDepartureDay. Null hides the cell.
+   */
+  readonly trackedDeparture = computed(() => {
+    const data = this.view();
+    return data ? orderDepartureDay(data, purchaseTrackedOrder(data.order, this.trackingPanel()?.row() ?? null)) : null;
   });
 
   openArrival(): void {

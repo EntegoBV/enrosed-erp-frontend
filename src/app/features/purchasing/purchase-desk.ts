@@ -122,6 +122,7 @@ export class PurchaseDeskStyles {}
     @if (view(); as data) {
       @let title = containerName(data.order);
       @let trackedOrder = trackingOrder() ?? data.order;
+      @let departureDay = orderDepartureDay(data, trackedOrder);
       <app-page-header [title]="title" [subtitle]="containerNumberHint(title, data.order.number) ?? ''"
                        [showBack]="true" [showBell]="false">
         @if (editing()) {
@@ -580,11 +581,12 @@ export class PurchaseDeskStyles {}
                         @if (isReceived() && data.order.receivedOn) { <div><dt>Ontvangen op</dt><dd>{{ data.order.receivedOn | dateNl }}</dd></div> }
                         @else {
                           @let arrival = orderArrival(data);
+                          @if (departureDay) { <div><dt>Vertrek</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(departureDay, null) }} ›</button>@if (data.order.trackingReference && arrival.departureByHand) { <small>met de hand</small> }</dd></div> }
                           <div><dt>Aankomst container</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(trackedOrder.expectedArrival, trackedOrder.expectedArrival === data.order.expectedArrival ? arrival.containerAt : null, data.order.trackingReference ? 'Datum onbekend' : 'Nog niet gepland') }} ›</button>@if (shipArrivedText(shipArrivedOn(), trackedOrder.expectedArrival, !!data.order.trackingReference && arrival.containerByHand); as shipText) { <small>{{ shipText }}</small> } @else if (data.order.trackingReference && arrival.containerByHand) { <small>met de hand@if (trackingPanel()?.row()?.sourceArrival; as source) { · track &amp; trace meldt {{ source | dateNl }} }</small> }@if (arrivalMove(); as move) { <small [class.pdk-moved--later]="move.news && move.later" [class.pdk-moved--earlier]="move.news && !move.later">was {{ move.from | dateNl }} · {{ move.text }}</small> }</dd></div>
                           <div><dt>Aankomst {{ receivingLocationName(data.order.receivingLocationId) }}</dt><dd><button class="linklike" type="button" aria-haspopup="dialog" (click)="openArrival()">{{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }} ›</button></dd></div>
                         }
                         <div><dt>Betaalplan</dt><dd>{{ paymentTermsLabel(data.order.paymentTerms) }} <button class="linklike" type="button" (click)="showPayments()">Betalingen ›</button></dd></div>
-                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — @if (billOffered(data.order.status)) { <button class="linklike" type="button" aria-haspopup="dialog" [disabled]="saving()" (click)="openBill()">Uit de bill of lading ›</button> } }@if (trackedOrder.shippedOn) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
+                        @if (data.order.status !== 'CONCEPT') { <div><dt>Track &amp; trace</dt><dd>@if (data.order.trackingReference) { <button class="linklike" type="button" (click)="showTracking()">{{ data.order.trackingReference }} ›</button> } @else { — @if (billOffered(data.order.status)) { <button class="linklike" type="button" aria-haspopup="dialog" [disabled]="saving()" (click)="openBill()">Uit de bill of lading ›</button> } }@if (trackedOrder.shippedOn && !departureDay) { <small>vertrokken {{ trackedOrder.shippedOn | dateNl }}</small> }</dd></div> }
                       </dl>
                     </section>
                     <section class="pdk-sec" aria-labelledby="pdk-sec-route">
@@ -626,7 +628,7 @@ export class PurchaseDeskStyles {}
                     @if (!isReceived()) {
                       @let arrival = orderArrival(data);
                       <div class="field">
-                        <label for="dk-arrival">Aankomst</label>
+                        <label for="dk-arrival">{{ orderDepartureDay(data, data.order) ? 'Vertrek en aankomst' : 'Aankomst' }}</label>
                         <button class="btn purchase-payment-plan-trigger" id="dk-arrival" type="button" [disabled]="saving()" (click)="openArrival()">Container {{ arrivalText(data.order.expectedArrival, arrival.containerAt) }} <span>Wijzigen</span></button>
                         <span class="hint">{{ receivingLocationName(data.order.receivingLocationId) }}: {{ arrivalText(arrival.warehouseOn, arrival.warehouseAt) }}@if (data.order.trackingReference && arrival.containerByHand) { · container met de hand }</span>
                       </div>
@@ -641,7 +643,7 @@ export class PurchaseDeskStyles {}
                         <label for="dk-tracking">Track &amp; trace <span class="opt"></span></label>
                         <input class="input" id="dk-tracking" placeholder="Containernummer of BL: nummer" [ngModel]="data.order.trackingReference ?? ''" (ngModelChange)="patch({ trackingReference: $event || null })" />
                         <app-tracking-reference-hint [value]="data.order.trackingReference" [quiet]="data.order.status === 'ONTVANGEN'" (rewrite)="patch({ trackingReference: $event })" />
-                        @if (data.order.shippedOn) { <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}.</span> }
+                        @if (data.order.shippedOn) { <span class="hint">Vertrokken op {{ data.order.shippedOn | dateNl }}{{ departureMarked(data) ? ' · met de hand' : '' }}.</span> }
                       </div>
                     }
                     <p class="desk-form__group">Route</p>
