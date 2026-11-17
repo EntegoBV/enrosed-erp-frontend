@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import type { ContainerTracking } from '../../core/api/container-tracking-models';
-import type { PurchaseArrival, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
+import type { PurchaseArrival, PurchaseArrivalRequest, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
 import { DateNlPipe } from '../../shared/pipes';
+import { brusselsToday } from '../../shared/product-incoming';
 import { Sheet, Ui } from '../../shared/ui';
 
 /** "di 18/11/2026 · 14:00", "Nog niet gepland". */
@@ -95,10 +96,25 @@ export function shipIsIn(portArrivedOn: string | null | undefined, shownDay: str
 const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
+ * The ship's arrival counts for a voyage from this many days after its departure up to this many: the server's
+ * TrackingDateSync.ARRIVAL_EARLIEST_DAYS / ARRIVAL_LATEST_DAYS (change both sides or neither). A departure set by
+ * hand that puts the stored arrival outside makes the server forget it, so the sheet says so before the save.
+ */
+export const ARRIVAL_EARLIEST_DAYS = 7, ARRIVAL_LATEST_DAYS = 180;
+
+/** yyyy-mm-dd plus a number of days. */
+function plusDays(day: string, days: number): string {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/**
  * Aankomst (Emre, 2026-11-15): the container's day and hour at the port, and the day and hour it is expected at
  * the place it is unloaded at (Zaltbommel). With track & trace the container's day follows the source until
  * "Zelf instellen"; then it stays as set until "Track & trace volgen". The sheet saves itself and hands the
  * order as it stands to its parent. Verhoeven sees both in the partner portal.
+ * Vertrek (Emre, 2026-11-16, "Ja, voeg toe"): for a container under way, the departure day as a first part. A day
+ * set here stays: tracking no longer moves it (until a bill of lading's day or a status step back).
  */
 @Component({
   selector: 'app-purchase-arrival-sheet',
@@ -106,8 +122,24 @@ const HOUR = /^([01]\d|2[0-3]):[0-5]\d$/;
   imports: [Sheet, DateField, DateNlPipe],
   template: `
     @let order = view().order;
-    <app-sheet title="Aankomst" variant="ios" (closed)="close()">
+    <app-sheet [title]="sheetTitle()" variant="ios" (closed)="close()">
       <div body class="arr" [attr.inert]="busy() ? '' : null">
+        @if (departureDay(); as stored) {
+          <!-- No data-initial-focus: the close button keeps the first focus, so the phone keyboard stays shut. -->
+          <section class="arr__part" aria-labelledby="arr-departure">
+            <div class="arr__head">
+              <h3 id="arr-departure">{{ departurePort() ? 'Vertrek uit ' + departurePort() : 'Vertrek' }}</h3>
+              @if (departureHand()) { <span class="arr__tag arr__tag--hand">Met de hand</span> }
+            </div>
+            <div class="arr__pair">
+              <div class="field">
+                <label for="arr-departure-day">Dag</label>
+                <app-date-field fieldId="arr-departure-day" [value]="departureTyped() ?? stored" (valueChange)="departureTyped.set($event)" />
+              </div>
+            </div>
+            @if (departureDropsShip()) { <p class="arr__note arr__note--warn">Let op: met deze vertrekdag vervalt 'schip aangekomen' ({{ text(shipArrivedOn(), null) }}).</p> }
+          </section>
+        }
         <section class="arr__part" aria-labelledby="arr-container">
           <div class="arr__head">
             <h3 id="arr-container">Container in {{ port() }}</h3>
@@ -246,6 +278,50 @@ export class PurchaseArrivalSheet implements OnInit {
   /** The day the linked ship arrived at the port: the tracking row's when the page has this order's, else the order's. */
   readonly shipArrivedOn = computed(() => orderShipArrivedOn(this.view(), this.trackingRow(), this.savedTrackingReference()));
 
+  /* ---- the departure (2026-11-16) ---- */
+  /**
+   * The stored departure the section shows, from the LIVE view: the hosts hand the sheet a new view when the minute's
+   * tracking read brings another day, and an untouched field follows it. Null hides the section (the one rule).
+   */
+  readonly departureDay = computed(() => orderDepartureDay(this.view(), this.view().order));
+  /**
+   * What the user set in the departure's Dag; null while untouched. Never copied from the order (no ngOnInit copy,
+   * not in start): a copy compared with the live day would send a stale day after a tracking read and pin it by hand.
+   */
+  readonly departureTyped = signal<string | null>(null);
+  /** The user set another day than the one stored: only then is it sent, checked, warned about and named. */
+  readonly departureChanged = computed(() => {
+    const stored = this.departureDay();
+    const typed = this.departureTyped();
+    return stored !== null && typed !== null && typed !== stored;
+  });
+  /** The loading port as the page's route names it (the server falls back on the supplier's port). */
+  readonly departurePort = computed(() => this.view().costLabels?.loadingPort?.trim() || this.view().order.departurePort?.trim() || '');
+  /** As the container's mark: only with a saved track & trace reference, for a stored day by hand or one being set. */
+  readonly departureHand = computed(() => this.tracked() && (orderArrival(this.view()).departureByHand || this.departureChanged()));
+  /**
+   * A changed departure only: the stored day as it stands never blocks (the server judges only a day that differs
+   * from it). Today is Brussels' day, as the server's, read here rather than kept from when the sheet opened. The
+   * order date is the server's to judge: an editor's draft may hold one the server does not know.
+   */
+  readonly departureProblem = computed(() => {
+    if (!this.departureChanged()) return null;
+    const day = this.departureTyped();
+    if (!day) return 'Kies de vertrekdag.';
+    if (day > brusselsToday()) return 'De vertrekdag kan niet in de toekomst liggen.';
+    return null;
+  });
+  /**
+   * The ship is in on a day that cannot be this voyage's arrival for the changed departure: the server then forgets
+   * "schip aangekomen" (and the day it put on the order). Said, not refused: a typo should not pass unseen.
+   */
+  readonly departureDropsShip = computed(() => {
+    const day = this.departureChanged() && !this.departureProblem() ? this.departureTyped() : null;
+    const ship = this.shipArrivedOn();
+    return !!day && !!ship && (ship < plusDays(day, ARRIVAL_EARLIEST_DAYS) || ship > plusDays(day, ARRIVAL_LATEST_DAYS));
+  });
+  readonly sheetTitle = computed(() => this.departureDay() ? 'Vertrek en aankomst' : 'Aankomst');
+
   /** The warehouse day lies before the day at the port: allowed (a hand slip is likelier), said quietly. */
   readonly beforePort = computed(() => {
     const port = this.containerOn();
@@ -254,6 +330,8 @@ export class PurchaseArrivalSheet implements OnInit {
   });
 
   readonly problem = computed(() => {
+    const departure = this.departureProblem();
+    if (departure) return departure;
     const containerAt = this.containerAt().trim();
     const warehouseAt = this.warehouseAt().trim();
     if (containerAt && !HOUR.test(containerAt.slice(0, 5))) return 'Het uur van de container is geen geldig uur.';
@@ -263,12 +341,14 @@ export class PurchaseArrivalSheet implements OnInit {
     return null;
   });
 
-  readonly changed = computed(() => {
+  /** The two arrival parts differ from the order as it stands (the departure has its own rule above). */
+  private readonly arrivalChanged = computed(() => {
     const start = this.start();
     return this.containerOn() !== start.containerOn || this.hour(this.containerAt()) !== start.containerAt
       || (this.tracked() && this.byHand() !== start.byHand)
       || this.warehouseOn() !== start.warehouseOn || this.hour(this.warehouseAt()) !== start.warehouseAt;
   });
+  readonly changed = computed(() => this.departureChanged() || this.arrivalChanged());
 
   ngOnInit(): void {
     const start = this.start();
@@ -301,20 +381,26 @@ export class PurchaseArrivalSheet implements OnInit {
   async save(id: number): Promise<void> {
     if (this.busy() || this.problem()) return;
     this.busy.set(true);
+    /* Decided before the call: a tracking read during it may hand the sheet another view. */
+    const departure = this.departureChanged() ? this.departureTyped() : null;
+    const arrival = this.arrivalChanged();
     try {
       const following = this.tracked() && !this.byHand();
-      const fresh = await this.sourcing.setArrival(id, {
+      const request: PurchaseArrivalRequest = {
         /* Following: the day the sheet opened with (the server keeps its stored day anyway). */
         containerOn: (following ? this.start().containerOn : this.containerOn()) || null,
         containerAt: following ? null : this.hour(this.containerAt()) || null,
         containerByHand: this.tracked() && this.byHand(),
         warehouseOn: this.warehouseOn() || null,
         warehouseAt: this.warehouseOn() ? this.hour(this.warehouseAt()) || null : null,
-      });
-      this.ui.toast('Aankomst opgeslagen');
+        /* Only a day the user set: the server reads a request that carries one as "by hand". */
+        ...(departure ? { shippedOn: departure } : {}),
+      };
+      const fresh = await this.sourcing.setArrival(id, request);
+      this.ui.toast(departure ? (arrival ? 'Vertrek en aankomst opgeslagen' : 'Vertrek opgeslagen') : 'Aankomst opgeslagen');
       this.saved.emit(fresh);
     } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Aankomst opslaan mislukt'), 'err');
+      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
     } finally {
       this.busy.set(false);
     }
