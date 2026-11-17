@@ -5769,7 +5769,7 @@ inkooporders; Verhoeven moet het op zijn portaal terugzien." Backend side: its A
     their "Vertrokken op …" line ends with " · met de hand" (`PurchaseEditor.departureMarked`: the rule, a
     reference and the stored flag). No viewChild of the sheet anywhere (its `view` input is required: NG0950).
   - Not changed: the progress strip, the tracking panel ("Vertrokken volgens order" reads the patched row), the
-    bill sheet, the partner portal, the native app. Checked by build and by reading only; not looked at live.
+    bill sheet, the partner portal, the native app. Looked at live on 2026-11-17 against a local backend: on the old server every screen reads as before (no section, no row, the small stays, label 'Aankomst'); on the new one 26/10 -> 20/10 by hand (row 'di 20/10/2026 › met de hand', strip, phone cell), the two refusals, the 'schip aangekomen' warning and its lapse, desk edit mode (save, reopen: the new day), desk 1070 and phone 390.
 - **Partnerportaal**: `PartnerContainer.expectedArrivalTime`, `warehouseArrivalOn`, `warehouseArrivalTime`,
   `PartnerContainerPage.warehouseName`. `partner-containers-model`: `warehouseDay`, `hourText`; `calendarDay`
   puts a container on its warehouse day first; `isLate` uses that day; `arrivalWords` gives `warehouse` /
