@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import type { ContainerTracking } from '../../core/api/container-tracking-models';
-import type { PurchaseArrival, PurchaseOrderView } from '../../core/api/models';
+import type { PurchaseArrival, PurchaseOrder, PurchaseOrderView } from '../../core/api/models';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { messageOf } from '../../core/api/errors';
 import { DateField } from '../../shared/date-field';
@@ -24,7 +24,38 @@ export function orderArrival(view: Pick<PurchaseOrderView, 'arrival'> | null | u
     warehouseOn: view?.arrival?.warehouseOn ?? null,
     warehouseAt: view?.arrival?.warehouseAt ?? null,
     portArrivedOn: view?.arrival?.portArrivedOn ?? null,
+    departureByHand: view?.arrival?.departureByHand === true,
   };
+}
+
+/**
+ * The server knows the departure by hand: it then always sends the boolean. Read raw, not through orderArrival(),
+ * which turns a missing one into false. An older server ignores a shippedOn it does not know and answers the old
+ * day, so without this the sheet would say "Vertrek opgeslagen" while nothing was stored.
+ */
+export function departureOnServer(view: Pick<PurchaseOrderView, 'arrival'> | null | undefined): boolean {
+  return typeof view?.arrival?.departureByHand === 'boolean';
+}
+
+/**
+ * The departure day the order pages show and the Aankomst sheet sets, or null. The one rule for every place the
+ * departure shows (the sheet's section and title, the desk's Vertrek row, the phone's Vertrek cell, the desk's
+ * "vertrokken …" small it replaces, the editors' label): a container under way with a real day, on a server that
+ * takes the day. Pass the order with the dates the page shows (the tracking row's when fresher). On an older server
+ * it answers null, so every screen reads as before.
+ */
+export function orderDepartureDay(view: Pick<PurchaseOrderView, 'arrival'> | null | undefined,
+    order: Pick<PurchaseOrder, 'status' | 'shippedOn'> | null | undefined): string | null {
+  const day = order?.shippedOn;
+  return departureOnServer(view) && order?.status === 'ONDERWEG' && isDay(day) ? day : null;
+}
+
+/** A real calendar day as yyyy-mm-dd ("2026-02-31" is none). */
+function isDay(value: string | null | undefined): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }
 
 /**

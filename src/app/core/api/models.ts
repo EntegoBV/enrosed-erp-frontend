@@ -1811,6 +1811,12 @@ export interface PurchaseArrival {
    * "container gelost"); missing on a server before 2026-11-16.
    */
   portArrivedOn?: string | null;
+  /**
+   * The departure day (order.shippedOn) was set by hand in the sheet, so tracking leaves it alone until a bill of
+   * lading's day or a status step back. Always a boolean on a server with the departure by hand, missing on an
+   * older one: its presence is how the screens know the server takes the day (departureOnServer).
+   */
+  departureByHand?: boolean;
 }
 
 /**
@@ -1823,6 +1829,11 @@ export interface PurchaseArrivalRequest {
   containerByHand: boolean;
   warehouseOn: string | null;
   warehouseAt: string | null;
+  /**
+   * The departure day ("yyyy-mm-dd") the user set; sent only then, so a request that carries it means "by hand".
+   * Left out, the server leaves the departure alone.
+   */
+  shippedOn?: string | null;
 }
 
 /* ---- track & trace from the bill of lading (2026-11-16): GET/POST /api/purchase-orders/{id}/bill-of-lading ---- */
