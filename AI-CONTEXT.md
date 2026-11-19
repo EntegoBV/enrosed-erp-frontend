@@ -2443,7 +2443,9 @@ cijfers'.
   (mixed on a concept), Zelf indelen a hand layout that starts from it and
   that the freight then counts; never required for sending.
 - PDF sheet: quote PDF in any of 8 languages, plus **Pakbon** (packing
-  slip, grouped per pallet when laid out).
+  slip, grouped per pallet when laid out). The pakbon sheet offers
+  Ontwerp Klassiek (v1, default) or Nieuw · v2 (2026-11-19, `design=v2`);
+  the choice is remembered per browser (`enrosed.packingSlip.design`).
 - A line on the customer's own price wears a quiet K beside its price (round
   3b): see "Klantprijs op offertes en facturen".
 - **Save queue**: every mutation goes through `enqueue(make)` - a strict

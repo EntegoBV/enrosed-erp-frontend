@@ -26,15 +26,39 @@ export interface NormalizedSalesPdfOptions {
   showBarcode: boolean;
 }
 
+/** The pakbon's two designs: v1 as it always was, v2 in the new purchase order's family. */
+export type PackingSlipDesign = 'v1' | 'v2';
+
 /** The packing slip has no commercial switches: it can only add packing identifiers. */
 export interface PackingSlipPdfOptions {
   showOuterCarton?: boolean;
   showBarcode?: boolean;
+  design?: PackingSlipDesign;
 }
 
 export interface NormalizedPackingSlipPdfOptions {
   showOuterCarton: boolean;
   showBarcode: boolean;
+  design: PackingSlipDesign;
+}
+
+const PACKING_SLIP_DESIGN_KEY = 'enrosed.packingSlip.design';
+
+/** The pakbon design last chosen in this browser; v1 when nothing is stored or storage is blocked. */
+export function rememberedPackingSlipDesign(): PackingSlipDesign {
+  try {
+    return localStorage.getItem(PACKING_SLIP_DESIGN_KEY) === 'v2' ? 'v2' : 'v1';
+  } catch {
+    return 'v1';
+  }
+}
+
+export function rememberPackingSlipDesign(design: PackingSlipDesign): void {
+  try {
+    localStorage.setItem(PACKING_SLIP_DESIGN_KEY, design);
+  } catch {
+    /* a convenience only: without storage the next sheet starts at v1 again */
+  }
 }
 
 export function normalizeSalesPdfOptions(options: SalesPdfOptions = {}): NormalizedSalesPdfOptions {
@@ -56,6 +80,7 @@ export function normalizePackingSlipPdfOptions(
   return {
     showOuterCarton: options.showOuterCarton ?? false,
     showBarcode: options.showBarcode ?? false,
+    design: options.design === 'v2' ? 'v2' : 'v1',
   };
 }
 
@@ -80,5 +105,7 @@ export function packingSlipPdfQuery(options: PackingSlipPdfOptions = {}): string
   const query = new URLSearchParams();
   query.set('showOuterCarton', String(resolved.showOuterCarton));
   query.set('showBarcode', String(resolved.showBarcode));
+  /* Only v2 names itself, so every link to the first design stays exactly as it was. */
+  if (resolved.design === 'v2') query.set('design', 'v2');
   return query.toString();
 }

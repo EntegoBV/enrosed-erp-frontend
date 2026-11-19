@@ -1,4 +1,5 @@
 import { euroText, otherBasisPrice, productSalesUnit, salesQuantityDetail, salesQuantityLabel } from '../products/product-sales-unit';
+import { rememberedPackingSlipDesign } from '../../core/api/sales-pdf-options';
 import { orderStepMultiple, orderStepNotice, orderStepOf, roundToOrderStep, unitsPerOrderStep } from '../products/product-order-step';
 import { partCartonNote, perPieceOptions, salesLineWithPerPiece } from './sales-per-piece';
 import { Segmented } from '../../shared/segmented';
@@ -4679,7 +4680,7 @@ export class SalesEditor {
   async downloadPackingSlip(): Promise<void> {
     const data = this.view();
     if (!data) return;
-    const blob = await this.sales.packingSlip(data.order.id);
+    const blob = await this.sales.packingSlip(data.order.id, { design: rememberedPackingSlipDesign() });
     saveBlob(blob, `${data.order.number.replace(/[\/\\:*?"<>|]/g, '-')}-pakbon.pdf`);
     this.pdfSheet.set(false);
     this.ui.toast('Pakbon gedownload — zonder prijzen, voor magazijn en transport');

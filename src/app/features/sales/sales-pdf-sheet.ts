@@ -17,6 +17,8 @@ import {
   PackingSlipPdfOptions,
   SalesPdfOptions,
   normalizePackingSlipPdfOptions,
+  rememberPackingSlipDesign,
+  rememberedPackingSlipDesign,
   normalizeSalesPdfOptions,
 } from '../../core/api/sales-pdf-options';
 import { saveBlob } from '../../core/api/download';
@@ -103,7 +105,7 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
                 <span class="choice-copy"
                   ><span class="choice-kicker">A4 · prijsloos</span>
                   <strong>Pakbon instellen</strong
-                  ><small>Voeg alleen indien nodig omdoos of barcode toe.</small></span
+                  ><small>Kies het ontwerp en voeg zo nodig omdoos of barcode toe.</small></span
                 >
                 <span class="choice-action">Instellen</span>
               </button>
@@ -305,6 +307,36 @@ export type SalesPdfChoice = 'DOCUMENT' | 'PACKING_SLIP';
               laadcontrole</span
             ><strong>Geen prijzen</strong>
           </div>
+          <div class="options-heading">
+            <strong>Ontwerp</strong>
+            <small>Je keuze blijft bewaard op dit toestel.</small>
+          </div>
+          <fieldset class="pdf-option-group packing-options">
+            <div class="option-grid">
+              <label class="pdf-option pdf-option--extra"
+                ><input
+                  type="radio"
+                  name="packing-design"
+                  [checked]="packingOptions().design === 'v1'"
+                  [disabled]="busy()"
+                  (change)="patchPacking({ design: 'v1' })"
+                />
+                <span><b>Klassiek</b><small>De pakbon zoals altijd.</small></span></label
+              >
+              <label class="pdf-option pdf-option--extra"
+                ><input
+                  type="radio"
+                  name="packing-design"
+                  [checked]="packingOptions().design === 'v2'"
+                  [disabled]="busy()"
+                  (change)="patchPacking({ design: 'v2' })"
+                />
+                <span
+                  ><b>Nieuw · v2</b><small>Naam, maat en kleur apart, zoals de nieuwe inkooporder.</small></span
+                ></label
+              >
+            </div>
+          </fieldset>
           <div class="options-heading">
             <strong>Extra productinformatie</strong>
             <small>Standaard uit; de pakbon gebruikt automatisch de klanttaal.</small>
@@ -688,7 +720,7 @@ export class SalesPdfSheet implements OnInit {
   readonly choice = signal<SalesPdfChoice | null>(null);
   readonly documentOptions = signal<NormalizedSalesPdfOptions>(normalizeSalesPdfOptions());
   readonly packingOptions = signal<NormalizedPackingSlipPdfOptions>(
-    normalizePackingSlipPdfOptions(),
+    normalizePackingSlipPdfOptions({ design: rememberedPackingSlipDesign() }),
   );
   readonly documentBusy = signal(false);
   readonly packingBusy = signal(false);
@@ -736,6 +768,7 @@ export class SalesPdfSheet implements OnInit {
     this.packingOptions.update((current) =>
       normalizePackingSlipPdfOptions({ ...current, ...patch }),
     );
+    if (patch.design) rememberPackingSlipDesign(patch.design);
   }
 
   open(choice: SalesPdfChoice): void {
