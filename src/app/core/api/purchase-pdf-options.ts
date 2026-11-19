@@ -1,10 +1,33 @@
 export type PurchasePdfLayout = 'PORTRAIT' | 'LANDSCAPE';
 export type PurchasePdfAudience = 'INTERNAL' | 'STANDARD' | 'SUPPLIER';
+/** The purchase order's two designs: v1 as it was before 2026-11-18 (Klassiek), v2 the current one. */
+export type PurchasePdfDesign = 'v1' | 'v2';
+
+const PURCHASE_PDF_DESIGN_KEY = 'enrosed.purchaseOrder.design';
+
+/** The design last chosen in this browser; v2, the current one, when nothing is stored or storage is blocked. */
+export function rememberedPurchasePdfDesign(): PurchasePdfDesign {
+  try {
+    return localStorage.getItem(PURCHASE_PDF_DESIGN_KEY) === 'v1' ? 'v1' : 'v2';
+  } catch {
+    return 'v2';
+  }
+}
+
+export function rememberPurchasePdfDesign(design: PurchasePdfDesign): void {
+  try {
+    localStorage.setItem(PURCHASE_PDF_DESIGN_KEY, design);
+  } catch {
+    /* a convenience only: without storage the next sheet starts at v2 again */
+  }
+}
 
 /** Optional switches accepted by the purchase PDF endpoint. */
 export interface PurchasePdfOptions {
   layout?: PurchasePdfLayout;
   audience?: PurchasePdfAudience;
+  /** Klassiek (v1) or the current design (v2, the default); the same choice for every layout. */
+  design?: PurchasePdfDesign;
   showRevenue?: boolean;
   showSupplier?: boolean;
   showPrices?: boolean;
@@ -34,6 +57,7 @@ export interface PurchasePdfOptions {
 export interface NormalizedPurchasePdfOptions {
   layout: PurchasePdfLayout;
   audience?: PurchasePdfAudience;
+  design: PurchasePdfDesign;
   showRevenue: boolean;
   showSupplier: boolean;
   showPrices: boolean;
@@ -75,6 +99,7 @@ export function normalizePurchasePdfOptions(
   return {
     layout,
     audience,
+    design: options.design === 'v1' ? 'v1' : 'v2',
     /* Landscape is the internal calculation: every cost column, unless a caller says otherwise. */
     showRevenue: options.showRevenue ?? layout === 'LANDSCAPE',
     showSupplier,
@@ -118,5 +143,7 @@ export function purchasePdfQuery(options: PurchasePdfOptions = {}): string {
   query.set('showSeparateCosts', String(resolved.showSeparateCosts));
   query.set('showFreight', String(resolved.showFreight));
   query.set('includeFreight', String(resolved.includeFreight));
+  /* Only the classic design names itself, so every link to the current design stays exactly as it was. */
+  if (resolved.design === 'v1') query.set('design', 'v1');
   return query.toString();
 }

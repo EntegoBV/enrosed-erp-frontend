@@ -6,7 +6,8 @@ import { FormsModule } from '@angular/forms';
 import { saveBlob } from '../../core/api/download';
 import { messageOf } from '../../core/api/errors';
 import {
-  NormalizedPurchasePdfOptions, PurchasePdfOptions, normalizePurchasePdfOptions,
+  NormalizedPurchasePdfOptions, PurchasePdfDesign, PurchasePdfOptions, normalizePurchasePdfOptions,
+  rememberPurchasePdfDesign, rememberedPurchasePdfDesign,
 } from '../../core/api/purchase-pdf-options';
 import { PurchasePdfLayout, SourcingApi } from '../../core/api/sourcing-api';
 import { PurchaseInspectionOptions } from '../../core/api/purchase-inspection-options';
@@ -90,7 +91,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER' | 'INSPECTION';
               <span></span><span></span><span></span>
             </span>
             <span class="choice-copy">
-              <span class="choice-kicker">A4 verticaal · intern</span>
+              <span class="choice-kicker">A4 verticaal · intern · {{ design() === 'v1' ? 'Klassiek' : 'Nieuw · v2' }}</span>
               <strong>Staande inkooporder</strong>
               <small>
                 {{ portraitOptionCount() === 0
@@ -240,6 +241,23 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER' | 'INSPECTION';
         } @else {
           <p class="intro">Kies de versie die past bij wat je ermee gaat doen.</p>
 
+          <fieldset class="pdf-option-group design-choice">
+            <legend>Ontwerp</legend>
+            <div class="design-options">
+              <label class="pdf-option">
+                <input type="radio" name="purchase-design" [checked]="design() === 'v1'"
+                       [disabled]="busyChoice() !== null" (change)="setDesign('v1')" />
+                <span><b>Klassiek</b><small>De inkooporder zoals vroeger.</small></span>
+              </label>
+              <label class="pdf-option">
+                <input type="radio" name="purchase-design" [checked]="design() === 'v2'"
+                       [disabled]="busyChoice() !== null" (change)="setDesign('v2')" />
+                <span><b>Nieuw · v2</b><small>Witte kaarten, naam en maat apart.</small></span>
+              </label>
+            </div>
+            <p class="group-note">Voor leverancier, staand en horizontaal. Blijft bewaard op dit toestel.</p>
+          </fieldset>
+
           <div class="choice-groups">
             <section class="choice-group" aria-labelledby="supplier-pdf-group">
               <div class="choice-group__head">
@@ -355,6 +373,7 @@ type PurchasePdfChoice = PurchasePdfLayout | 'SUPPLIER' | 'INSPECTION';
   `,
   styles: [`
     :host{display:contents}.intro{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
+    fieldset.design-choice{margin-top:14px}.design-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.design-options .pdf-option+.pdf-option{margin-top:0}.design-choice .group-note{margin:6px 4px 1px}
     .pdf-choice--inspection{border-color:color-mix(in srgb,var(--rose) 24%,var(--line));background:linear-gradient(135deg,var(--rose-soft),var(--surface))}.paper--inspection{border-color:var(--rose)}.paper--inspection span{height:4px;border-left:3px solid var(--rose);background:var(--rose-soft)}.inspection-summary{display:flex;align-items:center;gap:12px;padding:16px;border:1px solid var(--rose-line);border-radius:16px;background:var(--rose-soft)}.inspection-symbol{display:grid;place-items:center;flex:none;width:40px;height:48px;border-radius:8px;border:1px solid var(--rose-line);background:var(--surface);color:var(--rose);font-size:24px}.inspection-summary strong{font-size:18px}.inspection-summary small{font-size:13px;line-height:1.5}.inspection-includes{padding:14px 3px 2px;font-size:13px;line-height:1.5}.inspection-includes p{margin:4px 0;color:var(--muted)}.inspection-includes>span{color:var(--rose);font-weight:650}.inspection-language{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px;background:var(--surface);border-radius:9px}.inspection-language>span{display:grid;gap:3px;font-size:13px}.inspection-language small{color:var(--muted);font-size:11.5px}.inspection-language select{min-height:44px;padding:8px 30px 8px 12px;border:1px solid var(--line);border-radius:10px;color:var(--ink);background:var(--surface);font:inherit;font-size:14px}.inspection-language select:focus-visible{outline:3px solid var(--rose-line);outline-offset:2px}.inspection-note{margin:14px 3px 0;font-size:12px;line-height:1.5;color:var(--muted)}@media(max-width:620px){.inspection-language{align-items:stretch;flex-direction:column;gap:10px}.inspection-language select{width:100%}.inspection-summary{padding:13px}.inspection-summary strong{font-size:16px}}
     .choice-groups{display:grid;gap:15px;margin-top:14px}.choice-group{display:grid;gap:7px}.choice-group__head{display:grid;gap:1px;padding:0 2px}.choice-group__head strong{font-size:13.5px}.choice-group__head small{color:var(--muted);font-size:12px}.internal-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.pdf-choice{display:grid;min-height:82px;grid-template-columns:48px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease}.pdf-choice--supplier{border-color:#ddc08a;background:linear-gradient(135deg,#fffaf1,var(--surface))}.pdf-choice:hover:not(:disabled){transform:translateY(-1px);border-color:var(--gold);box-shadow:0 9px 22px rgb(45 31 23/.08)}.pdf-choice:focus-visible{outline:3px solid color-mix(in srgb,var(--gold) 38%,transparent);outline-offset:2px}.pdf-choice:disabled{cursor:not-allowed;opacity:.55}.paper{display:grid;align-content:center;gap:4px;justify-self:center;border:1px solid color-mix(in srgb,var(--gold) 64%,var(--line));border-radius:4px;background:#fff8ef;box-shadow:0 5px 12px rgb(45 31 23/.1);padding:6px}.paper--portrait{width:30px;height:42px}.paper--landscape{width:42px;height:30px}.paper--supplier{border-color:var(--gold);background:#fff}.paper span{display:block;height:2px;border-radius:2px;background:color-mix(in srgb,var(--ink) 18%,transparent)}.paper span:first-child{width:64%;background:var(--rose)}.choice-copy{display:flex;min-width:0;flex-direction:column;gap:2px}.choice-kicker{color:var(--rose);font-size:10.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}.choice-copy strong{font-size:15px;line-height:1.25}.choice-copy small{color:var(--muted);font-size:11.5px;line-height:1.35}.choice-action{align-self:center;color:var(--rose);font-size:12px;font-weight:780}
     .portrait-summary{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--rose-line);border-radius:14px 14px 0 0;background:var(--rose-soft)}.base-includes{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--rose-line);border-top:0;border-radius:0 0 14px 14px;background:var(--surface);font-size:11.5px;line-height:1.35}.base-includes b{flex:none;color:var(--rose);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase}.base-includes span{color:var(--muted)}.options-heading{display:grid;gap:1px;margin-top:14px}.options-heading strong{font-size:15px}.options-heading small{color:var(--muted);font-size:12px}.pdf-options{display:grid;gap:9px;margin-top:9px}.pdf-option-group{min-width:0;margin:0;padding:6px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}.pdf-option-group legend{padding:0 6px;color:var(--rose);font-size:10.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.pdf-option{display:flex;min-height:52px;align-items:flex-start;gap:9px;padding:9px 10px;border-radius:9px;background:var(--surface);cursor:pointer}.pdf-option+.pdf-option{margin-top:5px}.pdf-option input{width:19px;height:19px;flex:none;margin:0;accent-color:var(--rose)}.pdf-option>span{display:grid;min-width:0;gap:1px}.pdf-option b{font-size:13px}.pdf-option small,.group-note{color:var(--muted);font-size:11.5px;line-height:1.35}.pdf-option--master{border:1px solid var(--rose-line)}.nested-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-top:5px}.pdf-option--nested{min-height:58px}.nested-options .pdf-option+.pdf-option{margin-top:0}.nested-options--disabled{opacity:.5}.group-note{margin:0 4px 7px}.save-warning,.download-error{display:flex;gap:9px;margin-bottom:12px;padding:11px 12px;border-radius:11px;font-size:13px;line-height:1.45}.save-warning{border:1px solid var(--warn);background:var(--warn-soft)}.save-warning>span{display:grid;width:24px;height:24px;flex:none;place-items:center;border-radius:50%;background:var(--warn);color:#fff;font-weight:800}.save-warning b{display:block}.download-error{flex-direction:column;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger)}.sheet-actions{display:contents}
@@ -383,6 +402,8 @@ export class PurchasePdfSheet {
 
   readonly busyChoice = signal<PurchasePdfChoice | null>(null);
   readonly error = signal<string | null>(null);
+  /** Klassiek (v1) or the current design (v2) for every purchase PDF here; remembered per browser. */
+  readonly design = signal<PurchasePdfDesign>(rememberedPurchasePdfDesign());
   readonly portraitOpen = signal(false);
   readonly inspectionOpen = signal(false);
   readonly inspectionOptions = signal<Required<PurchaseInspectionOptions>>({
@@ -417,6 +438,11 @@ export class PurchasePdfSheet {
 
   close(): void {
     if (this.busyChoice() === null) this.closed.emit();
+  }
+
+  setDesign(design: PurchasePdfDesign): void {
+    this.design.set(design);
+    rememberPurchasePdfDesign(design);
   }
 
   openPortraitOptions(): void {
@@ -496,7 +522,7 @@ export class PurchasePdfSheet {
     this.error.set(null);
     this.busyChoice.set(choice);
     try {
-      const blob = await this.sourcing.purchasePdf(this.orderId(), options);
+      const blob = await this.sourcing.purchasePdf(this.orderId(), { ...options, design: this.design() });
       const stem = this.safeFilename(this.orderNumber());
       saveBlob(blob, supplierCopy
         ? `${stem}-leverancier-verticaal.pdf`

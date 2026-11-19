@@ -3361,6 +3361,10 @@ recipe; every function stayed, the logic of `TicaSettlements` and its sheets is 
   landed costs with confirm dialog.
 - Purchase figures are always shown to staff (no privacy mode since
   fd979b4); the PDF sheet picks the internal or supplier variant.
+- Purchase PDF sheet, Ontwerp (2026-11-19): Klassiek (`design=v1`, the
+  design of before 2026-11-18) or Nieuw · v2 (default, no parameter) for
+  the supplier, portrait and landscape PDFs, not the inspection file; the
+  choice is remembered per browser (`enrosed.purchaseOrder.design`).
 - Receipt date (2026-09-29, F2): both 'Container ontvangen' sheets open with
   an 'Ontvangen op' date field (device-local today, `ReceiveDraft.receivedOn`)
   and send it as `receivedOn`; the server refuses a future date or one before
