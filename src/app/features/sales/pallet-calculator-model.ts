@@ -19,7 +19,10 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   and weight, so every pallet rule below holds for it too.
  * - Palletberekening may also lay an omdoos on its side (palletFitTurnable):
  *   the best of the three standing sides, upright on a tie. The backend and
- *   a quote count upright only (palletFit).
+ *   a quote count upright and lay an omdoos down only when it fits no pallet
+ *   upright (palletFit; Emre 2026-11-20: "alleen als het moet"). With
+ *   "Omdozen mogen kantelen" off, Palletberekening counts upright only
+ *   (palletFitUpright).
  * - A container takes loose cartons: each product's own capacity (the hand
  *   count where one was confirmed, else full cartons on the practical
  *   volumes of the backend's ContainerType), a mix as the sum of the shares.
@@ -205,8 +208,8 @@ function bestRows(primary: number, secondary: number, boxLength: number, boxWidt
   return best;
 }
 
-/** How many cartons of one size go on one pallet: PalletCalculator.fit. */
-export function palletFit(carton: CartonSize, pallet: PalletSpec): PalletFit {
+/** How many cartons of one size go on one pallet standing upright: PalletCalculator's upright fit. */
+export function palletFitUpright(carton: CartonSize, pallet: PalletSpec): PalletFit {
   const { lengthCm, widthCm, heightCm } = carton;
   if (!positive(lengthCm) || !positive(widthCm) || !positive(heightCm)) return none('afmetingen ontbreken');
   const perLayer = Math.max(
@@ -244,16 +247,34 @@ export function cartonStanding(carton: Pick<CartonDto, 'lengthCm' | 'widthCm' | 
 }
 
 /**
- * palletFit with the omdoos also on its side: the side that takes the most
+ * How many cartons go on one pallet as the backend and a quote count them (PalletCalculator.fit):
+ * upright; only an omdoos that fits no pallet upright (too wide or too high) is laid down, on its
+ * long side or on its end, whichever takes the most omdozen, the lower load on a tie.
+ */
+export function palletFit(carton: CartonSize, pallet: PalletSpec): PalletFit {
+  const upright = palletFitUpright(carton, pallet);
+  if (upright.cartonsPerPallet > 0 || upright.problem === 'afmetingen ontbreken') return upright;
+  let best = upright;
+  for (const up of ['w', 'l'] as const) {
+    const fit = palletFitUpright({ ...cartonStanding(carton, up), weightKg: carton.weightKg }, pallet);
+    const more = fit.cartonsPerPallet > best.cartonsPerPallet
+      || (fit.cartonsPerPallet === best.cartonsPerPallet && fit.cartonsPerPallet > 0 && fit.heightCm < best.heightCm - EPSILON);
+    if (more) best = { ...fit, up };
+  }
+  return best;
+}
+
+/**
+ * palletFitUpright with the omdoos also on its side: the side that takes the most
  * omdozen, the lower load on a tie, upright before a side. Palletberekening
- * counts so when omdozen may be laid down; a quote does not.
+ * counts so when omdozen may be laid down; a quote lays one down only when it must.
  */
 export function palletFitTurnable(carton: CartonSize, pallet: PalletSpec): PalletFit {
-  let best = palletFit(carton, pallet);
+  let best = palletFitUpright(carton, pallet);
   for (const up of ['w', 'l'] as const) {
     const standing = cartonStanding(carton, up);
     if (standing.lengthCm === carton.lengthCm && standing.widthCm === carton.widthCm) continue;
-    const fit = palletFit({ ...standing, weightKg: carton.weightKg }, pallet);
+    const fit = palletFitUpright({ ...standing, weightKg: carton.weightKg }, pallet);
     const more = fit.cartonsPerPallet > best.cartonsPerPallet
       || (fit.cartonsPerPallet === best.cartonsPerPallet && fit.cartonsPerPallet > 0 && fit.heightCm < best.heightCm - EPSILON);
     if (more) best = { ...fit, up };
@@ -265,7 +286,7 @@ export function palletFitTurnable(carton: CartonSize, pallet: PalletSpec): Palle
 export interface LayerSlot { x: number; z: number; lengthCm: number; widthCm: number }
 
 /**
- * Where the perLayer omdozen of palletFit lie: the rows of bestRows in the
+ * Where the perLayer omdozen of palletFitUpright lie: the rows of bestRows in the
  * direction that gave the most, centred on the floor. The 3D view lays a
  * computed layer with it.
  */

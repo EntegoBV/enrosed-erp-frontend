@@ -30,7 +30,7 @@ import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  containerCapacity, containerFill, karSpec, palletFit, palletFitTurnable, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -1195,7 +1195,8 @@ export class PalletCalculatorPage {
     if (units.piecesPerCarton) unitOptions.push({ id: 'piece', label: capitalize(piece.one) });
     const unit = unitOptions.some((option) => option.id === row.unit) ? row.unit : 'carton';
     const carton = product.carton;
-    const fit = turnable ? palletFitTurnable(carton, pallet) : palletFit(carton, pallet);
+    /* "Omdozen mogen kantelen" off: upright only, also where a quote would lay an omdoos down. */
+    const fit = turnable ? palletFitTurnable(carton, pallet) : palletFitUpright(carton, pallet);
     const cartons = cartonsFor(row.quantity, unit, units);
     const weightKg = carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0;
     const problem = fit.problem ? problemText(fit.problem, words) : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;

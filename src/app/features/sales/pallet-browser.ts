@@ -3,7 +3,7 @@ import {
 } from '@angular/core';
 import { AuthImage } from '../../core/api/auth-image';
 import { Icon } from '../../shared/icon';
-import { palletFit, palletFitTurnable, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
+import { palletFitTurnable, palletFitUpright, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
 import { matchPalletTiles, type PalletBrowserSection, type PalletBrowserTile } from './pallet-browser-model';
 
 /** One cell of the grid: a section heading (Alle) or a tile with what it shows. */
@@ -195,7 +195,7 @@ export class PalletBrowser {
   /** A tile's answer for the pallet or kar in use: the same figure as the card's Pallet or Deense kar row. */
   private readonly figures = computed(() => {
     const pallet = this.pallet();
-    const fitOf = this.turnable() ? palletFitTurnable : palletFit;
+    const fitOf = this.turnable() ? palletFitTurnable : palletFitUpright;
     const figures = new Map<string, { text: string; warn: boolean }>();
     for (const section of this.sections()) {
       for (const tile of section.tiles) {

@@ -734,8 +734,9 @@ export class ProductView {
   readonly isAutoGpCapacity = isAutoGpCapacity;
   readonly gpCapacityHint = gpCapacityHint;
   /**
-   * Whole omdozen on one europallet and on one Deense kar, as the catalogue prints them: upright,
-   * at the standard heights (260 cm, 230 cm). Palletberekening can count other heights and tipped omdozen.
+   * Whole omdozen on one europallet and on one Deense kar, as the catalogue prints them: upright, laid
+   * down only when they fit no pallet upright, at the standard heights (260 cm, 230 cm). Palletberekening
+   * can count other heights and tip every omdoos.
    */
   readonly carrierLoads = computed(() => {
     const product = this.product();
@@ -749,7 +750,8 @@ export class ProductView {
       return {
         label,
         units: cartons > 0 ? cartons * perCarton : null,
-        cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${fit.heightCm.toLocaleString('nl-BE')} cm hoog` : '',
+        cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${fit.heightCm.toLocaleString('nl-BE')} cm hoog`
+          + (fit.up === 'w' ? ' · op de zij' : fit.up === 'l' ? ' · op de korte kant' : '') : '',
         /* Why nothing fits, in Palletberekening's words (its problemText), naming this carrier. */
         problem: perCarton <= 0 ? 'inhoud per omdoos ontbreekt'
           : fit.problem === 'afmetingen ontbreken' ? 'Omdoosmaten ontbreken'
