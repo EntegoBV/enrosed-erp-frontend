@@ -25,6 +25,7 @@ import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { CustomerSheet } from '../customers/customer-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
 import { LinePriceSource, linePriceState, type LinePriceChoice, type LinePriceState } from './line-price-source';
@@ -109,7 +110,7 @@ function layoutKey(order: SalesOrder): string {
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
@@ -184,7 +185,12 @@ function layoutKey(order: SalesOrder): string {
                   </span>
                 }
               </div>
-              <div class="quote-hero__customer">{{ customerName() }}</div>
+              @if (orderCustomer()) {
+                <!-- The name opens the customer sheet (Klant bewerken, as in Klanten) over the document. -->
+                <button class="quote-hero__customer hero-customer" type="button" aria-haspopup="dialog" (click)="openCustomer()"><span class="hero-customer__name">{{ customerName() }}</span><span class="hero-customer__chev" aria-hidden="true">›</span></button>
+              } @else {
+                <div class="quote-hero__customer">{{ customerName() }}</div>
+              }
               <div class="quote-hero__meta">
                 {{ data.order.countryCode || 'Nog geen leverland' }}
                 · {{ data.order.incoterm || 'Geen incoterm' }}
@@ -1558,6 +1564,11 @@ function layoutKey(order: SalesOrder): string {
         />
       }
 
+      @if (customerSheet(); as customer) {
+        <app-customer-sheet [customer]="customer" [countries]="countries()" [removable]="false"
+                            (closed)="customerSheet.set(null)" (saved)="customerSaved()" />
+      }
+
       @if (palletSheet()) {
         <app-sheet title="Transport &amp; levering" [wide]="true" variant="ios" (closed)="closeShipping()">
           <div body>
@@ -2201,6 +2212,7 @@ function layoutKey(order: SalesOrder): string {
       .workflow-nav button { min-height:44px;flex-direction:row;justify-content:flex-start;gap:8px;padding:7px 9px;font-size:12px;text-align:left }
       .workflow-nav__copy small { display:block }
       .quote-hero__customer { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
+      .quote-hero__customer .hero-customer__name { overflow:hidden;text-overflow:ellipsis }
       .order-line__head { grid-template-columns:56px minmax(0,1fr) auto }
       .order-line__photo { width:56px;height:56px }
     }
@@ -3288,6 +3300,11 @@ export class SalesEditor {
     effect(() => {
       if (this.reportLocked() && this.phoneStep() === 2) untracked(() => this.phoneStep.set(3));
     });
+    /* Another document in this screen (a link in the customer's price popup): the open customer sheet was the old one's. */
+    effect(() => {
+      this.id();
+      untracked(() => this.customerSheet.set(null));
+    });
     effect(() => {
       const rawId = this.id();
       const routeId = Number(rawId);
@@ -3534,6 +3551,50 @@ export class SalesEditor {
   customerName(): string {
     const id = this.view()?.order.customerId;
     return this.customers().find((c) => c.id === id)?.company ?? 'Geen klant';
+  }
+
+  /** The document's customer from the cached list; null while there is none or the list has not arrived. */
+  readonly orderCustomer = computed(() => {
+    const id = this.view()?.order.customerId;
+    return this.customers().find((customer) => customer.id === id) ?? null;
+  });
+
+  /**
+   * The customer sheet over the document ("Klant bewerken", the sheet of Klanten), opened from the customer's name in
+   * the hero. It holds the customer as it was when it opened: a list read again behind it never resets what is typed.
+   */
+  readonly customerSheet = signal<Customer | null>(null);
+
+  openCustomer(): void {
+    const customer = this.orderCustomer();
+    if (customer) this.customerSheet.set(customer);
+  }
+
+  /**
+   * The sheet stored the customer. The cached list is read again (name, contact, language and terms on screen come
+   * from it), and so is the document: the server prices it with the customer's record (VAT, the address notice).
+   * Unsaved edits are re-priced instead, as after any edit: the answer keeps the draft and brings the new figures.
+   * While a write is under way only the address notice is taken over; that write's answer reads the new record.
+   */
+  customerSaved(): void {
+    this.customerSheet.set(null);
+    void this.sales.customers().then((customers) => this.customers.set(customers)).catch(() => undefined);
+    const data = this.view();
+    if (!data) return;
+    if (this.dirty() && this.canEdit() && !this.saving() && !this.busy() && !this.documentMutationBusy()) {
+      this.schedulePreview();
+      return;
+    }
+    const orderId = data.order.id;
+    void this.sales.order(orderId).then((fresh) => {
+      const current = this.view();
+      if (!current || current.order.id !== orderId) return;
+      if (this.dirty() || this.saving() || this.transportSaving() || this.busy() || this.documentMutationBusy()) {
+        this.view.set({ ...current, invoiceCustomer: fresh.invoiceCustomer });
+      } else {
+        this.adopt(fresh, false);
+      }
+    }).catch(() => undefined);
   }
 
   customerVatNumber(): string | null {

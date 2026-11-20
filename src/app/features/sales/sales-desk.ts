@@ -7,6 +7,7 @@ import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { CustomerSheet } from '../customers/customer-sheet';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { SalesAdvanceContents } from './sales-advance-contents';
@@ -79,7 +80,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -150,7 +151,10 @@ interface JourneyStep {
           <div class="desk-hero__top">
             <div class="desk-hero__who">
               <span class="desk-hero__eyebrow">{{ documentLabel(data.order) }}@if (isWebOrder()) { · websitebestelling } @else if (websiteRequest(data.order)) { · websiteaanvraag }</span>
-              <h1>{{ customerName() }}</h1>
+              <h1>@if (orderCustomer()) {
+                <!-- The name opens the customer sheet (Klant bewerken, as in Klanten) over the document. -->
+                <button class="hero-customer" type="button" aria-haspopup="dialog" title="Klant bekijken of wijzigen" (click)="openCustomer()"><span class="hero-customer__name">{{ customerName() }}</span><span class="hero-customer__chev" aria-hidden="true">›</span></button>
+              } @else { {{ customerName() }} }</h1>
               <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
                 · {{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</p>
               <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }}
@@ -1210,6 +1214,11 @@ interface JourneyStep {
                              [customerName]="customerName()" [customerLanguage]="customerLanguage()"
                              [invoice]="isInvoiceDoc()" [creditNote]="isCreditNoteDoc()" [agreementQuote]="!!advanceAgreement()" [dirty]="dirty()" [saving]="saving()"
                              (saveRequested)="save()" (closed)="pdfSheet.set(false)" />
+      }
+
+      @if (customerSheet(); as customer) {
+        <app-customer-sheet [customer]="customer" [countries]="countries()" [removable]="false"
+                            (closed)="customerSheet.set(null)" (saved)="customerSaved()" />
       }
 
       @if (palletSheet()) {

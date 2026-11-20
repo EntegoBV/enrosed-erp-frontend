@@ -3494,6 +3494,20 @@ app-purchase-view .erp-workspace__sidebar .cost-hero__unit {
 .desk-hero__who h1{margin:2px 0 4px;overflow:hidden;font-size:22px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}
 .desk-hero__who p{margin:0;color:rgb(255 255 255/.78);font-size:12.5px}
 .desk-hero__who p.desk-hero__meta{margin-top:2px;color:rgb(255 255 255/.55);font-size:11.5px}
+/* The customer's name in a sales document's dark hero (desk, phone view, phone editor) opens the customer sheet. It
+   keeps the title's own type; the chevron and, under a mouse, an underline say it opens. The desk title is one line:
+   the name ellipsises and the chevron stays. */
+.hero-customer{display:inline-flex;align-items:baseline;gap:.3em;max-width:100%;min-width:0;margin:0;padding:0;border:0;border-radius:6px;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-align:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.hero-customer__name{min-width:0}
+.hero-customer__chev{flex:none;opacity:.5;font-weight:500;transition:opacity .15s,transform .15s}
+.hero-customer:active{opacity:.72}
+.hero-customer:focus-visible{outline:2px solid rgb(255 255 255/.75);outline-offset:3px}
+@media (hover:hover){
+  .hero-customer:hover .hero-customer__name{text-decoration:underline;text-decoration-color:rgb(255 255 255/.45);text-decoration-thickness:1.5px;text-underline-offset:.2em}
+  .hero-customer:hover .hero-customer__chev{opacity:.9;transform:translateX(2px)}
+}
+@media (prefers-reduced-motion:reduce){.hero-customer__chev{transition:none}}
+.desk-hero__who .hero-customer__name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* The document's journey as one flush segmented pill: a dot per stage, the current stage lifted in white. */
 .desk-status{display:inline-flex;flex:none;align-items:stretch;gap:2px;max-width:100%;padding:3px;border:1px solid rgb(255 255 255/.14);border-radius:999px;background:rgb(255 255 255/.08);overflow-x:auto;scrollbar-width:none}
 .desk-status::-webkit-scrollbar{display:none}

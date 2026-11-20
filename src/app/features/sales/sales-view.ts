@@ -11,6 +11,7 @@ import type { SalesSplitResult } from '../../core/api/models';
 import { cancelledByCustomer, customerCanStillChange, customerMessageIsReadOnly, documentDeletable, isWebOrder, isWebOrderConflict, originalCustomerMessage, webOrderInvoiceable, webOrderRevision } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { CustomerSheet } from '../customers/customer-sheet';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
@@ -81,7 +82,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet],
   template: `
     @if (view(); as data) {
@@ -178,6 +179,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         />
       }
 
+      @if (customerSheet(); as customer) {
+        <app-customer-sheet [customer]="customer" [countries]="countries()" [removable]="false"
+                            (closed)="customerSheet.set(null)" (saved)="customerSaved()" />
+      }
+
       @if (desktop.active()) {
         <app-page-header [title]="data.order.number" [subtitle]="customerName()"
                          [showBack]="true" [showBell]="false">
@@ -225,7 +231,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <div class="sales-hero__identity">
               <span class="eyebrow">{{ documentKind() }}@if (isCreditNote() && data.creditedInvoiceNumber && !isPartnerDocument(data.order)) { · op {{ data.creditedInvoiceNumber }} }</span>
               <h1 id="sales-overview-title">
-                <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">{{ customerName() }}</a>
+                @if (customer()) {
+                  <!-- The name opens the customer sheet (Klant bewerken, as in Klanten) over the document. -->
+                  <button class="hero-customer" type="button" aria-haspopup="dialog" (click)="openCustomer()"><span class="hero-customer__name">{{ customerName() }}</span><span class="hero-customer__chev" aria-hidden="true">›</span></button>
+                } @else { {{ customerName() }} }
               </h1>
               <p>
                 {{ data.order.orderDate | dateNl }}
@@ -325,9 +334,13 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             } @else {
               <span><small>Geldig tot</small><b>{{ data.order.validUntil | dateNl }}</b></span>
             }
-            <a [routerLink]="['/customers']" [queryParams]="{ q: customerName() }">
-              <small>Contact</small><b>{{ customer()?.contact || '—' }}</b>
-            </a>
+            @if (customer()) {
+              <button type="button" aria-haspopup="dialog" (click)="openCustomer()">
+                <small>Contact</small><b>{{ customer()?.contact || '—' }}</b>
+              </button>
+            } @else {
+              <span><small>Contact</small><b>—</b></span>
+            }
             <span class="hero-details__pay">
               <small>Betaling</small>
               <b>{{ desktop.active() ? paymentTerms() : paymentShort() }}</b>
@@ -1130,8 +1143,6 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       .sales-hero__identity { display:flex;flex-direction:column;align-items:center }
       .sales-hero__top .sales-hero__badges { justify-content:center }
     }
-    .sales-hero h1 a { color:inherit;text-decoration:none }
-    .sales-hero h1 a:active { opacity:.75 }
     .eyebrow,.section-kicker { color:var(--rose);font-size:9.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase }
     .sales-hero .eyebrow { color:#efb8c4 }
     .sales-hero h1 { margin:3px 0 0;color:#fff;font-size:clamp(21px,6vw,30px);line-height:1.14;letter-spacing:-.03em }
@@ -1268,7 +1279,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     .hero-details { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px }
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover) { .hero-details { grid-template-columns:repeat(4,minmax(0,1fr)) } }
     .hero-details>* { display:grid;gap:1px;padding:8px 11px;border-radius:11px;background:rgb(255 255 255/.08);color:inherit;text-decoration:none;align-content:center }
-    .hero-details a:active { background:rgb(255 255 255/.16) }
+    .hero-details>button { width:100%;min-width:0;border:0;font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent }
+    .hero-details :is(a,button):active { background:rgb(255 255 255/.16) }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px) { .hero-details__pay small { display:none } }
     .hero-details small { color:rgb(255 255 255/.6);font-size:9px;font-weight:750;letter-spacing:.06em;text-transform:uppercase }
     .hero-details b { color:#fff;font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
@@ -2017,6 +2029,11 @@ export class SalesView {
   constructor() {
     /* Lines name each product's unit ("16 bowls"); "stuks" until the list arrives. */
     void this.catalog.unitNames().catch(() => undefined);
+    /* Another document in this screen (a link in the customer's price popup): the open customer sheet was the old one's. */
+    effect(() => {
+      this.id();
+      untracked(() => this.customerSheet.set(null));
+    });
     effect(() => {
       const orderId = Number(this.id());
       if (Number.isInteger(orderId) && orderId > 0) void this.load(orderId);
@@ -2143,6 +2160,28 @@ export class SalesView {
 
   customerName(): string {
     return this.customer()?.company || 'Geen klant';
+  }
+
+  /**
+   * The customer sheet over the document ("Klant bewerken", the sheet of Klanten), opened from the customer's name or
+   * the Contact detail. It holds the customer as it was when it opened: a list read again behind it never resets it.
+   */
+  readonly customerSheet = signal<Customer | null>(null);
+
+  openCustomer(): void {
+    const customer = this.customer();
+    if (customer) this.customerSheet.set(customer);
+  }
+
+  /** The sheet stored the customer: the cached list and the document are read again (the server prices it with the record). */
+  customerSaved(): void {
+    this.customerSheet.set(null);
+    void this.sales.customers().then((customers) => this.customers.set(customers)).catch(() => undefined);
+    const orderId = this.view()?.order.id;
+    if (orderId == null) return;
+    void this.sales.order(orderId).then((fresh) => {
+      if (this.view()?.order.id === orderId) this.show(fresh, false);
+    }).catch(() => undefined);
   }
 
   countryName(): string {
