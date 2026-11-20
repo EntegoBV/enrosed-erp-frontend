@@ -2212,7 +2212,9 @@ function layoutKey(order: SalesOrder): string {
       .workflow-nav button { min-height:44px;flex-direction:row;justify-content:flex-start;gap:8px;padding:7px 9px;font-size:12px;text-align:left }
       .workflow-nav__copy small { display:block }
       .quote-hero__customer { overflow:hidden;text-overflow:ellipsis;white-space:nowrap }
-      .quote-hero__customer .hero-customer__name { overflow:hidden;text-overflow:ellipsis }
+      .quote-hero__customer.hero-customer { display:inline-flex;align-items:baseline }
+      .quote-hero__customer .hero-customer__name { min-width:0;overflow:hidden;text-overflow:ellipsis }
+      .quote-hero__customer .hero-customer__chev { flex:none }
       .order-line__head { grid-template-columns:56px minmax(0,1fr) auto }
       .order-line__photo { width:56px;height:56px }
     }

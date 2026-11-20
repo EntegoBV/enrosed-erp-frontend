@@ -5827,7 +5827,8 @@ wijzigen."
   "7 nov · Emre" stamp for the sheet and the list row's title.
 - **Klanten** opens it from a row, `+ Nieuw` / `+ Klant`, `?klant=<id>` and `?nieuw=1`, as before (`sheet` signal).
 - **Verkoop.** The customer's name in the dark hero is a `.hero-customer` button (global `styles.scss`: the title's
-  own type, a quiet "›", an underline under a mouse; on the desk the name ellipsises and the chevron stays): desk
+  own type, a quiet "›" glued to the last word, an underline under a mouse; a long name wraps on the phone, on the
+  desk it ellipsises and the chevron stays): desk
   `.desk-hero__who h1`, phone view `h1#sales-overview-title` and its Contact detail (both used to leave for
   `/customers?q=`), phone editor `.quote-hero__customer`. No customer (or the list not in yet): plain text. It opens
   the sheet over the document (`customerSheet` in `SalesEditor`, inherited by `SalesDesk`, and in `SalesView`),
@@ -5842,6 +5843,6 @@ wijzigen."
 - Duo landscape (`styles/host-r5/_sales-doc.scss`): the two-column customer sheet rules now target
   `app-customer-sheet`, so they hold from Klanten and from a sales document alike.
 - Looked at on 2026-11-20 against a local prod-profile backend on the 2026-11-15 test backup: desk 1280 and 1070 px,
-  phone 390 px (view and editor, touch), unfolded Duo 669 × 951; open, Escape, ×, Annuleren, Opslaan with the new
-  name in the title at once, a fiscal-representative change turning the VAT treatment with and without unsaved
+  phone 390 px (view and editor, touch), unfolded Duo 669 × 951, short and very long names; open, Escape, ×,
+  Annuleren, Opslaan with the new name in the title at once, a fiscal-representative change turning the VAT treatment with and without unsaved
   edits, Klanten row / new / `?klant=` / `?nieuw=1`.
