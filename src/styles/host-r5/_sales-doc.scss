@@ -48,17 +48,18 @@ $c1: calc(475.5px - var(--safe-l, 0px));
     /* TICA's card has no inset of its own and ran up to the hinge: the groups' 16 px. */
     app-product-view .pcp { margin-inline: 16px; }
 
-    /* ---- the customer (Klant bewerken, the list's sheet): the card spans the page, the follow-up stands sticky in the
-       first column, the form and the buttons in the second (16 px card + 16 px body inset before the first column). */
-    app-customer-list .sheet:has(.cl-followup) { max-width: none; }
-    app-customer-list .sheet:has(.cl-followup) .sheet__foot { padding-left: #{$c1}; }
-    app-customer-list [body]:has(> .cl-followup) {
+    /* ---- the customer (Klant bewerken, from Klanten or from a sales document's customer name): the card spans the page,
+       the follow-up stands sticky in the first column, the form and the buttons in the second (16 px card + 16 px body
+       inset before the first column). */
+    app-customer-sheet .sheet:has(.cl-followup) { max-width: none; }
+    app-customer-sheet .sheet:has(.cl-followup) .sheet__foot { padding-left: #{$c1}; }
+    app-customer-sheet [body]:has(> .cl-followup) {
       display: grid;
       grid-template-columns: calc(#{$c1} - 48px) minmax(0, 1fr);
       column-gap: 32px;
       align-items: start;
     }
-    app-customer-list [body]:has(> .cl-followup) > * { grid-column: 2; }
-    app-customer-list [body] > .cl-followup { grid-column: 1; grid-row: 1 / span 9; position: sticky; top: 0; }
+    app-customer-sheet [body]:has(> .cl-followup) > * { grid-column: 2; }
+    app-customer-sheet [body] > .cl-followup { grid-column: 1; grid-row: 1 / span 9; position: sticky; top: 0; }
   }
 }

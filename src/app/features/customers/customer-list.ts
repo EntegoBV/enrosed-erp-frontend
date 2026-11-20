@@ -1,30 +1,22 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { SalesApi } from '../../core/api/sales-api';
-import { PartnerSalesApi } from '../../core/api/partner-sales-api';
-import { WorkQueue } from '../../core/api/work-queue';
-import { Country, CrmStatus, Customer, CustomerTouchpoint, LANGUAGES } from '../../core/api/models';
-import { countryFlag, countryName, STANDARD_PAYMENT_TERMS } from '../../core/api/geo';
+import { Country, CrmStatus, Customer } from '../../core/api/models';
+import { countryFlag, countryName } from '../../core/api/geo';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { PageHeader } from '../../shared/page-header';
 import { Skeleton } from '../../shared/skeleton';
 import { Segmented, SegmentOption } from '../../shared/segmented';
-import { CountryPicker } from '../../shared/country-picker';
-import { escapeHtml, Sheet, Ui } from '../../shared/ui';
+import { Ui } from '../../shared/ui';
 import { messageOf } from '../../core/api/errors';
 import { LoadError, LOAD_ERROR_FALLBACK } from '../../shared/load-error';
-import { CustomerLoginBlock } from './customer-login-block';
-import { CustomerPartnerPortalRow } from './customer-partner-portal-row';
-import { CustomerPartnerOriginRow } from './customer-partner-origin';
 import { partnerShortName } from '../../shared/partner-short-name';
-import { CustomerPriceBlock } from './customer-price-block';
-import { CustomerAppliedPrices } from './customer-applied-prices';
+import { CustomerSheet } from './customer-sheet';
 import {
-  blankCustomer as blank, CRM_STATUSES, CrmTone, crmStatusLabel, CUSTOMER_SORTS, CustomerSort, customerSince,
-  defaultCustomerCountry, filterCustomers, hasTouchpoint, metaLine, shortDateNl, sortCustomers, TOUCHPOINT_KINDS, toggleTouchpoint,
-  touchpointLabel, VAT_REQUIRED_MESSAGE, vatCountryMismatch, vatNumberMissing,
+  CRM_STATUSES, CrmTone, crmStatusLabel, CUSTOMER_SORTS, CustomerSort, customerSince,
+  filterCustomers, metaLine, sortCustomers, TOUCHPOINT_KINDS, touchpointLabel, touchpointStamp,
 } from './customer-form';
 
 /** The sort survives a reload; a status filter is a deep link (?status=) instead. */
@@ -36,7 +28,7 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
 @Component({
   selector: 'app-customer-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Skeleton, FormsModule, RouterLink, PageHeader, Sheet, Segmented, CountryPicker, CustomerLoginBlock, CustomerPartnerPortalRow, CustomerPartnerOriginRow, CustomerPriceBlock, CustomerAppliedPrices, LoadError],
+  imports: [Skeleton, FormsModule, PageHeader, Segmented, CustomerSheet, LoadError],
   template: `
     <app-page-header title="Klanten" [subtitle]="filtered().length === 1 ? '1 klant' : filtered().length + ' klanten'">
       <button class="btn btn--primary btn--sm hide-mobile" type="button" (click)="open(null)">
@@ -127,164 +119,9 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
 
     <button class="fab" type="button" (click)="open(null)">+ Klant</button>
 
-    @if (editing()) {
-      <app-sheet [title]="draft().id ? 'Klant bewerken' : 'Nieuwe klant'"
-                 (closed)="editing.set(false)">
-        <div body>
-          <p class="legend"><b>*</b> verplicht · de rest kan later.</p>
-          @if (draft().id && draft().partnerOrigin; as origin) {
-            <app-customer-partner-origin [origin]="origin" [marked]="reviewOnSave()" [vatMissing]="vatMissing(draft().vatNumber)" (markChange)="reviewOnSave.set($event)" />
-          }
-          <div class="partner-field cl-followup">
-            <div class="cl-followup__head">
-              <b>Opvolging</b>
-              @if (draftSince(); as since) { <span class="cl-since">{{ since }}</span> }
-            </div>
-            <!-- A customer from before the statuses has none: the thumb hides instead of resting under Nieuw as if that were stored. -->
-            <app-segmented [variant]="desktop.active() ? 'desk' : 'ios'" semantics="radio" label="Status" [class.cl-seg--none]="!draft().crmStatus"
-                           [options]="statusChoices()" [value]="draft().crmStatus ?? ''" (changed)="patch({ crmStatus: $any($event) })" />
-            @if (!draft().crmStatus) { <span class="hint cl-followup__none">Nog geen status: kies er een.</span> }
-            <div class="cl-touch" role="group" aria-label="Contactmomenten">
-              @for (step of touchpointKinds; track step.kind) {
-                <button class="cl-touch__row" type="button" role="checkbox" [attr.aria-checked]="ticked(step.kind)"
-                        (click)="toggle(step.kind)">
-                  <i class="cl-touch__box" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"
-                         stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 10.5 3.5 3.5L15.5 6" /></svg>
-                  </i>
-                  <span class="cl-touch__label">{{ step.label }}
-                    @if (step.hint) { <small>{{ step.hint }}</small> }</span>
-                  @if (stamp(step.kind); as when) { <span class="cl-touch__stamp">{{ when }}</span> }
-                </button>
-              }
-            </div>
-            <span class="hint">Bewaard bij Opslaan.</span>
-          </div>
-          <div class="form-grid">
-            <div class="field span-2"><label class="req" for="c-company">Bedrijfsnaam</label>
-              <input class="input" id="c-company" [ngModel]="draft().company"
-                     (ngModelChange)="patch({ company: $event })" /></div>
-            <div class="field"><label for="c-contact">Contactpersoon</label>
-              <input class="input" id="c-contact" [ngModel]="draft().contact"
-                     (ngModelChange)="patch({ contact: $event })" /></div>
-            <div class="field"><label for="c-email">E-mail <span class="opt"></span></label>
-              <input class="input" id="c-email" type="email" [ngModel]="draft().email"
-                     (ngModelChange)="patch({ email: $event })" />
-              <span class="hint">Nodig om de offerte te kunnen versturen.</span></div>
-            <div class="field"><label for="c-phone">Telefoon</label>
-              <input class="input" id="c-phone" type="tel" [ngModel]="draft().phone"
-                     (ngModelChange)="patch({ phone: $event })" /></div>
-            <div class="field"><label class="req" for="c-vat">BTW-nummer</label>
-              <input class="input" id="c-vat" [ngModel]="draft().vatNumber" placeholder="bijv. BE0123456789"
-                     (ngModelChange)="patch({ vatNumber: $event })" />
-              @if (vatCountryMismatch(); as mismatch) {
-                <span class="hint hint--warn">Landcode {{ mismatch.prefix }} in het BTW-nummer verschilt van het land ({{ mismatch.country }}). Opslaan mag; wij controleren het handmatig.</span>
-              } @else {
-                <span class="hint">Verplicht. Klopt het niet met het land, dan controleren we het zelf na.</span>
-              }</div>
-            <div class="field span-2"><label for="c-address">Adres</label>
-              <input class="input" id="c-address" [ngModel]="draft().address"
-                     (ngModelChange)="patch({ address: $event })" /></div>
-            <div class="field"><label for="c-zip">Postcode</label>
-              <input class="input" id="c-zip" [ngModel]="draft().postalCode"
-                     (ngModelChange)="patch({ postalCode: $event })" /></div>
-            <div class="field"><label for="c-city">Stad</label>
-              <input class="input" id="c-city" [ngModel]="draft().city"
-                     (ngModelChange)="patch({ city: $event })" /></div>
-            <div class="field"><label class="req" for="c-country">Land</label>
-              <app-country-picker inputId="c-country" [value]="draft().countryCode || null" [preferred]="countries()"
-                                  (changed)="patch({ countryCode: $event })" />
-              @if (countryOutsideFreight(); as land) {
-                <span class="hint hint--warn">{{ land }} staat niet bij Landen &amp; vracht:
-                  offertes naar dit land lukken pas als je het daar toevoegt.
-                  <!-- In a new tab: routing away would destroy this sheet and the half-typed customer with it. -->
-                  <a routerLink="/countries" target="_blank" rel="noopener">Landen &amp; vracht openen ›</a></span>
-              }</div>
-            <div class="field"><label class="req" for="c-language">Taal van de klant</label>
-              <select class="select" id="c-language" [ngModel]="draft().language"
-                      (ngModelChange)="patch({ language: $event })">
-                @for (language of languages; track language.code) {
-                  <option [value]="language.code">{{ language.label }}</option>
-                }
-              </select>
-              <span class="hint">Offerte, PDF en klantportaal vertrekken in deze taal.</span></div>
-            <div class="field"><label for="c-incoterm">Incoterm</label>
-              <select class="select" id="c-incoterm" [ngModel]="draft().incoterm"
-                      (ngModelChange)="patch({ incoterm: $event })">
-                @for (term of incoterms; track term) { <option [value]="term">{{ term }}</option> }
-              </select></div>
-            <div class="field span-2"><label for="c-terms">Betaalvoorwaarden</label>
-              <select class="select" id="c-terms" [ngModel]="paymentChoice()"
-                      (ngModelChange)="pickPaymentTerms($event)">
-                @for (term of paymentTerms; track term) {
-                  <option [value]="term">{{ term }}</option>
-                }
-                <option value="__other__">Anders…</option>
-              </select>
-              @if (customPaymentTerms()) {
-                <input class="input mt-8" aria-label="Eigen betaalvoorwaarden"
-                       placeholder="Eigen voorwaarden…" [ngModel]="draft().paymentTerms"
-                       (ngModelChange)="patch({ paymentTerms: $event })" />
-              }
-              <span class="hint">
-                Voorwaarden uit de lijst worden op offertes automatisch vertaald.
-              </span></div>
-            <div class="field span-2 partner-field">
-              <label class="partner-toggle">
-                <input type="checkbox" [checked]="draft().partner ?? false" (change)="patch({ partner: $any($event.target).checked })" />
-                <span><b>Partnercontainers</b><small>Bestelt containers met ons mee aan onze gelande kost en verkoopt de goederen op de veiling. Vanuit de inkooporder maak je direct conceptvoorschotfacturen per betaaltermijn. De slotfactuur volgt na de veiling.</small></span>
-              </label>
-              @if (draft().partner) {
-                <div class="partner-grid">
-                  <div class="field"><label for="c-partner-share">Ons deel van de winst</label>
-                    <span class="partner-pct"><input class="input num right" id="c-partner-share" type="number" min="0" max="100" step="0.5" inputmode="decimal"
-                           [ngModel]="draft().partnerSharePct ?? 50" (ngModelChange)="patch({ partnerSharePct: $event === '' || $event === null ? null : +$event })" /><i>%</i></span>
-                    <span class="hint">Na de veiling, op de winst boven onze gelande kost.</span></div>
-                  <div class="field"><label for="c-partner-cost">Kost die de partner vooraf betaalt</label>
-                    <span class="partner-pct"><input class="input num right" id="c-partner-cost" type="number" min="0" max="100" step="5" inputmode="decimal"
-                           [ngModel]="draft().partnerCostPct ?? 100" (ngModelChange)="patch({ partnerCostPct: $event === '' || $event === null ? null : +$event })" /><i>%</i></span>
-                    <span class="hint">100 % = de partner betaalt de container vooraf; 0 % = wij financieren alles en rekenen af na de veiling.</span></div>
-                </div>
-                @if (draft().id; as partnerId) { <app-customer-partner-portal-row [customerId]="partnerId" /> }
-              }
-            </div>
-            <div class="field span-2 partner-field">
-              <label class="partner-toggle">
-                <input type="checkbox" [checked]="draft().fiscalRepresentative ?? false" (change)="patch({ fiscalRepresentative: $any($event.target).checked })" />
-                <span><b>Inklaring in Nederland via onze fiscaal vertegenwoordiger</b><small>De btw verschuift naar deze klant (art. 12.3 Wet OB). Offerte en voorschotfactuur vermelden onze beperkt fiscaal vertegenwoordiger, de verlegging en het btw-nummer van de klant; de slotfactuur enkel de verlegging. Vraagt een btw-nummer.</small></span>
-              </label>
-            </div>
-            @if (draft().id; as customerId) {
-              <div class="field span-2 partner-field">
-                <app-customer-login-block [customerId]="customerId" [customerEmail]="draft().email || null" />
-              </div>
-              <!-- A klantprijs saved above changes the pills below (klantprijs / ≠ klantprijs): the rows come again. -->
-              <div class="field span-2 partner-field">
-                <app-customer-price-block [customerId]="customerId" [customerName]="draft().company" (changed)="appliedPrices()?.reload()" />
-              </div>
-              <div class="field span-2 partner-field">
-                <app-customer-applied-prices [customerId]="customerId" [customerName]="draft().company" />
-              </div>
-            }
-            <div class="field span-2"><label for="c-invoice-note">Extra vermelding op documenten <span class="opt"></span></label>
-              <textarea class="textarea" id="c-invoice-note" [ngModel]="draft().invoiceNote ?? ''"
-                        (ngModelChange)="patch({ invoiceNote: $event })" placeholder="Komt op elke offerte en factuur voor deze klant."></textarea></div>
-            <div class="field span-2"><label for="c-notes">Notities <span class="opt"></span></label>
-              <textarea class="textarea" id="c-notes" [ngModel]="draft().notes"
-                        (ngModelChange)="patch({ notes: $event })"></textarea></div>
-          </div>
-        </div>
-        <div foot style="display:contents">
-          @if (draft().id) {
-            <button class="btn btn--danger" type="button" (click)="remove()">Verwijderen</button>
-          }
-          <span class="spacer"></span>
-          <button class="btn" type="button" (click)="editing.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
-            {{ saving() ? 'Bezig…' : 'Opslaan' }}
-          </button>
-        </div>
-      </app-sheet>
+    @if (sheet(); as open) {
+      <app-customer-sheet [customer]="open.customer" [countries]="countries()"
+                          (closed)="sheet.set(null)" (saved)="sheetDone()" (removed)="sheetDone()" />
     }
   `,
   styles: `
@@ -314,83 +151,16 @@ const STATUS_VALUES: readonly string[] = CRM_STATUSES.map((status) => status.val
     }
     .cl-marks { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
     .cl-marks .wk-pill { height: 18px; padding: 0 6px; font-size: 10px; }
-
-    .partner-field { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid var(--rose-line); border-radius: 12px; background: var(--rose-soft); }
-    .cl-followup { margin-bottom: 14px; }
-    .cl-followup__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; }
-    .cl-followup__head .cl-since { font-size: 12px; }
-    .cl-followup app-segmented { max-width: 100%; }
-    /* Five statuses must share 319 px on a 375 px phone and ~560 px in the desk sheet: tighter segments than the kit's default. */
-    :host ::ng-deep .cl-followup .wk-seg__opt { padding: 0 6px; }
-    :host ::ng-deep .cl-followup .ios-seg__opt { padding: 0 3px; font-size: 11.5px; letter-spacing: -.01em; }
-    /* The phone cells say one word each (Gesprek, Actief); should one still not fit its 57 px cell, it clips with an
-       ellipsis instead of running over its neighbours. */
-    :host ::ng-deep .cl-followup .ios-seg__opt > span { min-width: 0; }
-    /* No stored status: no thumb; the hint under the control says so. */
-    .cl-followup .cl-seg--none::before { opacity: 0; }
-    .cl-followup__none { margin-top: -4px; }
-    .cl-touch { display: grid; border: 1px solid var(--rose-line); border-radius: 10px; background: var(--surface); overflow: hidden; }
-    .cl-touch__row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 12px; border: 0;
-      border-top: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer;
-      -webkit-tap-highlight-color: transparent; }
-    .cl-touch__row:first-child { border-top: 0; }
-    .cl-touch__row:active { background: var(--surface-2); }
-    .cl-touch__box { display: grid; flex: none; place-items: center; width: 20px; height: 20px; border: 1.5px solid var(--muted-2); border-radius: 5px; color: transparent; }
-    .cl-touch__row[aria-checked="true"] .cl-touch__box { border-color: var(--rose); background: var(--rose); color: #fff; }
-    .cl-touch__label { display: grid; flex: 1; min-width: 0; gap: 1px; }
-    .cl-touch__label small { color: var(--muted); font-size: 11.5px; }
-    .cl-touch__stamp { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-
-    .partner-toggle { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 10px; cursor: pointer; }
-    .partner-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--rose); }
-    .partner-toggle span { display: grid; gap: 2px; font-size: 13px; }
-    .partner-toggle small { color: var(--ink-2); font-size: 12px; line-height: 1.4; }
-    .partner-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-    .partner-pct { display: inline-flex; align-items: center; gap: 6px; }
-    .partner-pct .input { width: 96px; }
-    .partner-pct i { color: var(--muted); font-style: normal; }
   `,
 })
 export class CustomerList {
-  readonly paymentTerms = STANDARD_PAYMENT_TERMS;
-  /** True while terms outside the standard list are being typed. */
-  readonly customPaymentTerms = signal(false);
-
-  paymentChoice(): string {
-    if (this.customPaymentTerms()) return '__other__';
-    const terms = this.draft().paymentTerms ?? '';
-    return (this.paymentTerms as readonly string[]).includes(terms) ? terms : '__other__';
-  }
-
-  pickPaymentTerms(choice: string): void {
-    if (choice === '__other__') {
-      this.customPaymentTerms.set(true);
-      return;
-    }
-    this.customPaymentTerms.set(false);
-    this.patch({ paymentTerms: choice });
-  }
-
   private readonly sales = inject(SalesApi);
-  private readonly partnerSales = inject(PartnerSalesApi);
-  private readonly work = inject(WorkQueue);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly ui = inject(Ui);
   readonly desktop = inject(DesktopViewport);
 
-  readonly languages = LANGUAGES;
-  readonly incoterms = ['EXW', 'FOB', 'CIF', 'DAP', 'DDP'];
   readonly sorts = CUSTOMER_SORTS;
-  readonly touchpointKinds = TOUCHPOINT_KINDS;
-  /**
-   * The status choice in the sheet: the five statuses, no "Alle". On the phone the one-word labels, since five cells
-   * share 319 px and "In gesprek" and "Actieve klant" were cut to an ellipsis there; the desk sheet says the full ones.
-   */
-  readonly statusChoices = computed<SegmentOption[]>(() => CRM_STATUSES.map((status) => ({
-    id: status.value,
-    label: this.desktop.active() ? status.label : status.short,
-  })));
   readonly metaLine = metaLine;
   readonly customerSince = customerSince;
   readonly crmStatusLabel = crmStatusLabel;
@@ -400,8 +170,8 @@ export class CustomerList {
   readonly query = signal('');
   readonly status = signal<CrmStatus | 'ALLE'>('ALLE');
   readonly sort = signal<CustomerSort>(readStoredSort());
-  readonly editing = signal(false);
-  readonly draft = signal<Customer>(blank('BE'));
+  /** The open sheet: the customer it edits, or null inside for "Nieuwe klant"; null when no sheet is open. */
+  readonly sheet = signal<{ customer: Customer | null } | null>(null);
   readonly loading = signal(true);
 
   constructor() {
@@ -433,14 +203,10 @@ export class CustomerList {
       const [customers, countries] = await Promise.all([
         this.sales.customers(), this.sales.countries()]);
       this.customers.set(customers);
+      /* A new customer's sheet that opened before this list takes the default country from it (customer-sheet.ts). */
       this.countries.set(countries);
       this.loadError.set(null);
       this.openWanted();
-      /* The sheet can open before this list arrives: without repair the new
-         customer sat on an empty country code. */
-      if (this.editing() && this.draft().id === null && !this.draft().countryCode) {
-        this.patch({ countryCode: this.defaultCountry() });
-      }
     } catch (failure: unknown) {
       this.loadError.set(messageOf(failure, LOAD_ERROR_FALLBACK));
     } finally {
@@ -522,150 +288,22 @@ export class CustomerList {
     const shorts = TOUCHPOINT_KINDS.filter((kind) => ticked.some((touchpoint) => touchpoint.kind === kind.kind)).map((kind) => kind.short);
     const unknown = ticked.filter((touchpoint) => !TOUCHPOINT_KINDS.some((kind) => kind.kind === touchpoint.kind)).map((touchpoint) => touchpoint.kind);
     const all = [...shorts, ...unknown];
+    const year = new Date().getFullYear();
     return {
       shown: all.slice(0, MARKS_SHOWN),
       more: Math.max(0, all.length - MARKS_SHOWN),
-      title: ticked.map((touchpoint) => `${touchpointLabel(touchpoint.kind)} · ${this.stampOf(touchpoint)}`).join('\n'),
+      title: ticked.map((touchpoint) => `${touchpointLabel(touchpoint.kind)} · ${touchpointStamp(touchpoint, year)}`).join('\n'),
     };
   }
 
-  /** "Klant sinds 7 nov 2026" at the top of Opvolging for a stored customer; "" for a new one. */
-  readonly draftSince = computed(() => {
-    const since = this.draft().id ? customerSince(this.draft().createdAt) : '';
-    return since ? since.charAt(0).toUpperCase() + since.slice(1) : '';
-  });
-
-  /** The chosen country is not in Landen & vracht: its name, so the hint can say so; null when it is, or while the list is not known yet. */
-  readonly countryOutsideFreight = computed(() => {
-    const code = (this.draft().countryCode ?? '').trim().toUpperCase();
-    /* The sheet can open before the countries arrive, and stays open when they failed: no warning on an empty list. */
-    if (!code || !this.countries().length || this.countries().some((country) => country.code === code)) return null;
-    return countryName(code) || code;
-  });
-
   open(customer: Customer | null): void {
-    /* An older server answers without the follow-up fields: the sheet treats them as "no status, nothing ticked". */
-    this.draft.set(customer
-      ? { ...customer, crmStatus: customer.crmStatus ?? null, touchpoints: customer.touchpoints ?? [] }
-      : blank(this.defaultCountry()));
-    this.reviewOnSave.set(false);
-    this.editing.set(true);
+    this.sheet.set({ customer });
   }
 
-  /** A partner-made customer's Nagekeken, ticked on the sheet: sent after its Opslaan stored the customer. */
-  readonly reviewOnSave = signal(false);
-  readonly vatMissing = vatNumberMissing;
-
-  /** Home first when it ships, otherwise the first configured country -
-      never a hardcoded guess, which left every new customer without a
-      country whenever the guess was not in Landen & vracht. */
-  private defaultCountry(): string {
-    return defaultCustomerCountry(this.countries().map((country) => country.code));
-  }
-
-  patch(changes: Partial<Customer>): void {
-    this.draft.update((customer) => ({ ...customer, ...changes }));
-  }
-
-  ticked(kind: string): boolean {
-    return hasTouchpoint(this.draft(), kind);
-  }
-
-  toggle(kind: string): void {
-    this.draft.update((customer) => toggleTouchpoint(customer, kind, new Date().toISOString()));
-  }
-
-  /** "7 nov · Emre" beside a ticked step; null while unticked. A tick made just now has no name yet: the server adds it. */
-  stamp(kind: string): string | null {
-    const touchpoint = (this.draft().touchpoints ?? []).find((entry) => entry.kind === kind);
-    return touchpoint ? this.stampOf(touchpoint) : null;
-  }
-
-  private stampOf(touchpoint: CustomerTouchpoint): string {
-    const date = shortDateNl(touchpoint.at);
-    /* This year's stamps drop the year: the row is narrow and the year is noise until it changes. */
-    const thisYear = ` ${new Date().getFullYear()}`;
-    const day = date.endsWith(thisYear) ? date.slice(0, -thisYear.length) : date;
-    return touchpoint.by ? `${day} · ${touchpoint.by}` : day;
-  }
-
-  readonly saving = signal(false);
-  private readonly prices = viewChild(CustomerPriceBlock);
-  readonly appliedPrices = viewChild(CustomerAppliedPrices);
-
-  /** The two letters of the VAT number next to the customer's country, when they differ. */
-  readonly vatCountryMismatch = computed(() => vatCountryMismatch(this.draft().vatNumber, this.draft().countryCode));
-
-  async save(): Promise<void> {
-    /* A second tap while the first is under way made a second customer. */
-    if (this.saving()) return;
-    const customer = this.draft();
-    if (!(customer.countryCode ?? '').trim()) {
-      this.ui.toast('Kies een land voor de klant', 'err');
-      return;
-    }
-    /* A customer the partner made (name, country, maybe a city) is put right here first: while staff have not
-       marked it Nagekeken it saves without a VAT number, as the server allows. Nagekeken (ticked on the sheet) goes
-       after this save, and needs the VAT number: from then on every save does. */
-    const unreviewed = !!customer.partnerOrigin && !customer.partnerOrigin.reviewedAt;
-    const review = unreviewed && customer.id !== null && this.reviewOnSave();
-    if (vatNumberMissing(customer.vatNumber) && !(unreviewed && !review)) {
-      this.ui.toast(review ? 'Nagekeken vraagt het BTW-nummer: vul het in, of vink Nagekeken uit en sla zo op.' : VAT_REQUIRED_MESSAGE, 'err');
-      setTimeout(() => document.getElementById('c-vat')?.focus(), 100);
-      return;
-    }
-    this.saving.set(true);
-    try {
-      /* The price block saves on its own; a price typed there and not stored yet goes along, a refused one keeps the sheet. */
-      const prices = this.prices();
-      if (prices?.pending() && !(await prices.saveDraft())) {
-        prices.reveal();
-        return;
-      }
-      /* The draft goes as is: the server stamps at/by on a touchpoint that is new and keeps them on one it already has. */
-      /* partnerOrigin is the server's: never sent back. */
-      const { partnerOrigin: _origin, ...body } = customer;
-      if (customer.id === null) await this.sales.createCustomer(body);
-      else await this.sales.updateCustomer(customer.id, body);
-      /* The customer is stored: now Nagekeken (the bell item goes). A refusal keeps what was saved. */
-      let reviewed: boolean | null = null;
-      if (review && customer.id !== null) {
-        try {
-          await this.partnerSales.markCustomerReviewed(customer.id);
-          reviewed = true;
-        } catch (failure: unknown) {
-          reviewed = false;
-          this.ui.toast(`Klant opgeslagen; ${messageOf(failure, 'Nagekeken lukte niet').replace(/^./, (c) => c.toLowerCase())}`, 'err');
-        }
-        void this.work.refresh(true);
-      }
-      this.editing.set(false);
-      await this.load();
-      if (reviewed !== false) this.ui.toast(reviewed ? 'Klant opgeslagen en nagekeken' : 'Klant opgeslagen');
-    } catch (failure: unknown) {
-      this.ui.toast(messageOf(failure, 'Opslaan mislukt'), 'err');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  remove(): void {
-    const customer = this.draft();
-    this.ui.confirm(
-      { title: 'Klant verwijderen', message: `<b>${escapeHtml(customer.company)}</b> verwijderen?`,
-        confirmLabel: 'Verwijderen', danger: true },
-      async () => {
-        try {
-          await this.sales.deleteCustomer(customer.id!);
-        } catch (failure: unknown) {
-          /* A 409 explains why (the customer has quotes or invoices): show it, keep the sheet. */
-          this.ui.toast(messageOf(failure, 'Verwijderen mislukt'), 'err');
-          return;
-        }
-        this.editing.set(false);
-        await this.load();
-        this.ui.toast('Klant verwijderd');
-      });
+  /** The sheet saved or deleted (and said so): it closes and the list is read again. */
+  sheetDone(): void {
+    this.sheet.set(null);
+    void this.load();
   }
 
   async newOrder(customer: Customer): Promise<void> {

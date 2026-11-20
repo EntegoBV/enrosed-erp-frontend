@@ -5,7 +5,7 @@
  * (status, touchpoints, sort and filter) the Klanten list and sheet use.
  * Pure and import-free at runtime: node-tested.
  */
-import type { CrmStatus, Customer } from '../../core/api/models';
+import type { CrmStatus, Customer, CustomerTouchpoint } from '../../core/api/models';
 
 export const VAT_REQUIRED_MESSAGE = 'Vul het BTW-nummer in; het mag niet leeg zijn';
 
@@ -184,6 +184,17 @@ export function shortDateNl(value: string | null | undefined): string {
  */
 export function metaLine(parts: readonly (string | null | undefined)[]): string {
   return parts.map((part) => (part ?? '').trim()).filter(Boolean).join(' · ');
+}
+
+/**
+ * "7 nov · Emre" for a ticked step, on the sheet and in a list row's title. This year's stamps drop the year: the row
+ * is narrow and the year is noise until it changes. A tick made just now has no name yet: the server adds it.
+ */
+export function touchpointStamp(touchpoint: CustomerTouchpoint, currentYear: number): string {
+  const date = shortDateNl(touchpoint.at);
+  const thisYear = ` ${currentYear}`;
+  const day = date.endsWith(thisYear) ? date.slice(0, -thisYear.length) : date;
+  return touchpoint.by ? `${day} · ${touchpoint.by}` : day;
 }
 
 /** "klant sinds 7 nov 2026" for the list row; "" for a customer without a known date. */
