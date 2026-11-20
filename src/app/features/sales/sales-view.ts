@@ -59,7 +59,7 @@ import { WorkQueue } from '../../core/api/work-queue';
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass, statusOf } from './quote-status';
+import { STATUS_LABEL, isWebsiteQuoteRequest, statusClass, statusOf, websitePricesSeen } from './quote-status';
 import {
   isLocallyDeletableSalesDocument,
 } from './sales-list-swipe';
@@ -387,6 +387,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             @if (webOrderOpen() && !desktop.active()) {
               <button class="btn btn--primary btn--block web-order-banner__take" type="button" [disabled]="invoiceBusy()" (click)="openTake()">In verwerking nemen</button>
             }
+          </div>
+        } @else if (websiteRequest(data.order) && !isWebOrder()) {
+          <!-- A website request still to answer: first whether the customer already saw prices on the website. -->
+          <div class="web-order-banner">
+            <p role="status"><span aria-hidden="true">↗ </span>Websiteaanvraag · <b>{{ websitePricesSeen(data).text }}</b></p>
           </div>
         }
         <!-- The customer record lacks the address an invoice needs: said where staff work on the document, with the
@@ -2346,6 +2351,8 @@ export class SalesView {
   statusOf = statusOf;
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
+  /** A website request: whether the customer already saw prices on the website, as the intake stored it. */
+  readonly websitePricesSeen = websitePricesSeen;
 
   /**
    * A quotation goes straight to its settings. An invoice first shows the

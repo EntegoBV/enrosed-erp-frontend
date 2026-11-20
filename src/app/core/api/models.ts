@@ -2535,6 +2535,12 @@ export interface SalesOrderView {
   fulfillment?: SalesFulfillment | null;
   customerRequestMessageReadonly?: boolean;
   customerRequestMessage?: string | null;
+  /**
+   * A website request or order: whether the website showed the customer prices when they sent it, stored at the
+   * intake (a visitor without login only while the website price switch was on; a logged-in customer always).
+   * Null or absent: not known (a request from before 5 October 2026, or an older backend).
+   */
+  customerSawPrices?: boolean | null;
   advanceContents?: AdvanceContents | null;
   advanceAgreement?: AdvanceAgreement | null;
   settlement?: { revenueEur: number; costEur: number; advanceEur: number; finalSettlement: boolean;

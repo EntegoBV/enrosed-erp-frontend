@@ -45,6 +45,25 @@ export function hasWebsiteCustomerMessage(order: SalesOrder | null | undefined):
     || !!order?.internalNotes?.trimStart().startsWith(WEBSITE_QUOTE_REQUEST_PREFIX);
 }
 
+/**
+ * A website request: did the customer already see prices on the website before sending it? Stored at the intake
+ * (`customerSawPrices`): a visitor without login only sees prices while "Prijzen tonen op de website" is on, a
+ * logged-in customer always sees theirs. Before 5 October 2026 a request without login was not recorded.
+ */
+export function websitePricesSeen(view: SalesOrderView | null | undefined): { text: string; hint: string } {
+  const seen = view?.customerSawPrices;
+  if (seen === true) {
+    return { text: 'klant heeft de prijzen al gezien',
+      hint: 'De website toonde de klant prijzen bij het aanvragen: ingelogd de eigen prijzen, anders de lijstprijzen.' };
+  }
+  if (seen === false) {
+    return { text: 'klant heeft nog geen prijzen gezien',
+      hint: 'De website toonde de klant geen prijzen: “Prijzen tonen op de website” stond uit en de klant was niet ingelogd.' };
+  }
+  return { text: 'onbekend of de klant de prijzen al zag',
+    hint: 'Niet bewaard: deze aanvraag kwam binnen vóór 5 oktober 2026, toen de website de prijzen nog kon tonen.' };
+}
+
 export function customerMessageIsReadOnly(view: SalesOrderView): boolean {
   return view.customerRequestMessageReadonly === true || hasWebsiteCustomerMessage(view.order);
 }

@@ -66,7 +66,7 @@ import { DesktopViewport, deskViewport } from '../../core/platform/desktop-viewp
 import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
-import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, internalNotesForDisplay, isWebsiteQuoteRequest, replaceInternalNotesForDisplay, statusClass, websiteCartonRequests, statusOf,
+import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, internalNotesForDisplay, isWebsiteQuoteRequest, replaceInternalNotesForDisplay, statusClass, websiteCartonRequests, websitePricesSeen, statusOf,
   cancelledByCustomer, customerCanStillChange, documentDeletable, isWebOrder, isWebOrderConflict, webOrderInvoiceable, webOrderRevision } from './quote-status';
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
@@ -380,6 +380,7 @@ function layoutKey(order: SalesOrder): string {
                 <span class="website-review__step">1 · Producten, dozen &amp; prijzen</span>
                 <strong>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }} · {{ data.priced.totals.cartons | num }} dozen</strong>
                 <small>Huidig offertetotaal {{ data.priced.totals.total | eur }} · controleer de stukprijzen.</small>
+                @if (!isWebOrder()) { <small class="website-review__prices">{{ websitePricesSeen(data).text }}</small> }
                 @if (websiteCartons(data.order).length) {
                   <em class="website-review__warning">
                     {{ websiteCartons(data.order).length }}
@@ -1818,6 +1819,8 @@ function layoutKey(order: SalesOrder): string {
     .website-review__grid strong { font-size:15px;line-height:1.35 }
     .website-review__grid small,.website-review__warning { color:var(--muted);font-size:13px;line-height:1.4;font-style:normal }
     .website-review__warning { color:var(--danger);font-weight:680 }
+    .website-review__grid small.website-review__prices { color:var(--ink);font-weight:760 }
+    .website-review__prices::first-letter { text-transform:uppercase }
     .website-review__go { margin-top:auto;color:var(--rose-dark);font-size:13px;font-weight:780 }
     @media(max-width:560px) {
       .quote-action-error { align-items:stretch;flex-direction:column }
@@ -3517,6 +3520,8 @@ export class SalesEditor {
   statusOf = statusOf;
   cls = statusClass;
   readonly websiteRequest = isWebsiteQuoteRequest;
+  /** A website request: whether the customer already saw prices on the website, as the intake stored it. */
+  readonly websitePricesSeen = websitePricesSeen;
   readonly websiteCartons = websiteCartonRequests;
   readonly visibleInternalNotes = internalNotesForDisplay;
 

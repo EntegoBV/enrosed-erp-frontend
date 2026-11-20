@@ -360,9 +360,10 @@ interface JourneyStep {
             <button class="linklike" type="button" (click)="showRail('status')">Beoordelen ›</button>
           </div>
         } @else if (websiteRequest(data.order) && !isWebOrder()) {
+          @let prices = websitePricesSeen(data);
           <div class="desk-attention" role="status">
             <b>↗</b>
-            <span><strong>Websiteaanvraag</strong> · controleer producten en dozen, klant en btw ({{ vatLabel(data.priced.totals.vatTreatment) }}), levering en vracht vóór het versturen</span>
+            <span><strong>Websiteaanvraag</strong> · <em class="desk-attention__prices" [attr.title]="prices.hint">{{ prices.text }}</em> · controleer producten en dozen, klant en btw ({{ vatLabel(data.priced.totals.vatTreatment) }}), levering en vracht vóór het versturen</span>
             <button class="linklike" type="button" (click)="showRail('status')">Checklist ›</button>
           </div>
         } @else if (data.awaitingResend) {
@@ -1537,6 +1538,7 @@ interface JourneyStep {
     .desk-notes{display:grid;column-gap:14px}.desk-web-note{margin-bottom:16px}
     @media(min-width:1180px){.desk-notes{grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);align-items:start}}
     .desk-attention--order{align-items:flex-start;margin-bottom:12px}.desk-attention--order small{display:block;margin-top:4px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+    .desk-attention__prices{display:inline-block;padding:0 8px;border:1px solid #e3cd9f;border-radius:999px;background:var(--surface);color:var(--ink);font-style:normal;font-weight:760;line-height:1.6}
     .desk-attention--order small.desk-attention__gold{padding:5px 8px;border-left:3px solid var(--gold);border-radius:8px;background:var(--surface);color:var(--ink)}
     .check-option{display:flex;gap:10px;padding:8px 0;cursor:pointer}.check-option input{width:20px;height:20px;flex:none;accent-color:var(--rose)}.check-option span{display:grid;gap:2px}.check-option strong{font-size:12.5px}.check-option small{color:var(--muted);font-size:11px}
   `],
