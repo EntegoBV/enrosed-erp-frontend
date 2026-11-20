@@ -5811,3 +5811,37 @@ screens live. Backend side: its AI-CONTEXT (same title) and `docs/integrations/c
 - Looked at on 2026-11-16 against a local backend with the real documents of PO-2026-004, -006, -007 and -011
   (same references and dates): the sheet in every state, Overnemen from the order page (desk, phone) and from the
   tracking page, the partner portal with a ship that is in; desk 1280 and 1070 px, phone 375 and 390 px.
+
+## De klant vanuit een verkoopdocument (2026-11-20)
+
+Emre: "Verkoop order op de titel klant kunnen drukken om popup te hebben en details van klant te kunnen zien of
+wijzigen."
+
+- **One customer sheet.** `customers/customer-sheet.ts` (`<app-customer-sheet>`) is the sheet Klanten always had
+  ("Klant bewerken" / "Nieuwe klant": Opvolging, the fields, partner and fiscal representative, Websitelogin,
+  Klantprijzen, Gehanteerde prijzen, notes), moved out of `customer-list.ts` unchanged. Inputs: `customer` (null for
+  a new one; read ONCE in ngOnInit, so a list read again behind it never resets what is typed), `countries`
+  (Landen & vracht; a new customer whose sheet opened before them gets the default country when they arrive) and
+  `removable` (Verwijderen; true in Klanten). It saves and deletes itself and toasts, then emits `saved(Customer)`
+  / `removed`; the host closes it and reads its lists again. `touchpointStamp()` in `customer-form.ts` is the
+  "7 nov · Emre" stamp for the sheet and the list row's title.
+- **Klanten** opens it from a row, `+ Nieuw` / `+ Klant`, `?klant=<id>` and `?nieuw=1`, as before (`sheet` signal).
+- **Verkoop.** The customer's name in the dark hero is a `.hero-customer` button (global `styles.scss`: the title's
+  own type, a quiet "›", an underline under a mouse; on the desk the name ellipsises and the chevron stays): desk
+  `.desk-hero__who h1`, phone view `h1#sales-overview-title` and its Contact detail (both used to leave for
+  `/customers?q=`), phone editor `.quote-hero__customer`. No customer (or the list not in yet): plain text. It opens
+  the sheet over the document (`customerSheet` in `SalesEditor`, inherited by `SalesDesk`, and in `SalesView`),
+  placed beside the PDF sheet, outside `<main>` (its `anim-rise` transform would trap the fixed overlay), and
+  without Verwijderen (the document itself keeps the customer). A move to another document in the same screen
+  (a link in the customer's price popup) closes it.
+- **After Opslaan** (`customerSaved`): the customer list is read again (name, contact, language, terms), and the
+  document too, because the server prices it with the customer's record (VAT treatment, the address notice): a clean
+  document is re-read and adopted; with unsaved edits the draft is re-priced (`schedulePreview`, the answer keeps
+  the draft); while a write is under way only `invoiceCustomer` is taken over, that write's answer reads the new
+  record. The phone view simply shows the re-read document.
+- Duo landscape (`styles/host-r5/_sales-doc.scss`): the two-column customer sheet rules now target
+  `app-customer-sheet`, so they hold from Klanten and from a sales document alike.
+- Looked at on 2026-11-20 against a local prod-profile backend on the 2026-11-15 test backup: desk 1280 and 1070 px,
+  phone 390 px (view and editor, touch), unfolded Duo 669 × 951; open, Escape, ×, Annuleren, Opslaan with the new
+  name in the title at once, a fiscal-representative change turning the VAT treatment with and without unsaved
+  edits, Klanten row / new / `?klant=` / `?nieuw=1`.
