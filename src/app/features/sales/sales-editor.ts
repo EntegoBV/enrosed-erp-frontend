@@ -22,8 +22,10 @@ import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
-import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderInvoiceReady, webOrderNotice, webOrderSendChoice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import type { WebOrderAgreement, WebOrderSendMode } from './sales-invoice-actions';
 import { SalesWebOrderNote } from './sales-web-order-note';
+import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
@@ -112,7 +114,7 @@ function layoutKey(order: SalesOrder): string {
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, OrderPallets3d, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
@@ -151,13 +153,13 @@ function layoutKey(order: SalesOrder): string {
             <button class="btn btn--sm quote-header-button quote-header-button--send" type="button"
                     [class.quote-header-button--send-quiet]="dirty() || invoiceFirst(data)"
                     [disabled]="sending()"
-                    [attr.aria-label]="sendForApproval() ? 'Versturen ter goedkeuring' : data.order.sentAt ? 'Offerte opnieuw versturen' : 'Offerte versturen'"
+                    [attr.aria-label]="sendChoice() ? sendLabel(data) : sendForApproval() ? 'Versturen ter goedkeuring' : data.order.sentAt ? 'Offerte opnieuw versturen' : 'Offerte versturen'"
                     (click)="openSend()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M22 2 11 13"/><path d="M22 2l-7 20-4-9-9-4 22-7z"/>
               </svg>
-              <span>{{ sendForApproval() ? 'Ter goedkeuring' : data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}</span>
+              <span>{{ sendChoice() ? (sendChoice()!.defaultMode === 'invoice' ? 'Factuur' : 'Ter goedkeuring') : sendForApproval() ? 'Ter goedkeuring' : data.order.sentAt ? 'Opnieuw' : 'Verstuur' }}</span>
             </button>
           }
           @if (canCancel()) {
@@ -1500,7 +1502,7 @@ function layoutKey(order: SalesOrder): string {
             </button>
           } @else if (!dirty() && !isClaimDoc() && !sendIssues().length) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
-                    [disabled]="sending()" (click)="openSend()">{{ sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen' }}</button>
+                    [disabled]="sending()" (click)="openSend()">{{ sendChoice() ? sendLabel(data) : sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen' }}</button>
           } @else if (!dirty() && !isClaimDoc() && sendIssues().length) {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     (click)="fixIssue(sendIssues()[0])">
@@ -1703,9 +1705,14 @@ function layoutKey(order: SalesOrder): string {
       @if (sendSheet()) {
         <app-sheet [title]="sendCopy()?.title ?? (isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen')" (closed)="sendSheet.set(false)">
           <div body>
+            @if (sendChoice()) {
+              <!-- A taken website order: the invoice (the customer agreed) or this version for approval. -->
+              <app-web-order-send-choice [view]="data" variant="ios" [(mode)]="sendMode" [(agreedVia)]="sendAgreedVia" />
+            } @else {
             <p class="small muted" style="margin-bottom:14px">
               {{ sendCopy()?.body ?? (isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.') }}
             </p>
+            }
             <div class="field">
               <label for="send-message">Persoonlijk bericht</label>
               <textarea class="textarea" id="send-message" [ngModel]="sendMessage()"
@@ -1715,8 +1722,8 @@ function layoutKey(order: SalesOrder): string {
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="sendSheet.set(false)">Annuleren</button>
             <button class="btn btn--primary" type="button"
-                    [disabled]="sending() || sendIssues().length > 0"
-                    (click)="send()">{{ sending() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}</button>
+                    [disabled]="sending() || sendIssues().length > 0 || sendConfirmBlocked()"
+                    (click)="confirmSend()">{{ sending() ? 'Bezig…' : sendConfirmLabel() }}</button>
           </div>
         </app-sheet>
       }
@@ -2310,7 +2317,16 @@ export class SalesEditor {
     return this.websiteRequest(data.order) && !data.order.sentAt ? 'Aanvraag annuleren' : fallback;
   }
   sendLabel(data: SalesOrderView): string {
+    const choice = webOrderSendChoice(data);
+    if (choice) return choice.defaultMode === 'invoice' ? 'Factuur versturen' : 'Versturen ter goedkeuring';
     return webOrderSendsForApproval(data) ? 'Versturen ter goedkeuring' : data.order.sentAt ? 'Opnieuw versturen' : 'Versturen';
+  }
+  /** Under the desk's next step: what the send sheet offers a taken website order. */
+  sendHint(data: SalesOrderView): string {
+    const choice = webOrderSendChoice(data);
+    if (!choice) return data.awaitingResend ? 'de klant wacht op de nieuwe versie' : 'klaar voor de klant';
+    if (choice.invoiceBlock) return 'factuur kan nog niet';
+    return choice.needsAgreement ? 'klant akkoord · of ter goedkeuring' : 'gelijk aan de bestelling';
   }
   /**
    * The server mails a cancellation only when the customer record holds an
@@ -2938,7 +2954,7 @@ export class SalesEditor {
     } else if (!dirty && this.invoiceFirst(data)) {
       primary = { id: 'makeInvoice', label: 'Factuur maken', disabled: this.invoiceConversionBusy() || this.saving() || this.sending() };
     } else if (!dirty && !this.isClaimDoc() && !this.sendIssues().length) {
-      primary = { id: 'openSend', label: this.sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen', disabled: this.sending() };
+      primary = { id: 'openSend', label: this.sendChoice() ? this.sendLabel(data) : this.sendForApproval() ? 'Versturen ter goedkeuring' : 'Versturen', disabled: this.sending() };
     } else if (!dirty && !this.isClaimDoc() && this.sendIssues().length) {
       const count = this.sendIssues().length;
       primary = { id: 'fixIssue', label: `${count} open ${count === 1 ? 'punt' : 'punten'}` };
@@ -3273,6 +3289,15 @@ export class SalesEditor {
   });
   readonly sendMessage = signal('');
   readonly sending = signal(false);
+  /** The send sheet of a taken website order: the invoice or the approval, and how the customer agreed. */
+  readonly sendChoice = computed(() => webOrderSendChoice(this.view()));
+  readonly sendMode = signal<WebOrderSendMode>('invoice');
+  readonly sendAgreedVia = signal<WebOrderAgreement | null>(null);
+  /** The sheet's button sends the invoice: a taken website order with Factuur picked. */
+  readonly sendsInvoice = computed(() => !!this.sendChoice() && this.sendMode() === 'invoice');
+  readonly sendConfirmLabel = computed(() => this.sendsInvoice() ? 'Factuur versturen' : (this.sendCopy()?.confirm ?? 'Versturen'));
+  /** Factuur picked while the invoice cannot go yet, or the agreement is still to be picked. */
+  readonly sendConfirmBlocked = computed(() => this.sendsInvoice() && !webOrderInvoiceReady(this.sendChoice(), this.sendAgreedVia()));
 
   /** Pallet management opens as a sheet: full height, scrollable, phone-first. */
   readonly palletSheet = signal(false);
@@ -4612,7 +4637,48 @@ export class SalesEditor {
       return;
     }
     this.sendMessage.set('');
+    this.sendMode.set(this.sendChoice()?.defaultMode ?? 'approval');
+    this.sendAgreedVia.set(null);
     this.sendSheet.set(true);
+  }
+
+  confirmSend(): void {
+    if (this.sendsInvoice()) void this.sendWebOrderInvoice();
+    else void this.send();
+  }
+
+  /**
+   * "Factuur versturen" from the send sheet of a taken website order: the
+   * server records how the customer agreed (other figures than the ordered
+   * ones only), makes the invoice and mails it, or does nothing at all.
+   * The screen then moves to the invoice.
+   */
+  async sendWebOrderInvoice(): Promise<void> {
+    if (this.sending()) return;
+    this.sending.set(true);
+    let actingId = this.view()?.order.id ?? -1;
+    try {
+      if (!(await this.flushPendingEdits())) return;
+      const data = this.view();
+      if (!data) return;
+      actingId = data.order.id;
+      if (this.sendIssues().length) {
+        this.ui.toast(this.sendIssues()[0], 'err');
+        return;
+      }
+      const choice = webOrderSendChoice(data);
+      if (!webOrderInvoiceReady(choice, this.sendAgreedVia())) return;
+      const invoice = await this.sales.invoiceWebOrder(data.order.id,
+        { agreedVia: choice!.needsAgreement ? this.sendAgreedVia() : null, message: this.sendMessage() }, webOrderRevision(data));
+      this.sendSheet.set(false);
+      void this.work.refresh(true);
+      this.ui.toast(`Factuur ${invoice.order.number} verstuurd naar de klant`);
+      await this.router.navigate(['/sales', invoice.order.id]);
+    } catch (failure: unknown) {
+      this.actionFailed(failure, 'Factuur versturen mislukt', actingId);
+    } finally {
+      this.sending.set(false);
+    }
   }
 
   async send(): Promise<void> {

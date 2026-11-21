@@ -3081,9 +3081,24 @@ and on copies. Without the blocks (older backend) every screen is as before.
   compare line per `termsState`; `canCreateInvoiceFromQuote` allows an
   invoice without sending only for a taken order with `ORDER_EQUAL` or
   `APPROVED`; there the invoice is the primary action
-  (`webOrderInvoiceFirst`). The send action of a taken concept always reads
-  `Versturen ter goedkeuring` (`webOrderSendsForApproval`), and the send
-  sheet and toast come from `webOrderSendCopy`. The banner sits straight
+  (`webOrderInvoiceFirst`, false once the send sheet itself offers the
+  invoice). The send sheet and toast come from `webOrderSendCopy`.
+- **Factuur versturen (2026-11-20, Emre: "they already approved it, the
+  customer should get the invoice").** A taken web order in CONCEPT,
+  VERZONDEN or BEKEKEN, not invoiced, sends from one sheet "Bestelling
+  versturen" with `app-web-order-send-choice`
+  (`sales-web-order-send-choice.ts`): Factuur (default) or Ter goedkeuring.
+  `webOrderSendChoice` decides it: other figures than the ordered ones need
+  one tap "Klant ging akkoord via" (Telefoon, E-mail, WhatsApp, Ter
+  plaatse) before `Factuur versturen` lights; freight "later bepalen" or a
+  customer without address blocks the invoice and starts on Ter
+  goedkeuring. The send button and the desk's next step read `Factuur
+  versturen` (`sendLabel`, `sendHint`); `Factuur maken zonder versturen`
+  stays as the quiet option. `SalesApi.invoiceWebOrder` posts
+  `/web-order/invoice` (agreement, invoice and mail in one server
+  transaction) and the screen moves to the invoice. Desk and phone editor
+  share it through `SalesEditor` (`sendChoice`, `sendMode`, `sendAgreedVia`,
+  `confirmSend`); the read view has its own copy. The banner sits straight
   under the hero on desk, phone editor and read view (where it also carries
   `In verwerking nemen` on a phone) and names a cancellation by the customer.
   Verwijderen on a document follows `documentDeletable`: a web order once

@@ -6,6 +6,7 @@ import { salesSplitBlockReason } from './sales-split-state';
 import type { SalesSplitResult } from '../../core/api/models';
 import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
+import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
@@ -81,7 +82,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, OrderPallets3d, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -323,7 +324,7 @@ interface JourneyStep {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="sending() || dirty() || allProductsUnavailable()" (click)="openSend()">
                 <small>Volgende stap</small>
                 <strong>{{ sendLabel(data) }} ›</strong>
-                <span>{{ dirty() ? 'slaat eerst op' : (data.awaitingResend ? 'de klant wacht op de nieuwe versie' : 'klaar voor de klant') }}</span>
+                <span>{{ dirty() ? 'slaat eerst op' : sendHint(data) }}</span>
               </button>
             } @else {
               <div class="desk-kpi desk-kpi--total">
@@ -1130,7 +1131,7 @@ interface JourneyStep {
                           </button>
                         } @else if (data.order.status === 'CONCEPT' || data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
                           <button class="desk-action" type="button" [disabled]="sending() || sendIssues().length > 0 || dirty()" (click)="openSend()">
-                            <i aria-hidden="true">➤</i><span><b>{{ sendLabel(data) }}</b><small>{{ dirty() ? 'Sla eerst op' : isWebOrder() ? 'PDF in bijlage en een link om deze versie goed te keuren' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
+                            <i aria-hidden="true">➤</i><span><b>{{ sendLabel(data) }}</b><small>{{ dirty() ? 'Sla eerst op' : sendChoice() ? (sendChoice()!.defaultMode === 'invoice' ? 'Factuur-PDF met betaalgegevens, of ter goedkeuring' : 'PDF in bijlage en een link om deze versie goed te keuren') : isWebOrder() ? 'PDF in bijlage en een link om deze versie goed te keuren' : 'PDF in bijlage en een link om te tekenen' }}</small></span>
                           </button>
                         }
                         @if (advanceAgreement() || canCreateInvoice(data)) {
@@ -1364,9 +1365,14 @@ interface JourneyStep {
       @if (sendSheet()) {
         <app-sheet [title]="sendCopy()?.title ?? (isCreditNoteDoc() ? 'Creditnota versturen' : isInvoiceDoc() ? 'Factuur versturen' : 'Offerte versturen')" (closed)="sendSheet.set(false)">
           <div body>
+            @if (sendChoice() && view(); as current) {
+              <!-- A taken website order: the invoice (the customer agreed) or this version for approval. -->
+              <app-web-order-send-choice [view]="current" [(mode)]="sendMode" [(agreedVia)]="sendAgreedVia" />
+            } @else {
             <p class="small muted" style="margin-bottom:14px">
               {{ sendCopy()?.body ?? (isCreditNoteDoc() ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.' : isInvoiceDoc() ? 'De klant krijgt de factuur-PDF in bijlage met de betaalgegevens.' : 'De klant krijgt de PDF in bijlage en een link om de offerte online te bekijken, te tekenen of een wijziging voor te stellen.') }}
             </p>
+            }
             <div class="field">
               <label for="sd-send-message">Persoonlijk bericht</label>
               <textarea class="textarea" id="sd-send-message" rows="4" [ngModel]="sendMessage()" (ngModelChange)="sendMessage.set($event)"></textarea>
@@ -1374,8 +1380,8 @@ interface JourneyStep {
           </div>
           <div foot style="display:contents">
             <button class="btn" type="button" (click)="sendSheet.set(false)">Annuleren</button>
-            <button class="btn btn--primary" type="button" [disabled]="sending() || sendIssues().length > 0" (click)="send()">
-              {{ sending() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}
+            <button class="btn btn--primary" type="button" [disabled]="sending() || sendIssues().length > 0 || sendConfirmBlocked()" (click)="confirmSend()">
+              {{ sending() ? 'Bezig…' : sendConfirmLabel() }}
             </button>
           </div>
         </app-sheet>

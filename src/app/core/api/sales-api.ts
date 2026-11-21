@@ -8,7 +8,7 @@ import {
   NotificationFeed, PortalCatalogItem, PortalQuote, QuoteEvent, QuoteRevision, SalesOrder,
   SalesOrderView, SalesPayment, SalesPaymentRequest, IncomingPaymentRow, SalesPurpose, SalesPaymentPlan, Carrier, CarrierShipQuote, DocumentType, AuctionSettlementRequest, FromPurchaseOrderRequest,
   SalesSplitEligibility, SalesSplitRequest, SalesSplitPreview, SalesSplitCommitRequest, SalesSplitResult,
-  CreditNoteProposal, CreditNoteRequest, SalesAdvanceInvoiceRequest,
+  CreditNoteProposal, CreditNoteRequest, SalesAdvanceInvoiceRequest, WebOrderAgreement,
 } from './models';
 import {
   PackingSlipPdfOptions, SalesPdfOptions, packingSlipPdfQuery, salesPdfQuery,
@@ -377,6 +377,17 @@ export class SalesApi {
   sendQuote(id: number, message: string, webOrderRevision?: number | null): Promise<SalesOrderView> {
     return firstValueFrom(
       this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send${revisionQuery(webOrderRevision)}`), { message }));
+  }
+
+  /**
+   * "Factuur versturen" on a taken website order: the server records how the
+   * customer agreed (only for other figures than the ordered ones), makes the
+   * invoice and mails it, all or nothing. Answers the invoice.
+   */
+  invoiceWebOrder(id: number, body: { agreedVia: WebOrderAgreement | null; message: string },
+                  webOrderRevision?: number | null): Promise<SalesOrderView> {
+    return firstValueFrom(
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/web-order/invoice${revisionQuery(webOrderRevision)}`), body));
   }
 
   /** Withdraws an open quote; with notify the customer gets a mail with the portal link. */

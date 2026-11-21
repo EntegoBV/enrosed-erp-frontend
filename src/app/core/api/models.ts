@@ -2618,6 +2618,9 @@ export interface SalesInvoiceCustomer {
 export type SalesWebOrderTermsState =
   'ORDER_EQUAL' | 'ORDER_DIFFERENT' | 'ORDER_UNKNOWN' | 'AWAITING_APPROVAL' | 'RESEND_REQUIRED' | 'APPROVED';
 
+/** How a customer agreed to a website order outside the approval link, as staff record it when the invoice leaves. */
+export type WebOrderAgreement = 'TELEFOON' | 'EMAIL' | 'WHATSAPP' | 'TER_PLAATSE';
+
 export interface SalesWebOrder {
   /** Moves only through customer actions; every staff mutation presents the one its screen shows. */
   revision: number;

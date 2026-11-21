@@ -32,7 +32,9 @@ import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoi
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
-import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderInvoiceReady, webOrderNeedsApproval, webOrderNotice, webOrderSendChoice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import type { WebOrderAgreement, WebOrderSendMode } from './sales-invoice-actions';
+import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
 import { linePriceFigures, linePriceHint, linePriceState, linePriceSummary, type LinePriceState } from './line-price-source';
@@ -84,7 +86,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet, OrderPallets3d],
   template: `
     @if (view(); as data) {
@@ -870,8 +872,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </button>
                   }
                   <button class="btn btn--block" [class.btn--primary]="!invoiceFirst(data)" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
-                          (click)="sendSheetOpen.set(true)">
-                    {{ sendForApproval() ? 'Versturen ter goedkeuring…' : data.order.sentAt ? 'Nieuwe versie versturen…' : 'Offerte versturen…' }}
+                          (click)="openSendSheet()">
+                    {{ sendChoice() ? (sendChoice()!.defaultMode === 'invoice' ? 'Factuur versturen…' : 'Versturen ter goedkeuring…') : sendForApproval() ? 'Versturen ter goedkeuring…' : data.order.sentAt ? 'Nieuwe versie versturen…' : 'Offerte versturen…' }}
                   </button>
                   @if (canCreateInvoice(data) && !invoiceFirst(data)) {
                     <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()"
@@ -1059,6 +1061,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       <app-sheet [title]="sendCopy()?.title ?? (isCreditNote() ? 'Creditnota versturen' : isInvoice() ? 'Factuur versturen' : 'Offerte versturen')"
                  (closed)="sendSheetOpen.set(false)">
         <div body>
+          @if (sendChoice()) {
+            <!-- A taken website order: the invoice (the customer agreed) or this version for approval. -->
+            <app-web-order-send-choice [view]="data" variant="ios" [(mode)]="sendMode" [(agreedVia)]="sendAgreedVia" />
+          } @else {
           <p class="small muted" style="margin-bottom:14px">
             {{ sendCopy()?.body ?? (isCreditNote()
                 ? 'De klant krijgt de creditnota-PDF in bijlage, met de factuur waarop ze slaat en de stand van het tegoed.'
@@ -1066,6 +1072,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 ? 'De klant krijgt de factuur-PDF in bijlage, met de betaalgegevens in de mail.'
                 : 'De klant krijgt de PDF in bijlage en een link om online te tekenen of een wijziging voor te stellen.') }}
           </p>
+          }
           <div class="field">
             <label for="view-send-message">Persoonlijk bericht</label>
             <textarea class="textarea" id="view-send-message" rows="3"
@@ -1075,8 +1082,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
         </div>
         <div foot style="display:contents">
           <button class="btn" type="button" (click)="sendSheetOpen.set(false)">Annuleren</button>
-          <button class="btn btn--primary" type="button" [disabled]="sendingQuote() || allProductsUnavailable()"
-                  (click)="sendFromView()">{{ sendingQuote() ? 'Bezig…' : (sendCopy()?.confirm ?? 'Versturen') }}</button>
+          <button class="btn btn--primary" type="button" [disabled]="sendingQuote() || allProductsUnavailable() || sendConfirmBlocked()"
+                  (click)="confirmSendFromView()">{{ sendingQuote() ? 'Bezig…' : sendConfirmLabel() }}</button>
         </div>
       </app-sheet>
     }
@@ -1639,6 +1646,7 @@ export class SalesView {
     if (data.webOrder?.customerEditable) return 'Bestelling in verwerking nemen';
     if (data.webOrder?.customerCancelledAt) return 'Door klant geannuleerd';
     if (data.webOrder && data.order.status === 'GEACCEPTEERD' && !webOrderInvoiceable(data)) return 'Nieuwe kopie ter goedkeuring';
+    if (data.webOrder && webOrderSendChoice(data)?.defaultMode === 'invoice' && data.order.status === 'CONCEPT') return 'Factuur naar de klant';
     if (data.webOrder && webOrderNeedsApproval(data)) return 'Bestelling ter goedkeuring naar de klant';
     if (data.order.docType === 'CREDITNOTA') return this.creditStep()?.title ?? 'Creditnota';
     if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Wacht op beschikbare producten';
@@ -1667,6 +1675,9 @@ export class SalesView {
     if (data.webOrder?.customerEditable) return 'De klant kan nog wijzigen. Neem ze in verwerking om te bewerken, te versturen of te factureren.';
     if (data.webOrder?.customerCancelledAt) return 'De klant annuleerde deze bestelling op de website; heropenen kan niet.';
     if (data.webOrder && data.order.status === 'GEACCEPTEERD' && !webOrderInvoiceable(data)) return 'De cijfers wijken af van de versie waarmee de klant akkoord ging. Maak via Beheren een nieuwe kopie en verstuur die ter goedkeuring.';
+    if (data.webOrder && webOrderSendChoice(data)?.defaultMode === 'invoice' && data.order.status === 'CONCEPT') return webOrderSendChoice(data)!.needsAgreement
+      ? 'Gewijzigd t.o.v. de bestelling. Ging de klant akkoord, stuur dan de factuur; anders ter goedkeuring.'
+      : 'Gelijk aan de bestelling: de factuur kan meteen naar de klant.';
     if (data.webOrder && webOrderNeedsApproval(data)) return 'Deze bestelling wijkt af van wat de klant bestelde of werd al eens verstuurd. Verstuur ze ter goedkeuring, of maak de factuur als de klant buiten de link akkoord ging.';
     if (data.order.docType === 'CREDITNOTA') return this.creditStep()?.help ?? '';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR' && (data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'De creditnota nam de hele factuur terug; er valt niets meer te ontvangen.';
@@ -1851,6 +1862,47 @@ export class SalesView {
   readonly sendSheetOpen = signal(false);
   readonly sendMessage = signal('');
   readonly sendingQuote = signal(false);
+  /** The send sheet of a taken website order: the invoice or the approval, and how the customer agreed. */
+  readonly sendChoice = computed(() => webOrderSendChoice(this.view()));
+  readonly sendMode = signal<WebOrderSendMode>('invoice');
+  readonly sendAgreedVia = signal<WebOrderAgreement | null>(null);
+  readonly sendsInvoice = computed(() => !!this.sendChoice() && this.sendMode() === 'invoice');
+  readonly sendConfirmLabel = computed(() => this.sendsInvoice() ? 'Factuur versturen' : (this.sendCopy()?.confirm ?? 'Versturen'));
+  readonly sendConfirmBlocked = computed(() => this.sendsInvoice() && !webOrderInvoiceReady(this.sendChoice(), this.sendAgreedVia()));
+
+  /** The quote's send sheet starts on what the order allows: the invoice when it can go, else the approval. */
+  openSendSheet(): void {
+    this.sendMode.set(this.sendChoice()?.defaultMode ?? 'approval');
+    this.sendAgreedVia.set(null);
+    this.sendSheetOpen.set(true);
+  }
+
+  confirmSendFromView(): void {
+    if (this.sendsInvoice()) void this.sendInvoiceFromView();
+    else void this.sendFromView();
+  }
+
+  /** "Factuur versturen" on a taken website order: agreement, invoice and mail in one call; then the invoice opens. */
+  async sendInvoiceFromView(): Promise<void> {
+    const data = this.view();
+    if (!data || this.sendingQuote() || this.allProductsUnavailable() || customerCanStillChange(data)) return;
+    const choice = webOrderSendChoice(data);
+    if (!webOrderInvoiceReady(choice, this.sendAgreedVia())) return;
+    this.sendingQuote.set(true);
+    try {
+      const invoice = await this.sales.invoiceWebOrder(data.order.id,
+        { agreedVia: choice!.needsAgreement ? this.sendAgreedVia() : null, message: this.sendMessage().trim() }, webOrderRevision(data));
+      this.sendSheetOpen.set(false);
+      this.sendMessage.set('');
+      void this.work.refresh(true);
+      this.ui.toast(`Factuur ${invoice.order.number} verstuurd naar de klant`);
+      await this.routerNav.navigate(['/sales', invoice.order.id]);
+    } catch (failure: unknown) {
+      this.actionFailed(failure, 'Factuur versturen mislukt', data.order.id);
+    } finally {
+      this.sendingQuote.set(false);
+    }
+  }
 
   /** The next step without opening the editor: the quote leaves from here. */
   async sendFromView(): Promise<void> {
