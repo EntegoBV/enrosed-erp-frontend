@@ -267,6 +267,12 @@ export function quoteSettlement(view: Pick<SalesOrderView, 'invoicedAs' | 'invoi
   return { id: view.invoicedAsId ?? null, number: view.invoicedAs || 'de slotfactuur', state };
 }
 
+/** Who agreed to an accepted quote: the name of an online signature, else 'akkoord genoteerd' (staff noted it outside the link). */
+export function acceptedBy(order: { signedByName?: string | null }): string {
+  const name = order.signedByName?.trim();
+  return name ? `getekend door ${name}` : 'akkoord genoteerd';
+}
+
 /** A slotfactuur line the server owns: 'Voorschotfactuur F-… van dd/mm/jjjj'. It is never edited or removed here. */
 export function isDeductionLine(description: string | null | undefined, deductions: readonly Pick<SalesAdvanceDeduction, 'number'>[] | null | undefined): boolean {
   const text = (description ?? '').trim();
@@ -284,11 +290,22 @@ export interface InvoiceConfirm { title: string; message: string; confirmLabel: 
  * The confirm before converting a quote: the ordinary invoice, or the
  * slotfactuur with the advances it deducts. `escape` is the host's HTML
  * escaper (the confirm renders markup); a concept advance refuses instead.
+ * `agreement`: the customer never approved this version through the link,
+ * so the confirm asks whether the customer agreed otherwise; the server
+ * then notes that agreement with the invoice.
  */
-export function invoiceConfirmOptions(view: SalesOrderView, escape: (value: string) => string): InvoiceConfirm | { refused: string } {
+export function invoiceConfirmOptions(view: SalesOrderView, escape: (value: string) => string, agreement = false): InvoiceConfirm | { refused: string } {
   const plan = finalInvoicePlan(view);
   const number = escape(view.order.number);
   if (!plan) {
+    if (agreement) {
+      return {
+        title: 'Akkoord buiten de link?',
+        message: `${agreementQuestion(view, number, escape)} De inhoud komt in een nieuwe conceptfactuur; de offerte wordt gearchiveerd. `
+          + 'Er wordt geen e-mail verstuurd.',
+        confirmLabel: 'Akkoord noteren en factuur maken',
+      };
+    }
     return {
       title: 'Factuur maken zonder versturen',
       message: `De inhoud van <b>${number}</b> komt in een nieuwe conceptfactuur. `
@@ -301,10 +318,37 @@ export function invoiceConfirmOptions(view: SalesOrderView, escape: (value: stri
   const outro = rest.pop() ?? '';
   return {
     title: 'Slotfactuur maken',
-    message: `<b>${number}</b> · ${escape(intro)}<br>${rest.map((row) => `· ${escape(row)}`).join('<br>')}<br>${escape(outro)}`
+    message: (agreement ? `${agreementQuestion(view, number, escape)}<br>` : '')
+      + `<b>${number}</b> · ${escape(intro)}<br>${rest.map((row) => `· ${escape(row)}`).join('<br>')}<br>${escape(outro)}`
       + (!plan.negative ? ''
         : plan.creditsKnown ? '<br><b>Let op:</b> de voorschotten zijn hoger dan de offerte; uitreiken lukt pas na een creditnota op een voorschotfactuur.'
         : '<br><b>Let op:</b> vóór creditnota\'s zijn de voorschotten hoger dan de offerte; zonder creditnota op een voorschotfactuur lukt uitreiken niet.'),
-    confirmLabel: 'Conceptslotfactuur maken',
+    confirmLabel: agreement ? 'Akkoord noteren en slotfactuur maken' : 'Conceptslotfactuur maken',
   };
+}
+
+/** 'Not approved through the link; did the customer agree otherwise?', with the link closing when one is open. */
+function agreementQuestion(view: SalesOrderView, number: string, escape: (value: string) => string): string {
+  const webOrder = view.webOrder;
+  const linkOpen = view.order.status === 'VERZONDEN' || view.order.status === 'BEKEKEN';
+  return (webOrder ? `De klant keurde deze versie van <b>${number}</b> niet goed via de link.` : `<b>${number}</b> is niet via de link aanvaard.`)
+    + orderDifference(webOrder?.termsState === 'ORDER_DIFFERENT' ? webOrder.differences : null, escape)
+    + ' Ging de klant toch akkoord, per telefoon, mail of op de beurs? Dan noteren we dat akkoord'
+    + (linkOpen ? ' en sluit de klantlink.' : '.');
+}
+
+/**
+ * ' Wijkt af van de bestelling: …' kept short: up to two changes by name, more as a count, and the total line
+ * last. The order's own notice on the page lists every change.
+ */
+function orderDifference(differences: readonly string[] | null | undefined, escape: (value: string) => string): string {
+  const lines = (differences ?? []).filter(Boolean);
+  if (!lines.length) return '';
+  const total = lines.find((line) => line.startsWith('Totaal'));
+  const rest = lines.filter((line) => line !== total);
+  const parts = [
+    rest.length > 2 ? `${rest.length} wijzigingen` : rest.join(' · '),
+    total ? total.charAt(0).toLowerCase() + total.slice(1) : '',
+  ].filter(Boolean);
+  return ` Wijkt af van de bestelling: ${escape(parts.join(' · '))}.`;
 }

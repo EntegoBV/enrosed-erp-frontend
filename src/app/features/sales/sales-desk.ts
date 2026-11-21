@@ -14,7 +14,7 @@ import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
-import { canCreateInvoiceFromQuote } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, invoiceNotesAgreement } from './sales-invoice-actions';
 import { creditNoteJourney, creditNoteSettlement } from './sales-credit-note';
 import { SalesCreditNoteSheet } from './sales-credit-note-sheet';
 import { SalesOffsetSheet } from './sales-offset-sheet';
@@ -47,7 +47,7 @@ import { isSettlementInvoice, salesDocumentKind } from './partner-settlement';
 import { reportShipSplits } from './report-backed';
 import { ReportBackedCostSheet } from './report-backed-cost-sheet';
 import { meldingNumbersLine, reportMeldingQuery } from './report-backed-cost';
-import { billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice } from './sales-advance-billing';
+import { acceptedBy, billingKind, invoiceConfirmOptions, isAdvanceBillingInvoice, quoteSettlement } from './sales-advance-billing';
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
@@ -114,7 +114,8 @@ interface JourneyStep {
         } @else if (isCreditNoteDoc() && creditStep()?.key === 'apply') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy() || documentMutationBusy()" (click)="openOffset(data.creditedInvoiceId ?? null)">{{ creditStep()!.label }}</button>
         }
-        @if (data.order.status === 'CONCEPT' && canCreateInvoice(data)) {
+        @if (data.order.status !== 'GEACCEPTEERD' && canCreateInvoice(data)) {
+          <!-- Also afterwards, on a quote sent and not answered: the confirm notes that the customer agreed outside the link. -->
           <button class="btn btn--sm" [class.btn--primary]="invoiceFirst(data)" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()"
                   [title]="dirty() ? 'Sla de wijzigingen eerst op' : ''" (click)="makeInvoice(data)">
             {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
@@ -140,7 +141,7 @@ interface JourneyStep {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="busy()" (click)="duplicate()">Nieuwe kopie</button>
         } @else if (!isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
           <button class="btn btn--primary btn--sm" type="button" [disabled]="invoiceBusy() || dirty() || saving()" (click)="makeInvoice(data)">
-            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
+            {{ advanceAgreement() ? 'Voorschotfacturen beheren' : data.invoicedAs ? 'Naar factuur ' + data.invoicedAs : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
           </button>
         }
       </app-page-header>
@@ -294,9 +295,16 @@ interface JourneyStep {
               </button>
             } @else if (data.order.status === 'GEACCEPTEERD') {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="makeInvoice(data)">
-                <small>Volgende stap</small>
-                <strong>{{ advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken') }} ›</strong>
-                <span>getekend door {{ data.order.signedByName || 'de klant' }}</span>
+                @if (!advanceAgreement() && madeInvoice(data); as made) {
+                  <!-- The invoice already exists: the tile leads there and says how far it is. -->
+                  <small>Gefactureerd</small>
+                  <strong>{{ made.number }} ›</strong>
+                  <span>{{ made.state || 'factuur gemaakt' }} · {{ acceptedBy(data.order) }}</span>
+                } @else {
+                  <small>Volgende stap</small>
+                  <strong>{{ advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken') }} ›</strong>
+                  <span>{{ acceptedBy(data.order) }}</span>
+                }
               </button>
             } @else if (sendIssues().length) {
               <button class="desk-kpi desk-kpi--go" type="button" (click)="showRail('status')">
@@ -1122,7 +1130,7 @@ interface JourneyStep {
                           </button>
                         }
                         @if (advanceAgreement() || canCreateInvoice(data)) {
-                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : dirty() ? 'Sla de wijzigingen eerst op' : invoiceActionLabel(data, '') ? 'De volledige offerte min de uitgereikte voorschotfacturen. Er gaat geen e-mail uit.' : 'Maak een conceptfactuur en archiveer de offerte. Er gaat geen e-mail uit.' }}</small></span></button>
+                          <button class="desk-action" type="button" [disabled]="invoiceBusy() || dirty() || saving() || sending()" (click)="makeInvoice(data)"><i aria-hidden="true">€</i><span><b>{{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}</b><small>{{ advanceAgreement() ? 'Maak elke termijn op de inkooporder afzonderlijk aan' : dirty() ? 'Sla de wijzigingen eerst op' : notesAgreement(data) ? 'Ging de klant buiten de link akkoord? Noteer dat en maak de conceptfactuur. Er gaat geen e-mail uit.' : invoiceActionLabel(data, '') ? 'De volledige offerte min de uitgereikte voorschotfacturen. Er gaat geen e-mail uit.' : 'Maak een conceptfactuur en archiveer de offerte. Er gaat geen e-mail uit.' }}</small></span></button>
                         }
                         @if (customerPortalLink(); as portalLink) {
                           @if (portalLink.available && portalLink.url) {
@@ -1716,6 +1724,9 @@ export class SalesDesk extends SalesEditor {
 
   /* ---- invoices: the same steps the phone view offers ---- */
   readonly invoiceBusy = this.documentMutationBusy;
+  /** The invoice made from this quote, with how far it is; null before. */
+  readonly madeInvoice = quoteSettlement;
+  readonly acceptedBy = acceptedBy;
 
   makeInvoice(data: SalesOrderView): void {
     if (this.invoiceBusy() || this.dirty() || this.saving() || this.sending()) return;
@@ -1729,7 +1740,7 @@ export class SalesDesk extends SalesEditor {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    const confirm = invoiceConfirmOptions(data, escapeHtml, invoiceNotesAgreement(data));
     if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
     this.ui.confirm(confirm, () => { void this.createInvoice(data); });
   }
@@ -1741,7 +1752,7 @@ export class SalesDesk extends SalesEditor {
     this.invoiceBusy.set(true);
     try {
       /* The revision of this screen's copy, read inline: the node tests run this method without its imports. */
-      const invoice = await this.sales.createInvoiceFrom(data.order.id, data.webOrder?.revision ?? null);
+      const invoice = await this.sales.createInvoiceFrom(data.order.id, data.webOrder?.revision ?? null, invoiceNotesAgreement(data));
       this.refreshWorkQueue();
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.router.navigate(['/sales', invoice.order.id]);

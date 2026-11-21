@@ -22,7 +22,7 @@ import { SalesAdvanceContents } from './sales-advance-contents';
 import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
-import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { CustomerSheet } from '../customers/customer-sheet';
@@ -1481,7 +1481,7 @@ function layoutKey(order: SalesOrder): string {
           } @else if (!dirty() && !isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
             <button class="btn btn--primary sales-mobile-dock__primary" type="button"
                     [disabled]="invoiceConversionBusy() || saving()" (click)="makeInvoiceFromEditor(data)">
-              {{ advanceAgreement() ? 'Voorschotten beheren' : invoiceConversionBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken') }}
+              {{ advanceAgreement() ? 'Voorschotten beheren' : data.invoicedAs ? 'Naar factuur' : invoiceConversionBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken') }}
             </button>
           } @else if (!dirty() && !isInvoiceDoc()
                      && canReopen(data)) {
@@ -2462,6 +2462,8 @@ export class SalesEditor {
   private readonly injector = inject(Injector);
 
   readonly canCreateInvoice = canCreateInvoiceFromQuote;
+  /** The invoice notes that the customer agreed outside the link (a sent quote, an order never approved). */
+  readonly notesAgreement = invoiceNotesAgreement;
   readonly invoiceConversionBusy = signal(false);
 
   protected refreshWorkQueue(): void { void this.work.refresh(true); }
@@ -2478,7 +2480,7 @@ export class SalesEditor {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    const confirm = invoiceConfirmOptions(data, escapeHtml, invoiceNotesAgreement(data));
     if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
     this.ui.confirm(confirm, () => { void this.createDraftInvoice(data); });
   }
@@ -2569,7 +2571,7 @@ export class SalesEditor {
     this.invoiceConversionBusy.set(true);
     try {
       /* The revision of this screen's copy, read inline: the node tests run this method without its imports. */
-      const invoice = await this.sales.createInvoiceFrom(data.order.id, data.webOrder?.revision ?? null);
+      const invoice = await this.sales.createInvoiceFrom(data.order.id, data.webOrder?.revision ?? null, invoiceNotesAgreement(data));
       this.refreshWorkQueue();
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.router.navigate(['/sales', invoice.order.id]);
@@ -2916,7 +2918,7 @@ export class SalesEditor {
     } else if (!dirty && data.order.status === 'GEACCEPTEERD' && this.invoiceBlockedByOrder(data)) {
       primary = { id: 'duplicate', label: 'Nieuwe kopie', icon: 'copy', disabled: this.busy() };
     } else if (!dirty && !this.isClaimDoc() && data.order.status === 'GEACCEPTEERD') {
-      primary = { id: 'makeInvoice', label: this.advanceAgreement() ? 'Voorschotten beheren' : invoiceActionLabel(data, 'Factuur maken'),
+      primary = { id: 'makeInvoice', label: this.advanceAgreement() ? 'Voorschotten beheren' : data.invoicedAs ? 'Naar factuur' : invoiceActionLabel(data, 'Factuur maken'),
         symbol: 'doc.badge.plus', disabled: this.invoiceConversionBusy() || this.saving() };
     } else if (!dirty && !this.isInvoiceDoc() && this.canReopen(data)) {
       primary = { id: 'reopen', label: 'Heropenen', disabled: this.busy() || this.documentMutationBusy() };

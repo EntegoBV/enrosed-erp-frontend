@@ -5846,3 +5846,32 @@ wijzigen."
   phone 390 px (view and editor, touch), unfolded Duo 669 × 951, short and very long names; open, Escape, ×,
   Annuleren, Opslaan with the new name in the title at once, a fiscal-representative change turning the VAT treatment with and without unsaved
   edits, Klanten row / new / `?klant=` / `?nieuw=1`.
+
+## Factuur maken achteraf: akkoord buiten de link (2026-11-20)
+Emre: "ik wil van deze offerte een factuur maken waarom zie ik dit knop niet?? Fix het dat ik achteraf hier een factuur
+van kan maken" (ENR-2026-0028, a website order Berat had taken, changed and sent for approval; the customer never
+opened the link). Before, `canCreateInvoiceFromQuote` allowed only Concept and Geaccepteerd, and a website order only
+with ordered or approved figures.
+- `canCreateInvoiceFromQuote` now also allows a quote that waits for the customer's answer (Verzonden, Bekeken), and a
+  taken website order whose figures the customer never approved (Concept with ORDER_DIFFERENT / ORDER_UNKNOWN /
+  RESEND_REQUIRED, Verzonden / Bekeken with AWAITING_APPROVAL / RESEND_REQUIRED). Still never: Wijziging gevraagd (the
+  proposal comes first), Afgewezen / Verlopen / Geannuleerd (Heropenen first), an approved version whose figures moved
+  (Nieuwe kopie), an order the customer can still change.
+- `invoiceNotesAgreement(view)` says when the invoice notes that agreement. `invoiceConfirmOptions(view, escape,
+  agreement)` then asks "Ging de klant toch akkoord, per telefoon, mail of op de beurs?" (title "Akkoord buiten de
+  link?", short enough for the phone sheet; button "Akkoord noteren en factuur maken"; a website order names up to two
+  changes, more as a count, plus the total line; a slotfactuur gets the same question on top), and
+  `SalesApi.createInvoiceFrom(id, revision, true)` posts `{ agreedOutsideLink: true }`. The server records the agreement
+  (quote Geaccepteerd, unsigned, history "Akkoord van de klant buiten de link genoteerd · <naam>"), closes the link and
+  holds a website order's invoice to those figures when it is issued.
+- `webOrderInvoiceFirst` stays false for a changed website order: "Versturen ter goedkeuring" is still the primary step,
+  the invoice the secondary one.
+- Where the button shows: desk header (any status but Geaccepteerd, which has its own primary) and the Acties list (small
+  line "Ging de klant buiten de link akkoord? …"); phone view under the next-step card of a sent quote, and the Concept
+  card's secondary button; phone and desk editor status actions (they already followed `canCreateInvoice`).
+- An accepted quote that already has its invoice no longer reads as a to-do (this was so before too, e.g. a
+  slotfactuur quote showed "Slotfactuur maken · getekend door de klant" while its invoice was paid): the desk tile reads
+  "Gefactureerd · VF-… › <nog in concept|uitgereikt|betaald> · <who agreed>", the desk header and the phone card button
+  "Naar factuur VF-…", the phone title "Gefactureerd", the editor dock "Naar factuur" (`quoteSettlement`). Who agreed
+  comes from `acceptedBy(order)`: "getekend door <naam>" for an online signature, else "akkoord genoteerd" (never "de
+  klant" for a signature that does not exist).

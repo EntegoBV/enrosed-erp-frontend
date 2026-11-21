@@ -26,11 +26,11 @@ import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { containerNumberHint, linkedPurchaseOrderId, salesContainerName, salesContainerNumber } from '../purchasing/container-name';
-import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoiceConfirmOptions, isAdvanceBillingInvoice, liveAdvances } from './sales-advance-billing';
+import { advanceInvoiceBlock, billingKind, billingTag, invoiceActionLabel, invoiceConfirmOptions, isAdvanceBillingInvoice, liveAdvances, quoteSettlement } from './sales-advance-billing';
 import { SalesAdvanceBillingCard } from './sales-advance-billing-card';
 import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
-import { canCreateInvoiceFromQuote, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
+import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderNeedsApproval, webOrderNotice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
 import { linePriceFigures, linePriceHint, linePriceState, linePriceSummary, type LinePriceState } from './line-price-source';
@@ -872,12 +872,19 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 } @else if (data.order.status === 'GEACCEPTEERD' && !invoiceBlockedByOrder(data)) {
                   <button class="btn btn--primary btn--block" type="button" [disabled]="invoiceBusy()"
                           (click)="makeInvoice(data)">
-                    {{ advanceAgreement() ? 'Voorschotfacturen beheren' : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
+                    {{ advanceAgreement() ? 'Voorschotfacturen beheren' : data.invoicedAs ? 'Naar factuur ' + data.invoicedAs : invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
                   </button>
                 } @else {
                   <a class="btn btn--primary btn--block" [routerLink]="['/sales', data.order.id, 'edit']">
                     {{ actionLabel() }}
                   </a>
+                  @if (canCreateInvoice(data)) {
+                    <!-- Sent and not answered: the confirm notes that the customer agreed outside the link. -->
+                    <button class="btn btn--block" type="button" [disabled]="invoiceBusy() || sendingQuote()"
+                            (click)="makeInvoice(data)">
+                      {{ invoiceBusy() ? 'Factuur maken…' : invoiceActionLabel(data, 'Factuur maken zonder versturen') }}
+                    </button>
+                  }
                 }
               </section>
 
@@ -1623,7 +1630,7 @@ export class SalesView {
     }
     if (data.order.status === 'CONCEPT') return data.order.sentAt
       ? 'Nieuwe versie naar de klant' : 'Offerte naar de klant';
-    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data) ? 'Voorschotfacturen beheren' : invoiceActionLabel(data, 'Factuur maken');
+    if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data) ? 'Voorschotfacturen beheren' : data.invoicedAs ? 'Gefactureerd' : invoiceActionLabel(data, 'Factuur maken');
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
       return 'Reactie van de klant volgen';
     }
@@ -1638,7 +1645,7 @@ export class SalesView {
     if (data.webOrder?.customerEditable) return 'De klant kan nog wijzigen. Neem ze in verwerking om te bewerken, te versturen of te factureren.';
     if (data.webOrder?.customerCancelledAt) return 'De klant annuleerde deze bestelling op de website; heropenen kan niet.';
     if (data.webOrder && data.order.status === 'GEACCEPTEERD' && !webOrderInvoiceable(data)) return 'De cijfers wijken af van de versie waarmee de klant akkoord ging. Maak via Beheren een nieuwe kopie en verstuur die ter goedkeuring.';
-    if (data.webOrder && webOrderNeedsApproval(data)) return 'Deze bestelling wijkt af van wat de klant bestelde of werd al eens verstuurd. Verstuur ze ter goedkeuring; factureren kan na akkoord.';
+    if (data.webOrder && webOrderNeedsApproval(data)) return 'Deze bestelling wijkt af van wat de klant bestelde of werd al eens verstuurd. Verstuur ze ter goedkeuring, of maak de factuur als de klant buiten de link akkoord ging.';
     if (data.order.docType === 'CREDITNOTA') return this.creditStep()?.help ?? '';
     if ((data.order.docType ?? 'OFFERTE') === 'FACTUUR' && (data.creditedEur ?? 0) > 0 && data.creditedEur! >= Math.abs(data.paymentSummary?.invoiceTotalEur ?? data.priced.totals.totalInclVat) - 0.005) return 'De creditnota nam de hele factuur terug; er valt niets meer te ontvangen.';
     if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) return 'Dit concept blijft bewaard. Herstel minstens één product via Bewerken om het document uit te geven of te versturen.';
@@ -1652,12 +1659,16 @@ export class SalesView {
     if (data.order.status === 'CONCEPT') return advanceAgreementFor(data)
       ? 'Controleer de afspraken. De voorschotfacturen maak je per termijn bij het betaalplan.'
       : 'Verstuur deze offerte of maak meteen een conceptfactuur. Bij omzetting wordt de offerte gearchiveerd; er gaat geen e-mail uit.';
+    const made = data.order.status === 'GEACCEPTEERD' && !advanceAgreementFor(data) ? quoteSettlement(data) : null;
+    if (made) return `Factuur ${made.number}${made.state ? ` · ${made.state}` : ''}. De offerte is ermee afgerond.`;
     if (data.order.status === 'GEACCEPTEERD') return advanceAgreementFor(data)
       ? 'Maak per afgesproken termijn een voorschotfactuur op de inkooporder. De slotfactuur volgt na verkoop.'
       : liveAdvances(data).length ? 'De slotfactuur neemt de offerte over en trekt de uitgereikte voorschotfacturen af; de btw volgt het saldo.'
       : 'Bevries deze afspraken in een nieuwe verkoopfactuur.';
     if (data.order.status === 'VERZONDEN' || data.order.status === 'BEKEKEN') {
-      return 'De klantlink blijft actief. Open Beheren alleen als je een nieuwe versie wilt voorbereiden.';
+      return canCreateInvoiceFromQuote(data)
+        ? 'De klantlink blijft actief. Ging de klant buiten de link akkoord? Maak dan de factuur.'
+        : 'De klantlink blijft actief. Open Beheren alleen als je een nieuwe versie wilt voorbereiden.';
     }
     return 'Open Beheren om deze status of een nieuwe versie verder af te handelen.';
   }
@@ -1881,7 +1892,7 @@ export class SalesView {
       return;
     }
     if (!canCreateInvoiceFromQuote(data)) return;
-    const confirm = invoiceConfirmOptions(data, escapeHtml);
+    const confirm = invoiceConfirmOptions(data, escapeHtml, invoiceNotesAgreement(data));
     if ('refused' in confirm) { this.ui.toast(confirm.refused, 'err'); return; }
     this.ui.confirm(confirm, () => { void this.createInvoice(data); });
   }
@@ -1904,7 +1915,7 @@ export class SalesView {
     this.invoiceBusy.set(true);
     try {
       /* The revision of this screen's copy, read inline: the node tests run this method without its imports. */
-      const invoice = await this.sales.createInvoiceFrom(data.order.id!, data.webOrder?.revision ?? null);
+      const invoice = await this.sales.createInvoiceFrom(data.order.id!, data.webOrder?.revision ?? null, invoiceNotesAgreement(data));
       void this.work.refresh(true);
       this.ui.toast(`${invoice.order.number} aangemaakt · niet verstuurd`);
       await this.routerNav.navigate(['/sales', invoice.order.id]);

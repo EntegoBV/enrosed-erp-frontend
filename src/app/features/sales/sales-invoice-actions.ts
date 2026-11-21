@@ -3,18 +3,37 @@ import type { SalesOrderView } from '../../core/api/models';
 /**
  * Converting a quotation creates a draft invoice; sending is a separate action.
  *
- * A website order is invoiced only once staff took it and while its figures
- * are the ordered or the approved ones; the server guard stays the authority.
+ * Also afterwards: a quotation sent and not answered yet (Verzonden, Bekeken)
+ * is invoiced once staff confirm the customer agreed outside the link. A
+ * website order is invoiced only once staff took it, while its figures are the
+ * ordered or the approved ones, or with that same confirmation; never an
+ * approved version whose figures moved since. The server guard stays the
+ * authority.
  */
 export function canCreateInvoiceFromQuote(view: SalesOrderView | null | undefined): boolean {
   if (!view) return false;
   const order = view.order;
   const webOrder = view.webOrder;
-  return (order.docType ?? 'OFFERTE') === 'OFFERTE'
-    && !order.archivedAt && !view.invoicedAsId && !view.invoicedAs
-    && !view.advanceAgreement
-    && (order.status === 'CONCEPT' || order.status === 'GEACCEPTEERD')
-    && (!webOrder || (!webOrder.customerEditable && (webOrder.termsState === 'ORDER_EQUAL' || webOrder.termsState === 'APPROVED')));
+  if ((order.docType ?? 'OFFERTE') !== 'OFFERTE' || order.archivedAt || view.invoicedAsId || view.invoicedAs
+    || view.advanceAgreement) return false;
+  if (!['CONCEPT', 'VERZONDEN', 'BEKEKEN', 'GEACCEPTEERD'].includes(order.status)) return false;
+  if (!webOrder) return true;
+  if (webOrder.customerEditable) return false;
+  return webOrder.termsState === 'ORDER_EQUAL' || webOrder.termsState === 'APPROVED'
+    || (!!webOrder.termsState && order.status !== 'GEACCEPTEERD');
+}
+
+/**
+ * The invoice notes that the customer agreed outside the link: the quotation
+ * waits for the customer's answer, or it is a website order whose figures the
+ * customer never approved. The confirm says so and the server records it.
+ */
+export function invoiceNotesAgreement(view: SalesOrderView | null | undefined): boolean {
+  if (!view || !canCreateInvoiceFromQuote(view)) return false;
+  const status = view.order.status;
+  if (status === 'VERZONDEN' || status === 'BEKEKEN') return true;
+  const terms = view.webOrder?.termsState;
+  return status === 'CONCEPT' && !!terms && terms !== 'ORDER_EQUAL' && terms !== 'APPROVED';
 }
 
 export interface WebOrderNoticeLine { text: string; gold: boolean }
@@ -107,7 +126,7 @@ export function webOrderSendsForApproval(view: SalesOrderView | null | undefined
  * second signature, so it is the secondary action there.
  */
 export function webOrderInvoiceFirst(view: SalesOrderView | null | undefined): boolean {
-  return !!view?.webOrder && view.order.status === 'CONCEPT' && canCreateInvoiceFromQuote(view);
+  return !!view?.webOrder && view.order.status === 'CONCEPT' && canCreateInvoiceFromQuote(view) && !invoiceNotesAgreement(view);
 }
 
 export interface WebOrderSendCopy { title: string; body: string; confirm: string; toast: string }

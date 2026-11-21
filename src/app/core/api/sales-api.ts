@@ -178,10 +178,14 @@ export class SalesApi {
       api(`/api/sales-orders/${quoteId}/advance-invoice${revisionQuery(webOrderRevision)}`), body));
   }
 
-  /** Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. With advances it is the slotfactuur. */
-  createInvoiceFrom(quoteId: number, webOrderRevision?: number | null): Promise<SalesOrderView> {
+  /**
+   * Creates an unsent draft invoice and archives its source quote; retries reuse the linked invoice. With advances it is the slotfactuur.
+   * `agreedOutsideLink`: staff confirmed the customer agreed outside the quote link; a sent quote without an answer needs it.
+   */
+  createInvoiceFrom(quoteId: number, webOrderRevision?: number | null, agreedOutsideLink = false): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice${revisionQuery(webOrderRevision)}`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${quoteId}/invoice${revisionQuery(webOrderRevision)}`),
+        agreedOutsideLink ? { agreedOutsideLink: true } : {}));
   }
 
   markInvoiceSent(id: number): Promise<SalesOrderView> {
