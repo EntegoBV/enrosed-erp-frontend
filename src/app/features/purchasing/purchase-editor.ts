@@ -176,7 +176,7 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseSalesLinks, Skeleton, LoadError, PurchaseQuoteSheet, PurchaseExtraSplit, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentOverview, PurchaseNacalcOverview, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, ContextMenu, PurchasePaymentPlanSheet, PaymentProofPicker, PurchasePartnerSheet, AuctionSettlementSheet, FormsModule, RouterLink, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet,
-            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
+            PurchasePdfSheet, PurchaseActivity, EurPipe, EurUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker,
             IosNav, Icon, Segmented, SwipeActions, PurchaseNacalcGlance, PurchaseStepConfirmSheet, TrackingReferenceHint],
   template: `
     @if (view(); as data) {
@@ -911,11 +911,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 </label>
                 <div class="ios-cell mpo-field-row">
                   <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" [attr.for]="'exw-sheet-' + line.productId">Afgesproken prijs per stuk</label>
-                    <span class="ios-cell__sub">{{ isDdp() ? 'DDP' : 'EXW' }}</span></span>
+                    <span class="ios-cell__sub">{{ isDdp() ? 'DDP' : 'EXW' }}@if (extraUnitOf(line.productId); as extra) { · + {{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ extra | num: 2 }} extra}</span></span>
                   <span class="mpo-affix"><span class="mpo-affix__unit mpo-affix__unit--lead" aria-hidden="true">{{ currencySymbol(effectiveExwCurrency(line.productId)) }}</span>
                     <input class="mpo-input" [id]="'exw-sheet-' + line.productId" type="number" min="0" step="0.01" inputmode="decimal"
                            [attr.aria-label]="'Prijs per stuk in ' + effectiveExwCurrency(line.productId)" [ngModel]="orderLine(line.productId)?.exwPrice"
-                           [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | numUp: 3) : ''" (ngModelChange)="setExwPrice(line.productId, $event)" /></span>
+                           [placeholder]="cardPriceHint(line.productId)" (ngModelChange)="setExwPrice(line.productId, $event)" /></span>
                 </div>
               </div>
               @if (cartonNote || ordered) {
@@ -976,10 +976,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
         <app-sheet title="Verdeelsleutels" variant="ios" (closed)="keysOpen.set(false)">
           <div body class="mpo-sheet">
             <div class="ios-group">
-              <!-- A series is one product to the buyer: its colours and sizes land at one and the same unit cost. -->
+              <!-- A series is one product to the buyer: its colours and sizes share the container costs per piece; each keeps its own price. -->
               <label class="ios-cell mpo-field-row">
                 <span class="ios-cell__body"><span class="ios-cell__title">Varianten als één product</span>
-                  <span class="ios-cell__sub mpo-wrap">Kleuren en maten van dezelfde reeks krijgen samen één kostprijs per stuk; de aantallen worden opgeteld.</span></span>
+                  <span class="ios-cell__sub mpo-wrap">Kleuren en maten van dezelfde reeks delen de containerkosten per stuk; elke variant houdt zijn eigen inkoopprijs.</span></span>
                 <input class="ios-switch" type="checkbox" [ngModel]="data.order.groupVariants ?? true" (ngModelChange)="patch({ groupVariants: $event })" />
               </label>
               @for (key of allocationKeys(); track key.field) {
@@ -1565,7 +1565,7 @@ export class PurchaseEditor {
   rowPriceText(productId: number): string | null {
     const pipe = new NumUpPipe();
     return linePriceText({ price: this.orderLine(productId)?.exwPrice, currency: this.effectiveExwCurrency(productId) },
-      this.productCardPrice(productId), (value) => pipe.transform(value, 3));
+      this.productCardPrice(productId), (value) => pipe.transform(value, 3), this.extraUnitOf(productId));
   }
 
   productSku(productId: number): string | null {
@@ -4898,6 +4898,22 @@ export class PurchaseEditor {
     return product?.exwPrice == null
       ? null
       : { amount: product.exwPrice, currency: product.exwCurrency ?? 'USD' };
+  }
+
+  /**
+   * The extra per stuk on top of the price (giftbox, display), in the price's currency: the line's own, else what
+   * this supplier asks (as the server counts the goods); null at 0.
+   */
+  extraUnitOf(productId: number): number | null {
+    const extra = this.orderLine(productId)?.extraUnitCost
+      ?? this.lineProducts().find((candidate) => candidate.id === productId)?.extraUnitCost ?? null;
+    return extra != null && extra > 0 ? extra : null;
+  }
+
+  /** The price field's hint while the line has no price of its own: the card price, never the goods per piece (extra included). */
+  cardPriceHint(productId: number): string {
+    const card = this.productCardPrice(productId);
+    return card ? new NumUpPipe().transform(card.amount, 3) : '';
   }
 
   /* ---- damage or shortfall on a received order, via one small button ---- */

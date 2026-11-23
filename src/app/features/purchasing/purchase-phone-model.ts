@@ -228,13 +228,16 @@ const CURRENCY_SIGN: Readonly<Record<Currency, string>> = { USD: '$', CNY: '¥',
 /**
  * The purchase price a line row states: the order's own agreed price, else
  * the product card's price in the card's own currency, named as such; null
- * without either. Never the costing's goods figure, which is converted to
- * USD and levelled across a family's variants.
+ * without either. An extra per stuk (giftbox, display) follows it, since the
+ * goods count it too. Never the costing's goods figure, which is converted
+ * to USD.
  */
 export function linePriceText(own: { price: number | null | undefined; currency: Currency },
-  card: { amount: number; currency: Currency } | null, format: (value: number) => string): string | null {
-  if (own.price != null) return `${CURRENCY_SIGN[own.currency]} ${format(own.price)} afgesproken`;
-  return card ? `${CURRENCY_SIGN[card.currency]} ${format(card.amount)} kaartprijs` : null;
+  card: { amount: number; currency: Currency } | null, format: (value: number) => string,
+  extra: number | null = null): string | null {
+  const plus = (currency: Currency) => (extra != null && extra > 0 ? ` + ${CURRENCY_SIGN[currency]} ${format(extra)} extra` : '');
+  if (own.price != null) return `${CURRENCY_SIGN[own.currency]} ${format(own.price)} afgesproken${plus(own.currency)}`;
+  return card ? `${CURRENCY_SIGN[card.currency]} ${format(card.amount)} kaartprijs${plus(card.currency)}` : null;
 }
 
 export interface NacalcGlance {

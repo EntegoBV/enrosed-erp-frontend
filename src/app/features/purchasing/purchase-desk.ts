@@ -40,7 +40,7 @@ import { Skeleton } from '../../shared/skeleton';
 import { LoadError } from '../../shared/load-error';
 import { Sheet } from '../../shared/ui';
 import { paymentPlanLabel } from './payment-plan';
-import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe, NumUpPipe } from '../../shared/pipes';
+import { CbmPipe, CurPipe, DateNlPipe, EurPipe, NumPipe, PctPipe, EurUpPipe } from '../../shared/pipes';
 import { SupplierAddress } from '../../shared/supplier-address';
 import { AuthImage } from '../../core/api/auth-image';
 import { PurchaseOrderedSuccess } from './purchase-ordered-success';
@@ -77,7 +77,8 @@ const OVERLAY = '.overlay, .cm, [data-kit-overlay]';
 type DeskRow =
   | { kind: 'section'; key: string; label: string; count: number }
   | { kind: 'group'; key: string; groupKey: string; label: string; lines: LandedCostLine[]; pieces: number;
-      cartons: number; cbm: number; goodsEur: number; unitMinEur: number; unitMaxEur: number; totalEur: number; leadProductId: number }
+      cartons: number; cbm: number; goodsEur: number; goodsMinEur: number; goodsMaxEur: number; unitMinEur: number; unitMaxEur: number;
+      totalEur: number; leadProductId: number }
   | { kind: 'line'; key: string; line: LandedCostLine; variant: boolean };
 
 /**
@@ -116,7 +117,7 @@ export class PurchaseDeskStyles {}
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PurchaseTracking, TrackingReferenceHint, PurchaseSalesLinks, Skeleton, LoadError, PurchaseDeskStyles, PurchaseQuoteSheet, PurchasePartnerSheet, AuctionSettlementSheet, SalesCreditNoteSheet, PurchasePartnerPanel, PurchasePartnerPayments, PurchasePaymentWorkbench, PurchaseNacalcWorkbench, PurchaseNacalcSummaryCard, PurchasePaymentSheet, PurchaseBankLinkSheet, PurchaseInvoiceSheet, PurchaseSettleSheet, PurchaseSupplierCreditSheet, PurchaseFirstInstalmentSheet, PurchaseArrivalSheet, PurchaseBillSheet, Segmented, PurchasePaymentPlanSheet, PaymentProofPicker, PurchaseExtraSplit, FormsModule, RouterLink, PageHeader, Diary, ProductPicker, DateField, Sheet, AuthImage,
             SupplierAddress, PurchaseOrderedSuccess, PurchaseStatusSuccess, PurchaseStatusBackSheet, PurchaseApplyCostsSheet, PurchaseBatchesCard,
-            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, NumUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
+            PurchasePdfSheet, PurchaseActivity, PurchaseDeskPicker, Icon, NgTemplateOutlet, EurPipe, EurUpPipe, CurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, FilePicker],
   template: `
     <app-purchase-desk-styles />
     @if (view(); as data) {
@@ -364,7 +365,7 @@ export class PurchaseDeskStyles {}
                         <td class="c-qty num"><b>{{ row.pieces | num }}</b></td>
                         <td class="c-cartons num"><b>{{ row.cartons | num }}</b></td>
                         <td class="c-price"></td>
-                        <td class="c-money num">{{ (perPiece() && row.pieces > 0 ? row.goodsEur / row.pieces : row.goodsEur) | eurUp: decimals() }}</td>
+                        <td class="c-money num">{{ perPiece() ? landedRangeText(row.goodsMinEur, row.goodsMaxEur) : (row.goodsEur | eurUp: decimals()) }}</td>
                         <td class="c-money num c-money--total">{{ perPiece() ? landedRangeText(row.unitMinEur, row.unitMaxEur) : (row.totalEur | eur) }}</td>
                         @if (editing()) { <td class="c-act"></td> }
                       </tr>
@@ -440,12 +441,18 @@ export class PurchaseDeskStyles {}
                               <input class="input num right desk-cell" type="number" min="0" step="0.01" inputmode="decimal"
                                      [attr.aria-label]="'Prijs per stuk ' + line.productName + ' in ' + effectiveExwCurrency(line.productId)"
                                      [ngModel]="orderLine(line.productId)?.exwPrice"
-                                     [placeholder]="line.quantity ? (line.goodsUsd / line.quantity | numUp: 3) : ''"
+                                     [placeholder]="cardPriceHint(line.productId)"
                                      (ngModelChange)="setExwPrice(line.productId, $event)" />
                             </div>
+                            @if (extraUnitOf(line.productId); as extra) {
+                              <small class="desk-price__hint">+ {{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ extra | num: 2 }} extra</small>
+                            }
                           } @else {
                             <b class="num">{{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ unitPriceOf(line) | num: 2 }}</b>
                             @if (setPiecesOf(line.productId)) { <small>/display</small> }
+                            @if (extraUnitOf(line.productId); as extra) {
+                              <small>+ {{ currencySymbol(effectiveExwCurrency(line.productId)) }} {{ extra | num: 2 }} extra</small>
+                            }
                           }
                         </td>
                         <td class="c-money num">{{ amt(line.goodsEur, line) | eurUp: decimals() }}</td>
@@ -725,7 +732,7 @@ export class PurchaseDeskStyles {}
                         <div><dt>{{ costLabels().originCostsLabel }}</dt><dd>{{ data.order.originCosts | cur: data.order.originCurrency }}<small>{{ costLabels().originRoute }}</small></dd></div>
                         <div><dt>{{ costLabels().destinationCostsLabel }}</dt><dd>{{ data.order.destinationCostsEur | eur }}</dd></div>
                         <div><dt>Invoerrecht zonder HS</dt><dd>{{ data.order.defaultDutyRatePct | pct: 1 }}</dd></div>
-                        <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'één kostprijs per reeks' : 'elke variant apart' }}</dd></div>
+                        <div><dt>Varianten</dt><dd>{{ (data.order.groupVariants ?? true) ? 'kosten samen per reeks' : 'elke variant apart' }}</dd></div>
                       </dl>
                     }
                   }
@@ -834,7 +841,7 @@ export class PurchaseDeskStyles {}
                     <details class="desk-details">
                       <summary>Verdeelsleutels &amp; varianten</summary>
                       <label class="desk-switch">
-                        <span><b>Varianten als één product</b><small>Kleuren en maten van dezelfde reeks krijgen samen één kostprijs per stuk.</small></span>
+                        <span><b>Varianten als één product</b><small>Kleuren en maten van dezelfde reeks delen de containerkosten per stuk; elke variant houdt zijn eigen inkoopprijs.</small></span>
                         <input type="checkbox" [ngModel]="data.order.groupVariants ?? true" (ngModelChange)="patch({ groupVariants: $event })" />
                       </label>
                       @for (key of allocationKeys(); track key.field) {
@@ -1895,10 +1902,13 @@ export class PurchaseDesk extends PurchaseEditor {
       for (const family of section.families) {
         const grouped = family.familyId !== null && family.lines.length > 1;
         if (grouped) {
+          /* Each variant's own goods per piece: a series bought at two prices shows both, never their average. */
+          const goodsUnits = family.lines.filter((line) => line.quantity > 0).map((line) => line.goodsEur / line.quantity);
           rows.push({
             kind: 'group', key: 'g:' + family.key, groupKey: family.key, label: family.label,
             lines: family.lines, pieces: family.pieces, cartons: family.cartons, cbm: family.cbm,
             goodsEur: family.lines.reduce((sum, line) => sum + line.goodsEur, 0),
+            goodsMinEur: goodsUnits.length ? Math.min(...goodsUnits) : 0, goodsMaxEur: goodsUnits.length ? Math.max(...goodsUnits) : 0,
             unitMinEur: family.unitMinEur, unitMaxEur: family.unitMaxEur, totalEur: family.totalEur,
             leadProductId: family.lines[0].productId,
           });

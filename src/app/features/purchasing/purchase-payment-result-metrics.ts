@@ -449,15 +449,20 @@ export interface LandedUnit {
 }
 
 export function landedUnit(
-  lines: readonly { productId: number; quantity: number; totalEur: number }[], averageUnitEur: number, uniform: boolean,
-  setPiecesOf: (productId: number) => number | null,
+  lines: readonly { productId: number; quantity: number; totalEur: number; landedUnitEur?: number | null }[], averageUnitEur: number,
+  uniform: boolean, setPiecesOf: (productId: number) => number | null,
 ): LandedUnit | null {
   if (!lines.length) return null;
-  const products = new Map<number, { quantity: number; totalEur: number }>();
+  const products = new Map<number, { quantity: number; totalEur: number; lines: number; unitEur: number | null }>();
   for (const line of lines) {
-    const product = products.get(line.productId) ?? { quantity: 0, totalEur: 0 };
-    products.set(line.productId, { quantity: product.quantity + line.quantity, totalEur: product.totalEur + line.totalEur });
+    const product = products.get(line.productId) ?? { quantity: 0, totalEur: 0, lines: 0, unitEur: null };
+    products.set(line.productId, { quantity: product.quantity + line.quantity, totalEur: product.totalEur + line.totalEur,
+      lines: product.lines + 1, unitEur: Number.isFinite(line.landedUnitEur) ? Number(line.landedUnitEur) : null });
   }
+  /* A product on one line: the line's own unit figure, as its row shows it; the cent-rounded total over the pieces
+     can tip the third decimal up (€ 16.516,95 / 9.980 = 1,655005 read € 1,656 next to a row of € 1,655). */
+  const unitOf = (product: { quantity: number; totalEur: number; lines: number; unitEur: number | null }) =>
+    product.lines === 1 && product.unitEur !== null ? product.unitEur : product.totalEur / product.quantity;
   const sizes = new Set([...products.keys()].map(id => setPiecesOf(id) ?? 1));
   const allSets = [...products.keys()].every(id => setPiecesOf(id) !== null) && sizes.size === 1;
   const setPieces = allSets ? [...sizes][0] : null;
@@ -465,7 +470,7 @@ export function landedUnit(
     return { mix: false, count: products.size, unit: setPieces ? 'display' : 'stuk', unitEur: averageUnitEur, maxEur: averageUnitEur, setPieces };
   }
   const figures = [...products.entries()].filter(([, product]) => product.quantity > 0)
-    .map(([id, product]) => product.totalEur / product.quantity / (allSets ? 1 : setPiecesOf(id) ?? 1));
+    .map(([id, product]) => unitOf(product) / (allSets ? 1 : setPiecesOf(id) ?? 1));
   if (!figures.length) return null;
   return { mix: true, count: products.size, unit: allSets ? 'display' : 'stuk', unitEur: Math.min(...figures), maxEur: Math.max(...figures), setPieces: null };
 }
