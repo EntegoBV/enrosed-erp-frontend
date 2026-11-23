@@ -1,6 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
 import {
-  ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, computed, effect, inject, input, output, signal, viewChild,
+  ChangeDetectionStrategy, Component, DestroyRef, ElementRef, afterNextRender, computed, effect, inject, input, output, signal, untracked,
+  viewChild,
 } from '@angular/core';
 import { AuthImage } from '../../core/api/auth-image';
 import { HostBridge } from '../../core/platform/host-bridge';
@@ -80,6 +81,9 @@ const DRAG_START_PX = 7;
  * box does what the mouse does, and a finger turns the view unless it starts
  * on the chosen box (Emre, 2026-11-15: see the products, mouse over them,
  * very good on mobile).
+ * A sales order shows its pallets here too (fixed): the omdozen it counts,
+ * one pallet at a time with arrows between them; they turn and move, none
+ * comes or goes, Automatisch lays them back, and nothing is kept.
  * three.js loads with this screen only (a @defer on the page).
  */
 @Component({
@@ -90,24 +94,40 @@ const DRAG_START_PX = 7;
   template: `
     <div class="pb3" role="dialog" aria-modal="true" aria-labelledby="pb3-title">
       <header class="pb3-bar">
-        <button class="pb3-btn pb3-btn--round" type="button" (click)="closed.emit()" aria-label="Sluiten" title="Sluiten (Esc)">
+        <button class="pb3-btn pb3-btn--round pb3-close" type="button" (click)="closed.emit()" aria-label="Sluiten" title="Sluiten (Esc)">
           <app-icon name="close" [size]="18" />
         </button>
         <div class="pb3-title">
-          <h2 id="pb3-title">3D laden</h2>
+          <h2 id="pb3-title">{{ heading() }}</h2>
           <p>{{ label() }}</p>
         </div>
+        @if (pages().length > 1) {
+          <div class="pb3-pager" role="group" [attr.aria-label]="'Pallet ' + (page() + 1) + ' van ' + pages().length">
+            <button class="pb3-btn pb3-btn--round" type="button" [disabled]="page() <= 0" (click)="turnPage(-1)"
+                    [attr.aria-label]="'Vorige: ' + (pages()[page() - 1] ?? '')" title="Vorige pallet"><app-icon name="chevron-left" [size]="18" /></button>
+            <span class="pb3-pager__at" aria-hidden="true">{{ page() + 1 }}/{{ pages().length }}</span>
+            <button class="pb3-btn pb3-btn--round" type="button" [disabled]="page() >= pages().length - 1" (click)="turnPage(1)"
+                    [attr.aria-label]="'Volgende: ' + (pages()[page() + 1] ?? '')" title="Volgende pallet"><app-icon name="chevron-right" [size]="18" /></button>
+          </div>
+        }
         <div class="pb3-tools">
           <button class="pb3-btn" type="button" [disabled]="!canUndo()" (click)="undo()" aria-label="Ongedaan maken" title="Ongedaan maken">
             <app-icon name="restore" [size]="16" /><span class="pb3-lbl">Ongedaan</span>
           </button>
-          <button class="pb3-btn" type="button" [disabled]="!parts().length" (click)="autoFill()" aria-label="Automatisch vullen"
-                  title="Vul zoals Palletberekening telt">
-            <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Automatisch</span>
-          </button>
-          <button class="pb3-btn" type="button" [disabled]="!boxes().length" (click)="clearAll()" aria-label="Alles eraf" title="Alles eraf">
-            <app-icon name="trash" [size]="16" /><span class="pb3-lbl">Leeg</span>
-          </button>
+          @if (fixed()) {
+            <button class="pb3-btn" type="button" [disabled]="!initialBoxes()?.length" (click)="autoFill()" aria-label="Zoals berekend leggen"
+                    title="Leg alles terug zoals de order telt">
+              <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Zoals berekend</span>
+            </button>
+          } @else {
+            <button class="pb3-btn" type="button" [disabled]="!parts().length" (click)="autoFill()" aria-label="Automatisch vullen"
+                    title="Vul zoals Palletberekening telt">
+              <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Automatisch</span>
+            </button>
+            <button class="pb3-btn" type="button" [disabled]="!boxes().length" (click)="clearAll()" aria-label="Alles eraf" title="Alles eraf">
+              <app-icon name="trash" [size]="16" /><span class="pb3-lbl">Leeg</span>
+            </button>
+          }
         </div>
       </header>
 
@@ -122,6 +142,7 @@ const DRAG_START_PX = 7;
                 <span class="pb3-warn" [class.pb3-bad]="spillSum().much"><b>{{ spillSum().count | num }}</b> {{ spillSum().count === 1 ? 'steekt uit' : 'steken uit' }}</span>
               }
             </div>
+            @if (notice(); as text) { <p class="pb3-notice">{{ text }}</p> }
           </div>
           <button class="pb3-btn pb3-btn--round pb3-view" type="button" (click)="frameView()" aria-label="Beeld terugzetten" title="Beeld terugzetten">
             <app-icon name="expand" [size]="16" />
@@ -131,9 +152,13 @@ const DRAG_START_PX = 7;
             <p class="pb3-empty">3D werkt niet in deze browser.</p>
           } @else if (ready() && !boxes().length) {
             <div class="pb3-empty">
-              <p>Kies een kleur bij Producten om een omdoos op de {{ one() }} te zetten.</p>
-              @if (parts().length) {
-                <button class="btn btn--primary btn--sm" type="button" (click)="autoFill()"><app-icon name="auto" [size]="15" /><span>Automatisch vullen</span></button>
+              @if (fixed()) {
+                <p>Niets om te tekenen op deze {{ one() }}.</p>
+              } @else {
+                <p>Kies een kleur bij Producten om een omdoos op de {{ one() }} te zetten.</p>
+                @if (parts().length) {
+                  <button class="btn btn--primary btn--sm" type="button" (click)="autoFill()"><app-icon name="auto" [size]="15" /><span>Automatisch vullen</span></button>
+                }
               }
             </div>
           }
@@ -159,8 +184,10 @@ const DRAG_START_PX = 7;
                 @if (turnable() && sidesOf(card.item).length > 1) {
                   <button type="button" (click)="tipOver()" title="Kantel (T)"><app-icon name="exchange" [size]="17" /><span>Kantel</span></button>
                 }
-                <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="17" /><span>+1</span></button>
-                <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="17" /><span>Weg</span></button>
+                @if (!fixed()) {
+                  <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="17" /><span>+1</span></button>
+                  <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="17" /><span>Weg</span></button>
+                }
                 <button type="button" class="pb3-pick__close" (click)="selected.set(null)" aria-label="Klaar" title="Klaar (Esc)"><app-icon name="close" [size]="15" /></button>
               </div>
             </div>
@@ -171,7 +198,7 @@ const DRAG_START_PX = 7;
           <button class="pb3-list__bar" type="button" (click)="listOpen.set(!listOpen())" [attr.aria-expanded]="listOpen()">
             <span class="pb3-list__grab" aria-hidden="true"></span>
             <span class="pb3-list__name">Producten</span>
-            <span class="pb3-list__hint">{{ touch() ? 'Tik op een kleur, of hou vast en sleep' : 'Klik op een kleur, of sleep hem op de ' + one() }}</span>
+            <span class="pb3-list__hint">{{ fixed() ? 'Wat op deze ' + one() + ' staat' : touch() ? 'Tik op een kleur, of hou vast en sleep' : 'Klik op een kleur, of sleep hem op de ' + one() }}</span>
             <app-icon class="pb3-list__chev" name="chevron-down" [size]="16" />
           </button>
           <div class="pb3-list__body">
@@ -228,7 +255,7 @@ const DRAG_START_PX = 7;
     <!-- One colour (or a product with one colour) as a product-list row: a tap adds one omdoos, a drag carries it out. -->
     <ng-template #row let-item let-group="group" let-nested="nested">
       <div class="plp-row pb3-row" [class.plp-row--nested]="nested" [class.plp-row--inactive]="!isSized(item)"
-           [class.pb3-row--picked]="selectedItem()?.key === item.key"
+           [class.pb3-row--picked]="selectedItem()?.key === item.key" [class.pb3-row--fixed]="fixed()"
            (pointerdown)="trayDown($event, item)" (pointerenter)="lean($event, [item.key])" (pointerleave)="lean($event, null)"
            (contextmenu)="$event.preventDefault()">
         @if (item.photo) {
@@ -254,10 +281,12 @@ const DRAG_START_PX = 7;
           <strong [class.zero]="!counts().get(item.key)">{{ (counts().get(item.key) ?? 0) | num }}</strong>
           <small>{{ !nested && group.wanted ? 'van ' + group.wanted : 'op de ' + one() }}</small>
         </span>
-        <button type="button" class="pb3-add" [disabled]="!isSized(item)" (click)="trayClick(item)"
-                [attr.aria-label]="'Zet een omdoos ' + item.title + ' erbij'" [title]="isSized(item) ? 'Eén erbij' : 'Maten ontbreken'">
-          <app-icon name="plus" [size]="15" />
-        </button>
+        @if (!fixed()) {
+          <button type="button" class="pb3-add" [disabled]="!isSized(item)" (click)="trayClick(item)"
+                  [attr.aria-label]="'Zet een omdoos ' + item.title + ' erbij'" [title]="isSized(item) ? 'Eén erbij' : 'Maten ontbreken'">
+            <app-icon name="plus" [size]="15" />
+          </button>
+        }
       </div>
     </ng-template>
 
@@ -286,6 +315,10 @@ const DRAG_START_PX = 7;
     .pb3-title h2{margin:0;font-size:16px;font-weight:750}
     .pb3-title p{margin:1px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pb3-tools{display:flex;gap:6px}
+    .pb3-pager{display:flex;align-items:center;gap:2px}
+    .pb3-pager__at{min-width:34px;color:var(--muted);font-size:12.5px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+    .pb3-notice{display:inline-block;max-width:100%;margin:6px 0 0;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--ink-2);font-size:12px;font-weight:600}
+    .pb3-row.pb3-row--fixed{cursor:default}
     .pb3-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:40px;height:40px;padding:0 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
     .pb3-btn:disabled{opacity:.4;cursor:default}.pb3-btn:active:not(:disabled){background:var(--surface-2)}
     .pb3-btn--round{width:40px;padding:0}
@@ -426,12 +459,29 @@ export class PalletBuilder {
   readonly items = input.required<readonly BuilderItem[]>();
   readonly carrier = input.required<CarrierKind>();
   readonly spec = input.required<PalletSpec>();
-  /** Where the build is kept on this device: 'kar' or the pallet type. */
-  readonly storeKey = input.required<string>();
+  /** Where the build is kept on this device: 'kar' or the pallet type; null keeps nothing. */
+  readonly storeKey = input<string | null>(null);
+  /** The title over the view: "3D laden", or the pallet shown ("Pallet 2"). */
+  readonly heading = input('3D laden');
   readonly label = input('');
   readonly turnable = input(true);
   /** The first carrier as Palletberekening counts it: what Automatisch lays. */
   readonly parts = input<readonly BuilderPart[]>([]);
+  /**
+   * The omdozen are given (a sales order's pallet): they turn and move, none
+   * comes or goes, and Automatisch ("Zoals berekend") lays initialBoxes again.
+   */
+  readonly fixed = input(false);
+  /** The boxes to start from instead of the build kept on this device. */
+  readonly initialBoxes = input<readonly BuilderBox[] | null>(null);
+  /** Changes when another carrier is shown (the next pallet): the build starts again from initialBoxes. */
+  readonly buildKey = input('');
+  /** Carriers to page through ("Pallet 1", "Pallet 2") and the one shown; paged asks for another. */
+  readonly pages = input<readonly string[]>([]);
+  readonly page = input(0);
+  readonly paged = output<number>();
+  /** A standing line under the figures: what the view does not draw, or how it differs. */
+  readonly notice = input<string | null>(null);
   readonly closed = output<void>();
 
   private readonly stage = viewChild.required<ElementRef<HTMLElement>>('stage');
@@ -576,6 +626,8 @@ export class PalletBuilder {
   private topObserver: ResizeObserver | null = null;
   private lastHover: PointerEvent | null = null;
   private noteTimer: ReturnType<typeof setTimeout> | undefined;
+  private opener: HTMLElement | null = null;
+  private overlaid = false;
 
   constructor() {
     /* One pass in order: the carrier (the floor every box stands on), the looks, then the boxes. */
@@ -601,13 +653,30 @@ export class PalletBuilder {
       const levels = new Map<number, SpillLevel>([...this.spills()].map(([id, spill]) => [id, spill.level]));
       if (this.sceneReady()) this.scene?.setSpill(levels);
     });
+    /* The build stays on this device under its key (Palletberekening); without one nothing is kept.
+       Untracked: a key that changed while the view is open must not receive this build. */
     effect(() => {
       const boxes = this.boxes();
-      if (this.loaded) saveBuild(this.storeKey(), boxes);
+      const key = untracked(() => this.storeKey());
+      if (this.loaded && key) saveBuild(key, boxes);
+    });
+    /* Another carrier (the next pallet, or other omdozen on this one): start again from what the host gives. */
+    effect(() => {
+      this.buildKey();
+      untracked(() => { if (this.loaded) this.restart(); });
     });
 
-    afterNextRender(() => void this.start());
+    afterNextRender(() => {
+      /* As a sheet does: the app's own tab bar goes while the view is open, and the focus comes back after. */
+      this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      this.hostBridge.overlay(true);
+      this.overlaid = true;
+      void this.start();
+    });
     this.destroyRef.onDestroy(() => {
+      if (this.overlaid) this.hostBridge.overlay(false);
+      const opener = this.opener;
+      queueMicrotask(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); });
       window.removeEventListener('pointermove', this.move);
       window.removeEventListener('pointerup', this.up);
       window.removeEventListener('pointercancel', this.cancel);
@@ -652,12 +721,38 @@ export class PalletBuilder {
     /* While a held colour is dragged out, the panel must not scroll under the finger. */
     document.addEventListener('touchmove', this.holdScroll, { passive: false });
 
-    const stored = settle(loadBuild(this.storeKey(), this.itemMap()), this.itemMap());
+    const initial = this.initialBoxes();
+    const key = this.storeKey();
+    const stored = settle(initial ? [...initial] : key ? loadBuild(key, this.itemMap()) : [], this.itemMap());
     this.nextId = stored.reduce((max, box) => Math.max(max, box.id), 0) + 1;
     this.boxes.set(stored);
     this.loaded = true;
     this.sceneReady.set(true);
     this.ready.set(true);
+    /* Opened from a menu or a sheet that just shut: their own focus return has landed by now. */
+    const now = document.activeElement;
+    if ((!this.opener || this.opener === document.body || !this.opener.isConnected)
+        && now instanceof HTMLElement && now !== document.body && !this.element.nativeElement.contains(now)) this.opener = now;
+    this.element.nativeElement.querySelector<HTMLElement>('.pb3-close')?.focus({ preventScroll: true });
+  }
+
+  /** Another carrier to show: what was chosen, dragged or undone here belonged to the one before. */
+  private restart(): void {
+    this.dropPress();
+    this.endTrayDrag();
+    this.selected.set(null);
+    this.hoverId.set(null);
+    this.history = [];
+    this.canUndo.set(false);
+    const boxes = settle([...(this.initialBoxes() ?? [])], this.itemMap());
+    this.nextId = boxes.reduce((max, box) => Math.max(max, box.id), 0) + 1;
+    this.boxes.set(boxes);
+  }
+
+  /** The previous or next carrier of the pages. */
+  turnPage(step: -1 | 1): void {
+    const next = this.page() + step;
+    if (next >= 0 && next < this.pages().length) this.paged.emit(next);
   }
 
   isSized(item: BuilderItem): boolean {
@@ -772,7 +867,7 @@ export class PalletBuilder {
   /** The chosen box becomes another colour of the same product (the same omdoos). */
   recolour(item: BuilderItem): void {
     const box = this.selectedBox();
-    if (!box || box.key === item.key) return;
+    if (!box || box.key === item.key || this.fixed()) return;
     this.commit(this.boxes().map((other) => (other.id === box.id ? { ...other, key: item.key } : other)));
     this.hostBridge.haptic('selection');
   }
@@ -795,12 +890,21 @@ export class PalletBuilder {
   }
 
   clearAll(): void {
-    if (!this.boxes().length) return;
+    if (!this.boxes().length || this.fixed()) return;
     this.commit([]);
     this.selected.set(null);
   }
 
   autoFill(): void {
+    if (this.fixed()) {
+      /* Zoals berekend: the given omdozen back where the count puts them (undo brings the moved ones back). */
+      const initial = this.initialBoxes();
+      if (!initial?.length) return;
+      this.commit(settle([...initial], this.itemMap()));
+      this.selected.set(null);
+      this.hostBridge.haptic('success');
+      return;
+    }
     const filled = computedFill(this.itemMap(), this.parts(), this.deck(), this.nextId);
     if (!filled.length) { this.say('Hier valt niets automatisch te vullen'); return; }
     this.nextId += filled.length;
@@ -812,7 +916,7 @@ export class PalletBuilder {
 
   /** Tap on a product: one omdoos on the next free place, on the side Palletberekening counts it. */
   addOne(item: BuilderItem): void {
-    if (!sized(item)) return;
+    if (!sized(item) || this.fixed()) return;
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
     const spot = nextSpot(solidsOf(this.boxes(), this.itemMap()), item, [item.up], this.deck());
     if (!spot) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
@@ -840,7 +944,7 @@ export class PalletBuilder {
   copy(): void {
     const box = this.selectedBox();
     const item = this.selectedItem();
-    if (!box || !item) return;
+    if (!box || !item || this.fixed()) return;
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
     const spot = nextSpot(solidsOf(this.boxes(), this.itemMap()), item, [box.up], this.deck());
     if (!spot) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
@@ -852,7 +956,7 @@ export class PalletBuilder {
 
   remove(): void {
     const box = this.selectedBox();
-    if (!box) return;
+    if (!box || this.fixed()) return;
     this.commit(settle(this.boxes().filter((other) => other.id !== box.id), this.itemMap()));
     this.selected.set(null);
   }
@@ -967,7 +1071,7 @@ export class PalletBuilder {
   }
 
   trayDown(event: PointerEvent, item: BuilderItem): void {
-    if (!sized(item) || (event.pointerType === 'mouse' && event.button !== 0) || !this.scene) return;
+    if (!sized(item) || this.fixed() || (event.pointerType === 'mouse' && event.button !== 0) || !this.scene) return;
     if ((event.target as Element).closest('.pb3-add')) return;
     clearTimeout(this.trayPress?.timer);
     const touch = event.pointerType !== 'mouse';
@@ -1062,6 +1166,7 @@ export class PalletBuilder {
   /* --------------------------------------------------------------- keyboard */
 
   key(event: KeyboardEvent): void {
+    if (event.key === 'Tab') { this.keepFocus(event); return; }
     const target = event.target;
     if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]')) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); this.undo(); return; }
@@ -1076,9 +1181,31 @@ export class PalletBuilder {
       case 'r': case 'R': this.turn(); return;
       case 't': case 'T': case 'k': case 'K': this.tipOver(); return;
       case 'd': case 'D': case '+': this.copy(); return;
+      case 'PageUp': case 'PageDown':
+        if (this.pages().length > 1) { event.preventDefault(); this.turnPage(event.key === 'PageUp' ? -1 : 1); }
+        return;
       case 'Delete': case 'Backspace':
-        if (this.selected() !== null) { event.preventDefault(); this.remove(); }
+        if (this.selected() !== null && !this.fixed()) { event.preventDefault(); this.remove(); }
         return;
     }
+  }
+
+  /**
+   * Tab stays in the view, which covers everything: inside a sheet (a sales
+   * order's Transport & levering) it went on to the sheet's own buttons under it.
+   */
+  private keepFocus(event: KeyboardEvent): void {
+    if (event.defaultPrevented) return;
+    const root = this.element.nativeElement.querySelector<HTMLElement>('.pb3');
+    if (!root) return;
+    const focusable = [...root.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (!root.contains(active)) { event.preventDefault(); (event.shiftKey ? last : first).focus(); }
+    else if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
   }
 }

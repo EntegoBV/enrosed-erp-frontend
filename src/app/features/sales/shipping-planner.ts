@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, i
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type {
-  Carrier, FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, PalletRule, SalesOrderView,
+  Carrier, FreightPricingStrategy, LoadMode, OrderPallet, PalletProfile, PalletRule, Product, SalesOrderView,
 } from '../../core/api/models';
 import { AuthImage } from '../../core/api/auth-image';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -13,6 +13,7 @@ import { scrollBehavior } from '../../shared/motion';
 import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
+import { OrderPallets3d } from './order-pallets-3d';
 import { PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, clampPalletHeight, palletHeightLimit } from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
@@ -75,13 +76,15 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * emits patches and pallet actions: the sales editor keeps its serial save
  * queue, and the backend stays the one that calculates fits, m³ and freight.
  *
- * Overlays (the pallet sheet, Lading, the menus) sit at the root of this
- * template, outside .sp-layout: its container query traps position:fixed.
+ * Overlays (the pallet sheet, Lading, the menus, the 3D view) sit at the
+ * root of this template, outside .sp-layout: its container query traps
+ * position:fixed. 3D shows the pallets as they are laid out here, one at a
+ * time (Emre, 2026-11-20); what stands where still changes here only.
  */
 @Component({
   selector: 'app-shipping-planner',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, ContextMenu, EurPipe, Icon, NgTemplateOutlet, PalletGlyph, PalletSheet, PlannerFreight, PlannerLoad,
+  imports: [AuthImage, ContextMenu, EurPipe, Icon, NgTemplateOutlet, OrderPallets3d, PalletGlyph, PalletSheet, PlannerFreight, PlannerLoad,
     PlannerPallet, RouterLink, Segmented, Sheet],
   template: `
     <div class="sp">
@@ -140,14 +143,23 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
             @if (palletsMode() && (manual() || autoShown())) {
               <section class="sp-sec" aria-labelledby="sp-pallets">
                 <div class="sp-sec__head"><h4 id="sp-pallets">Pallets</h4>
-                  @if (desk() && manual() && canEdit()) {
-                    <button class="btn btn--sm" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="14" />Pallet</button>
-                  } @else { <span>{{ manual() ? handRows().length : autoCount() }}</span> }
+                  <span class="sp-sec__tools">
+                    @if (can3d()) {
+                      <button class="sp-3d" [class.btn]="desk()" [class.btn--sm]="desk()" type="button" [disabled]="pricing()"
+                              aria-label="Pallets in 3D bekijken" title="Pallets in 3D bekijken" (click)="open3d(0)">
+                        <app-icon name="cube" [size]="desk() ? 14 : 16" />3D
+                      </button>
+                    }
+                    @if (desk() && manual() && canEdit()) {
+                      <button class="btn btn--sm" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="14" />Pallet</button>
+                    } @else { <span>{{ manual() ? handRows().length : autoCount() }}</span> }
+                  </span>
                 </div>
                 @if (manual()) {
                   <div [class.sp-grid]="desk()" [class.sp-group]="!desk()">
                     @for (pallet of handRows(); track $index; let i = $index) {
                       <app-planner-pallet [pallet]="pallet" [look]="desk() ? 'card' : 'row'" [editable]="canEdit()" [count]="handRows().length"
+                                          [viewable]="can3d()" (view3d)="open3d($event)"
                                           [lines]="lines()" [placements]="placed()" [chips]="chipsFor() === i"
                                           [dragging]="draggingIndex() === i" [target]="draggingIndex() !== null && draggingIndex() !== i && dropIndex() === i"
                                           (act)="run($event)" (open)="sheetIndex.set($event)" (menu)="cardMenu.set($event)" (chipsToggle)="toggleChips($event)"
@@ -160,7 +172,10 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
                   </div>
                 } @else {
                   <div [class.sp-tiles]="desk()" [class.sp-group]="!desk()">
-                    @for (pallet of autoRows(); track pallet.from) { <app-planner-pallet [pallet]="pallet" look="row" /> }
+                    @for (pallet of autoRows(); track pallet.from) {
+                      <!-- Stays a button while the figures are worked out again (no tiles jumping); open3d waits for them. -->
+                      <app-planner-pallet [pallet]="pallet" look="row" [viewable]="can3d()" (view3d)="open3d($event)" />
+                    }
                   </div>
                   @if (canEdit() && mixed(); as mix) {
                     <div class="sp-offer">
@@ -267,7 +282,12 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
 
     @if (sheetPallet(); as pallet) {
       <app-pallet-sheet [pallet]="pallet" [lines]="lines()" [placements]="placed()" [spec]="spec()" [count]="handRows().length" [canEdit]="canEdit()"
+                        [can3d]="can3d()" (view3d)="open3d($event)"
                         (act)="run($event)" (move)="moveFromSheet($event)" (remove)="removePallet($event)" (closed)="sheetIndex.set(null)" />
+    }
+    @let at3d = view3d();
+    @if (at3d !== null) {
+      <app-order-pallets-3d [view]="view()" [products]="products()" [start]="at3d" (closed)="view3d.set(null)" />
     }
     @if (loadOpen()) {
       <app-sheet title="Lading" variant="ios" (closed)="loadOpen.set(false)">
@@ -313,6 +333,9 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
     .sp-sec{display:grid;gap:7px;min-width:0}
     .sp-sec__head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:20px;padding:0 16px;color:var(--muted);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
     .sp-sec__head h4{font-size:13px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+    .sp-sec__tools{display:flex;align-items:center;gap:10px}
+    .sp-3d:not(.btn){display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 2px;border:0;background:none;color:var(--rose);font:inherit;font-size:15px;font-weight:600;text-transform:none;letter-spacing:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .sp-3d:disabled{opacity:.4;cursor:default}
     .sp-group{overflow:hidden;border-radius:var(--ios-radius,22px);background:var(--surface)}
     .sp-group>*+*{border-top:.5px solid var(--ios-sep)}
     .sp-add{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:8px 16px;border:0;background:var(--surface);color:var(--rose);font-size:16px;font-weight:500;cursor:pointer}
@@ -368,6 +391,8 @@ export class ShippingPlanner {
   readonly pricing = input(false);
   /** An invoice that was issued before (or whose history is not known yet): only its history tells once it is back on concept. */
   readonly issued = input(false);
+  /** The catalogue (the editor's): 3D draws the omdozen at their sizes, which the priced order does not carry. */
+  readonly products = input<readonly Product[]>([]);
   readonly patch = output<ShippingOrderPatch>();
   readonly action = output<ShippingPalletAction>();
 
@@ -496,6 +521,11 @@ export class ShippingPlanner {
   /* ---- what is open */
   readonly infoOpen = signal(false);
   readonly loadOpen = signal(false);
+  /** The pallet (from 0) the 3D view opened on; null while it is shut. */
+  readonly view3d = signal<number | null>(null);
+  /** 3D shows the pallets listed here, once the catalogue's omdoos sizes are in. */
+  readonly can3d = computed(() => this.products().length > 0 && this.palletsMode()
+    && (this.manual() ? this.handRows().length > 0 : this.autoShown()));
   readonly sheetIndex = signal<number | null>(null);
   readonly sheetPallet = computed(() => {
     const index = this.sheetIndex();
@@ -522,6 +552,7 @@ export class ShippingPlanner {
     const menu = this.cardMenu();
     if (!menu) return [];
     return [
+      { id: '3d', label: 'Bekijk in 3D', iconName: 'cube', disabled: !this.can3d() || this.pricing() },
       { id: 'edit', label: 'Soort en hoogte…', iconName: 'pallet' },
       { id: 'up', label: 'Naar voren', iconName: 'chevron-up', disabled: menu.index === 0 },
       { id: 'down', label: 'Naar achteren', iconName: 'chevron-down', disabled: menu.index >= this.handRows().length - 1 },
@@ -555,6 +586,15 @@ export class ShippingPlanner {
     if (line.cartonHeightCm !== null) parts.push(`${Math.round(this.spec().baseHeightCm + line.cartonHeightCm * line.fullLayers)} cm`);
     if (line.weightLimited) parts.push('gewicht bepaalt');
     return parts.join(' · ');
+  }
+
+  /** The pallets in 3D, on this one (from 0); never on figures being worked out again. */
+  open3d(index: number): void {
+    if (!this.can3d() || this.pricing()) return;
+    this.sheetIndex.set(null);
+    this.cardMenu.set(null);
+    this.placeFor.set(null);
+    this.view3d.set(index);
   }
 
   toFreight(): void {
@@ -670,7 +710,8 @@ export class ShippingPlanner {
     const menu = this.cardMenu();
     this.cardMenu.set(null);
     if (!menu) return;
-    if (item.id === 'edit') this.sheetIndex.set(menu.index);
+    if (item.id === '3d') this.open3d(menu.index);
+    else if (item.id === 'edit') this.sheetIndex.set(menu.index);
     else if (item.id === 'up') this.move(menu.index, -1);
     else if (item.id === 'down') this.move(menu.index, 1);
     else if (item.id === 'remove') this.removePallet(menu.index);

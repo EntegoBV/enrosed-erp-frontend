@@ -60,6 +60,11 @@ export function palletPill(pallet: PalletVm): { text: string; tone: 'ok' | 'neut
         <button class="sp-row" type="button" aria-haspopup="dialog" (click)="open.emit(p.index)">
           <ng-container [ngTemplateOutlet]="row" /><app-icon class="sp-row__chev" name="chevron-right" [size]="16" />
         </button>
+      } @else if (viewable()) {
+        <!-- A pallet that does not change here (automatic, or locked) opens in 3D: the whole row, as a phone presses it. -->
+        <button class="sp-row sp-row--view" type="button" aria-haspopup="dialog" [attr.aria-label]="p.label + ' in 3D bekijken'" (click)="view3d.emit(p.index)">
+          <ng-container [ngTemplateOutlet]="row" /><app-icon class="sp-row__chev" name="cube" [size]="16" />
+        </button>
       } @else {
         <div class="sp-row sp-row--static"><ng-container [ngTemplateOutlet]="row" /></div>
       }
@@ -83,6 +88,11 @@ export function palletPill(pallet: PalletVm): { text: string; tone: 'ok' | 'neut
           @if (editable()) {
             <button class="sp-card__more" type="button" aria-haspopup="menu" [attr.aria-label]="'Acties voor ' + p.label" (click)="openMenu($event)">
               <app-icon name="more" [size]="18" />
+            </button>
+          } @else if (viewable()) {
+            <button class="sp-card__more" type="button" aria-haspopup="dialog" [attr.aria-label]="p.label + ' in 3D bekijken'" title="Bekijk in 3D"
+                    (click)="view3d.emit(p.index)">
+              <app-icon name="cube" [size]="16" />
             </button>
           }
         </header>
@@ -124,6 +134,8 @@ export function palletPill(pallet: PalletVm): { text: string; tone: 'ok' | 'neut
     :host{display:block;min-width:0}
     .sp-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto 14px;grid-template-areas:"glyph title pill chev" "glyph facts facts chev";align-items:center;column-gap:12px;row-gap:2px;width:100%;min-height:64px;padding:9px 16px;border:0;background:var(--surface);color:var(--ink);text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
     button.sp-row:active{background:var(--surface-2)}
+    .sp-row--view .sp-row__chev{color:var(--rose)}
+    @media (hover: hover){button.sp-row--view:hover{background:color-mix(in srgb,var(--rose) 5%,var(--surface))}}
     .sp-row--static{cursor:default;grid-template-columns:30px minmax(0,1fr) auto;grid-template-areas:"glyph title pill" "glyph facts facts"}
     .sp-row app-pallet-glyph{grid-area:glyph}.sp-row .badge{grid-area:pill}.sp-row__chev{grid-area:chev;color:var(--muted-2)}
     .sp-row__title{grid-area:title;min-width:0;overflow:hidden;font-size:15px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
@@ -167,6 +179,8 @@ export class PlannerPallet {
   readonly look = input<'row' | 'card'>('row');
   /** A hand-built pallet that may change; an automatic one never does. */
   readonly editable = input(false);
+  /** One that does not change here opens in 3D (view3d); an editable one does so from its menu or sheet. */
+  readonly viewable = input(false);
   readonly count = input(0);
   readonly lines = input<readonly PlannerLine[]>([]);
   readonly placements = input<ReadonlyMap<number, Placement>>(new Map());
@@ -178,6 +192,7 @@ export class PlannerPallet {
   readonly open = output<number>();
   readonly menu = output<{ index: number; point: MenuPoint }>();
   readonly chipsToggle = output<number>();
+  readonly view3d = output<number>();
 
   readonly pill = computed(() => palletPill(this.pallet()));
   /** Products with omdozen on no pallet that are not on this one yet. */

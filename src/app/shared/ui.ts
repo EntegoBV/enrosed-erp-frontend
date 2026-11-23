@@ -154,14 +154,17 @@ export class Sheet implements AfterViewInit, OnDestroy {
   onKeydown(event: KeyboardEvent): void {
     if (Sheet.stack.at(-1) !== this) return;
     if (event.key === 'Escape') {
-      /* A desk menu or country popover open in this dialog is a popover, not a sheet on the stack: the Escape is its own, it closes just that. */
-      if (this.dialog?.nativeElement.querySelector('.cm, .cp-pop')) return;
+      /* A desk menu or country popover open in this dialog is a popover, not a sheet on the stack: the Escape is its own, it closes just that.
+         So is the 3D view of the pallets over a sales order's Transport & levering, also while it loads (its host is there first). */
+      if (this.dialog?.nativeElement.querySelector('.cm, .cp-pop, .pb3, app-order-pallets-3d')) return;
       event.preventDefault();
       event.stopPropagation();
       this.requestClose();
       return;
     }
     if (event.key !== 'Tab') return;
+    /* The 3D view over it keeps the Tab in itself: this sheet's own buttons lie hidden under it. */
+    if (this.dialog?.nativeElement.querySelector('.pb3, app-order-pallets-3d')) return;
 
     const focusable = this.focusableElements();
     if (!focusable.length) {

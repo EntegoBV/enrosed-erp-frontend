@@ -23,7 +23,8 @@ export function keyContext(event: KeyboardEvent, scope: Element | null, doc: Doc
   const target = event.target instanceof Element ? event.target : null;
   return {
     typing: isTypingTarget(target),
-    overlayOpen: doc.querySelector('.overlay, .cm, [data-kit-overlay]') !== null,
+    /* The 3D view of the pallets covers the screen too (Palletberekening, a sales order): a shortcut's sheet would open under it. */
+    overlayOpen: doc.querySelector('.overlay, .cm, [data-kit-overlay], .pb3, app-order-pallets-3d') !== null,
     inScope: !scope || !target || target === doc.body || scope.contains(target),
     mod: event.metaKey || event.ctrlKey,
   };

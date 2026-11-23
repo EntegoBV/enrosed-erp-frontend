@@ -5246,6 +5246,44 @@ are tiles, hand pallets are cards edited in place.
 - Seen only in headless Chrome so far: the nested phone sheets in iOS Safari
   and the native host, and the desk drag (synthetic pointer events).
 
+### The order's pallets in 3D (2026-11-20)
+
+Emre: "3d pallet ook bij verkoop order bij pallet indelen zetten". `app-order-pallets-3d`
+(order-pallets-3d.ts) opens Palletberekening's builder (`app-pallet-builder`, three.js in its
+lazy chunk through the wrapper's `@defer`) on the order's pallets, one at a time with ‹ 2/4 ›:
+- What it shows (`order-pallets-3d-model.ts`, no Angular): the planner's pallets, i.e. the hand
+  layout (`order.pallets`), else `priced.totals.autoPallets` (every pallet of a run on its own),
+  else an older server's strict rows; none for loose cartons or when the automatic pallets do not
+  add up to the server's count. `palletBuild` lays every product in whole layers of `layerSlots`
+  (never more per layer than the order's `cartonsPerLayer`), bottom to top in the pallet's order,
+  a short layer as high as a full one, on the side `palletFit` stands it (upright; on its side
+  only when it fits no pallet upright, as the server counts since 2026-11-20), then `settle`.
+  Omdoos sizes come from the
+  catalogue (the priced line has none): the planner gets `[products]` from the editor. Checked on
+  real orders: count, height and weight per pallet equal the planner's.
+- Builder inputs added for it (Palletberekening unchanged): `storeKey` optional (null keeps
+  nothing), `initialBoxes`, `buildKey` (a change restarts from initialBoxes: next pallet, or other
+  omdozen), `fixed` (omdozen turn and move, none comes or goes; Automatisch reads "Zoals
+  berekend" and lays initialBoxes again; no Leeg, +1, Weg or +), `heading`, `pages`/`page`/`paged`,
+  `notice` (omdozen without sizes not drawn, sizes changed since pricing, measured height, own
+  pallet type). The builder now hides the app's tab bar like a sheet (HostBridge.overlay,
+  counted), keeps Tab inside, focuses Sluiten and gives the focus back on close.
+- Entries: planner "Pallets" head `3D`; automatic and locked rows are buttons (cube icon);
+  a hand card's ⋯ menu "Bekijk in 3D"; the phone pallet sheet "Bekijk in 3D"; and outside the
+  planner "Pallets in 3D bekijken" in the desk Levering rail, the phone editor's transport card
+  and the phone read view, so an accepted or shipped order can be viewed too. Disabled while
+  the figures are being priced again (planner rows stay buttons then; `open3d` waits).
+- Over a sheet: the Sheet leaves Escape and Tab to an open `.pb3` or `app-order-pallets-3d`
+  (the host exists while "3D laden…" shows, and its own Escape closes the view then); global
+  shortcuts count both as an overlay (key-context.ts), so "?" no longer opens under the 3D.
+  The screens close their 3D in `reload`/`load` and `canDeactivate`: it never opens again by
+  itself on the next document, and the leave question is never hidden under it.
+- The notice says why omdozen are not drawn: "zonder maten" or "te groot voor deze pallet"
+  (a hand pallet may hold an omdoos the planner marks "Omdoos te groot").
+- `layerSlots` rounds its centring once (0.01 cm): rounded slot by slot, 33,33 cm neighbours
+  overlapped by 0.01 cm and settle stacked one on the other (no catalogue size has two decimals
+  today).
+
 ## Catalogus PDF: prijzen voor een klant (round 3, 2026-11-06)
 
 Emre (2026-11-06): pallet always next to 20ft and 40ft in the PDF; with "Prijzen

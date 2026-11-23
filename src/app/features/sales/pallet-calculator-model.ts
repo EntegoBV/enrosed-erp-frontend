@@ -319,8 +319,10 @@ export function layerSlots(footprint: { lengthCm: number; widthCm: number }, pal
   if (!slots.length) return slots;
   const usedX = Math.max(...slots.map((slot) => slot.x + slot.lengthCm));
   const usedZ = Math.max(...slots.map((slot) => slot.z + slot.widthCm));
-  const offsetX = Math.max(0, (pallet.lengthCm - usedX) / 2);
-  const offsetZ = Math.max(0, (pallet.widthCm - usedZ) / 2);
+  /* The centring rounded once, to 0.01 cm: rounded place by place (the 3D view keeps 0.01 cm), two
+     neighbours of 33,33 cm could overlap by 0.01 cm and one then stood on the other. */
+  const offsetX = round(Math.max(0, (pallet.lengthCm - usedX) / 2), 2);
+  const offsetZ = round(Math.max(0, (pallet.widthCm - usedZ) / 2), 2);
   return slots.map((slot) => ({ ...slot, x: slot.x + offsetX, z: slot.z + offsetZ }));
 }
 

@@ -37,6 +37,7 @@ import {
   CbmPipe, DateNlPipe, DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe,
 } from '../../shared/pipes';
 import { ShippingPlanner } from './shipping-planner';
+import { OrderPallets3d } from './order-pallets-3d';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
 import { LinePriceSource } from './line-price-source';
@@ -81,7 +82,7 @@ interface JourneyStep {
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, LinePriceSource, IncomingPill,
+            ShippingPlanner, OrderPallets3d, SalesPdfSheet, LinePriceSource, IncomingPill,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
@@ -904,6 +905,9 @@ interface JourneyStep {
                       }
                       <div><dt>Levering</dt><dd>{{ deliverySummary(data) }}</dd></div>
                     </dl>
+                    @if (can3dOrder()) {
+                      <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+                    }
                     @if (!isLooseCartons(data) && data.order.pallets.length && (layoutCheck()?.loose ?? 0) > 0) {
                       <div class="row wrap"><b class="hint hint--warn grow">{{ layoutCheck()!.loose | num }} los</b>
                         @if (canEditShipping() && layoutCheck()!.looseFitting) { <button class="btn btn--sm" type="button" [disabled]="pricingStale()" (click)="refreshLayout()">Indeling bijwerken</button> }</div>
@@ -1232,7 +1236,7 @@ interface JourneyStep {
       @if (palletSheet()) {
         <app-sheet title="Transport &amp; levering" [wide]="true" variant="ios" (closed)="closeShipping()">
           <div body>
-            <app-shipping-planner [view]="data" [canEdit]="canEditShipping() && !financiallyLocked() && !reportLocked()" [carriers]="carriers()"
+            <app-shipping-planner [view]="data" [products]="products()" [canEdit]="canEditShipping() && !financiallyLocked() && !reportLocked()" [carriers]="carriers()"
                                   [splitFreight]="financiallyLocked() && canEdit()" [pricing]="pricingStale()"
                                   [customerPostcode]="customerPostcode()" [countryName]="orderCountryName()" [issued]="issuedBefore()"
                                   (patch)="applyShippingPatch($event)" (action)="handlePalletAction($event)" />
@@ -1246,6 +1250,11 @@ interface JourneyStep {
             <button class="btn btn--primary" type="button" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
+      }
+
+      @let deskPallet3d = pallets3d();
+      @if (deskPallet3d !== null) {
+        <app-order-pallets-3d [view]="data" [products]="products()" [start]="deskPallet3d" (closed)="pallets3d.set(null)" />
       }
 
       @if (settlementOpen()) {

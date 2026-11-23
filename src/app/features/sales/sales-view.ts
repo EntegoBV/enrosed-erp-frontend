@@ -18,6 +18,8 @@ import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
 import { REPORT_SHIPPED_LABEL, isReportBacked, reportShipSplits, shipsViaReports } from './report-backed';
 import { reportBreakdownOf } from './report-backed-breakdown';
 import { ReportBackedCostSheet, ReportCostRequest } from './report-backed-cost-sheet';
+import { OrderPallets3d } from './order-pallets-3d';
+import { orderPallets3d } from './order-pallets-3d-model';
 import { reportLineCost, reportLineMargin, reportMeldingQuery, reportProceeds } from './report-backed-cost';
 import { partnerShortName } from '../../shared/partner-short-name';
 import { advanceContentsSummary, advancePlanningHint, isAdvanceInvoice } from './sales-advance-contents-state';
@@ -83,7 +85,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
-            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet],
+            DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet, OrderPallets3d],
   template: `
     @if (view(); as data) {
       @if (cancelSheet()) {
@@ -163,6 +165,11 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             <button class="btn btn--primary" type="button" [disabled]="invoiceBusy()" (click)="confirmReturnGoods()">{{ invoiceBusy() ? 'Bezig…' : 'Retour boeken' }}</button>
           </div>
         </app-sheet>
+      }
+
+      @let viewPallet3d = pallets3d();
+      @if (viewPallet3d !== null) {
+        <app-order-pallets-3d [view]="data" [products]="products()" [start]="viewPallet3d" (closed)="pallets3d.set(null)" />
       }
 
       @if (pdfSheet()) {
@@ -767,6 +774,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div class="detail-item"><span>Vracht · {{ freightStrategyLabel(data) }}</span><strong>{{ freightLabel(data) }}</strong></div>
                 <div class="detail-item"><span>Levertermijn</span><strong>{{ deliveryState(data) }}</strong></div>
               </div>
+              @if (can3dOrder()) {
+                <button class="btn btn--block delivery-3d" type="button" aria-haspopup="dialog" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+              }
             </section>
             }
 
@@ -1126,6 +1136,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
     }
   `,
   styles: [`
+    .delivery-3d{margin-top:12px}
     .unavailable-model-label{color:#765017!important;font-weight:650}
     .sales-line--unavailable{background:color-mix(in srgb,var(--surface) 92%,#d59625)}
     .line-unavailable{display:grid;gap:4px;margin-top:12px;padding:12px 14px;border:1px solid #e2cda8;border-radius:14px;background:#fffaf1;color:#765017}
@@ -1338,7 +1349,11 @@ export class SalesView {
   readonly splitBusy = signal(false);
   readonly splitBlockReason = salesSplitBlockReason;
   readonly isPartner = isPartnerDocument;
-  canDeactivate(): boolean { return !this.splitBusy(); }
+  canDeactivate(): boolean {
+    /* Leaving: the 3D over the screen goes first. */
+    this.pallets3d.set(null);
+    return !this.splitBusy();
+  }
   @HostListener('window:beforeunload', ['$event'])
   warnBeforeUnload(event: BeforeUnloadEvent): void {
     if (!this.splitBusy()) return;
@@ -1536,6 +1551,13 @@ export class SalesView {
   readonly loadError = signal('');
   readonly downloading = signal(false);
   readonly pdfSheet = signal(false);
+  /** The pallet (from 0) the 3D view of the order's pallets opened on; null while it is shut. */
+  readonly pallets3d = signal<number | null>(null);
+  /** The order's pallets in 3D, also once its transport no longer changes (the warehouse loads from it). */
+  readonly can3dOrder = computed(() => {
+    const data = this.view();
+    return !!data && this.products().length > 0 && orderPallets3d(data).length > 0;
+  });
   readonly pdfInitialChoice = signal<SalesPdfChoice | null>(null);
   readonly copyingLink = signal(false);
   readonly deleting = signal(false);
@@ -2068,6 +2090,8 @@ export class SalesView {
     this.loading.set(true);
     this.loadError.set('');
     this.view.set(null);
+    /* The 3D belonged to the document that was there: it must not open again by itself on the next one. */
+    this.pallets3d.set(null);
     this.portalLink.set(null);
     this.openLine.set(null);
     this.openProductGroups.set(new Set());

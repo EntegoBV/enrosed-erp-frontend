@@ -31,6 +31,10 @@ import type { ShippingPalletAction } from './shipping-planner';
           </div>
           @if (issue(); as pill) { <span class="badge" [class]="'badge--' + pill.tone">{{ pill.text }}</span> }
         </div>
+        @if (can3d()) {
+          <div class="ps-group"><button class="ps-action ps-action--3d" type="button" (click)="view3d.emit(p.index)">
+            <app-icon name="cube" [size]="18" />Bekijk in 3D</button></div>
+        }
 
         <section class="ps-sec" aria-labelledby="ps-on">
           <div class="ps-head"><h4 id="ps-on">Op deze pallet</h4><span>{{ p.cartons | num }}</span></div>
@@ -127,6 +131,7 @@ import type { ShippingPalletAction } from './shipping-planner';
     .ps-duo{display:grid;grid-template-columns:1fr 1fr}.ps-duo>*+*{border-top:0;border-left:.5px solid var(--ios-sep)}
     .ps-action{display:flex;align-items:center;justify-content:center;width:100%;min-height:52px;padding:0 12px;border:0;background:var(--surface);color:var(--rose);font-size:16px;cursor:pointer}
     .ps-action:disabled{opacity:.4;cursor:default}.ps-action--danger{color:var(--danger)}
+    .ps-action--3d{gap:8px;font-weight:600}
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){.ps{padding:0 var(--ios-inset,16px)}}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
       .ps-group,.ps-empty{border:1px solid var(--line);border-radius:12px}
@@ -143,6 +148,9 @@ export class PalletSheet {
   readonly spec = input.required<PlannerSpec>();
   readonly count = input(0);
   readonly canEdit = input(false);
+  /** The order's pallets can be shown in 3D (the planner closes this sheet and opens it on this pallet). */
+  readonly can3d = input(false);
+  readonly view3d = output<number>();
 
   readonly act = output<ShippingPalletAction>();
   readonly move = output<-1 | 1>();

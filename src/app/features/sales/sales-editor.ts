@@ -73,6 +73,8 @@ import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
 import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
+import { OrderPallets3d } from './order-pallets-3d';
+import { orderPallets3d } from './order-pallets-3d-model';
 import { PALLET_LEGACY_MAX_HEIGHT_CM } from './pallet-calculator-model';
 import {
   automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
@@ -111,7 +113,7 @@ function layoutKey(order: SalesOrder): string {
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
-            ShippingPlanner, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
+            ShippingPlanner, OrderPallets3d, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
     @if (view(); as data) {
@@ -1110,6 +1112,9 @@ function layoutKey(order: SalesOrder): string {
                 }
               </div>
             }
+            @if (can3dOrder()) {
+              <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+            }
             <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditShipping()"
                     (click)="palletSheet.set(true)" aria-haspopup="dialog">
               Transport &amp; levering aanpassen
@@ -1575,6 +1580,7 @@ function layoutKey(order: SalesOrder): string {
             @if (view(); as data) {
               <app-shipping-planner
                 [view]="data"
+                [products]="products()"
                 [canEdit]="canEditShipping() && !mobileFinanciallyLocked()"
                 [splitFreight]="mobileFinanciallyLocked() && canEdit()"
                 [pricing]="pricingStale()"
@@ -1596,6 +1602,13 @@ function layoutKey(order: SalesOrder): string {
             <button class="btn btn--primary" type="button" (click)="closeShipping()">Klaar</button>
           </div>
         </app-sheet>
+      }
+
+      @let editorPallet3d = pallets3d();
+      @if (editorPallet3d !== null) {
+        @if (view(); as data) {
+          <app-order-pallets-3d [view]="data" [products]="products()" [start]="editorPallet3d" (closed)="pallets3d.set(null)" />
+        }
       }
 
     @if (settlementOpen()) {
@@ -3263,6 +3276,13 @@ export class SalesEditor {
 
   /** Pallet management opens as a sheet: full height, scrollable, phone-first. */
   readonly palletSheet = signal(false);
+  /** The pallet (from 0) the 3D view of the order's pallets opened on; null while it is shut. */
+  readonly pallets3d = signal<number | null>(null);
+  /** 3D from the delivery facts too: it also serves a document whose transport no longer changes (accepted, shipped). */
+  readonly can3dOrder = computed(() => {
+    const data = this.view();
+    return !!data && this.products().length > 0 && orderPallets3d(data).length > 0;
+  });
 
   /** Is an action running that should block the buttons? */
   readonly busy = signal(false);
@@ -3359,6 +3379,8 @@ export class SalesEditor {
     this.loading.set(true);
     this.loadError.set('');
     this.view.set(null);
+    /* The 3D belonged to the document that was there: it must not open again by itself on the next one. */
+    this.pallets3d.set(null);
     this.customerPortalLink.set(null);
     try {
       /* Everything the screen shows arrives together: the customers and the
@@ -4019,6 +4041,8 @@ export class SalesEditor {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    /* Leaving: the 3D covers the screen, and the leave question must not open unseen under it. */
+    this.pallets3d.set(null);
     if (this.transportSaving() || this.transportQueued()) {
       /* A refused transport save keeps nobody in: the leave question offers 'Niet opslaan'. */
       return this.flushTransport().then(saved => saved ? this.canDeactivate() : this.askToLeave());
