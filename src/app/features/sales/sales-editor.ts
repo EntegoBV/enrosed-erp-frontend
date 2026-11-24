@@ -1241,7 +1241,7 @@ function layoutKey(order: SalesOrder): string {
                 <span class="num">{{ data.priced.totals.goodsTotal | eur }}</span>
               </div>
               @if (!isPartnerDocument(data.order) && !reportLocked() && data.advanceBilling?.stage !== 'ADVANCE' && data.order.countryCode && data.priced.validation.minOrderValue > 0 && !data.priced.validation.meetsMinimum) {
-                <!-- The minimum is a goods matter, so its line lives here. -->
+                <!-- The minimum reads the goods (plus the free lines that add to them), so its line lives here. -->
                 <div class="receipt-min receipt-min--goods">
                   <div class="receipt-min__row">
                     <span>Min {{ data.priced.validation.minOrderValue | eur: 0 }}</span>
@@ -3459,12 +3459,13 @@ export class SalesEditor {
     return (this.view()?.priced.lines.findIndex((line) => line.productId === productId) ?? -1) + 1;
   }
 
+  /** The bar follows what the server says is still missing: the goods and the free lines that add to them. */
   readonly minimumPercent = computed(() => {
     const data = this.view();
     if (!data) return 0;
-    const minimum = data.priced.validation.minOrderValue;
-    if (!minimum) return 100;
-    return Math.min(100, (data.priced.totals.goodsTotal / minimum) * 100);
+    const { minOrderValue: minimum, meetsMinimum, shortfall } = data.priced.validation;
+    if (!minimum || meetsMinimum) return 100;
+    return Math.max(0, Math.min(100, ((minimum - shortfall) / minimum) * 100));
   });
 
   /** Commercial fields belong to the draft version only. */
