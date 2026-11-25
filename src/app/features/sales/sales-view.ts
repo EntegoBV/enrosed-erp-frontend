@@ -39,6 +39,7 @@ import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
 import { linePriceFigures, linePriceHint, linePriceState, linePriceSummary, type LinePriceState } from './line-price-source';
+import { CustomerPriceSaveTrigger, SalesCustomerPriceSave, customerPriceCandidates, type CustomerPriceCandidate, type CustomerPricesSaved } from './sales-customer-price-save';
 import { ChangeDetectionStrategy, Component, HostListener, afterRenderEffect, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { documentTitle } from '../../core/platform/document-title';
@@ -87,7 +88,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
 @Component({
   selector: 'app-sales-view',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
+  imports: [SalesSplitSheet, SalesCustomerPriceSave, CustomerPriceSaveTrigger, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, RouterLink, NgTemplateOutlet, AuthImage, PageHeader, Sheet, SalesPdfSheet, Skeleton, CbmPipe, DateNlPipe,
             DateTimeNlPipe, EurPipe, NumPipe, PctPipe, WeekNlPipe, HostPage, HostStickyBand, ReportBackedCostSheet, OrderPallets3d],
   template: `
     @if (view(); as data) {
@@ -148,6 +149,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
       @if (creditSheetOpen()) { <app-sales-credit-note-sheet [invoiceId]="data.order.id" (closed)="creditSheetOpen.set(false)" (created)="creditCreated($event)" /> }
       @if (advanceSheetOpen()) { <app-sales-advance-invoice-sheet [view]="data" (closed)="advanceSheetOpen.set(false)" (conflict)="reloadAfterConflict()" /> }
       @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
+      @if (customerPriceSaveOpen() && data.order.customerId != null) {
+        <app-sales-customer-price-save [customerId]="data.order.customerId" [customerName]="customerName()" [salesOrderId]="data.order.id"
+                                       [candidates]="customerPriceCandidates()" (saved)="customerPricesSaved($event)" (closed)="customerPriceSaveOpen.set(false)" />
+      }
       @if (returnSheet(); as ret) {
         <app-sheet title="Goederen terug in voorraad" variant="ios" (closed)="returnSheet.set(null)">
           <div body>
@@ -603,6 +608,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     <strong>Nog geen producten</strong>
                     <p>Open Bewerken om de eerste productregel toe te voegen.</p>
                   </div>
+                }
+                <!-- Typed prices that are not the customer's own: one press makes them the customer's (klantprijzen). -->
+                @if (customerPriceCandidates().length; as count) {
+                  <app-customer-price-save-trigger variant="phone" [count]="count" (pressed)="customerPriceSaveOpen.set(true)" />
                 }
 
                 @if ((data.priced.extraLines ?? []).length) {
@@ -2218,6 +2227,29 @@ export class SalesView {
     if (!this.customerPricesApply()) return null;
     const saved = this.view()?.order.lines.find((item) => item.productId === line.productId);
     return linePriceState(saved, line, this.lineUnit(line.productId).singular);
+  }
+
+  /**
+   * "Als klantprijs bewaren" (Emre, 2026-11-25), as in the editor: the saved lines' typed prices that are not the
+   * customer's price of today, on a document that takes the customer's prices (the editor's pinsAgreedPrices: a
+   * customer, a regular document, no advance invoice, no split part); not while a website order is still the
+   * customer's to change. Nothing on the document changes here: only the customer's prices.
+   */
+  readonly customerPriceCandidates = computed<CustomerPriceCandidate[]>(() => {
+    const data = this.view();
+    if (!data || data.order.customerId == null || !this.customerPricesApply() || data.advanceBilling?.stage === 'ADVANCE'
+        || data.fulfillment || data.webOrder?.customerEditable) return [];
+    return customerPriceCandidates(data.order, data.priced.lines, this.products(), (productId) => this.lineUnit(productId).singular);
+  });
+  readonly customerPriceSaveOpen = signal(false);
+
+  /** The lines' figures follow the stored prices at once; the lines themselves stay as they are. */
+  customerPricesSaved(event: CustomerPricesSaved): void {
+    this.customerPriceSaveOpen.set(false);
+    const current = this.view();
+    if (!current) return;
+    this.view.set({ ...current, priced: { ...current.priced, lines: current.priced.lines.map((line) =>
+      event.prices.has(line.productId) ? { ...line, customerUnitPriceEur: event.prices.get(line.productId)! } : line) } });
   }
 
   readonly priceSummary = linePriceSummary;

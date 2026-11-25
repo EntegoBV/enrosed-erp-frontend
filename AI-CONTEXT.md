@@ -3037,6 +3037,58 @@ pinned price as to a typed one.
   the finger lifts. Other picker users pass no `priceMarkOf`; their rows
   only lost text selection and the touch callout.
 
+### Als klantprijs bewaren (2026-11-25)
+Emre: "als ik een factuur maak en andere prijzen noteer, ook een knop hebben om
+die dan zijn catalogus prijs van dat te maken zodat ook die inlog prijzen van hun
+aanpassen meteen en dat zien". The typed prices of a quote or invoice become the
+customer's klantprijzen in one press: their website login shows them at once (the
+server looks them up live), new documents pin them, a price list for the customer
+prints them. `features/sales/sales-customer-price-save.ts`, its own styles (the
+desk's and editor's stylesheets stay at their budget).
+- `customerPriceCandidates(order, priced, products, unitOf, agreed?)` (pure): the
+  lines with a price staff typed (`priceSource` MANUAL; a customer price typed
+  over counts, as the marker reads it; not unavailable, no demo or gone product)
+  that differ from today's customer price; with no customer price, a price equal
+  to the catalogue price is not "another price". A line without a source (from
+  before 2026-11-06, or a website line at the list price of its day) is never
+  offered: nobody typed that price, and past concept the server gives such a line
+  no figures, so a stored price could not drop out (review 2026-11-25). Figures
+  from the server's priced line (given for every line with a source; null ones are
+  left out of the JSON, so "absent" reads as none); only a line typed a moment ago
+  that the next preview has not priced yet falls back to `catalogueUnitPrice` (=
+  the editor's `standardPriceOf`) and the editor's loaded `agreedPrices`. Nothing
+  on a cancelled or refused document. More than 2 decimals: listed, not tickable.
+- Where (the server's `pinsCustomerPrices`: a customer, regular document, no
+  credit note, partner deal, container-cost pricing, advance invoice or split part;
+  not while a website order is the customer's to change; editor: not while the
+  draft has another customer than the saved one), sent and issued documents
+  included (only the customer's prices change): `app-customer-price-save-trigger` - desk: a small button with the K before "+
+  Product" in the products bar ("Als klantprijs bewaren (n)", fits 1070 px);
+  phone editor (Producten step) and read view: a large row under the lines ("n
+  eigen prijzen · ook in de websitelogin").
+- `app-sales-customer-price-save` (iOS sheet on the phone, dialog on the desk):
+  one sentence, then a ticked row per product (name over two lines so the colour
+  stays, "nu klantprijs € x · tot dd/mm/jjjj" / "nu standaard € x" / "klantprijs €
+  x verlopen", the price per unit), Annuleren / "Bewaren (n)". It reads the stored
+  prices first (`CustomerPriceApi.list`, in ngOnInit: required inputs are not set
+  in the constructor); a price already stored at that amount drops out, an ended
+  end date is cleared (`validUntil: null`) so the new price applies, an end date
+  still ahead stays. One PUT `{source: 'SALES_DOCUMENT', salesOrderId, changes}`
+  with each product's basis; 409 CUSTOMER_PRICE_BASIS_CHANGED stores nothing and
+  marks the rows named.
+- After the save the screen's priced lines take the new `customerUnitPriceEur`
+  at once; on a concept the lines move to CUSTOMER in the draft (saved with
+  Opslaan, like "Klantprijs gebruiken"); a sent or issued document keeps its lines.
+  `linePriceState` now reads a line whose own price equals today's customer price
+  as on the customer's price (filled K, never "Klantprijs € x beschikbaar").
+- History: SALES_DOCUMENT reads "uit VF-2026-0031" (`historyMeta`, the server's
+  `reference`).
+- Checked locally 2026-11-25 (prod-profile jar on a copy of the 11-18 data, desk
+  800/1070, phone 390): concept 117 (partial save, Opslaan stores CUSTOMER, typing
+  over a customer price 2,45 -> 2,30), sent quote 118 (document unchanged), the
+  basis refusal, the customer history, the website login's `/account/prices` and
+  quote configuration right after a save.
+
 ### Websitebestellingen (2026-10-08)
 A logged-in customer places an order on the website; staff confirm it here.
 The document is an ordinary quote whose view carries a `webOrder` block

@@ -7,7 +7,8 @@ import type { DocumentType, LanguageCode, QuoteStatus, SalesLinePriceSource } fr
 /** The sales unit a price is on: per display only for a display priced per display. */
 export type CustomerPriceBasis = 'PIECE' | 'DISPLAY';
 export type CustomerPriceStatus = 'ACTIVE' | 'EXPIRED' | 'BASIS_CHANGED' | 'PRODUCT_GONE';
-export type CustomerPriceSource = 'CUSTOMER_SCREEN' | 'CATALOG_EXPORT';
+/** SALES_DOCUMENT: typed prices of a quote or invoice made the customer's own ("Als klantprijs bewaren", 2026-11-25). */
+export type CustomerPriceSource = 'CUSTOMER_SCREEN' | 'CATALOG_EXPORT' | 'SALES_DOCUMENT';
 export type CatalogExportPriceSource = 'CATALOGUE' | 'CUSTOMER' | 'ONE_OFF' | 'ON_REQUEST';
 
 /** A customer's own price for one product, EUR excl. VAT on the product's sales unit. */
@@ -68,6 +69,8 @@ export function priceBasisRefusal(failure: unknown): { message: string; productI
 export interface CustomerPriceSave {
   source: CustomerPriceSource;
   changes: CustomerPriceChange[];
+  /** With SALES_DOCUMENT: the quote or invoice the prices come from (it must be this customer's; its number goes on the history). */
+  salesOrderId?: number;
 }
 
 export interface CustomerPriceHistoryEntry {
@@ -80,6 +83,8 @@ export interface CustomerPriceHistoryEntry {
   source: CustomerPriceSource | 'CUSTOMER_DELETED';
   changedAt: string;
   changedBy: string | null;
+  /** SALES_DOCUMENT: the number of the document the price came from; absent from an older server. */
+  reference?: string | null;
 }
 
 /** One catalogue PDF made with prices or for a recipient: the journal's header. */

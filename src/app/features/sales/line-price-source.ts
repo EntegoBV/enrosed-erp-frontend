@@ -58,6 +58,11 @@ export function linePriceState(draft: SalesOrderLine | undefined, priced: Priced
   if (source === null && draft?.id == null && typed === null && customer !== null && sameAmount(priced.unitPrice, customer)) {
     source = 'CUSTOMER';
   }
+  /* A price of the line's own that is exactly the customer's price of today (typed before it became theirs, or made
+     theirs from this very document with "Als klantprijs bewaren") is the customer's price: never "beschikbaar". */
+  if (source !== 'CUSTOMER' && source !== 'STANDARD' && typed !== null && customer !== null && sameAmount(typed, customer)) {
+    source = 'CUSTOMER';
+  }
   if (source !== 'CUSTOMER' && customer === null) return null;
   const price = typed ?? priced.unitPrice;
   return {

@@ -43,6 +43,7 @@ import { OrderPallets3d } from './order-pallets-3d';
 import { SalesPdfSheet } from './sales-pdf-sheet';
 import { SalesEditor } from './sales-editor';
 import { LinePriceSource } from './line-price-source';
+import { CustomerPriceSaveTrigger, SalesCustomerPriceSave } from './sales-customer-price-save';
 import { AuctionSettlementSheet, AuctionSheetLine } from './auction-settlement-sheet';
 import { SourcingApi } from '../../core/api/sourcing-api';
 import { PartnerLinkSheet } from './partner-link-sheet';
@@ -84,13 +85,18 @@ interface JourneyStep {
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
-            ShippingPlanner, OrderPallets3d, SalesPdfSheet, LinePriceSource, IncomingPill,
+            ShippingPlanner, OrderPallets3d, SalesPdfSheet, LinePriceSource, IncomingPill, SalesCustomerPriceSave, CustomerPriceSaveTrigger,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
     @if (restoreLine(); as restore) {
       <app-sales-line-restore-sheet [description]="restore.description" [unitsPerStep]="restore.unitsPerStep"
         [multiple]="lineStepMultiple(restore.productId, restore.unitsPerStep)" [units]="lineUnit(restore.productId).plural"
         (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" />
+    }
+
+    @if (customerPriceSaveOpen() && view()?.order?.customerId != null) {
+      <app-sales-customer-price-save [customerId]="view()!.order.customerId!" [customerName]="customerName()" [salesOrderId]="view()!.order.id"
+                                     [candidates]="customerPriceCandidates()" (saved)="customerPricesSaved($event)" (closed)="customerPriceSaveOpen.set(false)" />
     }
 
     @if (view(); as data) {
@@ -439,6 +445,10 @@ interface JourneyStep {
                 <button type="button" [class.on]="profitPerPiece()" [attr.aria-pressed]="profitPerPiece()" (click)="profitPerPiece.set(true)">Per eenheid</button>
                 <button type="button" [class.on]="!profitPerPiece()" [attr.aria-pressed]="!profitPerPiece()" (click)="profitPerPiece.set(false)">Per regel</button>
               </span>
+              }
+              <!-- Typed prices that are not the customer's own: one press makes them the customer's (klantprijzen). -->
+              @if (customerPriceCandidates().length; as count) {
+                <app-customer-price-save-trigger [count]="count" (pressed)="openCustomerPriceSave()" />
               }
               @if (!isCreditNoteDoc()) {
               <button class="btn btn--primary btn--sm" type="button" [disabled]="!commercialEditable() || !available().length" (click)="openPicker()">

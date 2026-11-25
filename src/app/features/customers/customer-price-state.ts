@@ -149,6 +149,7 @@ export function historyChange(entry: Pick<CustomerPriceHistoryEntry, 'priceExclV
 /** Who and when (the moment left out where it heads the row), and where it happened when that was not the customer sheet. */
 export function historyMeta(entry: CustomerPriceHistoryEntry, withMoment = true): string {
   const source = entry.source === 'CATALOG_EXPORT' ? 'bij een catalogus'
+    : entry.source === 'SALES_DOCUMENT' ? (entry.reference ? `uit ${entry.reference}` : 'uit offerte of factuur')
     : entry.source === 'CUSTOMER_DELETED' ? 'klant verwijderd' : null;
   const parts = [withMoment ? momentText(entry.changedAt) : null, entry.changedBy, source, entry.validUntil ? `tot ${dayText(entry.validUntil)}` : null];
   const text = parts.filter(Boolean).join(' · ');

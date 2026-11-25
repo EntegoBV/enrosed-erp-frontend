@@ -32,6 +32,7 @@ import { CustomerSheet } from '../customers/customer-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
 import { LinePriceSource, linePriceState, type LinePriceChoice, type LinePriceState } from './line-price-source';
+import { CustomerPriceSaveTrigger, SalesCustomerPriceSave, customerPriceCandidates, type CustomerPriceCandidate, type CustomerPricesSaved } from './sales-customer-price-save';
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, signal, untracked, HostListener } from '@angular/core';
 import { CustomerPriceApi } from '../../core/api/customer-price-api';
 import { Router, RouterLink } from '@angular/router';
@@ -53,7 +54,7 @@ import { mergeOrderAfterSave, shippingFields, shippingSnapshot, withoutShipping 
 import { saveBlob } from '../../core/api/download';
 import { OrderPallet,
   Carrier, Category, Country, Customer, CustomerPortalLink, FreightPricingStrategy, LANGUAGES, LanguageCode,
-  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesLinePriceSource, SalesOrder, SalesOrderView, PurchaseOrderView,
+  MarkupMode, OrderStep, Product, ProductFamily, QuoteEvent, QuoteRevision, PricedLine, SalesExtraLine, SalesLinePriceSource, SalesOrder, SalesOrderLine, SalesOrderView, PurchaseOrderView,
 } from '../../core/api/models';
 import type { HostActionEvent, HostPageInput } from '../../core/platform/host-bridge';
 import { HostStickyBand } from '../../shared/host-page';
@@ -115,7 +116,7 @@ function layoutKey(order: SalesOrder): string {
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesLineRestoreSheet, SalesCustomerPriceSave, CustomerPriceSaveTrigger, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, OrderPallets3d, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
@@ -994,6 +995,10 @@ function layoutKey(order: SalesOrder): string {
                 }
               </section>
             }
+            <!-- Typed prices that are not the customer's own: one press makes them the customer's (klantprijzen). -->
+            @if (customerPriceCandidates().length; as count) {
+              <app-customer-price-save-trigger variant="phone" [count]="count" (pressed)="openCustomerPriceSave()" />
+            }
             } @else if (advanceLocked()) {
               <p class="adv-lock" role="note">{{ data.order.status === 'CONCEPT' ? advanceLockNote : 'Een voorschotfactuur heeft geen productregels; ze factureert alleen het voorschotbedrag.' }}</p>
             } @else {
@@ -1555,6 +1560,10 @@ function layoutKey(order: SalesOrder): string {
       @if (mobileSplitOpen()) { <app-sales-split-sheet [view]="data" [dirty]="dirty()" [externalBusy]="saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (busyChange)="mobileSplitBusy.set($event)" (saved)="mobileSplitSaved($event)" (closed)="closeMobileSplit()" /> }
       @if (offsetOpen()) { <app-sales-offset-sheet [credit]="data" [targetId]="offsetTarget()" (closed)="offsetOpen.set(false)" (changed)="offsetApplied($event)" /> }
       @if (restoreLine(); as restore) { <app-sales-line-restore-sheet [description]="restore.description" [unitsPerStep]="restore.unitsPerStep" [multiple]="lineStepMultiple(restore.productId, restore.unitsPerStep)" [units]="lineUnit(restore.productId).plural" (restored)="confirmRestoreLine($event)" (closed)="restoreLine.set(null)" /> }
+      @if (customerPriceSaveOpen() && data.order.customerId != null) {
+        <app-sales-customer-price-save [customerId]="data.order.customerId" [customerName]="customerName()" [salesOrderId]="data.order.id"
+                                       [candidates]="customerPriceCandidates()" (saved)="customerPricesSaved($event)" (closed)="customerPriceSaveOpen.set(false)" />
+      }
 
       @if (pdfSheet()) {
         <app-sales-pdf-sheet
@@ -3742,6 +3751,57 @@ export class SalesEditor {
     if (this.customerChanged()) return false;
     const saved = this.savedDocument()?.lines.find((item) => item.productId === line.productId);
     return saved?.priceSource === 'CUSTOMER' && same(saved.unitPriceEur);
+  }
+
+  /*
+   * "Als klantprijs bewaren" (Emre, 2026-11-25): the prices typed on this document become the customer's own, so their
+   * website login shows them at once and the next documents take them (sales-customer-price-save.ts).
+   */
+
+  /**
+   * The typed prices that are not the customer's price of today, on a document that takes the customer's prices
+   * (pinsAgreedPrices). Not while the draft has another customer than the saved document (the server ties the save to
+   * the document's customer), nor while a website order is still the customer's to change. A customer price typed
+   * over counts as typed, as the marker reads it.
+   */
+  readonly customerPriceCandidates = computed<CustomerPriceCandidate[]>(() => {
+    const data = this.view();
+    if (!data || !this.pinsAgreedPrices() || this.customerChanged() || data.webOrder?.customerEditable) return [];
+    const asStored = (line: SalesOrderLine): SalesOrderLine => {
+      if (line.priceSource !== 'CUSTOMER' || !((line.unitPriceEur ?? 0) > 0)) return line;
+      const priced = data.priced.lines.find((item) => item.productId === line.productId);
+      return priced && this.agreedAmount(priced, line.unitPriceEur!) ? line : { ...line, priceSource: 'MANUAL' };
+    };
+    const known = this.agreedPrices();
+    return customerPriceCandidates({ ...data.order, lines: data.order.lines.map(asStored) }, data.priced.lines, this.products(),
+      (productId) => this.lineUnit(productId).singular, known?.customerId === data.order.customerId ? known.byProduct : null);
+  });
+  readonly customerPriceSaveOpen = signal(false);
+
+  openCustomerPriceSave(): void {
+    if (this.customerPriceCandidates().length) this.customerPriceSaveOpen.set(true);
+  }
+
+  /**
+   * The prices are the customer's now. The lines' figures follow at once (the next preview brings the server's); on a
+   * concept each line moves to the klantprijs in the draft, like "Klantprijs gebruiken" in the marker, and is saved
+   * with Opslaan. A sent or issued document keeps its lines: only the customer's prices changed.
+   */
+  customerPricesSaved(event: CustomerPricesSaved): void {
+    this.customerPriceSaveOpen.set(false);
+    const current = this.view();
+    if (!current) return;
+    this.view.set({ ...current, priced: { ...current.priced, lines: current.priced.lines.map((line) =>
+      event.prices.has(line.productId) ? { ...line, customerUnitPriceEur: event.prices.get(line.productId)! } : line) } });
+    if (this.canEdit()) {
+      for (const [productId, price] of event.prices) {
+        const line = this.view()?.order.lines.find((item) => item.productId === productId);
+        if (line && line.priceSource !== 'CUSTOMER' && Math.abs((line.unitPriceEur ?? 0) - price) < 0.00005) {
+          this.setLine(productId, { unitPriceEur: price, priceSource: 'CUSTOMER' });
+        }
+      }
+    }
+    this.loadAgreedPrices();
   }
 
   quantityLabel(lines: readonly PricedLine[]): string {
