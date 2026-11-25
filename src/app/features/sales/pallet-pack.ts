@@ -18,7 +18,9 @@ import { cartonStanding, type CartonUp } from './pallet-calculator-model';
  * time); a try that takes everything still to load beats any that leaves
  * omdozen for another pallet; where they load the same (the last pallet takes
  * all that is left), the one that ends lowest, so a part pallet stands low and
- * wide instead of as a tower. An omdoos lies down only where that fills
+ * wide instead of as a tower. A pallet that could take all that is left (by
+ * volume and weight) but leaves omdozen over is tried again from every first
+ * block, the first that takes everything standing. An omdoos lies down only where that fills
  * clearly more (TIP_COST). Nothing hangs over an edge and nothing floats.
  *
  * FROZEN since 2026-11-25: the server's PalletPacker counts PACKED documents
@@ -334,11 +336,12 @@ function finish(state: State, kinds: readonly Kind[], deck: PackDeck): number {
   }
 }
 
-function fillOne(kinds: readonly Kind[], pool: readonly number[], deck: PackDeck): { boxes: PackedBox[]; state: State } {
+function fillOne(kinds: readonly Kind[], pool: readonly number[], deck: PackDeck, first?: Block): { boxes: PackedBox[]; state: State } {
   const state: State = {
     floors: [{ x: 0, z: 0, dx: deck.length, dz: deck.width, y: 0, parked: false }], weight: 0, left: [...pool], volume: 0, tipped: 0, top: 0,
   };
   const boxes: PackedBox[] = [];
+  if (first) apply(state, 0, first, kinds, deck, boxes);
   for (;;) {
     const at = lowest(state.floors);
     if (at < 0) break;
@@ -397,8 +400,24 @@ export function packPallets(input: readonly PackKind[], deck: PackDeck, maxPalle
   const pool = input.map((kind, index) => (kinds[index].shapes.length ? Math.max(0, kind.count) : 0));
   const pallets: PackedPallet[] = [];
   while (pallets.length < maxPallets && pool.some((count) => count > 0)) {
-    const { boxes, state } = fillOne(kinds, pool, deck);
+    let { boxes, state } = fillOne(kinds, pool, deck);
     if (!boxes.length) break;
+    /* What is left could go on this one pallet (volume and weight) but the search left omdozen over: every first block
+       of the empty pallet is tried with the full search after it, and the first that takes everything stands
+       (17 omdozen of 81 × 54,5 × 26,5 went on 2 pallets where 16 and 18 go on 1). Never more pallets. */
+    if (state.left.some((count) => count > 0)) {
+      let volume = 0; let weight = 0;
+      pool.forEach((count, index) => { volume += count * kinds[index].volume; weight += count * kinds[index].weight; });
+      if (volume <= deck.length * deck.width * deck.height && (deck.maxWeight <= 0 || weight <= deck.maxWeight)) {
+        const start: State = {
+          floors: [{ x: 0, z: 0, dx: deck.length, dz: deck.width, y: 0, parked: false }], weight: 0, left: [...pool], volume: 0, tipped: 0, top: 0,
+        };
+        for (const block of candidates(start.floors[0], start, kinds, deck).flatMap((candidate) => (candidate.lower ? [candidate, candidate.lower] : [candidate]))) {
+          const again = fillOne(kinds, pool, deck, block);
+          if (again.state.left.every((count) => count <= 0)) { ({ boxes, state } = again); break; }
+        }
+      }
+    }
     const counts = new Map<number, number>();
     let top = 0;
     for (const box of boxes) {

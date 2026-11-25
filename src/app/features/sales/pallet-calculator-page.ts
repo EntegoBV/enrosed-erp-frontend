@@ -753,8 +753,10 @@ export class PalletCalculatorPage {
   /** Absurd quantities (a typo of seven digits) are not worked out pallet by pallet. */
   readonly tooMany = computed(() => separatePallets(this.lines().map((line) => line.plan)) > MAX_PLANNED_PALLETS);
   /**
-   * What a new quote counts (PACKED, 2026-11-25): pallet by pallet as full as it goes, unless whole layers
-   * need fewer; on its side only when omdozen may tip. Products that fit no carrier stay out, as on a quote.
+   * Counted the way PACKED counts (2026-11-25): pallet by pallet as full as it goes, unless whole layers need
+   * fewer; on its side only when omdozen may tip. The whole layers are the cards' own (this page's switch), so
+   * with tipping on the plan can be a pallet below or above what a quote counts where layers decide. Products
+   * that fit no carrier stay out, as on a quote.
    */
   private readonly sides = computed(() => (this.turnable() ? ALL_SIDES : UPRIGHT));
   private readonly packs = computed<PackLine[]>(() => this.lines().filter((line) => line.fit.cartonsPerPallet > 0).map((line) => ({
@@ -822,8 +824,8 @@ export class PalletCalculatorPage {
 
   /**
    * How many more omdozen of each product go on without an extra pallet; worked out for small plans only (each
-   * is a re-plan). Up to 10 pallets every try is the plan itself (as full as it goes); beyond, whole layers only,
-   * which never promise more room than the fuller plan has.
+   * is a re-plan). Up to 10 pallets and 6 cards every try is the plan itself (as full as it goes); beyond, whole
+   * layers only, which never promise more room than the fuller plan has.
    */
   readonly room = computed(() => {
     const count = this.plan().length;
@@ -832,7 +834,8 @@ export class PalletCalculatorPage {
     const plan = this.lines().map((line) => line.plan);
     const packs = new Map(this.packs().map((pack) => [pack.key, pack]));
     const sides = this.sides();
-    const fuller = count <= 10 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {
+    /* Packed tries only for small mixes: each is a whole re-pack, per card and per step, on every keystroke. */
+    const fuller = count <= 10 && plan.length <= 6 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {
       const pack = packs.get(line.key);
       return pack ? [{ ...pack, cartons: line.cartons }] : [];
     }), pallet, sides).length : undefined;

@@ -1,7 +1,7 @@
 import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
-import { handLoads, sameItems, type HandCarton } from './pallet-hand-load';
+import { handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
 import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
   MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
@@ -281,8 +281,8 @@ export function handCarton(productId: number, products: ReadonlyMap<number, Prod
 /**
  * The hand-built pallets with their measured or estimated height and their weight. On a PACKED document (2026-11-25), a
  * pallet of the order's own type that carries what one of the server's pallets carries stands as high as the server
- * counted it (what Zelf indelen copied); any other is judged as the server would load it (handLoads: alone, with the
- * pallets after it, or with omdozen a lowered quantity took off). Otherwise, on any other document or pallet type, or
+ * counted it (what Zelf indelen copied); any other is judged as the server would load it (handLoader: with the pallets
+ * after it, alone, or with omdozen a lowered quantity took off). Otherwise, on any other document or pallet type, or
  * without the catalogue, every product stands in whole layers of its own, added up: the way MIXED and STRICT count.
  */
 export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
@@ -293,10 +293,18 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
   const packedDoc = view.priced.totals.palletRule === 'PACKED';
   const server = packedDoc ? view.priced.totals.autoPallets ?? [] : [];
   const own = (index: number) => typeNote(pallets[index].type, spec.profile) === null;
-  const loads = packedDoc && products?.size
-    ? handLoads(pallets.map((pallet) => pallet.items), lines.map((line) => line.productId),
-      (productId) => handCarton(productId, products, byId.get(productId)), packDeck(spec), ALL_SIDES, own)
-    : [];
+  const cartonOf = (productId: number) => handCarton(productId, products, byId.get(productId));
+  const order = lines.map((line) => line.productId);
+  const loadOf = packedDoc && products?.size
+    ? handLoader(pallets.map((pallet) => pallet.items), order, cartonOf, packDeck(spec), ALL_SIDES, own)
+    : null;
+  const serverLoadOf = packedDoc && products?.size && server.length
+    ? handLoader(server.map((pallet) => pallet.items), order, cartonOf, packDeck(spec), ALL_SIDES)
+    : null;
+  const layersOf = (item: { productId: number; cartons: number }) => {
+    const line = byId.get(item.productId);
+    return line && line.perLayer > 0 ? Math.ceil(item.cartons / line.perLayer) : 0;
+  };
   return pallets.map((pallet, index) => {
     const parts = pallet.items.map((item) => {
       const line = byId.get(item.productId);
@@ -308,8 +316,17 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
     if (packedDoc && !layered.measured && own(index) && pallet.items.length) {
       const same = server[index] && sameItems(server[index].items, pallet.items) ? server[index]
         : server.find((candidate) => sameItems(candidate.items, pallet.items));
-      const load = same ? null : loads[index];
+      const load = same || !loadOf ? null : loadOf(index);
       packedCm = same ? same.heightCm : load ? spec.baseHeightCm + load.top / 100 : null;
+      /* No more of any product than a server pallet carries: it fits as that part of the server's pallet, at most as high. */
+      if (packedCm === null) {
+        const holder = server.findIndex((candidate) => within(pallet.items, candidate.items));
+        if (holder >= 0) {
+          const whole = serverLoadOf ? serverLoadOf(holder) : null;
+          const part = whole ? partOf(whole, pallet.items, cartonOf) : null;
+          packedCm = part ? Math.min(server[holder].heightCm, spec.baseHeightCm + part.top / 100) : server[holder].heightCm;
+        }
+      }
     }
     const stack = packedCm === null ? layered : { heightCm: Math.round(packedCm * 10) / 10, measured: false };
     const weightKg = pallet.items.reduce((sum, item) => sum + Math.max(0, item.cartons) * (byId.get(item.productId)?.cartonWeightKg ?? 0), 0);
@@ -329,10 +346,7 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
       index, from: index + 1, to: index + 1, label: pallet.label.trim() || `Pallet ${index + 1}`, contents: contents(parts),
       parts, cartons: pallet.items.reduce((sum, item) => sum + item.cartons, 0),
       heightCm: stack.heightCm, measured: stack.measured, weightKg, fill, full, over, heavy, status,
-      blocks: glyphBlocks(pallet.items, byId, stack.heightCm, spec, (item) => {
-        const line = byId.get(item.productId);
-        return line && line.perLayer > 0 ? Math.ceil(item.cartons / line.perLayer) : 0;
-      }),
+      blocks: packedDoc ? glyphBlocks(pallet.items, byId, stack.heightCm, spec, layersOf) : pallet.items.map((item) => block(byId.get(item.productId), layersOf(item), spec)),
       type: normalizeManualPalletType(pallet.type), typeNote: typeNote(pallet.type, spec.profile),
     };
   });

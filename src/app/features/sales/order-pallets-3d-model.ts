@@ -2,7 +2,7 @@ import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { settle, type BuilderBox, type BuilderItem } from './pallet-builder-model';
 import { cartonStanding, layerSlots, palletFit, productUnits, type CartonUp } from './pallet-calculator-model';
-import { handLoads, sameItems } from './pallet-hand-load';
+import { handLoader, partOf, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, PACK_UNITS, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, type PlannerSpec } from './shipping-planner-model';
@@ -350,19 +350,30 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     }
   }
 
-  /* Every pallet keeps its own omdozen and stands as the server would load the list (alone, with the pallets after it, or with
-     omdozen a lowered quantity took off), else in whole layers per product from the floor, as the planner estimates it. An
-     omdoos without sizes, or too large for the pallet on any side, is left out and named. */
+  /* Every pallet keeps its own omdozen. On a PACKED document a pallet of the order's own type stands as the server loads it:
+     one that carries what a server pallet carries as that pallet within the server's own list (whatever its place in a hand
+     list), any other as the server would load this list (pallet-hand-load.ts). Any other pallet is packed on its own. Where no
+     try takes it, in whole layers per product from the floor, as the planner estimates it (past the height in orange and red).
+     An omdoos without sizes, or too large for the pallet on any side, is left out and named. */
   const drawable = new Map<number, boolean>();
   for (const [productId, stock] of stocks) {
     drawable.set(productId, stock.measured && packPallets([{ key: 1, length: packUnits(stock.lengthCm), width: packUnits(stock.widthCm),
       height: packUnits(stock.heightCm), weight: packUnits(stock.weightKg), count: 1, sides: ALL_SIDES }], deck, 1).pallets.length > 0);
   }
   const drawn = listed.map((pallet) => pallet.items.filter((item) => item.cartons > 0 && drawable.get(item.productId)));
-  const loads = handLoads(drawn, [...new Set(lines.map((line) => line.productId))], (productId) => {
+  const packedDoc = rule === 'PACKED';
+  const order = [...new Set(lines.map((line) => line.productId))];
+  const cartonOf = (productId: number) => {
     const stock = stocks.get(productId);
     return stock?.measured ? { lengthCm: stock.lengthCm, widthCm: stock.widthCm, heightCm: stock.heightCm, weightKg: stock.weightKg } : null;
-  }, deck, ALL_SIDES, (index) => !listed[index].ownType);
+  };
+  const server = packedDoc ? view.priced.totals.autoPallets ?? [] : [];
+  const serverLoad = server.length
+    ? handLoader(server.map((pallet) => pallet.items.filter((item) => item.cartons > 0 && drawable.get(item.productId))), order, cartonOf, deck, ALL_SIDES)
+    : null;
+  /* Joined as the server loads a list only on PACKED and on the order's own pallet type; any other pallet is packed on its own
+     (as before 2026-11-25: a STRICT part pallet stays low, a MIXED hand pallet as full as it goes). */
+  const listLoad = handLoader(drawn, order, cartonOf, deck, ALL_SIDES, (index) => packedDoc && !listed[index].ownType);
   const builds = listed.map((pallet, index) => {
     const unmeasured: Loadable['unmeasured'] = [];
     const tooLarge: { name: string; cartons: number }[] = [];
@@ -373,7 +384,19 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     }
     const boxes: BuilderBox[] = [];
     const counts = new Map<number, number>();
-    const load = loads[index];
+    let load = null;
+    if (packedDoc && !pallet.ownType) {
+      const twin = server[index] && sameItems(server[index].items, pallet.items) ? index
+        : server.findIndex((candidate) => sameItems(candidate.items, pallet.items));
+      load = twin >= 0 && serverLoad ? serverLoad(twin) : null;
+    }
+    if (!load) load = listLoad(index);
+    /* No more of any product than a server pallet carries: drawn as that part of the server's pallet. */
+    if (!load && packedDoc && !pallet.ownType && serverLoad) {
+      const holder = server.findIndex((candidate) => within(pallet.items, candidate.items));
+      const whole = holder >= 0 ? serverLoad(holder) : null;
+      load = whole ? partOf(whole, drawn[index], cartonOf) : null;
+    }
     if (load) {
       for (const box of load.boxes) {
         boxes.push({ id: boxes.length + 1, key: box.productId, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS,
