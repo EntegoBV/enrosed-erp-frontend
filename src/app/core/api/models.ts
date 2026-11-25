@@ -14,8 +14,8 @@ export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
 export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
-/** How the automatic pallets count: products stacked together, or every product on pallets of its own. */
-export type PalletRule = 'STRICT' | 'MIXED';
+/** How the automatic pallets count. STRICT: every product on pallets of its own; MIXED: whole layers stacked together; PACKED (2026-11-25): pallet by pallet as full as it goes. */
+export type PalletRule = 'STRICT' | 'MIXED' | 'PACKED';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
 /** A quote proposes, an invoice claims, a credit note reduces an invoice's claim (positive lines, the sign in the type). */
 export type DocumentType = 'OFFERTE' | 'FACTUUR' | 'CREDITNOTA';

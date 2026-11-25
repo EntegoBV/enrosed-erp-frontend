@@ -314,13 +314,15 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     for (const item of pallet.items) if (!stocks.has(item.productId)) stocks.set(item.productId, stockOf(item.productId, lineOf, products));
   }
 
-  /* Loaded again only where Automatisch mixes (new and concept documents): a document counted product by product (STRICT, sent
+  /* Loaded again only where Automatisch mixes: PACKED (since 2026-11-25 the server counts these very pallets, PalletPacker) and
+     MIXED (the server stacks whole layers; 3D shows how full they go). A document counted product by product (STRICT, sent
      before mixing) shows the pallets it went out on. */
-  if (!view.order.pallets.length && view.priced.totals.palletRule === 'MIXED') {
-    /* Everything the automatic pallets carry, in the order's line order. */
+  const rule = view.priced.totals.palletRule;
+  if (!view.order.pallets.length && (rule === 'MIXED' || rule === 'PACKED')) {
+    /* Everything the automatic pallets carry, in the order's line order, a product on two lines once (as the server merges it). */
     const totals = new Map<number, number>();
     for (const pallet of listed) for (const item of pallet.items) totals.set(item.productId, (totals.get(item.productId) ?? 0) + Math.max(0, item.cartons));
-    const order = [...lines.map((line) => line.productId).filter((id) => totals.has(id)), ...[...totals.keys()].filter((id) => !lineOf.has(id))];
+    const order = [...new Set([...lines.map((line) => line.productId).filter((id) => totals.has(id)), ...totals.keys()])];
     const goods = loadable(order.map((productId) => ({ productId, cartons: totals.get(productId) ?? 0 })), stocks);
     const plan = goods.unmeasured.length ? null : packPallets(goods.kinds, deck, listed.length);
     /* Never on more pallets than the order counts, and only with every omdoos drawn (else "past op" would not hold). */

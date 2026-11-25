@@ -616,15 +616,16 @@ export function planPallets(lines: readonly PlanLine[], pallet: PalletSpec): Pla
  * the largest number up to one full pallet of it for which a fresh plan
  * keeps the count. Every try is a whole re-plan, the cap to pallets of their
  * own included, and only a tried number is kept, so an offer never promises
- * room the plan then does not find.
+ * room the plan then does not find. `plan` counts a try: planPallets, or
+ * Palletberekening's bestPlan (as full as it goes, pallet-packed-plan.ts).
  */
-export function roomWithoutExtraPallet(lines: readonly PlanLine[], key: number, pallet: PalletSpec, count: number): number {
+export function roomWithoutExtraPallet(lines: readonly PlanLine[], key: number, pallet: PalletSpec, count: number,
+  plan: (lines: readonly PlanLine[]) => number = (tried) => planPallets(tried, pallet).length): number {
   const index = lines.findIndex((line) => line.key === key);
   const line = lines[index];
   if (!line || count <= 0 || line.fit.cartonsPerPallet <= 0 || !(line.cartonHeightCm > 0)) return 0;
-  const keepsCount = (extra: number) => planPallets(
-    lines.map((candidate, at) => (at === index ? { ...candidate, cartons: candidate.cartons + extra } : candidate)),
-    pallet).length <= count;
+  const keepsCount = (extra: number) => plan(
+    lines.map((candidate, at) => (at === index ? { ...candidate, cartons: candidate.cartons + extra } : candidate))) <= count;
   let low = 0;
   let high = line.fit.cartonsPerPallet;
   while (low < high) {

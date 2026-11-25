@@ -26,11 +26,13 @@ import type { BuilderItem, BuilderPart } from './pallet-builder-model';
 import {
   palletBrowserSections, rememberRecent, tilesByProduct, type PalletBrowserColour, type PalletBrowserTile,
 } from './pallet-browser-model';
+import { ALL_SIDES, UPRIGHT } from './pallet-pack';
+import { bestPlan, type PackLine } from './pallet-packed-plan';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, planPallets, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -750,7 +752,16 @@ export class PalletCalculatorPage {
 
   /** Absurd quantities (a typo of seven digits) are not worked out pallet by pallet. */
   readonly tooMany = computed(() => separatePallets(this.lines().map((line) => line.plan)) > MAX_PLANNED_PALLETS);
-  readonly plan = computed(() => (this.tooMany() ? [] : planPallets(this.lines().map((line) => line.plan), this.pallet())));
+  /**
+   * What a new quote counts (PACKED, 2026-11-25): pallet by pallet as full as it goes, unless whole layers
+   * need fewer; on its side only when omdozen may tip. Products that fit no carrier stay out, as on a quote.
+   */
+  private readonly sides = computed(() => (this.turnable() ? ALL_SIDES : UPRIGHT));
+  private readonly packs = computed<PackLine[]>(() => this.lines().filter((line) => line.fit.cartonsPerPallet > 0).map((line) => ({
+    key: line.plan.key, cartons: line.cartons, lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0,
+    heightCm: line.product.carton.heightCm ?? 0, weightKg: line.weightKg,
+  })));
+  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.lines().map((line) => line.plan), this.packs(), this.pallet(), this.sides())));
   readonly canShare = computed(() => this.lines().length > 1 && this.lines().some((line) => line.fit.cartonsPerPallet > 0));
   readonly full = computed(() => this.rows().length >= MAX_ROWS);
   readonly unplaced = computed(() => this.lines().filter((line) => line.cartons > 0 && line.fit.cartonsPerPallet <= 0));
@@ -801,14 +812,24 @@ export class PalletCalculatorPage {
     return groups;
   });
 
-  /** How many more omdozen of each product go on without an extra pallet; worked out for small plans only (each is a re-plan). */
+  /**
+   * How many more omdozen of each product go on without an extra pallet; worked out for small plans only (each
+   * is a re-plan). Up to 10 pallets every try is the plan itself (as full as it goes); beyond, whole layers only,
+   * which never promise more room than the fuller plan has.
+   */
   readonly room = computed(() => {
     const count = this.plan().length;
     if (count === 0 || count > 30) return [];
     const pallet = this.pallet();
     const plan = this.lines().map((line) => line.plan);
+    const packs = new Map(this.packs().map((pack) => [pack.key, pack]));
+    const sides = this.sides();
+    const fuller = count <= 10 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {
+      const pack = packs.get(line.key);
+      return pack ? [{ ...pack, cartons: line.cartons }] : [];
+    }), pallet, sides).length : undefined;
     return this.lines()
-      .map((line) => ({ line, cartons: roomWithoutExtraPallet(plan, line.plan.key, pallet, count) }))
+      .map((line) => ({ line, cartons: roomWithoutExtraPallet(plan, line.plan.key, pallet, count, fuller) }))
       .filter((entry) => entry.cartons > 0);
   });
 

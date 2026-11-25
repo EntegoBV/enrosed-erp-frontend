@@ -1,6 +1,8 @@
 import type {
-  Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, SalesOrder, SalesOrderView,
+  Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
+import { ALL_SIDES } from './pallet-pack';
+import { bestPlan, type PackLine } from './pallet-packed-plan';
 import {
   MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
   planPallets, roomWithoutExtraPallet, separatePallets, type PalletSpec, type PlanLine,
@@ -353,6 +355,43 @@ export function mixedRoom(lines: readonly PlannerLine[], spec: PlannerSpec, coun
   const plan = planLines(lines, spec);
   if (!plan?.length || count <= 0 || count > ROOM_PLAN_LIMIT || planPallets(plan, spec).length !== count) return new Map();
   return new Map(plan.map((line) => [line.key, roomWithoutExtraPallet(plan, line.key, spec, count)]));
+}
+
+/** Room hints under PACKED load the whole order once per try: only for a small plan. */
+const PACKED_ROOM_LIMIT = 10;
+
+/**
+ * Under the PACKED rule (2026-11-25), how many more omdozen of each product
+ * still go on the same pallets: every try counts the order as the server does
+ * (bestPlan: as full as it goes, unless whole layers need fewer), and only
+ * while that count is the server's, so a hint never promises room the pallets
+ * on screen do not have. The omdoos sizes come from the catalogue.
+ */
+export function packedRoom(lines: readonly PlannerLine[], products: ReadonlyMap<number, Product>, spec: PlannerSpec, count: number): Map<number, number> {
+  const plan = planLines(lines, spec);
+  if (!plan?.length || count <= 0 || count > PACKED_ROOM_LIMIT || plan.length > 12) return new Map();
+  const byId = new Map(lines.map((line) => [line.productId, line]));
+  const packs: PackLine[] = [];
+  for (const line of plan) {
+    const carton = products.get(line.key)?.carton;
+    const weightKg = carton?.weightKg && carton.weightKg > 0 ? carton.weightKg : byId.get(line.key)?.cartonWeightKg ?? 0;
+    if (!carton?.lengthCm || !carton.widthCm || !carton.heightCm) return new Map();
+    packs.push({ key: line.key, cartons: line.cartons, lengthCm: carton.lengthCm, widthCm: carton.widthCm, heightCm: carton.heightCm, weightKg });
+  }
+  const counted = (key: number | null, extra: number) => bestPlan(
+    plan.map((line) => (line.key === key ? { ...line, cartons: line.cartons + extra } : line)),
+    packs.map((pack) => (pack.key === key ? { ...pack, cartons: pack.cartons + extra } : pack)), spec, ALL_SIDES).length;
+  if (counted(null, 0) !== count) return new Map();
+  return new Map(plan.map((line) => {
+    let low = 0;
+    let high = line.fit.cartonsPerPallet;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (counted(line.key, middle) <= count) low = middle;
+      else high = middle - 1;
+    }
+    return [line.key, low];
+  }));
 }
 
 /** What still keeps a hand layout from being complete. */

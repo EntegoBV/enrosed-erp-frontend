@@ -22,7 +22,7 @@ import { PlannerFreight } from './planner-freight';
 import { PlannerLoad } from './planner-load';
 import { PlannerPallet, omdozen } from './planner-pallet';
 import {
-  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, palletCount,
+  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, packedRoom, palletCount,
   placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
 } from './shipping-planner-model';
 
@@ -113,7 +113,9 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </section>
       @if (!desk() && showSwitch()) { <ng-container [ngTemplateOutlet]="modeSwitch" /> }
       @if (infoOpen() && showSwitch()) {
-        @if (rule() === 'MIXED') {
+        @if (rule() === 'PACKED') {
+          <p class="sp-caption" id="sp-caption">Automatisch laadt pallet per pallet zo vol mogelijk: eerst de eerste vol, kantelen mag; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
+        } @else if (rule() === 'MIXED') {
           <p class="sp-caption" id="sp-caption">Automatisch zet elk product in eigen lagen en stapelt die samen op zo weinig mogelijk pallets; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
         } @else {
           <p class="sp-caption" id="sp-caption">Automatisch zet elk product op eigen pallets en volgt de aantallen; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
@@ -432,9 +434,15 @@ export class ShippingPlanner {
     return counts;
   });
   /** "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same pallets. */
-  readonly roomOf = computed(() => (this.rule() === 'MIXED'
-    ? mixedRoom(this.lines(), this.spec(), this.autoCount())
-    : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]))));
+  readonly roomOf = computed(() => {
+    const rule = this.rule();
+    if (rule === 'PACKED') {
+      const products = new Map(this.products().flatMap((product) => (product.id == null ? [] : [[product.id, product] as const])));
+      return packedRoom(this.lines(), products, this.spec(), this.autoCount());
+    }
+    return rule === 'MIXED' ? mixedRoom(this.lines(), this.spec(), this.autoCount())
+      : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]));
+  });
   readonly cells = computed(() => (this.palletsMode() && !this.manual() ? this.lines().filter((line) => !line.problem) : this.lines()));
   readonly heightCm = computed(() => this.order().maxPalletHeightCm ?? Math.round(this.spec().maxHeightCm));
   /** The highest height that can be picked: 260 cm for a europallet, 300 for the other types. */
