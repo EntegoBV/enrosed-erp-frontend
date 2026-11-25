@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, input, output, signal } from '@angular/core';
 import type { Product, SalesOrderView } from '../../core/api/models';
-import { EMPTY_BUILD, orderLoad3d, palletLabel3d, palletNotice3d } from './order-pallets-3d-model';
+import { EMPTY_BUILD, orderLoad3d, pageForListed, palletLabel3d, palletNotice3d } from './order-pallets-3d-model';
 import { PalletBuilder } from './pallet-builder';
 import { plannerLines, plannerSpec } from './shipping-planner-model';
 
@@ -53,7 +53,9 @@ export class OrderPallets3d {
   private readonly load = computed(() => orderLoad3d(this.view(), this.spec(), this.lines(), this.productMap()));
   private readonly pallets = computed(() => this.load().pallets);
 
-  readonly page = computed(() => Math.min(Math.max(0, this.chosen() ?? this.start()), Math.max(0, this.pallets().length - 1)));
+  /** start counts in the planner's list; loaded again, it opens on the pallet carrying most of that row's omdozen. */
+  readonly page = computed(() => Math.min(Math.max(0, this.chosen() ?? pageForListed(this.load(), this.start())),
+    Math.max(0, this.pallets().length - 1)));
   private readonly pallet = computed(() => this.pallets()[this.page()]);
   readonly build = computed(() => this.load().builds[this.page()] ?? EMPTY_BUILD);
   readonly pages = computed(() => this.pallets().map((pallet) => pallet.label));

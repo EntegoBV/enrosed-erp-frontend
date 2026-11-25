@@ -5310,8 +5310,12 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   8 candidate blocks are each tried by finishing the pallet the quick way (largest block each time);
   the fullest end wins, a box on its side counting 5 % less (`TIP_COST`: the 24 domes of pallet 1
   stay upright, 81 cm half hearts and 90 × 60 × 73 bears lie down); on a tie the lowest end, so the
-  last pallet stands low and wide. Colours with the same omdoos are one kind and share layers.
-  Weight limit per pallet; what fits no side stays in `left`. VF-2026-0017: 90 % · 91 % · 41 %
+  last pallet stands low and wide. A full block is also tried as its `lower` twin, only as high as
+  the floor's best pattern of rows needs (`floorPattern`, both turns), so the rest of a layer goes
+  beside it (24 × 50 × 30 × 30: 120 cm, not a 180 cm tower). Colours with the same omdoos size are
+  one kind (the heaviest colour's weight) and share layers. Weight limit per pallet; what fits no
+  side stays in `left`. Checked on 3000 random loads (no overlap, nothing floating or off the deck,
+  every omdoos once); 60 different omdozen pack in ~40 ms. VF-2026-0017: 90 % · 91 % · 41 %
   (was 56 % · 93 % · 70 % on the server's layers), still 3 pallets.
 - `orderLoad3d` (order-pallets-3d-model.ts) replaces `palletBuild`: a MIXED document without a hand
   layout is loaded again with the packer, used only when it needs no more pallets than
@@ -5320,10 +5324,12 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   packed alone (what one pallet does not take stands on top in whole layers, orange/red). The
   count, the planner's rows, Zelf indelen, the PDF's pallet column and the freight stay the
   server's (`mixedPallets`): 3D and the list can differ per pallet; the subtitle says "zo vol
-  mogelijk". Whether the count should follow is open with Emre.
+  mogelijk". A 3D button on a planner row from the second one opens on the packed pallet that carries
+  most of that row (`pageForListed`); the general button starts on pallet 1. Emre chose (same day)
+  that the count and freight follow too: a server round of its own.
 - Builder: the order's view now has Kantel (`turnable` true). `reshape` acts in place: same base
   and middle, `ridersOf` (what stands on it, transitively) goes up by the height it gains, a
-  collision with anything else lifts it out to `nearestSpot` (its level first) and only then on
+  collision with anything else (also of what rises with it) lifts it out to `nearestSpot` (its level first) and only then on
   top. `animateNext` tweens the moved boxes for 280 ms (none under prefers-reduced-motion). "Zoals
   berekend" is disabled while nothing moved (`pristine`). Palletberekening's Automatisch fills one
   carrier with `packedFill` from every omdoos on the cards (`builderParts`), tipping only when the

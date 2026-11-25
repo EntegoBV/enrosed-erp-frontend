@@ -470,7 +470,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       /* A narrow column: the name on at most two lines (its size often ends it), the colour and SKU on one; the size in the card. */
       .pb3-list .plp-row{min-height:54px;gap:10px;padding:8px 10px 8px 12px}
       .pb3-list .plp-row--nested{padding-left:24px}
-      .pb3-list .plp-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px}
+      .pb3-list .plp-name:not(.plp-name--variant){display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px}
       .pb3-list .plp-meta{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px}
       .pb3-list .plp-price{display:none}
       .pb3-list .plp-end{min-width:40px}.pb3-list .plp-end strong{font-size:15px}
@@ -483,11 +483,11 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-pick .pb3-card__here{display:none}
       .pb3-pick .pb3-card__img{width:40px;height:40px}
     }
-    /* A wide phone upright (the unfolded Duo): the chosen box's bar in one row, the products sheet a little lower. */
+    /* A wide phone upright (the unfolded Duo): the chosen box's bar in one row where it fits; many colours and buttons wrap. */
     @media (hover: none) and (orientation: portrait) and (min-width: 600px) and (max-width: 1023.98px){
-      .pb3-pick{left:50%;right:auto;bottom:18px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;max-width:calc(100% - 24px);padding:6px 6px 6px 8px}
-      .pb3-pick__info{flex:0 1 auto;min-width:200px;max-width:300px;padding:0 4px 0 0}
-      .pb3-pick__colours{flex:none;max-width:200px;padding:0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+      .pb3-pick{left:12px;right:12px;bottom:18px;transform:none;width:fit-content;margin-inline:auto;flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 8px;max-width:calc(100% - 24px);padding:6px 6px 6px 8px}
+      .pb3-pick__info{flex:1 1 220px;min-width:0;max-width:340px;padding:0 4px 0 0}
+      .pb3-pick__colours{flex:none;max-width:none;padding:0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
       .pb3-pick__actions button{flex:none;min-width:58px;height:52px}
       .pb3-list__body{max-height:min(34vh,340px)}
       .pb3-note{bottom:110px}
@@ -506,13 +506,8 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-list__grab,.pb3-list__chev{display:none}
       .pb3-list__hint{white-space:normal}
       .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px var(--safe-r) calc(12px + var(--safe-b)) 0}
-      .pb3-list .pb3-pick{position:static;transform:none;flex:none;flex-direction:column;align-items:stretch;gap:8px;max-width:none;
-        margin:12px calc(12px + var(--safe-r)) 2px 12px;padding:12px 10px 8px;border-radius:18px;background:var(--surface)}
-      .pb3-list .pb3-pick__info{min-width:0;max-width:none;padding:0 2px}
-      .pb3-list .pb3-pick__colours{max-width:none;padding:2px 0 0;border:0;gap:4px}
-      .pb3-list .pb3-pick__actions{justify-content:space-between}
-      .pb3-list .pb3-pick__actions button{flex:1;height:54px;font-size:12px}
-      .pb3-list .pb3-pick .pb3-pick__close{flex:none;min-width:44px}
+      /* The phone's card (its column, wide buttons) at the top of the panel instead of over the load. */
+      .pb3-list .pb3-pick{position:static;flex:none;margin:12px calc(12px + var(--safe-r)) 2px 12px;padding:12px 10px 8px;border-radius:18px;background:var(--surface)}
       .pb3-note{top:auto;bottom:24px}
     }
   `],
@@ -1077,8 +1072,10 @@ export class PalletBuilder {
     const x = after.sx > deck.lengthCm ? (deck.lengthCm - after.sx) / 2 : Math.min(Math.max(0, centreX - after.sx / 2), deck.lengthCm - after.sx);
     const z = after.sz > deck.widthCm ? (deck.widthCm - after.sz) / 2 : Math.min(Math.max(0, centreZ - after.sz / 2), deck.widthCm - after.sz);
     const here = { id: box.id, x: round(x), y: box.y, z: round(z), ...after };
-    if (!rest.some((solid) => collides(solid, here))) {
-      const rise = after.sy - before.sy;
+    /* What stands on it goes up with its top; neither it nor they may run into anything else (a box resting on a taller neighbour). */
+    const rise = after.sy - before.sy;
+    const raised = rise > 0 ? all.filter((solid) => riders.has(solid.id)).map((solid) => ({ ...solid, y: solid.y + rise })) : [];
+    if (!rest.some((solid) => collides(solid, here) || raised.some((rider) => collides(solid, rider)))) {
       const moved = new Set([box.id, ...riders]);
       const next = this.boxes().map((other) => other.id === box.id ? { ...turnedBox, x: here.x, z: here.z }
         : riders.has(other.id) && rise > 0 ? { ...other, y: round(other.y + rise) } : other);

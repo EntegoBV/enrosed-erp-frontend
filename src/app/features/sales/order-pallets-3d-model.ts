@@ -96,9 +96,29 @@ export interface OrderLoad3d {
   source: 'packed' | 'listed';
   /** The pallets the order counts when 3D loads its omdozen on fewer; null when on as many. */
   counted: number | null;
+  /** The pallets as the planner lists them: a 3D button on one of its rows opens on the pallet carrying most of it. */
+  listed: OrderPallet3d[];
 }
 
-export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'listed', counted: null };
+export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'listed', counted: null, listed: [] };
+
+/**
+ * The page for a pallet of the planner's list: itself where 3D keeps the list's pallets; loaded
+ * again, the pallet that carries most of its omdozen (the first on a tie).
+ */
+export function pageForListed(load: OrderLoad3d, index: number): number {
+  /* The first pallet is also where "Pallets in 3D bekijken" starts: loaded again, that is the fullest one, pallet 1. */
+  if (load.source !== 'packed' || index <= 0) return index;
+  const asked = load.listed[index];
+  if (!asked) return 0;
+  let best = 0; let most = -1;
+  load.pallets.forEach((pallet, page) => {
+    const shared = asked.items.reduce((sum, item) => sum
+      + Math.min(item.cartons, pallet.items.find((other) => other.productId === item.productId)?.cartons ?? 0), 0);
+    if (shared > most) { most = shared; best = page; }
+  });
+  return best;
+}
 
 /** A product's colour in the planner when the order no longer has its line. */
 const LOST_COLOUR = '#8a8079';
@@ -173,13 +193,15 @@ function loadable(entries: readonly { productId: number; cartons: number }[], st
     if (!stock.measured) { unmeasured.push({ name: stock.name, cartons }); continue; }
     const length = packUnits(stock.lengthCm); const width = packUnits(stock.widthCm); const height = packUnits(stock.heightCm);
     const weight = packUnits(stock.weightKg);
-    const signature = `${length}|${width}|${height}|${weight}`;
+    /* One omdoos size is one kind, its heaviest colour's weight for all: colours a few grams apart still share layers. */
+    const signature = `${length}|${width}|${height}`;
     let kind = bySize.get(signature);
     if (!kind) {
       kind = { key: bySize.size + 1, length, width, height, weight, count: 0, sides: ALL_SIDES };
       bySize.set(signature, kind);
       members.set(kind.key, []);
     }
+    kind.weight = Math.max(kind.weight, weight);
     kind.count += cartons;
     const list = members.get(kind.key) as { productId: number; left: number }[];
     const known = list.find((member) => member.productId === entry.productId);
@@ -310,7 +332,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
         pallets.push({ label: `Pallet ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null });
         builds.push(finished(boxes, counts, stocks, goods.unmeasured, [], spec));
       });
-      return { pallets, builds, source: 'packed', counted: plan.pallets.length < listed.length ? listed.length : null };
+      return { pallets, builds, source: 'packed', counted: plan.pallets.length < listed.length ? listed.length : null, listed };
     }
   }
 
@@ -335,7 +357,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     stackAbove(rest, boxes, stocks, spec, counts);
     return finished(boxes, counts, stocks, goods.unmeasured, tooLarge, spec);
   });
-  return { pallets: listed, builds, source: 'listed', counted: null };
+  return { pallets: listed, builds, source: 'listed', counted: null, listed };
 }
 
 /** "Europallet 120 × 80 · max 260 cm": what the 3D stands on. */

@@ -295,13 +295,15 @@ export function packedFill(items: ReadonlyMap<number, BuilderItem>, parts: reado
     if (!item || !sized(item) || !(cartons > 0)) continue;
     const length = packUnits(item.lengthCm); const width = packUnits(item.widthCm); const height = packUnits(item.heightCm);
     const weight = packUnits(item.weightKg);
-    const signature = `${length}|${width}|${height}|${weight}`;
+    /* One omdoos size is one kind, its heaviest colour's weight for all. */
+    const signature = `${length}|${width}|${height}`;
     let kind = bySize.get(signature);
     if (!kind) {
       kind = { key: bySize.size + 1, length, width, height, weight, count: 0, sides };
       bySize.set(signature, kind);
       members.set(kind.key, []);
     }
+    kind.weight = Math.max(kind.weight, weight);
     kind.count += cartons;
     members.get(kind.key)?.push({ key: item.key, left: cartons });
   }

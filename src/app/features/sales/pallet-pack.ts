@@ -89,7 +89,15 @@ interface Kind { key: number; weight: number; volume: number; shapes: Shape[] }
 
 interface Floor { x: number; z: number; dx: number; dz: number; y: number; parked: boolean }
 
-interface Block { kind: number; shape: Shape; nx: number; ny: number; nz: number; count: number; volume: number }
+interface Block {
+  kind: number; shape: Shape; nx: number; ny: number; nz: number; count: number; volume: number;
+  /**
+   * The same block only as high as the floor's best pattern needs for what is left of the kind
+   * (rows of both turns, as layerSlots lays them): the rest of a layer then goes beside it
+   * instead of a tower going up (24 omdozen of 50 × 30 × 30: 4 + 2 per layer, 120 cm, not 180).
+   */
+  lower?: Block;
+}
 
 interface State {
   floors: Floor[];
@@ -157,26 +165,71 @@ function blockFor(floor: Floor, index: number, kind: Kind, shape: Shape, most: n
   return { kind: index, shape, nx, ny: 1, nz, count, volume: count * kind.volume };
 }
 
+/** Rows of one footprint across a rectangle, either turn per row (PalletCalculator.bestRows): primary within a row. */
+function bestRows(primary: number, secondary: number, length: number, width: number): number {
+  let best = 0;
+  const straight = Math.floor(primary / length);
+  const turned = Math.floor(primary / width);
+  for (let rows = 0, most = Math.floor(secondary / width); rows <= most; rows++) {
+    const across = Math.floor((secondary - rows * width) / length);
+    best = Math.max(best, rows * straight + across * turned);
+  }
+  return best;
+}
+
+/** How many of this footprint the floor takes in its best pattern of rows: what one layer of it holds. */
+function floorPattern(floor: Floor, shape: Shape): number {
+  return Math.max(bestRows(floor.dx, floor.dz, shape.sx, shape.sz), bestRows(floor.dz, floor.dx, shape.sx, shape.sz));
+}
+
 /** The largest block first, upright before a side, then the kind's order: the quick way, and the order the tries go in. */
 function quick(left: Block, right: Block): number {
   return right.volume - left.volume || left.shape.rank - right.shape.rank || left.kind - right.kind;
 }
 
+/** How many of a kind still go on: what is left of it, within the weight still allowed. */
+function most(state: State, kinds: readonly Kind[], index: number, deck: PackDeck): number {
+  const left = state.left[index];
+  if (left <= 0) return 0;
+  const kind = kinds[index];
+  const room = kind.weight > 0 && deck.maxWeight > 0 ? Math.floor((deck.maxWeight - state.weight) / kind.weight) : left;
+  return Math.max(0, Math.min(left, room));
+}
+
+/** Every block that fits the floor, the quick way's order; each full block with its lower twin where one helps. */
 function candidates(floor: Floor, state: State, kinds: readonly Kind[], deck: PackDeck): Block[] {
   const blocks: Block[] = [];
   for (let index = 0; index < kinds.length; index++) {
-    const left = state.left[index];
-    if (left <= 0) continue;
-    const kind = kinds[index];
-    const room = kind.weight > 0 && deck.maxWeight > 0 ? Math.floor((deck.maxWeight - state.weight) / kind.weight) : left;
-    const most = Math.min(left, room);
-    if (most <= 0) continue;
-    for (const shape of kind.shapes) {
-      const block = blockFor(floor, index, kind, shape, most, deck);
-      if (block) blocks.push(block);
+    const count = most(state, kinds, index, deck);
+    if (count <= 0) continue;
+    for (const shape of kinds[index].shapes) {
+      const block = blockFor(floor, index, kinds[index], shape, count, deck);
+      if (!block) continue;
+      if (block.ny > 1) {
+        const needed = Math.ceil(count / floorPattern(floor, shape));
+        if (needed < block.ny) {
+          const fewer = block.nx * block.nz * needed;
+          block.lower = { ...block, ny: needed, count: fewer, volume: fewer * kinds[index].volume };
+        }
+      }
+      blocks.push(block);
     }
   }
   return blocks.sort(quick);
+}
+
+/** The quick way's one block for a floor: the first of candidates without sorting them all. */
+function quickest(floor: Floor, state: State, kinds: readonly Kind[], deck: PackDeck): Block | null {
+  let best: Block | null = null;
+  for (let index = 0; index < kinds.length; index++) {
+    const count = most(state, kinds, index, deck);
+    if (count <= 0) continue;
+    for (const shape of kinds[index].shapes) {
+      const block = blockFor(floor, index, kinds[index], shape, count, deck);
+      if (block && (!best || quick(block, best) < 0)) best = block;
+    }
+  }
+  return best;
 }
 
 /** The lowest free rectangle, then the one furthest back, then the one furthest left. */
@@ -268,8 +321,8 @@ function finish(state: State, kinds: readonly Kind[], deck: PackDeck): number {
   for (;;) {
     const at = lowest(state.floors);
     if (at < 0) return worth(state);
-    const blocks = candidates(state.floors[at], state, kinds, deck);
-    if (blocks.length) apply(state, at, blocks[0], kinds, deck);
+    const block = quickest(state.floors[at], state, kinds, deck);
+    if (block) apply(state, at, block, kinds, deck);
     else park(state, at);
   }
 }
@@ -285,11 +338,12 @@ function fillOne(kinds: readonly Kind[], pool: readonly number[], deck: PackDeck
     const blocks = candidates(state.floors[at], state, kinds, deck);
     if (!blocks.length) { park(state, at); continue; }
     let chosen = blocks[0];
-    if (blocks.length > 1) {
+    const tries = blocks.slice(0, PILOT).flatMap((block) => (block.lower ? [block, block.lower] : [block]));
+    if (tries.length > 1) {
       /* The fullest pallet wins; where several load the same (the last pallet, which takes all that is left), the lowest. */
       let best = Number.NEGATIVE_INFINITY;
       let lowestTop = Number.POSITIVE_INFINITY;
-      for (const block of blocks.slice(0, PILOT)) {
+      for (const block of tries) {
         const trial = copy(state);
         apply(trial, at, block, kinds, deck);
         const full = finish(trial, kinds, deck);
