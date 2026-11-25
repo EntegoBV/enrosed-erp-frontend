@@ -5299,6 +5299,48 @@ lazy chunk through the wrapper's `@defer`) on the order's pallets, one at a time
   overlapped by 0.01 cm and settle stacked one on the other (no catalogue size has two decimals
   today).
 
+### Zo vol mogelijk, Kantel in place, the Duo's tablet canvas (2026-11-25)
+
+Emre on VF-2026-0017 (sales/125): "bij een order van 3 pallets eerst de eerste proberen helemaal te
+vullen en je mag kantelen", "omdraaien gaat precies maar kantelen niet zo goed", "omkantel knop
+ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
+- `pallet-pack.ts` (no Angular, integer units: hundredths of a cm and of a kg, so a server port can
+  count the same): pallet by pallet, the lowest free floor rectangle (fully carried by the deck or a
+  flat top) gets a block of one omdoos kind on one side (rows along, rows across, layers up). Up to
+  8 candidate blocks are each tried by finishing the pallet the quick way (largest block each time);
+  the fullest end wins, a box on its side counting 5 % less (`TIP_COST`: the 24 domes of pallet 1
+  stay upright, 81 cm half hearts and 90 × 60 × 73 bears lie down); on a tie the lowest end, so the
+  last pallet stands low and wide. Colours with the same omdoos are one kind and share layers.
+  Weight limit per pallet; what fits no side stays in `left`. VF-2026-0017: 90 % · 91 % · 41 %
+  (was 56 % · 93 % · 70 % on the server's layers), still 3 pallets.
+- `orderLoad3d` (order-pallets-3d-model.ts) replaces `palletBuild`: a MIXED document without a hand
+  layout is loaded again with the packer, used only when it needs no more pallets than
+  `autoPallets`, nothing is left and every product has sizes; fewer reads "Past op 2 pallets · de
+  order telt er 3". STRICT documents, hand layouts and a failing plan keep the listed pallets, each
+  packed alone (what one pallet does not take stands on top in whole layers, orange/red). The
+  count, the planner's rows, Zelf indelen, the PDF's pallet column and the freight stay the
+  server's (`mixedPallets`): 3D and the list can differ per pallet; the subtitle says "zo vol
+  mogelijk". Whether the count should follow is open with Emre.
+- Builder: the order's view now has Kantel (`turnable` true). `reshape` acts in place: same base
+  and middle, `ridersOf` (what stands on it, transitively) goes up by the height it gains, a
+  collision with anything else lifts it out to `nearestSpot` (its level first) and only then on
+  top. `animateNext` tweens the moved boxes for 280 ms (none under prefers-reduced-motion). "Zoals
+  berekend" is disabled while nothing moved (`pristine`). Palletberekening's Automatisch fills one
+  carrier with `packedFill` from every omdoos on the cards (`builderParts`), tipping only when the
+  switch allows it; `computedFill` is gone.
+- Layout: `.pb3` resets `--safe-*` to env() (the side rail's lane of the page below leaked in as 88 px
+  of padding). Tablet canvas `(hover: none) and (orientation: landscape) and (min-width: 760px) and
+  (max-width: 1023.98px) and (min-height: 560.02px)` = `TABLET_QUERY` (the `tablet` signal follows it
+  live): the load left, the panel right with the chosen box (`#pick` template) at its top; with
+  `html[data-duo]` or host device duo (`pb3--duo`) the columns meet on the hinge, 475.5 px. Wide
+  phones upright (600-1023): the chosen box's bar is one row. Narrow (<= 420): the subtitle may
+  wrap, disabled tools wait out of sight, the card drops its count line. Folded sideways: two short
+  lines per product in the side column.
+- Checked locally (backend of main on a restored test dump; quote 114 = VF-2026-0017's lines) on
+  desk 1280 and the Duo's 867 × 669, 669 × 900, 382 × 678 and 594 × 406 with touch, real mouse and
+  touch input: open, choose, Kantel, Draai, page; a hand pallet (103), VF-2026-0010 (519 omdozen,
+  STRICT: listed pallets), Palletberekening's Automatisch.
+
 ## Catalogus PDF: prijzen voor een klant (round 3, 2026-11-06)
 
 Emre (2026-11-06): pallet always next to 20ft and 40ft in the PDF; with "Prijzen
