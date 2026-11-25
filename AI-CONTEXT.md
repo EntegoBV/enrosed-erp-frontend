@@ -5377,8 +5377,18 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   count, the planner's rows, Zelf indelen, the PDF's pallet column and the freight stay the
   server's (`mixedPallets`): 3D and the list can differ per pallet; the subtitle says "zo vol
   mogelijk". A 3D button on a planner row from the second one opens on the packed pallet that carries
-  most of that row (`pageForListed`); the general button starts on pallet 1. Emre chose (same day)
-  that the count and freight follow too: a server round of its own.
+  most of that row (`pageForListed`); the general button starts on pallet 1.
+- PACKED (same day, Emre: "Ja, ook telling en vracht"): new documents count with the server's
+  `PalletPacker`, this packer step for step (see the backend's AI-CONTEXT "PACKED"); `PalletRule` gained
+  'PACKED'. For a PACKED document `autoPallets` are the packed pallets, so the planner's rows and the 3D
+  pages carry the same omdozen; MIXED documents (sent before, or an invoice of a MIXED quote) still list
+  the layered pallets while 3D shows them packed. The planner explains PACKED and computes "+22 past"
+  with `packedRoom` (bestPlan per try, up to 10 pallets and 12 products). `pallet-packed-plan.ts`:
+  `packedPlan` (PlannedPallet from the packer: parts in first-laid order, layers = start heights) and
+  `bestPlan` (packed unless whole layers need fewer, as the server's guard). Palletberekening's plan is
+  `bestPlan` (sides by its switch), its room hints try it up to 10 pallets (beyond: layers, never more
+  room than the fuller plan). With the switch off the packer can need more than layers (VF-2026-0017
+  upright: 4) and the layers stand.
 - Builder: the order's view now has Kantel (`turnable` true). `reshape` acts in place: same base
   and middle, `ridersOf` (what stands on it, transitively) goes up by the height it gains, a
   collision with anything else (also of what rises with it) lifts it out to `nearestSpot` (its level first) and only then on
