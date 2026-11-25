@@ -329,7 +329,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     .pb3{--safe-t:env(safe-area-inset-top,0px);--safe-r:env(safe-area-inset-right,0px);--safe-b:env(safe-area-inset-bottom,0px);--safe-l:env(safe-area-inset-left,0px);
       position:fixed;inset:0;z-index:190;display:flex;flex-direction:column;background:var(--surface-2);color:var(--ink);animation:pb3-in .2s var(--ease-out,ease)}
     @keyframes pb3-in{from{opacity:0}}
-    .pb3-bar{display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t,0px)) calc(12px + var(--safe-r,0px)) 8px calc(12px + var(--safe-l,0px));border-bottom:1px solid var(--line);background:var(--surface)}
+    .pb3-bar{display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t)) calc(12px + var(--safe-r)) 8px calc(12px + var(--safe-l));border-bottom:1px solid var(--line);background:var(--surface)}
     .pb3-title{flex:1;min-width:0}
     .pb3-title h2{margin:0;font-size:16px;font-weight:750}
     .pb3-title p{margin:1px 0 0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -381,13 +381,13 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
 
     /* The products: the product list's rows (styles/products/_list.scss), a series folding its colours open under its head. */
     .pb3-list{--ios-inset:12px;display:flex;flex-direction:column;min-height:0;border-top:1px solid var(--line);background:var(--ios-bg)}
-    .pb3-list__bar{display:flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:4px calc(16px + var(--safe-r,0px)) 4px calc(16px + var(--safe-l,0px));border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
+    .pb3-list__bar{display:flex;align-items:center;gap:8px;flex:none;min-height:44px;padding:4px calc(16px + var(--safe-r)) 4px calc(16px + var(--safe-l));border:0;background:none;color:var(--ink);font:inherit;text-align:left;cursor:pointer;position:relative;-webkit-tap-highlight-color:transparent}
     .pb3-list__grab{position:absolute;top:5px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:999px;background:var(--line-strong)}
     .pb3-list__name{font-size:15px;font-weight:750}
     .pb3-list__hint{flex:1;min-width:0;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pb3-list__chev{color:var(--muted);transition:transform var(--dur-2,.2s) var(--ease-out,ease)}
     .pb3-list--shut .pb3-list__chev{transform:rotate(180deg)}
-    .pb3-list__body{max-height:min(42vh,380px);overflow-y:auto;overscroll-behavior:contain;padding:4px 0 calc(8px + var(--safe-b,0px));scrollbar-width:thin}
+    .pb3-list__body{max-height:min(42vh,380px);overflow-y:auto;overscroll-behavior:contain;padding:4px 0 calc(8px + var(--safe-b));scrollbar-width:thin}
     .pb3-list__body .ios-section{margin-bottom:16px}
     .pb3-list--shut .pb3-list__body{display:none}
     .plp-row{display:flex;align-items:flex-start;gap:12px;width:100%;min-height:64px;padding:10px 14px 10px 16px;border:0;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -442,7 +442,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-stats span{padding:4px 8px;font-size:12px}
       .pb3-list{border-radius:18px 18px 0 0;margin-top:-14px;position:relative;z-index:2;box-shadow:0 -6px 24px rgb(40 28 18 / 10%)}
       .pb3-list__bar{padding-top:14px}
-      .pb3-list--shut .pb3-list__bar{padding-bottom:calc(6px + var(--safe-b,0px))}
+      .pb3-list--shut .pb3-list__bar{padding-bottom:calc(6px + var(--safe-b))}
       .pb3-pick{left:10px;right:10px;bottom:24px;transform:none;flex-direction:column;align-items:stretch;gap:6px;max-width:none;padding:10px 10px 6px}
       .pb3-pick__info{max-width:none;padding:0 2px}
       .pb3-pick__colours{max-width:none;padding:2px 0 0;border:0;gap:4px}
@@ -454,13 +454,13 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     }
     /* A phone on its side (or the folded Duo): the products as a column on the left, the 3D as wide as it gets. */
     @media (hover: none) and (orientation: landscape) and (max-height: 560px){
-      .pb3-bar{padding-top:calc(4px + var(--safe-t,0px));padding-bottom:4px}
-      .pb3-main{grid-template-rows:none;grid-template-columns:calc(280px + var(--safe-l,0px)) minmax(0,1fr)}
+      .pb3-bar{padding-top:calc(4px + var(--safe-t));padding-bottom:4px}
+      .pb3-main{grid-template-rows:none;grid-template-columns:calc(280px + var(--safe-l)) minmax(0,1fr)}
       .pb3-list{order:-1;margin-top:0;border-radius:0;border-top:0;border-right:1px solid var(--line);box-shadow:none}
-      .pb3-list__bar{pointer-events:none;padding:8px 12px 4px calc(12px + var(--safe-l,0px))}
+      .pb3-list__bar{pointer-events:none;padding:8px 12px 4px calc(12px + var(--safe-l))}
       .pb3-list__grab,.pb3-list__chev,.pb3-list__hint{display:none}
       .pb3-list--shut .pb3-list__body{display:block}
-      .pb3-list__body{flex:1;max-height:none;padding:2px 0 calc(8px + var(--safe-b,0px)) var(--safe-l,0px)}
+      .pb3-list__body{flex:1;max-height:none;padding:2px 0 calc(8px + var(--safe-b)) var(--safe-l)}
       .pb3-pick{left:50%;right:auto;bottom:10px;transform:translateX(-50%);flex-direction:row;align-items:center;max-width:calc(100% - 20px);padding:4px 6px}
       /* Too low for the card: the panel marks the chosen colour, the bar keeps the colours and the buttons. */
       .pb3-pick__info{display:none}
@@ -488,7 +488,6 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-pick{left:50%;right:auto;bottom:18px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;max-width:calc(100% - 24px);padding:6px 6px 6px 8px}
       .pb3-pick__info{flex:0 1 auto;min-width:200px;max-width:300px;padding:0 4px 0 0}
       .pb3-pick__colours{flex:none;max-width:200px;padding:0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
-      .pb3-pick__actions{justify-content:flex-start}
       .pb3-pick__actions button{flex:none;min-width:58px;height:52px}
       .pb3-list__body{max-height:min(34vh,340px)}
       .pb3-note{bottom:110px}
@@ -503,12 +502,12 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-main{grid-template-rows:none;grid-template-columns:minmax(0,1fr) clamp(320px,42%,420px)}
       .pb3--duo .pb3-main{grid-template-columns:475.5px minmax(0,1fr)}
       .pb3-list{margin-top:0;border-radius:0;border-top:0;border-left:1px solid var(--line);box-shadow:none}
-      .pb3-list__bar{pointer-events:none;cursor:default;min-height:0;flex-direction:column;align-items:flex-start;gap:2px;padding:14px calc(16px + var(--safe-r,0px)) 6px 16px}
+      .pb3-list__bar{pointer-events:none;cursor:default;min-height:0;flex-direction:column;align-items:flex-start;gap:2px;padding:14px calc(16px + var(--safe-r)) 6px 16px}
       .pb3-list__grab,.pb3-list__chev{display:none}
       .pb3-list__hint{white-space:normal}
-      .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px var(--safe-r,0px) calc(12px + var(--safe-b,0px)) 0}
+      .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px var(--safe-r) calc(12px + var(--safe-b)) 0}
       .pb3-list .pb3-pick{position:static;transform:none;flex:none;flex-direction:column;align-items:stretch;gap:8px;max-width:none;
-        margin:12px calc(12px + var(--safe-r,0px)) 2px 12px;padding:12px 10px 8px;border-radius:18px;background:var(--surface);box-shadow:0 1px 2px rgb(40 28 18 / 6%)}
+        margin:12px calc(12px + var(--safe-r)) 2px 12px;padding:12px 10px 8px;border-radius:18px;background:var(--surface)}
       .pb3-list .pb3-pick__info{min-width:0;max-width:none;padding:0 2px}
       .pb3-list .pb3-pick__colours{max-width:none;padding:2px 0 0;border:0;gap:4px}
       .pb3-list .pb3-pick__actions{justify-content:space-between}
