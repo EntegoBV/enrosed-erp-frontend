@@ -505,8 +505,10 @@ export interface PlannedPallet {
   weightKg: number;
   /** The larger of the height and the weight share, 0 to 1. */
   fill: number;
-  /** One product at its cartonsPerPallet. */
+  /** One product at its cartonsPerPallet; a pallet loaded as full as it goes also at 99,5 % (pallet-packed-plan.ts). */
   full: boolean;
+  /** Loaded as full as it goes (pallet-packed-plan.ts): its products stand side by side, not in whole layers stacked. */
+  packed?: boolean;
 }
 
 interface Stack { parts: PalletPart[]; heightCm: number; weightKg: number }

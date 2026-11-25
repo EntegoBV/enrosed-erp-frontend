@@ -5255,10 +5255,14 @@ export class SalesEditor {
         .reduce((sum, item) => sum + item.cartons, 0);
   }
 
+  /** The catalogue by id: a hand pallet's height is judged as its omdozen go on it as full as they go (checkLayout). */
+  private readonly layoutProducts = computed(() => new Map(this.products().flatMap((product) =>
+    product.id == null ? [] : [[product.id, product] as const])));
+
   /** A hand layout as it stands: empty pallets, products gone, too high (estimated too), too heavy, too many or loose omdozen. */
   readonly layoutCheck = computed(() => {
     const data = this.view();
-    return data && !this.isLooseCartons(data) && data.order.pallets.length ? checkLayout(data) : null;
+    return data && !this.isLooseCartons(data) && data.order.pallets.length ? checkLayout(data, this.layoutProducts()) : null;
   });
 
   /** Does the manual layout still match the order's cartons, the height and the weight? */

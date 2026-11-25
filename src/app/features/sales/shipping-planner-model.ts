@@ -2,7 +2,7 @@ import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
 import { ALL_SIDES } from './pallet-pack';
-import { bestPlan, type PackLine } from './pallet-packed-plan';
+import { bestPlan, packedPlan, type PackLine } from './pallet-packed-plan';
 import {
   MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
   planPallets, roomWithoutExtraPallet, separatePallets, type PalletSpec, type PlanLine,
@@ -75,8 +75,8 @@ export function plannerLines(view: SalesOrderView, spec: PlannerSpec): PlannerLi
   const palletised = (view.order.loadMode ?? 'PALLETS') === 'PALLETS';
   const missing = new Set(view.priced.validation.productsWithoutCartonDimensions ?? []);
   return view.priced.lines.flatMap((line, index) => {
-    const ordered = view.order.lines.find((item) => item.productId === line.productId);
-    if (line.quantity <= 0 || salesLineUnavailable(line) || salesLineUnavailable(ordered)) return [];
+    /* The priced line's own flag: a product on two lines, the first unavailable, still counts its other line. */
+    if (line.quantity <= 0 || salesLineUnavailable(line)) return [];
     const perLayer = line.cartonsPerLayer ?? 0;
     const perPallet = palletised ? line.cartonsPerPallet : 0;
     const fullLayers = perLayer > 0 && perPallet > 0 ? Math.ceil(perPallet / perLayer) : 0;
@@ -151,6 +151,24 @@ function block(line: PlannerLine | undefined, layers: number, spec: PlannerSpec)
   return { colour: line?.colour ?? 'var(--muted-2)', pct: Math.min(100, (layers * height / spec.usableCm) * 100) };
 }
 
+/**
+ * The glyph of a pallet loaded as full as it goes (PACKED, or a hand pallet packed): its products stand side by side,
+ * so each block is the product's share of the load's volume, all together as high as the load.
+ */
+function shareBlocks(items: readonly { productId: number; cartons: number }[], byId: ReadonlyMap<number, PlannerLine>,
+  heightCm: number | null, spec: PlannerSpec): GlyphBlock[] {
+  const volumes = items.map((item) => {
+    const line = byId.get(item.productId);
+    return line && line.cartons > 0 ? Math.max(0, item.cartons) * (line.cbm / line.cartons) : 0;
+  });
+  const total = volumes.reduce((sum, volume) => sum + volume, 0);
+  const fill = heightCm === null ? 0 : Math.min(100, Math.max(0, ((heightCm - spec.baseHeightCm) / spec.usableCm) * 100));
+  return items.map((item, index) => ({
+    colour: byId.get(item.productId)?.colour ?? 'var(--muted-2)',
+    pct: total > 0 ? fill * (volumes[index] / total) : 0,
+  }));
+}
+
 function weightShare(weightKg: number, spec: PlannerSpec): number {
   return spec.maxWeightKg > 0 ? weightKg / spec.maxWeightKg : 0;
 }
@@ -187,7 +205,8 @@ export function serverPallets(view: SalesOrderView, lines: readonly PlannerLine[
       index, from: index + 1, to: index + 1, label: `Pallet ${index + 1}`, contents: contents(parts), parts, cartons,
       heightCm: pallet.heightCm, measured: false, weightKg: pallet.weightKg, fill: full ? 1 : fill, full,
       over: false, heavy: false, status: full ? 'vol' : 'pct',
-      blocks: pallet.items.map((item) => block(byId.get(item.productId), item.layers, spec)),
+      blocks: view.priced.totals.palletRule === 'PACKED' ? shareBlocks(pallet.items, byId, pallet.heightCm, spec)
+        : pallet.items.map((item) => block(byId.get(item.productId), item.layers, spec)),
       type: null, typeNote: null,
     });
   });
@@ -237,8 +256,35 @@ function typeNote(type: string, profile: PalletProfile): string | null {
   return PALLET_TYPES.find((choice) => choice.value === normal)?.short ?? normal;
 }
 
-/** The hand-built pallets with their estimated (or measured) height and their weight. */
-export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec): PalletVm[] {
+/**
+ * How high a hand-built pallet stands with its omdozen loaded as full as they go on it (pallet-pack.ts, every side, as
+ * PACKED counts): what Zelf indelen copied from PACKED pallets stands as high as the server counted it, and a pallet
+ * built by hand is judged by the best way it can be loaded. Null without the catalogue's omdoos sizes for each of its
+ * products, or when one pallet does not take them all: the layer estimate then stands (and says "te hoog").
+ */
+export function packedHandHeightCm(items: readonly { productId: number; cartons: number }[], byId: ReadonlyMap<number, PlannerLine>,
+  products: ReadonlyMap<number, Product> | undefined, spec: PlannerSpec): number | null {
+  if (!products?.size) return null;
+  const packs: PackLine[] = [];
+  for (const item of items) {
+    if (!(item.cartons > 0)) continue;
+    const carton = products.get(item.productId)?.carton;
+    if (!carton?.lengthCm || !carton.widthCm || !carton.heightCm) return null;
+    const weightKg = carton.weightKg && carton.weightKg > 0 ? carton.weightKg : byId.get(item.productId)?.cartonWeightKg ?? 0;
+    packs.push({ key: item.productId, cartons: item.cartons, lengthCm: carton.lengthCm, widthCm: carton.widthCm, heightCm: carton.heightCm, weightKg });
+  }
+  if (!packs.length) return null;
+  const plan = packedPlan(packs, spec, ALL_SIDES, () => Number.POSITIVE_INFINITY, 1);
+  return plan && plan.length === 1 ? plan[0].heightCm : null;
+}
+
+/**
+ * The hand-built pallets with their measured or estimated height and their weight. With the catalogue a pallet is
+ * estimated as its omdozen go on it as full as they go (packedHandHeightCm); without it, or when they do not all go on,
+ * every product in whole layers of its own, added up.
+ */
+export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
+  products?: ReadonlyMap<number, Product>): PalletVm[] {
   const byId = new Map(lines.map((line) => [line.productId, line]));
   const priced = new Set(view.priced.lines.map((line) => line.productId));
   return view.order.pallets.map((pallet, index) => {
@@ -247,7 +293,9 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
       return { productId: item.productId, name: line?.name ?? 'Verwijderd product', colour: line?.colour ?? 'var(--muted-2)',
         photoUrl: line?.photoUrl ?? null, cartons: item.cartons };
     });
-    const stack = estimatePalletHeightCm(pallet, view.priced.lines, spec.baseHeightCm);
+    const layered = estimatePalletHeightCm(pallet, view.priced.lines, spec.baseHeightCm);
+    const packed = layered.measured ? null : packedHandHeightCm(pallet.items, byId, products, spec);
+    const stack = packed === null ? layered : { heightCm: Math.round(packed), measured: false };
     const weightKg = pallet.items.reduce((sum, item) => sum + Math.max(0, item.cartons) * (byId.get(item.productId)?.cartonWeightKg ?? 0), 0);
     const fill = Math.min(1, Math.max(stack.heightCm === null ? 0 : (stack.heightCm - spec.baseHeightCm) / spec.usableCm,
       weightShare(weightKg, spec)));
@@ -265,7 +313,7 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
       index, from: index + 1, to: index + 1, label: pallet.label.trim() || `Pallet ${index + 1}`, contents: contents(parts),
       parts, cartons: pallet.items.reduce((sum, item) => sum + item.cartons, 0),
       heightCm: stack.heightCm, measured: stack.measured, weightKg, fill, full, over, heavy, status,
-      blocks: pallet.items.map((item) => {
+      blocks: packed !== null ? shareBlocks(pallet.items, byId, stack.heightCm, spec) : pallet.items.map((item) => {
         const line = byId.get(item.productId);
         return block(line, line && line.perLayer > 0 ? Math.ceil(item.cartons / line.perLayer) : 0, spec);
       }),
@@ -378,9 +426,12 @@ export function packedRoom(lines: readonly PlannerLine[], products: ReadonlyMap<
     if (!carton?.lengthCm || !carton.widthCm || !carton.heightCm) return new Map();
     packs.push({ key: line.key, cartons: line.cartons, lengthCm: carton.lengthCm, widthCm: carton.widthCm, heightCm: carton.heightCm, weightKg });
   }
-  const counted = (key: number | null, extra: number) => bestPlan(
-    plan.map((line) => (line.key === key ? { ...line, cartons: line.cartons + extra } : line)),
-    packs.map((pack) => (pack.key === key ? { ...pack, cartons: pack.cartons + extra } : pack)), spec, ALL_SIDES).length;
+  /* The extra omdozen on the product's first line only: a product on two lines would otherwise get them twice. */
+  const counted = (key: number | null, extra: number) => {
+    const at = key === null ? -1 : plan.findIndex((line) => line.key === key);
+    return bestPlan(plan.map((line, index) => (index === at ? { ...line, cartons: line.cartons + extra } : line)),
+      packs.map((pack, index) => (index === at ? { ...pack, cartons: pack.cartons + extra } : pack)), spec, ALL_SIDES).length;
+  };
   if (counted(null, 0) !== count) return new Map();
   return new Map(plan.map((line) => {
     let low = 0;
@@ -410,10 +461,11 @@ export interface LayoutCheck {
   looseFitting: number;
 }
 
-export function checkLayout(view: SalesOrderView): LayoutCheck {
+/** With the catalogue a hand pallet's height is judged as its omdozen go on it as full as they go (handPallets). */
+export function checkLayout(view: SalesOrderView, products?: ReadonlyMap<number, Product>): LayoutCheck {
   const spec = plannerSpec(view);
   const lines = plannerLines(view, spec);
-  const rows = handPallets(view, lines, spec);
+  const rows = handPallets(view, lines, spec, products);
   const placement = placements(view.order, lines);
   const placed = [...placement.values()];
   const priced = new Set(view.priced.lines.map((line) => line.productId));

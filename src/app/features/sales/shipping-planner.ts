@@ -416,7 +416,9 @@ export class ShippingPlanner {
   readonly autoRows = computed(() => serverPallets(this.view(), this.lines(), this.spec()) ?? autoPallets(this.lines(), this.spec()));
   /** The rows only when they add up to the server's count: never two different counts on one screen. */
   readonly autoShown = computed(() => this.autoRows().length > 0 && palletCount(this.autoRows()) === this.autoCount());
-  readonly handRows = computed(() => handPallets(this.view(), this.lines(), this.spec()));
+  /** The catalogue by id: omdoos sizes for the packed heights of hand pallets and for the PACKED room hints. */
+  private readonly productMap = computed(() => new Map(this.products().flatMap((product) => (product.id == null ? [] : [[product.id, product] as const]))));
+  readonly handRows = computed(() => handPallets(this.view(), this.lines(), this.spec(), this.productMap()));
   readonly placed = computed(() => placements(this.order(), this.lines()));
   /**
    * Palletberekening's mix one tap away, only where Automatisch does not mix already and only on a
@@ -436,10 +438,7 @@ export class ShippingPlanner {
   /** "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same pallets. */
   readonly roomOf = computed(() => {
     const rule = this.rule();
-    if (rule === 'PACKED') {
-      const products = new Map(this.products().flatMap((product) => (product.id == null ? [] : [[product.id, product] as const])));
-      return packedRoom(this.lines(), products, this.spec(), this.autoCount());
-    }
+    if (rule === 'PACKED') return packedRoom(this.lines(), this.productMap(), this.spec(), this.autoCount());
     return rule === 'MIXED' ? mixedRoom(this.lines(), this.spec(), this.autoCount())
       : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]));
   });
@@ -496,7 +495,7 @@ export class ShippingPlanner {
   });
   readonly heroPill = computed<{ text: string; tone: string } | null>(() => {
     if (!this.palletsMode() || !this.lines().length) return null;
-    if (this.manual()) return layoutPill(checkLayout(this.view()));
+    if (this.manual()) return layoutPill(checkLayout(this.view(), this.productMap()));
     const misfits = this.problems().length;
     return misfits && this.autoCount() > 0 ? { text: `${misfits} past niet`, tone: 'warn' } : null;
   });

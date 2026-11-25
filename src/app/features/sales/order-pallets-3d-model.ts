@@ -98,9 +98,22 @@ export interface OrderLoad3d {
   counted: number | null;
   /** The pallets as the planner lists them: a 3D button on one of its rows opens on the pallet carrying most of it. */
   listed: OrderPallet3d[];
+  /** Loaded again, every pallet carries what the list says it does (a PACKED document): a row opens on its own page. */
+  matchesList: boolean;
 }
 
-export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'listed', counted: null, listed: [] };
+export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'listed', counted: null, listed: [], matchesList: true };
+
+/** The same omdozen of each product on two pallets. */
+function sameItems(left: OrderPallet3d['items'], right: OrderPallet3d['items']): boolean {
+  const count = (items: OrderPallet3d['items']) => {
+    const counts = new Map<number, number>();
+    for (const item of items) counts.set(item.productId, (counts.get(item.productId) ?? 0) + item.cartons);
+    return counts;
+  };
+  const a = count(left); const b = count(right);
+  return a.size === b.size && [...a].every(([productId, cartons]) => b.get(productId) === cartons);
+}
 
 /**
  * The page for a pallet of the planner's list: itself where 3D keeps the list's pallets; loaded
@@ -108,7 +121,7 @@ export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'liste
  */
 export function pageForListed(load: OrderLoad3d, index: number): number {
   /* The first pallet is also where "Pallets in 3D bekijken" starts: loaded again, that is the fullest one, pallet 1. */
-  if (load.source !== 'packed' || index <= 0) return index;
+  if (load.source !== 'packed' || load.matchesList || index <= 0) return index;
   const asked = load.listed[index];
   if (!asked) return 0;
   let best = 0; let most = -1;
@@ -334,7 +347,12 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
         pallets.push({ label: `Pallet ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null });
         builds.push(finished(boxes, counts, stocks, goods.unmeasured, [], spec));
       });
-      return { pallets, builds, source: 'packed', counted: plan.pallets.length < listed.length ? listed.length : null, listed };
+      const matchesList = pallets.length === listed.length && pallets.every((pallet, index) => sameItems(pallet.items, listed[index].items));
+      /* PACKED: the server listed these very pallets. Loaded otherwise here (a catalogue size changed since pricing), the list
+         stands, so a row and its 3D page always carry the same omdozen. */
+      if (rule !== 'PACKED' || matchesList) {
+        return { pallets, builds, source: 'packed', counted: plan.pallets.length < listed.length ? listed.length : null, listed, matchesList };
+      }
     }
   }
 
@@ -359,7 +377,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     stackAbove(rest, boxes, stocks, spec, counts);
     return finished(boxes, counts, stocks, goods.unmeasured, tooLarge, spec);
   });
-  return { pallets: listed, builds, source: 'listed', counted: null, listed };
+  return { pallets: listed, builds, source: 'listed', counted: null, listed, matchesList: true };
 }
 
 /** "Europallet 120 × 80 · max 260 cm": what the 3D stands on. */

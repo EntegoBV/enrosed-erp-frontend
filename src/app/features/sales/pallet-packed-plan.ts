@@ -73,7 +73,7 @@ export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides
     const list = [...parts.values()];
     const fill = Math.min(1, Math.max(usable > 0 ? packed.top / usable : 0, pallet.maxWeightKg > 0 ? weightKg / pallet.maxWeightKg : 0));
     const full = (list.length === 1 && list[0].cartons >= fullAt(list[0].key)) || fill >= 0.995;
-    return { parts: list, heightCm: pallet.baseHeightCm + packed.top / 100, weightKg, fill: full ? 1 : fill, full };
+    return { parts: list, heightCm: pallet.baseHeightCm + packed.top / 100, weightKg, fill: full ? 1 : fill, full, packed: true };
   });
 }
 

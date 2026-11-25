@@ -32,7 +32,7 @@ import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  containerCapacity, containerFill, karSpec, palletFit, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -761,7 +761,20 @@ export class PalletCalculatorPage {
     key: line.plan.key, cartons: line.cartons, lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0,
     heightCm: line.product.carton.heightCm ?? 0, weightKg: line.weightKg,
   })));
-  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.lines().map((line) => line.plan), this.packs(), this.pallet(), this.sides())));
+  /**
+   * The lines as the count weighs whole layers: with tipping allowed, a quote's fit (an omdoos lies down only where it
+   * must, PalletCalculator.fit), so the plan is exactly what a new quote counts; without, upright, as the cards show.
+   */
+  private readonly countLines = computed<PlanLine[]>(() => {
+    const lines = this.lines();
+    if (!this.turnable()) return lines.map((line) => line.plan);
+    const pallet = this.pallet();
+    return lines.map((line) => {
+      const fit = palletFit(line.product.carton, pallet);
+      return { ...line.plan, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : line.product.carton.heightCm ?? 0 };
+    });
+  });
+  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.countLines(), this.packs(), this.pallet(), this.sides())));
   readonly canShare = computed(() => this.lines().length > 1 && this.lines().some((line) => line.fit.cartonsPerPallet > 0));
   readonly full = computed(() => this.rows().length >= MAX_ROWS);
   readonly unplaced = computed(() => this.lines().filter((line) => line.cartons > 0 && line.fit.cartonsPerPallet <= 0));
@@ -791,18 +804,24 @@ export class PalletCalculatorPage {
     const usable = pallet.maxHeightCm - pallet.baseHeightCm;
     const lines = new Map(this.lines().map((line) => [line.product.id as number, line]));
     const groups: PalletGroup[] = [];
-    let previousKey: number | null = null;
+    let previous: string | null = null;
     this.plan().forEach((planned, index) => {
-      const fullKey = planned.full ? planned.parts[0].key : null;
+      /* A run reads as one row only when its pallets are the same: one product, as many omdozen. */
+      const same = planned.full && planned.parts.length === 1 ? `${planned.parts[0].key}:${planned.parts[0].cartons}` : null;
       const last = groups.at(-1);
-      if (last && fullKey !== null && fullKey === previousKey) { last.to = index + 1; return; }
-      previousKey = fullKey;
+      if (last && same !== null && same === previous) { last.to = index + 1; return; }
+      previous = same;
+      /* Packed, the products stand side by side: each its share of the load's volume, together as high as the load. */
+      const volume = (part: { key: number; cartons: number }) => part.cartons * (lines.get(part.key)?.cbm ?? 0);
+      const total = planned.parts.reduce((sum, part) => sum + volume(part), 0);
+      const loaded = Math.min(100, Math.max(0, ((planned.heightCm - pallet.baseHeightCm) / usable) * 100));
       groups.push({
         from: index + 1, to: index + 1, full: planned.full, fill: planned.fill,
         heightCm: planned.heightCm, weightKg: planned.weightKg,
         blocks: planned.parts.map((part) => ({
           colour: lines.get(part.key)?.colour ?? 'var(--muted)',
-          pct: Math.min(100, (part.layers * (lines.get(part.key)?.plan.cartonHeightCm ?? 0) / usable) * 100),
+          pct: planned.packed ? (total > 0 ? loaded * (volume(part) / total) : 0)
+            : Math.min(100, (part.layers * (lines.get(part.key)?.plan.cartonHeightCm ?? 0) / usable) * 100),
         })),
         parts: planned.parts.map((part) => ({
           name: lines.get(part.key)?.title ?? '', cartons: part.cartons, colour: lines.get(part.key)?.colour ?? '',
@@ -821,7 +840,7 @@ export class PalletCalculatorPage {
     const count = this.plan().length;
     if (count === 0 || count > 30) return [];
     const pallet = this.pallet();
-    const plan = this.lines().map((line) => line.plan);
+    const plan = this.countLines();
     const packs = new Map(this.packs().map((pack) => [pack.key, pack]));
     const sides = this.sides();
     const fuller = count <= 10 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {
