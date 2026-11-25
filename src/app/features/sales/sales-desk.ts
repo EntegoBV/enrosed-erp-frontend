@@ -16,6 +16,7 @@ import { SalesAdvanceInvoices } from './sales-advance-invoices';
 import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote, invoiceNotesAgreement } from './sales-invoice-actions';
+import { leaveInvoice } from './sales-invoice-minimum';
 import { creditNoteJourney, creditNoteSettlement } from './sales-credit-note';
 import { SalesCreditNoteSheet } from './sales-credit-note-sheet';
 import { SalesOffsetSheet } from './sales-offset-sheet';
@@ -1782,8 +1783,9 @@ export class SalesDesk extends SalesEditor {
     if (this.allProductsUnavailable() || this.invoiceBusy() || this.dirty() || this.saving() || this.view()?.order.id !== data.order.id) return;
     this.invoiceBusy.set(true);
     try {
-      const updated = await this.sales.markInvoiceSent(data.order.id);
-      if (this.view()?.order.id !== data.order.id) return;
+      const updated = await leaveInvoice(this.ui, 'mark',
+        (belowMinimumAccepted) => this.sales.markInvoiceSent(data.order.id, belowMinimumAccepted));
+      if (!updated || this.view()?.order.id !== data.order.id) return;
       this.adopt(updated);
       void this.loadHistory(data.order.id);
       this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota staat op verstuurd' : 'Factuur staat op verstuurd');

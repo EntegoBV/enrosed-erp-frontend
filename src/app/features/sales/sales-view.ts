@@ -34,6 +34,7 @@ import { SalesAdvanceDeductions } from './sales-advance-deductions';
 import { SalesAdvanceInvoiceSheet } from './sales-advance-invoice-sheet';
 import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderInvoiceReady, webOrderNeedsApproval, webOrderNotice, webOrderSendChoice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import type { WebOrderAgreement, WebOrderSendMode } from './sales-invoice-actions';
+import { leaveInvoice } from './sales-invoice-minimum';
 import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping } from './sales-payment-state';
@@ -1910,7 +1911,12 @@ export class SalesView {
     if (!data || this.sendingQuote() || this.allProductsUnavailable() || customerCanStillChange(data)) return;
     this.sendingQuote.set(true);
     try {
-      this.show(await this.sales.sendQuote(data.order.id!, this.sendMessage().trim(), webOrderRevision(data)));
+      /* An invoice under the minimum order asks "Toch versturen?" first; a no keeps the sheet open. */
+      const message = this.sendMessage().trim();
+      const sent = await leaveInvoice(this.ui, 'mail',
+        (belowMinimumAccepted) => this.sales.sendQuote(data.order.id!, message, webOrderRevision(data), belowMinimumAccepted));
+      if (!sent) return;
+      this.show(sent);
       this.sendSheetOpen.set(false);
       this.sendMessage.set('');
       this.ui.toast(webOrderSendCopy(data)?.toast ?? (data.order.docType === 'CREDITNOTA' ? 'Creditnota verstuurd' : this.isInvoice() ? 'Factuur verstuurd' : 'Offerte verstuurd'));
@@ -2006,7 +2012,10 @@ export class SalesView {
     if (this.invoiceBusy() || this.allProductsUnavailable()) return;
     this.invoiceBusy.set(true);
     try {
-      this.view.set(await this.sales.markInvoiceSent(data.order.id!));
+      const updated = await leaveInvoice(this.ui, 'mark',
+        (belowMinimumAccepted) => this.sales.markInvoiceSent(data.order.id!, belowMinimumAccepted));
+      if (!updated) return;
+      this.view.set(updated);
       this.ui.toast(data.order.docType === 'CREDITNOTA' ? 'Creditnota staat op verstuurd' : 'Factuur staat op verstuurd');
     } catch (failure: unknown) {
       this.ui.toast(messageOf(failure, 'Status wijzigen mislukt'), 'err');

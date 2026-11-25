@@ -24,6 +24,7 @@ import { SalesReceipts } from './sales-receipts';
 import { SalesDocumentNote } from './sales-document-note';
 import { canCreateInvoiceFromQuote, invoiceNotesAgreement, webOrderInvoiceFirst, webOrderInvoiceReady, webOrderNotice, webOrderSendChoice, webOrderSendCopy, webOrderSendsForApproval, WEB_ORDER_RELOADED } from './sales-invoice-actions';
 import type { WebOrderAgreement, WebOrderSendMode } from './sales-invoice-actions';
+import { leaveInvoice } from './sales-invoice-minimum';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
@@ -4696,7 +4697,11 @@ export class SalesEditor {
         this.ui.toast(this.sendIssues()[0], 'err');
         return;
       }
-      const sent = await this.sales.sendQuote(data.order.id, this.sendMessage(), webOrderRevision(data));
+      /* An invoice under the minimum order asks "Toch versturen?" first; a no keeps the sheet open. */
+      const message = this.sendMessage();
+      const sent = await leaveInvoice(this.ui, 'mail',
+        (belowMinimumAccepted) => this.sales.sendQuote(data.order.id, message, webOrderRevision(data), belowMinimumAccepted));
+      if (!sent) return;
       this.adopt(sent);
       this.sendSheet.set(false);
       void this.work.refresh(true);

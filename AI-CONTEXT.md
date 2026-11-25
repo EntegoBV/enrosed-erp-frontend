@@ -5976,3 +5976,18 @@ with ordered or approved figures.
   "Naar factuur VF-…", the phone title "Gefactureerd", the editor dock "Naar factuur" (`quoteSettlement`). Who agreed
   comes from `acceptedBy(order)`: "getekend door <naam>" for an online signature, else "akkoord genoteerd" (never "de
   klant" for a signature that does not exist).
+
+## Factuur onder de minimumorder: toch versturen (2026-11-25)
+
+Emre: "minimum order waarde bij onze factuur moet je gewoon popup geven dat we alsnog kunnen verzenden indien minimum
+ook niet genoeg is".
+- `sales-invoice-minimum.ts`: `leaveInvoice(ui, 'mail' | 'mark' | 'issue', call)` runs the call without the flag; when
+  the server answers 409 `MINIMUM_NOT_MET` (`minimumRefusal`), the confirm "Minimumorder niet bereikt" ("Er ontbreekt
+  nog € 314,90 tot de minimumorder van € 1.500,00. De historiek noteert dat.") asks once, and "Toch versturen" /
+  "Toch op verstuurd zetten" / "Toch uitgeven" repeats the call with `belowMinimumAccepted`. Annuleren returns null:
+  nothing changes and the send sheet stays open.
+- The server decides (it checks the minimum after every hard rule, so the question comes only when the minimum is the
+  last thing left); the screen asks nothing beforehand. Used by `SalesEditor.send` (desk + phone editor),
+  `SalesDesk.markSent`, `SalesView.sendFromView` / `markSent` and `SalesReceipts.issue` ("Uitgeven zonder e-mail").
+- `SalesApi.sendQuote`, `markInvoiceSent` and `issueInvoice` take `belowMinimumAccepted` (default false). Quotes and a
+  web order's "Factuur versturen" stay blocked by `sendIssues` as before.

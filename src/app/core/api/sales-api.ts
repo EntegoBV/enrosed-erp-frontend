@@ -188,9 +188,10 @@ export class SalesApi {
         agreedOutsideLink ? { agreedOutsideLink: true } : {}));
   }
 
-  markInvoiceSent(id: number): Promise<SalesOrderView> {
+  /** belowMinimumAccepted: staff answered "Toch …" to a concept under the minimum order (sales-invoice-minimum.ts). */
+  markInvoiceSent(id: number, belowMinimumAccepted = false): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-sent`), {}));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/mark-sent`), belowMinimumAccepted ? { belowMinimumAccepted } : {}));
   }
 
   payments(id: number): Promise<SalesPayment[]> {
@@ -210,8 +211,8 @@ export class SalesApi {
     return firstValueFrom(this.http.get<IncomingPaymentRow[]>(api(`/api/incoming-payments${query}`)));
   }
 
-  issueInvoice(id: number): Promise<SalesOrderView> {
-    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/issue`), {}));
+  issueInvoice(id: number, belowMinimumAccepted = false): Promise<SalesOrderView> {
+    return firstValueFrom(this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/issue`), belowMinimumAccepted ? { belowMinimumAccepted } : {}));
   }
 
   markInvoicePaid(id: number): Promise<SalesOrderView> {
@@ -374,9 +375,10 @@ export class SalesApi {
   /* ----------------------------------------------------------- offertes */
 
   /** Builds the PDF, mails it to the customer and marks the quote sent. */
-  sendQuote(id: number, message: string, webOrderRevision?: number | null): Promise<SalesOrderView> {
+  sendQuote(id: number, message: string, webOrderRevision?: number | null, belowMinimumAccepted = false): Promise<SalesOrderView> {
     return firstValueFrom(
-      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send${revisionQuery(webOrderRevision)}`), { message }));
+      this.http.post<SalesOrderView>(api(`/api/sales-orders/${id}/send${revisionQuery(webOrderRevision)}`),
+        belowMinimumAccepted ? { message, belowMinimumAccepted } : { message }));
   }
 
   /**

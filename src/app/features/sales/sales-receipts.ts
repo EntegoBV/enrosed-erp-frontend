@@ -16,6 +16,7 @@ import { salesAllProductsUnavailable } from './sales-line-availability';
 import { ReceiptDraft, receiptLocalParts, receiptRequest } from '../../shared/received-at';
 import { companyReceiptAccount, receiptAccountChoices, receiptAccountValue, type ReceiptBankAccount } from './receipt-bank-account';
 import { creditNoteSettlement, isCreditNote, isOffsetPayment } from './sales-credit-note';
+import { leaveInvoice } from './sales-invoice-minimum';
 
 /**
  * Money on a claim document. An invoice shows 'Ontvangen & open'; a credit
@@ -319,8 +320,10 @@ export class SalesReceipts implements OnDestroy {
     const orderId = this.view().order.id;
     this.busy.set(true);
     try {
-      const fresh = await this.sales.issueInvoice(orderId);
-      if (this.destroyed || this.view().order.id !== orderId) return;
+      /* An invoice under the minimum order asks "Toch uitgeven?" first. */
+      const fresh = await leaveInvoice(this.ui, 'issue',
+        (belowMinimumAccepted) => this.sales.issueInvoice(orderId, belowMinimumAccepted));
+      if (!fresh || this.destroyed || this.view().order.id !== orderId) return;
       this.changed.emit(fresh);
       const timeZone = 'Europe/Brussels';
       if (!creditNote && (fresh.paymentSummary?.invoiceTotalEur ?? 0) > 0) this.beginDraft({ amount: fresh.paymentSummary?.remainingEur ?? 0, ...receiptLocalParts(Date.now(), timeZone), timeZone, reference: '', bankAccount: '', direction: 'RECEIPT' });
