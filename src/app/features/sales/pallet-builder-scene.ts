@@ -49,6 +49,12 @@ const EDGE_OPACITY = 0.42;
 
 export interface Aim { centreX: number; centreZ: number }
 
+/** A box on its way to a new place or side: where it started, where it goes, since when. */
+interface Tween { from: Vector3; fromTurn: Quaternion; to: Vector3; toTurn: Quaternion; start: number }
+
+/** How long a turn or a tip takes on screen. */
+const TWEEN_MS = 280;
+
 export class BuilderScene {
   readonly canvas: HTMLCanvasElement;
   private readonly renderer: WebGLRenderer;
@@ -98,6 +104,10 @@ export class BuilderScene {
   private dirty = true;
   private readonly resizeObserver: ResizeObserver;
   private disposed = false;
+  /** The boxes the next setBoxes moves smoothly (a turn, a tip and what stands on it); null moves none. */
+  private animateIds: ReadonlySet<number> | null = null;
+  private readonly tweens = new Map<number, Tween>();
+  private readonly calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor(private readonly host: HTMLElement, logo: HTMLImageElement | null, accent: string) {
     this.renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
@@ -247,16 +257,24 @@ export class BuilderScene {
     }
   }
 
+  /** The next setBoxes moves these boxes smoothly to their new place and side (a turn, a tip, what stood on it). */
+  animateNext(ids: ReadonlySet<number> | null): void {
+    this.animateIds = ids;
+  }
+
   /** The boxes as they stand now: meshes come, go and move to match. */
   setBoxes(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>): void {
     const present = new Set<number>();
+    const animate = this.calm ? null : this.animateIds;
+    this.animateIds = null;
     for (const box of boxes) {
       const item = items.get(box.key);
       const look = this.looks.get(box.key);
       if (!item || !look) continue;
       present.add(box.id);
       let mesh = this.meshes.get(box.id);
-      if (!mesh || mesh.userData['signature'] !== look.signature) {
+      const known = !!mesh && mesh.userData['signature'] === look.signature;
+      if (!mesh || !known) {
         if (mesh) this.dropMesh(box.id);
         mesh = new Mesh(look.geometry, look.materials);
         mesh.castShadow = true;
@@ -269,10 +287,19 @@ export class BuilderScene {
         this.meshes.set(box.id, mesh);
         this.boxes.add(mesh);
       }
+      const from = known && animate?.has(box.id) ? { at: mesh.position.clone(), turn: mesh.quaternion.clone() } : null;
       this.pose(mesh, extentOf(item, box.up, box.turned), box.x, box.y, box.z, box.up, box.turned);
+      if (from && (from.at.distanceToSquared(mesh.position) > 1e-4 || from.turn.angleTo(mesh.quaternion) > 1e-4)) {
+        this.tweens.set(box.id, { from: from.at, fromTurn: from.turn, to: mesh.position.clone(), toTurn: mesh.quaternion.clone(), start: performance.now() });
+        mesh.position.copy(from.at);
+        mesh.quaternion.copy(from.turn);
+      } else {
+        this.tweens.delete(box.id);
+      }
       mesh.visible = box.id !== this.hiddenId;
     }
     for (const id of [...this.meshes.keys()]) if (!present.has(id)) this.dropMesh(id);
+    for (const id of [...this.tweens.keys()]) if (!present.has(id)) this.tweens.delete(id);
     this.paintSpill();
     this.markPicked(this.pickedId);
     if (this.hoveredId !== null && !this.meshes.has(this.hoveredId)) this.setHover(null);
@@ -437,13 +464,31 @@ export class BuilderScene {
   private readonly tick = (): void => {
     this.frame = 0;
     if (this.disposed) return;
-    const moving = this.controls.update();
+    const tweening = this.stepTweens();
+    const moving = this.controls.update() || tweening;
     if (moving || this.dirty) {
       this.dirty = false;
       this.renderer.render(this.scene, this.camera);
     }
     if (moving) this.frame = requestAnimationFrame(this.tick);
   };
+
+  /** One frame of the boxes on their way: eased out, the turn along the shortest arc. True while one still moves. */
+  private stepTweens(): boolean {
+    if (!this.tweens.size) return false;
+    const now = performance.now();
+    for (const [id, tween] of this.tweens) {
+      const mesh = this.meshes.get(id);
+      const t = Math.min(1, (now - tween.start) / TWEEN_MS);
+      const eased = 1 - Math.pow(1 - t, 3);
+      if (mesh) {
+        mesh.position.lerpVectors(tween.from, tween.to, eased);
+        mesh.quaternion.slerpQuaternions(tween.fromTurn, tween.toTurn, eased);
+      }
+      if (t >= 1 || !mesh) this.tweens.delete(id);
+    }
+    return true;
+  }
 
   private resize(): void {
     this.renderer.setSize(Math.max(1, this.host.clientWidth), Math.max(1, this.host.clientHeight), false);

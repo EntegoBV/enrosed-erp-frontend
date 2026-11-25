@@ -9,10 +9,11 @@ import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import type { CarrierKind, CartonUp, PalletSpec } from './pallet-calculator-model';
 import {
-  MAX_BUILDER_BOXES, computedFill, deckOf, extentOf, landing, loadBuild, nextSpot, saveBuild, settle, sidesOf, sized, solidsOf, spillOf,
-  type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid, type Spill, type SpillLevel,
+  MAX_BUILDER_BOXES, collides, deckOf, extentOf, landing, loadBuild, nearestSpot, nextSpot, packedFill, ridersOf, saveBuild, settle, sidesOf,
+  sized, solidsOf, spillOf, type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid, type Spill, type SpillLevel,
 } from './pallet-builder-model';
 import { BuilderScene } from './pallet-builder-scene';
+import { ALL_SIDES, UPRIGHT } from './pallet-pack';
 
 interface Target extends Landing { up: CartonUp; turned: boolean }
 
@@ -63,27 +64,36 @@ function cm(value: number): string {
   return value.toLocaleString('nl-BE', { maximumFractionDigits: 1 });
 }
 
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 const HISTORY = 60;
 const DRAG_START_PX = 7;
+/** The styles' tablet canvas: a wide touch screen on its side, high enough for the 3D beside the panel. */
+const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width: 760px) and (max-width: 1023.98px) and (min-height: 560.02px)';
 
 /**
  * 3D laden (Palletberekening): build a pallet or a Deense kar by hand. The
  * products of the calculation stand on a tray; drag one onto the carrier,
  * or tap it to set it on the next free place. A box lands on the floor or
  * on the boxes under it, snaps to nearby edges, and never goes above the
- * loading height. A chosen box turns (Draai), lies on its side (Kantel,
- * when omdozen may tip), gets a twin (+1) or goes (Weg); drag it to move
- * it, and what stood on it drops down. Automatisch lays the carrier as
- * Palletberekening counts it. The build stays on this device per carrier.
+ * loading height. A chosen box turns (Draai) or lies on its side (Kantel,
+ * when omdozen may tip) where it stands, what stands on it going up or down
+ * with it; it gets a twin (+1) or goes (Weg); drag it to move it, and what
+ * stood on it drops down. Automatisch fills the carrier as full as it goes
+ * from everything on the cards (pallet-pack.ts). The build stays on this
+ * device per carrier.
  * Which product is where: the mouse over a box shows its card and draws the
  * edges of all its boxes in its colour; a product in the legend (Op de kar)
  * or on the tray puts it in focus and fades the rest. On a phone a tap on a
  * box does what the mouse does, and a finger turns the view unless it starts
  * on the chosen box (Emre, 2026-11-15: see the products, mouse over them,
  * very good on mobile).
- * A sales order shows its pallets here too (fixed): the omdozen it counts,
- * one pallet at a time with arrows between them; they turn and move, none
- * comes or goes, Automatisch lays them back, and nothing is kept.
+ * A sales order shows its pallets here too (fixed): its omdozen loaded as
+ * full as they go, one pallet at a time with arrows between them; they turn,
+ * tip and move, none comes or goes, "Zoals berekend" lays them back, and
+ * nothing is kept.
  * three.js loads with this screen only (a @defer on the page).
  */
 @Component({
@@ -92,7 +102,7 @@ const DRAG_START_PX = 7;
   imports: [AuthImage, Icon, NgTemplateOutlet, NumPipe],
   host: { '(document:keydown)': 'key($event)' },
   template: `
-    <div class="pb3" role="dialog" aria-modal="true" aria-labelledby="pb3-title">
+    <div class="pb3" [class.pb3--duo]="duo" role="dialog" aria-modal="true" aria-labelledby="pb3-title">
       <header class="pb3-bar">
         <button class="pb3-btn pb3-btn--round pb3-close" type="button" (click)="closed.emit()" aria-label="Sluiten" title="Sluiten (Esc)">
           <app-icon name="close" [size]="18" />
@@ -115,8 +125,8 @@ const DRAG_START_PX = 7;
             <app-icon name="restore" [size]="16" /><span class="pb3-lbl">Ongedaan</span>
           </button>
           @if (fixed()) {
-            <button class="pb3-btn" type="button" [disabled]="!initialBoxes()?.length" (click)="autoFill()" aria-label="Zoals berekend leggen"
-                    title="Leg alles terug zoals de order telt">
+            <button class="pb3-btn" type="button" [disabled]="!initialBoxes()?.length || pristine()" (click)="autoFill()" aria-label="Zoals berekend leggen"
+                    title="Leg alles terug zoals berekend">
               <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Zoals berekend</span>
             </button>
           } @else {
@@ -167,34 +177,12 @@ const DRAG_START_PX = 7;
               <ng-container [ngTemplateOutlet]="facts" [ngTemplateOutletContext]="{ $implicit: info.card }" />
             </div>
           }
-          @if (selectedCard(); as card) {
-            <div class="pb3-pick" role="toolbar" [attr.aria-label]="'Gekozen omdoos: ' + card.item.title">
-              <div class="pb3-pick__info"><ng-container [ngTemplateOutlet]="facts" [ngTemplateOutletContext]="{ $implicit: card }" /></div>
-              @if (card.colours.length > 1) {
-                <div class="pb3-pick__colours" role="group" aria-label="Kleur van deze omdoos">
-                  @for (colour of card.colours; track colour.key) {
-                    <button type="button" class="pb3-swatch" [class.pb3-swatch--on]="colour.key === card.item.key" [style.--dot]="colour.colourHex || '#e6ddd3'"
-                            (click)="recolour(colour)" [attr.aria-pressed]="colour.key === card.item.key"
-                            [attr.aria-label]="colour.colourName || 'Zonder kleur'" [title]="colour.colourName || 'Zonder kleur'"></button>
-                  }
-                </div>
-              }
-              <div class="pb3-pick__actions">
-                <button type="button" (click)="turn()" title="Draai (R)"><app-icon name="refresh" [size]="17" /><span>Draai</span></button>
-                @if (turnable() && sidesOf(card.item).length > 1) {
-                  <button type="button" (click)="tipOver()" title="Kantel (T)"><app-icon name="exchange" [size]="17" /><span>Kantel</span></button>
-                }
-                @if (!fixed()) {
-                  <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="17" /><span>+1</span></button>
-                  <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="17" /><span>Weg</span></button>
-                }
-                <button type="button" class="pb3-pick__close" (click)="selected.set(null)" aria-label="Klaar" title="Klaar (Esc)"><app-icon name="close" [size]="15" /></button>
-              </div>
-            </div>
-          }
+          @if (!tablet()) { <ng-container [ngTemplateOutlet]="pick" /> }
         </div>
 
         <aside class="pb3-list" [class.pb3-list--shut]="!listOpen()" aria-label="Producten">
+          <!-- A wide touch screen (the unfolded Duo on its side): the chosen omdoos at the top of the panel, never over the load. -->
+          @if (tablet()) { <ng-container [ngTemplateOutlet]="pick" /> }
           <button class="pb3-list__bar" type="button" (click)="listOpen.set(!listOpen())" [attr.aria-expanded]="listOpen()">
             <span class="pb3-list__grab" aria-hidden="true"></span>
             <span class="pb3-list__name">Producten</span>
@@ -290,6 +278,35 @@ const DRAG_START_PX = 7;
       </div>
     </ng-template>
 
+    <!-- The chosen omdoos: its card, its colours, and what can be done with it. -->
+    <ng-template #pick>
+      @if (selectedCard(); as card) {
+        <div class="pb3-pick" role="toolbar" [attr.aria-label]="'Gekozen omdoos: ' + card.item.title">
+          <div class="pb3-pick__info"><ng-container [ngTemplateOutlet]="facts" [ngTemplateOutletContext]="{ $implicit: card }" /></div>
+          @if (card.colours.length > 1) {
+            <div class="pb3-pick__colours" role="group" aria-label="Kleur van deze omdoos">
+              @for (colour of card.colours; track colour.key) {
+                <button type="button" class="pb3-swatch" [class.pb3-swatch--on]="colour.key === card.item.key" [style.--dot]="colour.colourHex || '#e6ddd3'"
+                        (click)="recolour(colour)" [attr.aria-pressed]="colour.key === card.item.key"
+                        [attr.aria-label]="colour.colourName || 'Zonder kleur'" [title]="colour.colourName || 'Zonder kleur'"></button>
+              }
+            </div>
+          }
+          <div class="pb3-pick__actions">
+            <button type="button" (click)="turn()" title="Draai: een kwartslag op de vloer (R)"><app-icon name="refresh" [size]="17" /><span>Draai</span></button>
+            @if (turnable() && sidesOf(card.item).length > 1) {
+              <button type="button" (click)="tipOver()" title="Kantel: op een andere zijde (T)"><app-icon name="exchange" [size]="17" /><span>Kantel</span></button>
+            }
+            @if (!fixed()) {
+              <button type="button" (click)="copy()" title="Nog één (D)"><app-icon name="copy" [size]="17" /><span>+1</span></button>
+              <button type="button" class="pb3-pick__out" (click)="remove()" title="Weg (Delete)"><app-icon name="trash" [size]="17" /><span>Weg</span></button>
+            }
+            <button type="button" class="pb3-pick__close" (click)="selected.set(null)" aria-label="Klaar" title="Klaar (Esc)"><app-icon name="close" [size]="15" /></button>
+          </div>
+        </div>
+      }
+    </ng-template>
+
     <ng-template #facts let-card>
       <span class="pb3-card">
         @if (card.item.photo) { <img class="pb3-card__img" [appAuthSrc]="card.item.photo" alt="" /> }
@@ -308,7 +325,9 @@ const DRAG_START_PX = 7;
   `,
   styles: [`
     :host{display:contents}
-    .pb3{position:fixed;inset:0;z-index:190;display:flex;flex-direction:column;background:var(--surface-2);color:var(--ink);animation:pb3-in .2s var(--ease-out,ease)}
+    /* Over the whole screen: the screen's own safe areas, not the side rail's lane or a page bar's constant under it. */
+    .pb3{--safe-t:env(safe-area-inset-top,0px);--safe-r:env(safe-area-inset-right,0px);--safe-b:env(safe-area-inset-bottom,0px);--safe-l:env(safe-area-inset-left,0px);
+      position:fixed;inset:0;z-index:190;display:flex;flex-direction:column;background:var(--surface-2);color:var(--ink);animation:pb3-in .2s var(--ease-out,ease)}
     @keyframes pb3-in{from{opacity:0}}
     .pb3-bar{display:flex;align-items:center;gap:10px;padding:calc(8px + var(--safe-t,0px)) calc(12px + var(--safe-r,0px)) 8px calc(12px + var(--safe-l,0px));border-bottom:1px solid var(--line);background:var(--surface)}
     .pb3-title{flex:1;min-width:0}
@@ -448,6 +467,54 @@ const DRAG_START_PX = 7;
       .pb3-pick__colours{flex-wrap:nowrap;padding:0 4px 0 0;border:0}
       .pb3-pick__actions button{flex:none;min-width:50px;height:46px}
       .pb3-note{bottom:80px}
+      /* A narrow column: the name on at most two lines (its size often ends it), the colour and SKU on one; the size in the card. */
+      .pb3-list .plp-row{min-height:54px;gap:10px;padding:8px 10px 8px 12px}
+      .pb3-list .plp-row--nested{padding-left:24px}
+      .pb3-list .plp-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:14px}
+      .pb3-list .plp-meta{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:12px}
+      .pb3-list .plp-price{display:none}
+      .pb3-list .plp-end{min-width:40px}.pb3-list .plp-end strong{font-size:15px}
+    }
+    /* A phone held upright: the title's second line may wrap; a tool that cannot do anything yet waits out of sight. */
+    @media (hover: none) and (max-width: 420px){
+      .pb3-title p{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3}
+      .pb3-tools .pb3-btn:disabled{display:none}
+      /* The chosen box's card leaves more of the load in sight: the count stands in the list under it. */
+      .pb3-pick .pb3-card__here{display:none}
+      .pb3-pick .pb3-card__img{width:40px;height:40px}
+    }
+    /* A wide phone upright (the unfolded Duo): the chosen box's bar in one row, the products sheet a little lower. */
+    @media (hover: none) and (orientation: portrait) and (min-width: 600px) and (max-width: 1023.98px){
+      .pb3-pick{left:50%;right:auto;bottom:18px;transform:translateX(-50%);flex-direction:row;align-items:center;gap:8px;max-width:calc(100% - 24px);padding:6px 6px 6px 8px}
+      .pb3-pick__info{flex:0 1 auto;min-width:200px;max-width:300px;padding:0 4px 0 0}
+      .pb3-pick__colours{flex:none;max-width:200px;padding:0 6px;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+      .pb3-pick__actions{justify-content:flex-start}
+      .pb3-pick__actions button{flex:none;min-width:58px;height:52px}
+      .pb3-list__body{max-height:min(34vh,340px)}
+      .pb3-note{bottom:110px}
+    }
+    /*
+     * A wide touch screen on its side (the unfolded Duo, 867 px; Emre, 2026-11-25: "kan beter en mooier op iPhone
+     * Duo"): not the phone's sheet under a low strip of 3D, but a tablet canvas. The load on the left, the panel on
+     * the right with the chosen box at its top (its buttons never over the load) and the products under it; on a
+     * Duo the two meet on the hinge, 475.5 px from the page's left edge.
+     */
+    @media (hover: none) and (orientation: landscape) and (min-width: 760px) and (max-width: 1023.98px) and (min-height: 560.02px){
+      .pb3-main{grid-template-rows:none;grid-template-columns:minmax(0,1fr) clamp(320px,42%,420px)}
+      .pb3--duo .pb3-main{grid-template-columns:475.5px minmax(0,1fr)}
+      .pb3-list{margin-top:0;border-radius:0;border-top:0;border-left:1px solid var(--line);box-shadow:none}
+      .pb3-list__bar{pointer-events:none;cursor:default;min-height:0;flex-direction:column;align-items:flex-start;gap:2px;padding:14px calc(16px + var(--safe-r,0px)) 6px 16px}
+      .pb3-list__grab,.pb3-list__chev{display:none}
+      .pb3-list__hint{white-space:normal}
+      .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px var(--safe-r,0px) calc(12px + var(--safe-b,0px)) 0}
+      .pb3-list .pb3-pick{position:static;transform:none;flex:none;flex-direction:column;align-items:stretch;gap:8px;max-width:none;
+        margin:12px calc(12px + var(--safe-r,0px)) 2px 12px;padding:12px 10px 8px;border-radius:18px;background:var(--surface);box-shadow:0 1px 2px rgb(40 28 18 / 6%)}
+      .pb3-list .pb3-pick__info{min-width:0;max-width:none;padding:0 2px}
+      .pb3-list .pb3-pick__colours{max-width:none;padding:2px 0 0;border:0;gap:4px}
+      .pb3-list .pb3-pick__actions{justify-content:space-between}
+      .pb3-list .pb3-pick__actions button{flex:1;height:54px;font-size:12px}
+      .pb3-list .pb3-pick .pb3-pick__close{flex:none;min-width:44px}
+      .pb3-note{top:auto;bottom:24px}
     }
   `],
 })
@@ -505,6 +572,13 @@ export class PalletBuilder {
   readonly touch = signal(typeof matchMedia === 'function' && matchMedia('(hover: none)').matches);
   /** The products sheet on a phone: open, or shut to see more of the carrier. */
   readonly listOpen = signal(true);
+  /** An iPhone Duo (web app or the iOS app): on its side the view splits on the hinge. */
+  readonly duo = typeof document !== 'undefined'
+    && (document.documentElement.hasAttribute('data-duo') || document.documentElement.dataset['hostDevice'] === 'duo');
+  /** A wide touch screen on its side: the tablet canvas, with the chosen box in the panel (the styles' query, kept live through a fold). */
+  private readonly tabletQuery = typeof matchMedia === 'function' ? matchMedia(TABLET_QUERY) : null;
+  readonly tablet = signal(this.tabletQuery?.matches ?? false);
+  private readonly onTablet = (event: MediaQueryListEvent): void => this.tablet.set(event.matches);
 
   readonly itemMap = computed(() => new Map(this.items().map((item) => [item.key, item])));
   readonly deck = computed(() => deckOf(this.spec()));
@@ -525,6 +599,18 @@ export class PalletBuilder {
       count: this.boxes().length, topCm, weightKg: Math.round(weightKg),
       tooHigh: topCm > spec.maxHeightCm + 0.5, tooHeavy: weightKg > spec.maxWeightKg + 1e-6,
     };
+  });
+  /** The given omdozen still stand where they were laid: "Zoals berekend" has nothing to put back. */
+  readonly pristine = computed(() => {
+    const initial = this.initialBoxes();
+    const boxes = this.boxes();
+    if (!initial || initial.length !== boxes.length) return false;
+    const byId = new Map(boxes.map((box) => [box.id, box]));
+    return initial.every((box) => {
+      const now = byId.get(box.id);
+      return !!now && now.key === box.key && now.up === box.up && now.turned === box.turned
+        && Math.abs(now.x - box.x) < 0.01 && Math.abs(now.y - box.y) < 0.01 && Math.abs(now.z - box.z) < 0.01;
+    });
   });
   readonly selectedBox = computed(() => this.boxes().find((box) => box.id === this.selected()) ?? null);
   readonly selectedItem = computed(() => {
@@ -666,6 +752,7 @@ export class PalletBuilder {
       untracked(() => { if (this.loaded) this.restart(); });
     });
 
+    this.tabletQuery?.addEventListener('change', this.onTablet);
     afterNextRender(() => {
       /* As a sheet does: the app's own tab bar goes while the view is open, and the focus comes back after. */
       this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -675,6 +762,7 @@ export class PalletBuilder {
     });
     this.destroyRef.onDestroy(() => {
       if (this.overlaid) this.hostBridge.overlay(false);
+      this.tabletQuery?.removeEventListener('change', this.onTablet);
       const opener = this.opener;
       queueMicrotask(() => { if (opener?.isConnected) opener.focus({ preventScroll: true }); });
       window.removeEventListener('pointermove', this.move);
@@ -744,6 +832,8 @@ export class PalletBuilder {
     this.hoverId.set(null);
     this.history = [];
     this.canUndo.set(false);
+    clearTimeout(this.noteTimer);
+    this.note.set('');
     const boxes = settle([...(this.initialBoxes() ?? [])], this.itemMap());
     this.nextId = boxes.reduce((max, box) => Math.max(max, box.id), 0) + 1;
     this.boxes.set(boxes);
@@ -905,10 +995,11 @@ export class PalletBuilder {
       this.hostBridge.haptic('success');
       return;
     }
-    const filled = computedFill(this.itemMap(), this.parts(), this.deck(), this.nextId);
+    /* As full as the carrier goes from everything on the cards: on its side only when omdozen may tip. */
+    const filled = packedFill(this.itemMap(), this.parts(), this.deck(), this.spec().maxWeightKg, this.turnable() ? ALL_SIDES : UPRIGHT, this.nextId);
     if (!filled.length) { this.say('Hier valt niets automatisch te vullen'); return; }
     this.nextId += filled.length;
-    /* The count reckons a short layer as a full one; in 3D what stands above its gap drops onto the layer below. */
+    this.scene?.animateNext(null);
     this.commit(settle(filled, this.itemMap()));
     this.selected.set(null);
     this.hostBridge.haptic('success');
@@ -962,21 +1053,55 @@ export class PalletBuilder {
   }
 
   /**
-   * Turned or tipped: the box is lifted, what stood on it drops, and it goes
-   * back with its middle where it was, on top of what is under it then.
+   * Turned or tipped where it stands (Emre, 2026-11-25: "kantelen niet zo
+   * goed"): it keeps its place and its middle, and what stands on it goes up
+   * or down with its top, as a stack does when a box under it is laid on its
+   * side. Where the new shape runs into a neighbour it goes to the nearest
+   * free place instead (what stood on it drops into the gap), and only when
+   * there is none under the height on top of the load. It always turns: what
+   * sticks out shows orange or red, and the card says how far (2026-11-15).
    */
   private reshape(box: BuilderBox, up: CartonUp, turned: boolean): void {
-    const item = this.itemMap().get(box.key);
+    const items = this.itemMap();
+    const item = items.get(box.key);
     if (!item) return;
+    const deck = this.deck();
     const before = extentOf(item, box.up, box.turned);
     const after = extentOf(item, up, turned);
-    const others = settle(this.boxes().filter((other) => other.id !== box.id), this.itemMap());
-    const land = landing(solidsOf(others, this.itemMap()), after, box.x + before.sx / 2, box.z + before.sz / 2, this.deck(), null);
-    /* It always turns: what sticks out shows orange or red, and the card says how far (Emre, 2026-11-15). */
-    this.commit(settle([...others, { ...box, x: land.x, y: land.y, z: land.z, up, turned }], this.itemMap()));
-    const lifted = land.y > box.y + 0.5 ? 'Past niet tussen de andere: hij staat er nu op' : null;
-    const text = [lifted, spillText(land.spill)].filter((part): part is string => !!part).join(' · ');
-    if (text) this.say(text);
+    const centreX = box.x + before.sx / 2; const centreZ = box.z + before.sz / 2;
+    const all = solidsOf(this.boxes(), items);
+    const riders = ridersOf(all, box.id);
+    const rest = all.filter((solid) => solid.id !== box.id && !riders.has(solid.id));
+    const turnedBox = { ...box, up, turned };
+
+    /* In place: the same floor, the same middle, kept on the carrier where it fits on it. */
+    const x = after.sx > deck.lengthCm ? (deck.lengthCm - after.sx) / 2 : Math.min(Math.max(0, centreX - after.sx / 2), deck.lengthCm - after.sx);
+    const z = after.sz > deck.widthCm ? (deck.widthCm - after.sz) / 2 : Math.min(Math.max(0, centreZ - after.sz / 2), deck.widthCm - after.sz);
+    const here = { id: box.id, x: round(x), y: box.y, z: round(z), ...after };
+    if (!rest.some((solid) => collides(solid, here))) {
+      const rise = after.sy - before.sy;
+      const moved = new Set([box.id, ...riders]);
+      const next = this.boxes().map((other) => other.id === box.id ? { ...turnedBox, x: here.x, z: here.z }
+        : riders.has(other.id) && rise > 0 ? { ...other, y: round(other.y + rise) } : other);
+      this.scene?.animateNext(moved);
+      this.commit(settle(next, items));
+      const spill = spillOf(here, deck);
+      const text = [riders.size && rise > 0.05 ? `Wat erop staat gaat ${cm(Math.ceil(rise * 2) / 2)} cm omhoog` : null, spillText(spill)]
+        .filter((part): part is string => !!part).join(' · ');
+      if (text) this.say(text); else this.hostBridge.haptic('selection');
+      return;
+    }
+
+    /* No room there: lifted out, what stood on it drops, and it goes to the nearest place it fits, else on top. */
+    const others = settle(this.boxes().filter((other) => other.id !== box.id), items);
+    const solids = solidsOf(others, items);
+    const spot = nearestSpot(solids, after, centreX, centreZ, box.y, deck);
+    const land = spot ?? landing(solids, after, centreX, centreZ, deck, null);
+    this.scene?.animateNext(new Set([box.id]));
+    this.commit(settle([...others, { ...turnedBox, x: land.x, y: land.y, z: land.z }], items));
+    const where = spot ? 'Geen plaats waar hij stond: hij staat nu ernaast' : 'Past nergens tussen: hij staat er nu bovenop';
+    const text = [where, spillText(spillOf({ x: land.x, y: land.y, z: land.z, ...after }, deck))].filter((part): part is string => !!part).join(' · ');
+    this.say(text);
   }
 
   private say(text: string): void {

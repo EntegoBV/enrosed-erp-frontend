@@ -813,13 +813,15 @@ export class PalletCalculatorPage {
   });
 
   /**
-   * What Automatisch lays in 3D: the plan's first pallet or kar, bottom to
-   * top; without quantities one carrier shared out as Verdeel does it.
+   * What Automatisch has to lay in 3D: every omdoos on the cards, of which it
+   * fills one pallet or kar as full as it goes (Emre, 2026-11-25: "eerst de
+   * eerste proberen helemaal te vullen"); without quantities one carrier
+   * shared out as Verdeel does it.
    */
   readonly builderParts = computed<BuilderPart[]>(() => {
-    const first = this.plan()[0];
-    if (first) return first.parts.map((part) => ({ key: part.key, cartons: part.cartons }));
     const lines = this.lines().filter((line) => line.fit.cartonsPerPallet > 0);
+    const counted = lines.filter((line) => line.cartons > 0);
+    if (counted.length) return counted.map((line) => ({ key: line.row.productId, cartons: line.cartons }));
     if (!lines.length) return [];
     const shared = shareOnePallet(lines.map((line) => line.plan), this.pallet());
     return [...lines].sort((left, right) => right.plan.cartonHeightCm - left.plan.cartonHeightCm)

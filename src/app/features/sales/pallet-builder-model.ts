@@ -1,10 +1,12 @@
-import { cartonStanding, layerSlots, type CartonUp, type PalletSpec } from './pallet-calculator-model';
+import { cartonStanding, type CartonUp, type PalletSpec } from './pallet-calculator-model';
+import { PACK_UNITS, packPallets, packUnits, type PackKind } from './pallet-pack';
 
 /**
  * The arithmetic of 3D laden (pallet-builder.ts), free of three.js: where an
- * omdoos lands, how a stack settles, the next free place and the computed
- * fill. Every size is in cm. The floor is the pallet's deck or the kar's base
- * plate: x runs along its length, z along its width, y up from the floor.
+ * omdoos lands, how a stack settles, the next free place, what stands on a
+ * box, and the fill as full as it goes (pallet-pack.ts). Every size is in cm.
+ * The floor is the pallet's deck or the kar's base plate: x runs along its
+ * length, z along its width, y up from the floor.
  */
 
 /**
@@ -188,6 +190,61 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Two boxes take some of the same space; touching faces do not. */
+export function collides(a: Pick<Solid, 'x' | 'y' | 'z' | 'sx' | 'sy' | 'sz'>, b: Pick<Solid, 'x' | 'y' | 'z' | 'sx' | 'sy' | 'sz'>): boolean {
+  return overlaps(a.x, a.sx, b.x, b.sx) && overlaps(a.y, a.sy, b.y, b.sy) && overlaps(a.z, a.sz, b.z, b.sz);
+}
+
+/** The boxes standing on this one, and on those, up to the top: what goes up or down with it. */
+export function ridersOf(solids: readonly Solid[], id: number): Set<number> {
+  const riders = new Set<number>();
+  const queue = [id];
+  while (queue.length) {
+    const baseId = queue.pop();
+    const base = solids.find((solid) => solid.id === baseId);
+    if (!base) continue;
+    const top = base.y + base.sy;
+    for (const solid of solids) {
+      if (solid.id === id || riders.has(solid.id)) continue;
+      if (Math.abs(solid.y - top) < 0.05 && overlaps(solid.x, solid.sx, base.x, base.sx) && overlaps(solid.z, solid.sz, base.z, base.sz)) {
+        riders.add(solid.id);
+        queue.push(solid.id);
+      }
+    }
+  }
+  return riders;
+}
+
+/**
+ * The free place for a box of this size nearest to where it stood: at its
+ * own level first, then the nearest one, against the floor's edges or the
+ * boxes around, on what is under it, under the height. Null when none.
+ */
+export function nearestSpot(solids: readonly Solid[], extent: Extent, centreX: number, centreZ: number, level: number, deck: Deck):
+  { x: number; y: number; z: number } | null {
+  if (extent.sx > deck.lengthCm + EPSILON || extent.sz > deck.widthCm + EPSILON) return null;
+  const xs = new Set([0, round(deck.lengthCm - extent.sx), round(clamp(centreX - extent.sx / 2, 0, deck.lengthCm - extent.sx))]);
+  const zs = new Set([0, round(deck.widthCm - extent.sz), round(clamp(centreZ - extent.sz / 2, 0, deck.widthCm - extent.sz))]);
+  for (const solid of solids) {
+    xs.add(round(solid.x + solid.sx)); xs.add(round(solid.x - extent.sx));
+    zs.add(round(solid.z + solid.sz)); zs.add(round(solid.z - extent.sz));
+  }
+  let best: { x: number; y: number; z: number; score: number } | null = null;
+  for (const x of xs) {
+    if (x < -EPSILON || x + extent.sx > deck.lengthCm + EPSILON) continue;
+    for (const z of zs) {
+      if (z < -EPSILON || z + extent.sz > deck.widthCm + EPSILON) continue;
+      const y = restingHeight(solids, x, z, extent.sx, extent.sz);
+      if (y + extent.sy > deck.usableCm + EPSILON) continue;
+      const placed = { x, y, z, ...extent };
+      if (solids.some((solid) => collides(solid, placed))) continue;
+      const score = Math.abs(y - level) * 1000 + Math.hypot(x + extent.sx / 2 - centreX, z + extent.sz / 2 - centreZ);
+      if (!best || score < best.score - EPSILON) best = { x: round(x), y: round(y), z: round(z), score };
+    }
+  }
+  return best ? { x: best.x, y: best.y, z: best.z } : null;
+}
+
 /**
  * The next place for one more omdoos: the lowest spot, then the back, then
  * the left, against the floor's edges or the boxes already there, on the
@@ -222,29 +279,42 @@ export function nextSpot(
 }
 
 /**
- * The carrier as Palletberekening counts it: each product in whole layers of
- * its computed pattern (layerSlots), on the side the count chose, the parts
- * from the bottom up as the plan stacks them. A last layer that is short
- * takes the first places of the pattern.
+ * One carrier as full as it goes (pallet-pack.ts) from these omdozen: what
+ * Automatisch lays since 2026-11-25 ("eerst de eerste proberen helemaal te
+ * vullen"). The colours of one omdoos share its layers, each colour's boxes
+ * kept together; an omdoos lies on its side only on the sides given, and
+ * where that fills clearly more. Whatever does not fit stays on the panel.
  */
-export function computedFill(items: ReadonlyMap<number, BuilderItem>, parts: readonly BuilderPart[], deck: Deck, firstId: number): BuilderBox[] {
-  const boxes: BuilderBox[] = [];
-  let id = firstId;
-  let height = 0;
+export function packedFill(items: ReadonlyMap<number, BuilderItem>, parts: readonly BuilderPart[], deck: Deck, maxWeightKg: number,
+  sides: readonly CartonUp[], firstId: number): BuilderBox[] {
+  const bySize = new Map<string, PackKind>();
+  const members = new Map<number, { key: number; left: number }[]>();
   for (const part of parts) {
     const item = items.get(part.key);
-    if (!item || !sized(item) || part.cartons <= 0) continue;
-    const standing = cartonStanding(item, item.up);
-    const slots = layerSlots({ lengthCm: standing.lengthCm, widthCm: standing.widthCm }, deck);
-    if (!slots.length) continue;
-    for (let left = part.cartons; left > 0; left -= slots.length) {
-      if (height + standing.heightCm > deck.usableCm + EPSILON) return boxes;
-      for (const slot of slots.slice(0, Math.min(left, slots.length))) {
-        const turned = Math.abs(slot.lengthCm - standing.lengthCm) > EPSILON;
-        boxes.push({ id: id++, key: item.key, x: round(slot.x), y: round(height), z: round(slot.z), up: item.up, turned });
-      }
-      height += standing.heightCm;
+    const cartons = Math.floor(part.cartons);
+    if (!item || !sized(item) || !(cartons > 0)) continue;
+    const length = packUnits(item.lengthCm); const width = packUnits(item.widthCm); const height = packUnits(item.heightCm);
+    const weight = packUnits(item.weightKg);
+    const signature = `${length}|${width}|${height}|${weight}`;
+    let kind = bySize.get(signature);
+    if (!kind) {
+      kind = { key: bySize.size + 1, length, width, height, weight, count: 0, sides };
+      bySize.set(signature, kind);
+      members.set(kind.key, []);
     }
+    kind.count += cartons;
+    members.get(kind.key)?.push({ key: item.key, left: cartons });
+  }
+  const pack = packPallets([...bySize.values()], {
+    length: packUnits(deck.lengthCm), width: packUnits(deck.widthCm), height: packUnits(deck.usableCm), maxWeight: Math.max(0, packUnits(maxWeightKg)),
+  }, 1);
+  const boxes: BuilderBox[] = [];
+  let id = firstId;
+  for (const box of pack.pallets[0]?.boxes ?? []) {
+    const member = members.get(box.key)?.find((candidate) => candidate.left > 0);
+    if (!member) continue;
+    member.left -= 1;
+    boxes.push({ id: id++, key: member.key, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS, up: box.up, turned: box.turned });
   }
   return boxes;
 }
