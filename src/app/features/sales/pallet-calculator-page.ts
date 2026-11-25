@@ -32,7 +32,7 @@ import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  containerCapacity, containerFill, karSpec, palletFit, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
+  containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -761,20 +761,9 @@ export class PalletCalculatorPage {
     key: line.plan.key, cartons: line.cartons, lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0,
     heightCm: line.product.carton.heightCm ?? 0, weightKg: line.weightKg,
   })));
-  /**
-   * The lines as the count weighs whole layers: with tipping allowed, a quote's fit (an omdoos lies down only where it
-   * must, PalletCalculator.fit), so the plan is exactly what a new quote counts; without, upright, as the cards show.
-   */
-  private readonly countLines = computed<PlanLine[]>(() => {
-    const lines = this.lines();
-    if (!this.turnable()) return lines.map((line) => line.plan);
-    const pallet = this.pallet();
-    return lines.map((line) => {
-      const fit = palletFit(line.product.carton, pallet);
-      return { ...line.plan, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : line.product.carton.heightCm ?? 0 };
-    });
-  });
-  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.countLines(), this.packs(), this.pallet(), this.sides())));
+  /* The cards' own fits (Emre 2026-11-15/20: the switch "Omdozen mogen kantelen" stays this page's own, every card on the side
+     that fits the most): the plan, Verdeel, the room and the glyphs all weigh the same layers as the cards show. */
+  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.lines().map((line) => line.plan), this.packs(), this.pallet(), this.sides())));
   readonly canShare = computed(() => this.lines().length > 1 && this.lines().some((line) => line.fit.cartonsPerPallet > 0));
   readonly full = computed(() => this.rows().length >= MAX_ROWS);
   readonly unplaced = computed(() => this.lines().filter((line) => line.cartons > 0 && line.fit.cartonsPerPallet <= 0));
@@ -840,7 +829,7 @@ export class PalletCalculatorPage {
     const count = this.plan().length;
     if (count === 0 || count > 30) return [];
     const pallet = this.pallet();
-    const plan = this.countLines();
+    const plan = this.lines().map((line) => line.plan);
     const packs = new Map(this.packs().map((pack) => [pack.key, pack]));
     const sides = this.sides();
     const fuller = count <= 10 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {

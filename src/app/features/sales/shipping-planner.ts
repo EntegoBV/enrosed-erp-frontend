@@ -22,7 +22,7 @@ import { PlannerFreight } from './planner-freight';
 import { PlannerLoad } from './planner-load';
 import { PlannerPallet, omdozen } from './planner-pallet';
 import {
-  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, packedRoom, palletCount,
+  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, palletCount,
   placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
 } from './shipping-planner-model';
 
@@ -67,12 +67,15 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * then the pallets one by one, the products and the freight.
  *
  * Automatisch is the backend's count and layout, which the freight follows:
- * under palletRule MIXED (new and concept documents) the products stack
- * together the way Palletberekening stacks them; under STRICT (documents
- * past concept, which keep their count) every product stands on pallets of
- * its own, and when mixing saves a pallet Palletberekening's mix is one tap
- * away. An older server sends no layout: its palletsStrict is laid out
- * here. Zelf indelen starts from the automatic pallets. The planner only
+ * under palletRule PACKED (documents made since 2026-11-25) the pallets are
+ * loaded one after the other, each as full as it goes, an omdoos on its side
+ * where that fills clearly more; under MIXED (documents from before) the
+ * products stack together in whole layers the way Palletberekening stacks
+ * them; under STRICT (documents sent before mixing, which keep their count)
+ * every product stands on pallets of its own, and when mixing saves a pallet
+ * Palletberekening's mix is one tap away. An older server sends no layout:
+ * its palletsStrict is laid out here. Zelf indelen starts from the automatic
+ * pallets, a copied pallet as high as the server counted it. The planner only
  * emits patches and pallet actions: the sales editor keeps its serial save
  * queue, and the backend stays the one that calculates fits, m³ and freight.
  *
@@ -435,10 +438,14 @@ export class ShippingPlanner {
     }
     return counts;
   });
-  /** "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same pallets. */
+  /**
+   * "+22 past": what still goes on without an extra pallet, on the product's own last pallet or, mixed, on the same
+   * pallets. None under PACKED: loaded as full as it goes, the count does not always rise with every omdoos (89 can take
+   * 2 pallets where 90 take 1), so "+N" would promise room for fewer that the count may not keep.
+   */
   readonly roomOf = computed(() => {
     const rule = this.rule();
-    if (rule === 'PACKED') return packedRoom(this.lines(), this.productMap(), this.spec(), this.autoCount());
+    if (rule === 'PACKED') return new Map<number, number>();
     return rule === 'MIXED' ? mixedRoom(this.lines(), this.spec(), this.autoCount())
       : new Map(this.lines().map((line) => [line.productId, line.cartonHeightCm === null ? 0 : line.room]));
   });

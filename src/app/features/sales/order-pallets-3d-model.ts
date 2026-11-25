@@ -2,6 +2,7 @@ import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { settle, type BuilderBox, type BuilderItem } from './pallet-builder-model';
 import { cartonStanding, layerSlots, palletFit, productUnits, type CartonUp } from './pallet-calculator-model';
+import { handLoads, sameItems } from './pallet-hand-load';
 import { ALL_SIDES, PACK_UNITS, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, type PlannerSpec } from './shipping-planner-model';
@@ -19,9 +20,10 @@ import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, 
  * clearly more, the colours of one product in the same layers. That never
  * takes more pallets than the order counts; if it would, for a document
  * counted product by product (STRICT) and for a hand-built layout, every
- * pallet keeps what it carries and only that is laid as full as it goes. The
- * count and the freight stay the server's. Nothing floats, nothing hangs
- * over an edge; what does not fit under the height stands on top, in the
+ * pallet keeps what it carries and stands as the server would load the list
+ * (pallet-hand-load.ts), else in whole layers per product, as the planner
+ * estimates it. The count and the freight stay the server's. Nothing floats,
+ * nothing hangs over an edge; what goes past the height shows in the
  * builder's orange and red, as the planner says "te hoog".
  */
 
@@ -103,17 +105,6 @@ export interface OrderLoad3d {
 }
 
 export const EMPTY_LOAD: OrderLoad3d = { pallets: [], builds: [], source: 'listed', counted: null, listed: [], matchesList: true };
-
-/** The same omdozen of each product on two pallets. */
-function sameItems(left: OrderPallet3d['items'], right: OrderPallet3d['items']): boolean {
-  const count = (items: OrderPallet3d['items']) => {
-    const counts = new Map<number, number>();
-    for (const item of items) counts.set(item.productId, (counts.get(item.productId) ?? 0) + item.cartons);
-    return counts;
-  };
-  const a = count(left); const b = count(right);
-  return a.size === b.size && [...a].every(([productId, cartons]) => b.get(productId) === cartons);
-}
 
 /**
  * The page for a pallet of the planner's list: itself where 3D keeps the list's pallets; loaded
@@ -249,10 +240,10 @@ function buildOf(packed: PackedPallet | undefined, members: Map<number, { produc
 }
 
 /**
- * Omdozen that did not fit under the height (a hand-built pallet carrying
- * more than it takes): on top of the load in whole layers of their own
- * pattern, on the side the count stands them, so the view shows them past
- * the height.
+ * Omdozen in whole layers of their own pattern, on the side the count stands
+ * them, on top of what is already laid (from the floor when nothing is): a
+ * pallet the packer cannot show on one pallet stands as the planner estimates
+ * it, past the height where it says "te hoog".
  */
 function stackAbove(rest: readonly { productId: number; cartons: number }[], boxes: BuilderBox[], stocks: ReadonlyMap<number, Stock>,
   spec: PlannerSpec, counts: Map<number, number>): void {
@@ -331,6 +322,8 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
      MIXED (the server stacks whole layers; 3D shows how full they go). A document counted product by product (STRICT, sent
      before mixing) shows the pallets it went out on. */
   const rule = view.priced.totals.palletRule;
+  /* PACKED loaded otherwise here than the server listed: the catalogue's omdoos sizes changed since the pricing. */
+  let stale = false;
   if (!view.order.pallets.length && (rule === 'MIXED' || rule === 'PACKED')) {
     /* Everything the automatic pallets carry, in the order's line order, a product on two lines once (as the server merges it). */
     const totals = new Map<number, number>();
@@ -353,29 +346,43 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
       if (rule !== 'PACKED' || matchesList) {
         return { pallets, builds, source: 'packed', counted: plan.pallets.length < listed.length ? listed.length : null, listed, matchesList };
       }
+      stale = true;
     }
   }
 
-  /* Every pallet keeps its own omdozen, laid as full as they go on it. */
-  const builds = listed.map((pallet) => {
-    const goods = loadable(pallet.items, stocks);
-    const plan = packPallets(goods.kinds, deck, 1);
-    const { boxes, counts } = buildOf(plan.pallets[0], goods.members);
-    /* What one pallet does not take stands on top; an omdoos too large for any side is left out. */
-    const rest: { productId: number; cartons: number }[] = [];
+  /* Every pallet keeps its own omdozen and stands as the server would load the list (alone, with the pallets after it, or with
+     omdozen a lowered quantity took off), else in whole layers per product from the floor, as the planner estimates it. An
+     omdoos without sizes, or too large for the pallet on any side, is left out and named. */
+  const drawable = new Map<number, boolean>();
+  for (const [productId, stock] of stocks) {
+    drawable.set(productId, stock.measured && packPallets([{ key: 1, length: packUnits(stock.lengthCm), width: packUnits(stock.widthCm),
+      height: packUnits(stock.heightCm), weight: packUnits(stock.weightKg), count: 1, sides: ALL_SIDES }], deck, 1).pallets.length > 0);
+  }
+  const drawn = listed.map((pallet) => pallet.items.filter((item) => item.cartons > 0 && drawable.get(item.productId)));
+  const loads = handLoads(drawn, [...new Set(lines.map((line) => line.productId))], (productId) => {
+    const stock = stocks.get(productId);
+    return stock?.measured ? { lengthCm: stock.lengthCm, widthCm: stock.widthCm, heightCm: stock.heightCm, weightKg: stock.weightKg } : null;
+  }, deck, ALL_SIDES, (index) => !listed[index].ownType);
+  const builds = listed.map((pallet, index) => {
+    const unmeasured: Loadable['unmeasured'] = [];
     const tooLarge: { name: string; cartons: number }[] = [];
-    for (const [kindKey, list] of goods.members) {
-      const kind = goods.kinds.find((candidate) => candidate.key === kindKey);
-      for (const member of list) {
-        if (member.left <= 0) continue;
-        const stock = stocks.get(member.productId);
-        const fits = !!kind && packPallets([{ ...kind, count: 1 }], deck, 1).pallets.length > 0;
-        if (fits) rest.push({ productId: member.productId, cartons: member.left });
-        else tooLarge.push({ name: stock?.name ?? 'Product', cartons: member.left });
-      }
+    for (const item of pallet.items) {
+      const stock = stocks.get(item.productId);
+      if (!stock || !(item.cartons > 0) || drawable.get(item.productId)) continue;
+      (stock.measured ? tooLarge : unmeasured).push({ name: stock.name, cartons: Math.floor(item.cartons) });
     }
-    stackAbove(rest, boxes, stocks, spec, counts);
-    return finished(boxes, counts, stocks, goods.unmeasured, tooLarge, spec);
+    const boxes: BuilderBox[] = [];
+    const counts = new Map<number, number>();
+    const load = loads[index];
+    if (load) {
+      for (const box of load.boxes) {
+        boxes.push({ id: boxes.length + 1, key: box.productId, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS,
+          up: box.up, turned: box.turned });
+        counts.set(box.productId, (counts.get(box.productId) ?? 0) + 1);
+      }
+    } else stackAbove(drawn[index], boxes, stocks, spec, counts);
+    const build = finished(boxes, counts, stocks, unmeasured, tooLarge, spec);
+    return stale ? { ...build, differs: true } : build;
   });
   return { pallets: listed, builds, source: 'listed', counted: null, listed, matchesList: true };
 }

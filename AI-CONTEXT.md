@@ -5360,7 +5360,8 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   count the same): pallet by pallet, the lowest free floor rectangle (fully carried by the deck or a
   flat top) gets a block of one omdoos kind on one side (rows along, rows across, layers up). Up to
   8 candidate blocks are each tried by finishing the pallet the quick way (largest block each time);
-  the fullest end wins, a box on its side counting 5 % less (`TIP_COST`: the 24 domes of pallet 1
+  a try that takes everything still to load wins (89 omdozen went on 2 pallets where 88 and 90 go on
+  1), then the fullest end, a box on its side counting 5 % less (`TIP_COST`: the 24 domes of pallet 1
   stay upright, 81 cm half hearts and 90 × 60 × 73 bears lie down); on a tie the lowest end, so the
   last pallet stands low and wide. A full block is also tried as its `lower` twin, only as high as
   the floor's best pattern of rows needs (`floorPattern`, both turns), so the rest of a layer goes
@@ -5373,7 +5374,7 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   layout is loaded again with the packer, used only when it needs no more pallets than
   `autoPallets`, nothing is left and every product has sizes; fewer reads "Past op 2 pallets · de
   order telt er 3". STRICT documents, hand layouts and a failing plan keep the listed pallets, each
-  packed alone (what one pallet does not take stands on top in whole layers, orange/red). The
+  as `handLoads` lays it, else in whole layers from the floor (past the height in orange/red). The
   count, the planner's rows, Zelf indelen, the PDF's pallet column and the freight stay the
   server's (`mixedPallets`): 3D and the list can differ per pallet; the subtitle says "zo vol
   mogelijk". A 3D button on a planner row from the second one opens on the packed pallet that carries
@@ -5382,13 +5383,36 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   `PalletPacker`, this packer step for step (see the backend's AI-CONTEXT "PACKED"); `PalletRule` gained
   'PACKED'. For a PACKED document `autoPallets` are the packed pallets, so the planner's rows and the 3D
   pages carry the same omdozen; MIXED documents (sent before, or an invoice of a MIXED quote) still list
-  the layered pallets while 3D shows them packed. The planner explains PACKED and computes "+22 past"
-  with `packedRoom` (bestPlan per try, up to 10 pallets and 12 products). `pallet-packed-plan.ts`:
-  `packedPlan` (PlannedPallet from the packer: parts in first-laid order, layers = start heights) and
-  `bestPlan` (packed unless whole layers need fewer, as the server's guard). Palletberekening's plan is
-  `bestPlan` (sides by its switch), its room hints try it up to 10 pallets (beyond: layers, never more
-  room than the fuller plan). With the switch off the packer can need more than layers (VF-2026-0017
-  upright: 4) and the layers stand.
+  the layered pallets while 3D shows them packed. The planner explains PACKED and shows no "+N past"
+  under it: packed, the count is not monotone (a few omdozen more can take a pallet less), so "+N"
+  would promise room for fewer that the count may not keep. `pallet-packed-plan.ts`: `packedPlan`
+  (PlannedPallet from the packer: parts in first-laid order, layers = start heights) and `bestPlan`
+  (packed unless whole layers need fewer, as the server's guard). Palletberekening's plan is `bestPlan`
+  on the cards' own fits (its switch "Omdozen mogen kantelen" stays its own, Emre 2026-11-15/20; a quote
+  may count a pallet more where whole layers decide), its "+ N omdozen" buttons add exactly what was
+  tried, up to 10 pallets packed (beyond: layers). With the switch off the packer can need more than
+  layers (VF-2026-0017 upright: 4) and the layers stand.
+- FROZEN: `pallet-pack.ts` counts PACKED documents on the server (PalletPacker, identical). A change in
+  its behaviour re-counts every sent and paid PACKED document; it needs a new rule value (PACKED_2) and
+  copies of both packers. 3D tuning goes elsewhere (`pallet-hand-load.ts`, the builder), never into the
+  counting steps.
+- Hand pallets (`pallet-hand-load.ts`, `handLoads`): the packer is greedy, so 2.6 % of the server's
+  PACKED pallets do not go on one pallet packed alone. A listed pallet is tried with the pallets after it
+  (as the server loads a list: a Zelf indelen copy comes out as the server's pallet), alone, then with
+  1-40 omdozen of one product back (a lowered quantity takes its omdozen off the last pallets,
+  `trimPallets`, so the pallets before stand as loaded with them; small amounts on every product first,
+  320 packs per pallet at most, a memo of 300 pallets); the extra boxes of a larger load come off the
+  top. On the planner (PACKED, the order's own pallet type) a hand pallet that carries what an
+  `autoPallets` pallet carries stands as high as the server counted it; any other takes `handLoads`'
+  top; on MIXED/STRICT documents, other pallet types, or when no try fits, every product in whole
+  layers (the layer estimate, which may say "te hoog" and block Versturen). Checked on the reviewers'
+  4,600 orders: fresh copies and copies lowered by 1-25 omdozen never read "te hoog" (were 2.5-40 % and
+  4.5-22 %); median 1 ms per layout, 97 ms worst, cold. 3D's listed branch uses the same tries, else
+  whole layers per product from the floor (`stackAbove` from 0): nothing past the height where the
+  planner says it fits. A PACKED document 3D loads otherwise than the server listed reads "Omdoosmaten
+  gewijzigd sinds de berekening" on every page.
+- Glyphs (`glyphBlocks`): whole layers per product where those add up to the pallet's height (MIXED,
+  PACKED's fallback to layers, a layer estimate), else each product's share of the load's volume.
 - Builder: the order's view now has Kantel (`turnable` true). `reshape` acts in place: same base
   and middle, `ridersOf` (what stands on it, transitively) goes up by the height it gains, a
   collision with anything else (also of what rises with it) lifts it out to `nearestSpot` (its level first) and only then on

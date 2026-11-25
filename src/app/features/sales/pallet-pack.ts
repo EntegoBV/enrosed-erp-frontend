@@ -15,10 +15,17 @@ import { cartonStanding, type CartonUp } from './pallet-calculator-model';
  * at one height that meet edge to edge join. Of the blocks that fit, the one
  * that leaves the fullest pallet in the end wins: every candidate is tried
  * by filling the rest of the pallet the quick way (the largest block each
- * time); where they load the same (the last pallet takes all that is left),
- * the one that ends lowest, so a part pallet stands low and wide instead of
- * as a tower. An omdoos lies down only where that fills clearly more
- * (TIP_COST). Nothing hangs over an edge and nothing floats.
+ * time); a try that takes everything still to load beats any that leaves
+ * omdozen for another pallet; where they load the same (the last pallet takes
+ * all that is left), the one that ends lowest, so a part pallet stands low and
+ * wide instead of as a tower. An omdoos lies down only where that fills
+ * clearly more (TIP_COST). Nothing hangs over an edge and nothing floats.
+ *
+ * FROZEN since 2026-11-25: the server's PalletPacker counts PACKED documents
+ * with these exact steps, and documents are priced live, so a change here
+ * re-counts every sent and paid PACKED document. A change in behaviour needs a
+ * new rule value (a PACKED_2 for new documents only) and a copy of this file
+ * for it; 3D tuning must not touch the counting steps.
  *
  * Every size is in hundredths of a cm and every weight in hundredths of a kg,
  * whole numbers only: the same rounding everywhere, and a server port of
@@ -340,14 +347,20 @@ function fillOne(kinds: readonly Kind[], pool: readonly number[], deck: PackDeck
     let chosen = blocks[0];
     const tries = blocks.slice(0, PILOT).flatMap((block) => (block.lower ? [block, block.lower] : [block]));
     if (tries.length > 1) {
-      /* The fullest pallet wins; where several load the same (the last pallet, which takes all that is left), the lowest. */
+      /* A try that takes everything still to load wins: no omdoos goes to a pallet of its own because an upright
+         block was preferred (89 omdozen on 2 pallets where 88 and 90 go on 1). Then the fullest pallet wins; where
+         several load the same (the last pallet, which takes all that is left), the lowest. */
       let best = Number.NEGATIVE_INFINITY;
       let lowestTop = Number.POSITIVE_INFINITY;
+      let bestCleared = false;
       for (const block of tries) {
         const trial = copy(state);
         apply(trial, at, block, kinds, deck);
         const full = finish(trial, kinds, deck);
-        if (full > best || (full === best && trial.top < lowestTop)) { best = full; lowestTop = trial.top; chosen = block; }
+        const cleared = trial.left.every((count) => count <= 0);
+        if ((cleared && !bestCleared) || (cleared === bestCleared && (full > best || (full === best && trial.top < lowestTop)))) {
+          best = full; lowestTop = trial.top; bestCleared = cleared; chosen = block;
+        }
       }
     }
     apply(state, at, chosen, kinds, deck, boxes);
