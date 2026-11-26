@@ -3164,7 +3164,9 @@ and on copies. Without the blocks (older backend) every screen is as before.
   and keeps the stored one; a server from before that day ignores the mark.
   The spill (`palletSpillCm`, 2026-11-26) goes the same way without a mark:
   sent only when it differs from the last saved document, else null (absent
-  keeps, a number sets, 0 included); see "Spill" at the end of this file.
+  keeps, a number sets, 0 included). What travels is the draft's PICK
+  (`order.palletSpillCm`), never the spill the figures were counted with
+  (`totals.palletSpillCm`); see "Spill" near the end of this file.
   `persistOrder` and `saveDeliveryWeek` refuse to write
   while `customerEditable`: no save or autosave takes an order by itself.
 - **Wording.** A web order never shows request wording: `Websitebestelling`,
@@ -4832,6 +4834,9 @@ counterpart: "Kasprognose en bank (2026-10-16)" in the backend AI-CONTEXT.
   or one-off prices is exported only when the preflight answers `prices`; an
   older server would drop them silently (see "Catalogus PDF: prijzen voor een
   klant").
+- Catalogus PDF (2026-11-26): a request with a pallet height, a kar height or a spill of its own is exported only
+  when the preflight answers `load` with the same three values; an older server would print the standard figures
+  (see "Catalogus PDF: Laadhoogte en spill").
 - Verkoop (round 3b): without `priceSource`, `standardUnitPriceEur` and
   `customerUnitPriceEur` from the server no line wears the K; an older
   server ignores the `priceSource` a typed price or a popover choice sends.
@@ -5075,8 +5080,13 @@ settings view ends with its own "Alle instellingen ›" row (settings-page,
 **Deense kar elsewhere (2026-11-15):** the product page's Omdoos & logistiek (desk
 `product-desk.ts`, phone `product-view.ts`, shared `carrierLoads`) shows "Per europallet"
 and "Per Deense kar" next to 20ft/40ft: `palletFit` upright at the standard heights
-(260 / 230 cm), as the catalogue PDF prints them, with the omdozen and the loaded height
-under it, or why nothing fits. The catalogue studio's Compact overzicht preview
+(260 / 230 cm) with the standard spill (`STANDARD_SPILL_CM`, 2 cm since 2026-11-26; the kar
+across its width only), as a standard catalogue PDF prints them, with the omdozen and the
+loaded height under it, or why nothing fits. Where the spill decides the figure (another
+count, or another side up, than on the floor itself) the line ends in "· met 2 cm spill"
+(14 of 84 products on the pallet, 21 on the kar today); the phone's line wraps (`pph-wrap`)
+instead of ending in an ellipsis. A catalogue PDF made for other heights (the studio's
+"Laadhoogte en spill") prints other figures than this card. The catalogue studio's Compact overzicht preview
 (`catalog-export.ts` `compactRows`) groups like the PDF: one card per family and printed
 figures (unit, carton and its size, pallet, kar, 20ft, 40ft, and the price while prices
 are on). Since 2026-11-16 it also looks like the PDF's card design: a bordeaux masthead
@@ -5096,8 +5106,10 @@ Frontend only: it reads `GET /api/products` (active, not demo), the categories, 
 product families (CatalogApi's 20 s cache) and the unit names in parallel; failing
 categories or families fall back quietly (the picker's fallback names, only the
 Recent and Alle chips). The picks, pallet type, height and the recent products stay
-in localStorage (`enrosed.palletCalculator`: `profile`, `heightCm`, `standardCm`,
-`rows`, `recent`; `standardCm` is the standard the height was saved under: a height
+in localStorage (`enrosed.palletCalculator`: `carrier`, `profile`, `heightCm`, `standardCm`,
+`karHeightCm`, `karStandardCm`, `spillCm`, `spillStandardCm` (2026-11-26, the same "saved
+under" rule: see "Palletberekening: Spill, and 3D laden draws what the plan counts"),
+`turnable`, `rows`, `recent`; `standardCm` is the standard the height was saved under: a height
 equal to it was never picked and follows today's standard on the next visit, any
 other height was picked and stays, and a state without `standardCm` dates from 7-10
 November 2026 when the standard was 220, so a device still on 220 shows 260 once and
@@ -5217,9 +5229,11 @@ adds, the answer stays in sight.
   (`.pc-side{display:contents}` and `order`); from 760 px cards left and the
   side (desk pallet panel + result) sticky right. Phone header: the pallet
   button "Pallet instellen" (one shared settings template, here in an iOS sheet
-  with Klaar; changes apply live) and the trash; the caption is the pallet
-  ("Europallet 120 × 80 · max 260 cm"). Desk: subtitle "Pallet, 20ft en 40ft",
-  the search, Wissen; the settings are a panel.
+  with Klaar; changes apply live; since 2026-11-26 a second stepper row "Spill"
+  under "Max. hoogte") and the trash; the caption is the pallet
+  ("Europallet 120 × 80 · max 260 cm", ending "· spill 2 cm" at a picked spill
+  above 0). Desk: subtitle "Pallet, 20ft en 40ft", the search, Wissen; the
+  settings are a panel.
 - **The capsule** (phone): while there is a plan and the result is out of view
   (IntersectionObserver, 96 px off the bottom for the tab bar) the kit's glass
   `ios-float` reads "2 pallets · 20ft 13 %" (the smallest container that takes
@@ -5256,7 +5270,7 @@ are tiles, hand pallets are cards edited in place.
 | `pallet-glyph.ts` | `app-pallet-glyph`, `app-pallet-stepper` | Palletberekening's mini pallet (sm/md/lg, red top edge when too high) and the stepper | 1.9 kB |
 | `planner-pallet.ts` | `app-planner-pallet` | One pallet: a phone row (a hand pallet opens its sheet) or a desk card (the glyph is the drag handle, ↑/↓ move it, ⋯ menu, "Product" chips put a product's loose omdozen on it); renders no overlays | 4.7 kB |
 | `pallet-sheet.ts` | `app-pallet-sheet` | One hand pallet in an iOS sheet: Op deze pallet (steppers), Erbij zetten, Naam, Soort, Gemeten hoogte, Naar voren / Naar achteren, Pallet verwijderen; the desk opens it from "Soort en hoogte…" as a 620 px dialog | 3.4 kB |
-| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, not `issued`: an invoice whose history holds UITGEREIKT or is not loaded yet, `SalesEditor.issuedBefore`; no source quote, no web order, invoice, advance or split) so nothing sent, issued or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; a height above the type's limit (an old europallet at 280) comes down only after "Max. hoogte naar 260 cm?" with Verlagen, for "−", typing, Standaard and the switch to Euro alike, since it cannot go back up; Annuleren keeps everything and `fieldKey` renews the field), "incl. pallet 14,4 cm"; under it the Spill row (2026-11-26, `spillShown`: only when the server sends `totals.palletSpillCm`): stepper 0-5 cm, step 1, "cm per kant", "Standaard" while `spillOverridden`, on the kar the note "op de kar alleen aan de lange zijden"; no new styles | 1.0 kB |
+| `planner-load.ts` | `app-planner-load` | Lading: Op pallets / Losse dozen, pallet type, max height (±10 cm up to `maxCm`: 260 on a europallet, 300 on blok and half; a higher stored height shows as it is with "+" dimmed; "Standaard" while `heightOverridden`: the document stores a height other than 260, and for a stored 220, the standard of 7-10 November, only on a concept nothing has come from (CONCEPT, never sent, not `issued`: an invoice whose history holds UITGEREIKT or is not loaded yet, `SalesEditor.issuedBefore`; no source quote, no web order, invoice, advance or split) so nothing sent, issued or invoiced on 220 moves by one tap; it and then an emptied field send 260, because the server keeps a document's height when none is sent; a pre-2026-11-07 document has no height, counts 260 and gets no Standaard; a height above the type's limit (an old europallet at 280) comes down only after "Max. hoogte naar 260 cm?" with Verlagen, for "−", typing, Standaard and the switch to Euro alike, since it cannot go back up; Annuleren keeps everything and `fieldKey` renews the field), "incl. pallet 14,4 cm"; under it the Spill row (2026-11-26, `spillShown`: only when the server sends `totals.palletSpillCm`): stepper 0-5 cm, step 1, "cm per kant", showing the document's stored pick, "Standaard" while `spillOverridden`, on the kar the note "op de kar alleen aan de lange zijden", and `spillNote` ("Telt hier zonder spill: dat scheelt een pallet.") while the server priced the document without its pick; no new styles | 1.0 kB |
 | `planner-freight.ts` | `app-planner-freight` | Vracht: the five bases, their details, the carrier's "Opbouw" (`SalesApi.carrierQuote` for the shipped pallet count), Later bepalen, the split part's amount | 4.4 kB |
 | `pallet-stack.ts` | – | `palletTypeLabel`, `relabelPallets`, `nextPalletLabel`, `trimPallets`, `estimatePalletHeightCm`, `normalizeManualPalletType`, `PALLET_TYPES`, `PALLET_PRODUCT_COLOURS`, and the counts `automaticPallets`, `shippedPallets`, `automaticLinePallets` | – |
 
@@ -5370,10 +5384,14 @@ lazy chunk through the wrapper's `@defer`) on the order's pallets, one at a time
   Omdoos sizes come from the
   catalogue (the priced line has none): the planner gets `[products]` from the editor. Checked on
   real orders: count, height and weight per pallet equal the planner's.
-- Builder inputs added for it (Palletberekening unchanged): `storeKey` optional (null keeps
-  nothing), `initialBoxes`, `buildKey` (a change restarts from initialBoxes: next pallet, or other
+- Builder inputs added for it: `storeKey` optional (null keeps nothing; since 2026-11-26 it is
+  no longer the carrier but Palletberekening's `builderStoreKey`, and the order's 3D passes
+  none), `initialBoxes` (since 2026-11-26 also what Palletberekening's view starts from when
+  nothing is kept), `buildKey` (a change restarts from initialBoxes: next pallet, or other
   omdozen), `fixed` (omdozen turn and move, none comes or goes; Automatisch reads "Zoals
   berekend" and lays initialBoxes again; no Leeg, +1, Weg or +), `heading`, `pages`/`page`/`paged`,
+  `autoBoxes` and `countedNote` (2026-11-26, Palletberekening only: see "Palletberekening: Spill,
+  and 3D laden draws what the plan counts"),
   `notice` (omdozen without sizes not drawn, sizes changed since pricing, measured height, own
   pallet type). The builder now hides the app's tab bar like a sheet (HostBridge.overlay,
   counted), keeps Tab inside, focuses Sluiten and gives the focus back on close.
@@ -5478,7 +5496,8 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   `PACKED|<profile>|<loaded height>|<run: productId:omdozen,… in line order>|<place in the run>|<its own omdozen>`, e.g.
   `PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8` (`copySources` in pallet-hand-load.ts; a source past 4,000
   characters is not written). `copiedLoader` reads it back (`readCopySource`, strict; anything else is no source):
-  only while the order's profile and loaded height (`plannerSpec`) are the source's, it loads the run again as
+  only while the order's profile and loaded height (`plannerSpec`) are the source's (and, since 2026-11-26, the
+  spill the order counts with is at least the source's: see "Spill", "The copy source"), it loads the run again as
   `PalletCalculator.packedPallets` does (`copyRun`: one kind per omdoos size in line order, the heaviest colour's weight,
   every side, the colours handing out a size's boxes in turn; memo of 24 runs keyed on deck, sides, run and catalogue),
   on today's deck with today's catalogue, so it is always a real load; and it counts only when the pallet at the
@@ -5505,9 +5524,10 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   and middle, `ridersOf` (what stands on it, transitively) goes up by the height it gains, a
   collision with anything else (also of what rises with it) lifts it out to `nearestSpot` (its level first) and only then on
   top. `animateNext` tweens the moved boxes for 280 ms (none under prefers-reduced-motion). "Zoals
-  berekend" is disabled while nothing moved (`pristine`). Palletberekening's Automatisch fills one
-  carrier with `packedFill` from every omdoos on the cards (`builderParts`), tipping only when the
-  switch allows it; `computedFill` is gone.
+  berekend" is disabled while nothing moved (`pristine`). Palletberekening's Automatisch filled one
+  carrier with `packedFill` from every omdoos on the cards (`builderParts`) until 2026-11-26; since
+  then it lays the plan's page (`builderView().auto`, `builderParts` is gone) and `packedFill` remains
+  for the 'full' try of `planPage` and above 200 carriers; `computedFill` is gone.
 - Layout: `.pb3` resets `--safe-*` to env() (the side rail's lane of the page below leaked in as 88 px
   of padding). Tablet canvas `(hover: none) and (orientation: landscape) and (min-width: 760px) and
   (max-width: 1023.98px) and (min-height: 560.02px)` = `TABLET_QUERY` (the `tablet` signal follows it
@@ -5536,7 +5556,7 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 
 | File | Role | Styles (budget size) |
 |---|---|---|
-| `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | ~15.4 kB of 16 |
+| `catalog-export.ts` | The studio: the block under Prijzen tonen, request, guards, errors, preview, tab storage | 16.0 kB of 16 (no room: new styles go in a child component) |
 | `catalog-price-sheet.ts` | `app-catalog-price-sheet`, the Prijzen aanpassen popup: prices, taking products in, "Alle n gevonden"; `mode="customer"` for the customer's Klantprijzen | ~10 kB |
 | `catalog-product-selection-state.ts` | Pure: selection helpers and the catalogue search (`catalogSearchKey`, `catalogSearchWords`, `catalogSearchText`, `catalogSearchMatch`), shared by step 03 and the sheet | – |
 | `catalog-prices.ts` | Pure: `priceBasis`, `pricePrintable`, `basisChanged`, `standardPrice`, `printedPrice`, `changesPrint`, `requestOverrides`, `priceProblem`, `percentPrice`, `oneOffPrice`, `storedOverride`, `recipientSlug`, `todayIso` | – |
@@ -5545,10 +5565,11 @@ decimals (more is refused, never rounded), 0 < price < 1 000 000.
 
 - **Pallet, 20ft, 40ft** in the compact preview, in that order, one line:
   "Pallet: 144 · 20ft: 1.794 Auto · 40ft HC: 4.356" (grouped in the document
-  language, "-" when unknown). Pallet = `palletFit(carton, CATALOGUE_PALLET)`
-  whole omdozen × `piecesPerCarton`, with `CATALOGUE_PALLET` =
-  `palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)`, the frontend copy of
-  `SalesSettings.pallet()` the PDF counts with; 40ft is the carton's
+  language, "-" when unknown). Pallet and kar = `catalogueUnits(product,
+  carriers().pallet | .kar)` (catalog-load.ts): whole omdozen of `palletFit`
+  × `piecesPerCarton` on the heights and the spill picked under "Laadhoogte en
+  spill" (standard 260 / 230 / 2), the frontend copy of what the server's
+  `CataloguePalletFit` counts with; 40ft is the carton's
   `hcCapacity`. If `enrosed.pallet.*` is ever set on the server, preview and
   PDF disagree.
 - **Under Prijzen tonen** (only while on): "Voor klant (optioneel)" (Geen
@@ -6252,9 +6273,10 @@ Emre: "Je mag ook standaard maximaal 2cm spill doen. De spill willen wij ook kun
 cards, do not reopen): 2 cm per kant; overal, maar alleen NIEUWE documenten (an existing document keeps its count until he
 sets a spill on it himself in Pallets indelen); on the Deense kar alleen de lange zijden (posts at the short ends); the
 3D must show what the count says. Main's calls: the standard is a constant on both sides (no Instellingen field), whole
-centimetres 0 to 5, never on the height, staff screens say "Spill". This part is the counting model, the sales planner
-and the order's 3D; Palletberekening's own Spill setting, the builder's interactions and the catalogue studio are the
-parts after it.
+centimetres 0 to 5, never on the height, staff screens say "Spill". This section is the counting model, the sales planner
+and the order's 3D. Palletberekening's own Spill setting, the builder's interactions and 3D laden are in "Palletberekening:
+Spill, and 3D laden draws what the plan counts" right after it; the catalogue studio and the product page in "Catalogus
+PDF: Laadhoogte en spill" after that.
 
 - **The one rule** (`pallet-calculator-model.ts`, the backend's `PalletSpec` / `PalletCalculator` / `PalletPacker.deck`
   must give the same number): `s` = spill in cm per side. The count reads the LOAD floor, the real floor plus `s` on both
@@ -6282,37 +6304,76 @@ parts after it.
 - **null = 0** (`core/api/models.ts`): `SalesOrder.palletSpillCm` is the stored value: null on every document from
   before the round (counts as 0, NEVER as the standard), 2 on documents the server makes since; in a write absent or
   null keeps what is stored, a number (0 included) sets it. `PricedOrder.totals.palletSpillCm` is what the server counted
-  with (0 for null); its PRESENCE means "this server knows spill". `plannerSpec` reads `totals.palletSpillCm ?? 0` only:
-  what the planner and the 3D work out themselves must stand on the floor the server's figures came from (an older
-  server counts without, whatever a draft holds).
+  with (0 for null); its PRESENCE means "this server knows spill".
+- **The PICK and the spill USED are two values; never write one where the other belongs.** The server prices a document
+  WITHOUT its stored spill when with it the automatic count would need a carrier more than without (the packer is a
+  search and the layers are first-fit: on a slightly larger floor either can need one more; proof round, finding F1).
+  Then `order.palletSpillCm` is still the owner's pick (2) and `totals.palletSpillCm` is 0, and every figure of that
+  answer was counted on the floor itself.
+  - **Reads the spill USED** (`totals.palletSpillCm ?? 0`, only through `plannerSpec`): everything computed or drawn.
+    The planner's spec, lines and rows, `handPallets` and `checkLayout`, the room hints and Gemengd indelen, the
+    order's 3D (`orderLoad3d`, `sizesChanged`, the deck's allowance, the view-only other carrier), the basis line's
+    "· spill 2 cm" (`ShippingPlanner.spillUsed` in `specText`), the 3D's subtitle (`palletLabel3d`), a hand pallet's
+    measured-height bounds, and the spill `autoLayout` writes into a copied pallet's SOURCE (the floor that run stood
+    on). An older server sends none and counted without, whatever a draft holds.
+  - **Reads the PICK** (`order.palletSpillCm`, `pickedSpillCm(view)` in shipping-planner-model.ts: 0 for a document
+    that stores none and on a server that does not know spill): the Spill stepper's number, the "Standaard" rule
+    (`spillOverridden`), `setSpill`'s "nothing changed" test, and every write: the transport patch, `shippingSnapshot`,
+    the preview's body, the full save's "changed since the last saved document" test, "Wijzigingen weggooien",
+    `layoutKey`. Nothing copies `totals.palletSpillCm` onto the order: shown as the pick, that 0 would be stored by the
+    next step ("−" from a pick of 2 must send 1), and a save that did not touch the spill would change it.
+  - **The line**: `spillSetAside(view)` (pick above 0, counted with 0, on pallets or karren) gives one muted line under
+    the Spill row, "Telt hier zonder spill: dat scheelt een pallet." (on the kar "een kar"; `ShippingPlanner.spillNote`
+    → `PlannerLoad.spillNote`). It shows only while the figures on screen were counted for the pick on screen:
+    `pricedPick` (a `linkedSignal` over the pick and the planner's `pricing` input) keeps the pick of the last settled
+    figures while new ones are awaited, so stepping an old document from 0 to 1 never flashes the line against the
+    figures of 0, and a quantity typed under a set-aside pick does not make it blink. No other new text.
 - **Saving**: `palletSpillCm` is in `shippingFields` and `shippingSnapshot` (sales-shipping.ts). Mandatory: without it a
   spill change would be a document change, `shippingDirty` would never see it, the transport save would never run and a
   sent document would refuse the save; "Wijzigingen weggooien" restores it through the same list. `layoutKey`
   (sales-editor.ts) includes it, so Zelf indelen never copies pallets priced with another spill. The save sends it only
   when it differs from the last saved document (else null: the server keeps its own), as the height; no query mark.
-  `ShippingOrderPatch.palletSpillCm`.
-- **The Spill row** (`planner-load.ts`, fed by `ShippingPlanner.spillKnown / spillCm / spillOverridden / setSpill`):
-  under "Max. hoogte" and its "incl. pallet" note, the shared `app-pallet-stepper`, 0 to 5, step 1, unit "cm per kant";
-  on a kar the note "op de kar alleen aan de lange zijden". Shown only when the server sends `totals.palletSpillCm`.
-  "Standaard" (and an emptied field) only while the document stores its own spill and it is not 2: a document that stores
-  none shows 0 and never gets the button (one tap would re-count a sent document). Stepping or typing is allowed
-  wherever the height is (`canEdit`); a number equal to the spill on screen changes nothing (a typed 0 does not turn a
-  stored null into 0). The carrier switch keeps the spill: it is the document's, not the carrier's.
-- **Words**: the planner's basis line and the 3D's subtitle name a spill above 0 and nothing at 0: "Europallet 120 × 80
-  · max 260 cm · spill 2 cm" (`ShippingPlanner.specText`, `palletLabel3d`). No other screen got new text.
+  `ShippingOrderPatch.palletSpillCm`. All of these carry the PICK (see above); only `setSpill` ever changes it.
+- **The Spill row** (`planner-load.ts`, fed by `ShippingPlanner.spillKnown / spillCm / spillOverridden / spillNote /
+  setSpill`): under "Max. hoogte" and its "incl. pallet" note, the shared `app-pallet-stepper`, 0 to 5, step 1, unit
+  "cm per kant"; on a kar the note "op de kar alleen aan de lange zijden". Shown only when the server sends
+  `totals.palletSpillCm`. It shows the document's PICK (`spillCm` = `pickedSpillCm`), also where the server counted
+  without it. "Standaard" (and an emptied field) only while the document stores its own spill and it is not 2: a
+  document that stores none shows 0 and never gets the button (one tap would re-count a sent document). Stepping or
+  typing is allowed wherever the height is (`canEdit`); a number equal to the pick on screen changes nothing (a typed 0
+  does not turn a stored null into 0). The carrier switch keeps the spill: it is the document's, not the carrier's.
+- **Words**: the planner's basis line and the 3D's subtitle name the spill the figures were counted with, above 0, and
+  nothing at 0: "Europallet 120 × 80 · max 260 cm · spill 2 cm" (`ShippingPlanner.specText`, `palletLabel3d`); a
+  document priced without its pick therefore reads no spill there, and the line under the Spill row says why.
 - **The order's 3D** (`order-pallets-3d-model.ts`, `order-pallets-3d.ts`): `Deck` (pallet-builder-model.ts) keeps the
   real floor and knows the allowance per axis (`spillXCm`, `spillZCm`; `deckOf(spec)`). `spillOf` measures against the
   real floor and judges only what is past the allowance (`pastCm`): within it no warning and not in "n steken uit",
   up to 5 cm past it orange, more red; the height keeps its own rule; `sideCm` is still the whole overhang. The box
-  card's "Steekt n cm uit" shows only once `pastCm` > 0 (`spillText` in pallet-builder.ts). The view-only other carrier
-  stands at its standard height with the document's own spill (`standardSpec(kind, specSpillCm(ownSpec))`); `buildKey`
-  includes the spill.
+  card says "Steekt n cm uit" as a warning only once `pastCm` > 0 (`spillText` in pallet-builder.ts); within the
+  allowance it says it as a fact, in the card's own colour (`allowedText`, see the next section). The view-only other
+  carrier stands at its standard height with the spill the document counts with (`standardSpec(kind,
+  specSpillCm(ownSpec))`: 0 where the server left the pick out); `buildKey` includes the spill. `stackAbove` lives in
+  pallet-builder-model.ts since the next section's round (`stackListed` in the order's model calls it).
 - **The copy source** (`pallet-hand-load.ts`): a run counted with a spill writes it as a seventh part,
   `PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8|2`, only when it is not 0; six parts read as spill 0, so every source
-  ever written stays valid byte for byte. `CopySource.spillCm`; `copiedLoader` uses a copy only while the order's spill
-  is the copy's (as for profile and height), so the run is always loaded again on the deck it was copied from.
-  `SalesEditor.autoLayout` passes `specSpillCm(plannerSpec(view))`. The backend keeps the text as it is (its charset
-  and the 4,000 cap allow it); an older tab reads seven parts as "no source" and falls back to the other judges.
+  ever written stays valid byte for byte. `CopySource.spillCm` is the spill the run was COUNTED with:
+  `SalesEditor.autoLayout` passes `specSpillCm(plannerSpec(view))`, never the pick (a document priced without its spill
+  writes six parts). The backend keeps the text as it is (its charset and the 4,000 cap allow it); an older tab reads
+  seven parts as "no source" and falls back to the other judges.
+- **A copy at a larger spill keeps counting** (`copiedLoader`, proof round F3): a copy is used while the profile and the
+  height are the copy's and the spill the order counts with is AT LEAST the copy's (the floor only got larger, so the
+  load still stands on it). The run is always loaded again on the deck of ITS OWN spill (`packDeck` of the same carrier
+  with `spillAxes(profile, copy.spillCm)`), never on today's larger one: the packer is a search, and the same omdozen
+  can end higher on a larger deck (a real halve pallet copied at 2 cm read 215 cm on a 200 cm document at 5 cm: four
+  false "te hoog"). Its boxes are then moved by the difference of the two floors' offsets (in pack units), so
+  `packedPlace(box, deckOf(spec))` draws each where it stood on the real floor, hanging over no further than the copy's
+  spill. So a copy made while the server counted without spill stays good when the document later counts with 2, and
+  one made at 2 when he sets 5. BELOW the copy's spill the copy is not used (the load would pass the edge by more than
+  the document allows): the pallet is judged by the other tries and may read "te hoog", as for another profile or
+  height; "Indeling opnieuw maken" copies again. The order of the judges did not change (the server's twin pallet,
+  `handLoader` on today's deck, then the copy, then the holder), so only pallets none of the earlier judges takes
+  read their copy. Mind: if the server ever sets a pick aside on a document that HAS hand pallets copied with that
+  pick, those copies drop out (below their spill) until the pick counts again.
 - **Known, by rule, not by this change**: (1) `palletFit` (the quote's rule: upright, lying down only when it fits no
   pallet upright) can count FEWER with more spill: an omdoos that lay down starts to fit upright and then stands. None of
   today's 42 omdoos sizes does on any carrier (at the standards 0 → 2 cm: 8 sizes take more per europallet, 7 per kar,
@@ -6320,10 +6381,16 @@ parts after it.
   packer is a heuristic: one omdoos with kantelen can lose a box or three on a larger deck (4 of 6,720 steps on today's
   sizes, none from 0 to 2 cm on a europallet at 260 or a kar at 230; e.g. FH-15 53 × 16,8 × 31,5 on a blokpallet at
   220: 75 → 72 from 0 to 1 cm). The document count still never passes the whole-layers count (the server's guard).
+  (3) A whole plan can need a carrier MORE on a larger floor (same causes; in the proof round 3.9 % of the 1 cm steps
+  of mixed PACKED loads, e.g. 80 × DOM-7X23 + 17 × BOX16 on a europallet at 260: 3 at 0 cm, 4 at 2 cm). No screen shows
+  that: the server prices such a document without its spill (the pick and the spill used, above), and Palletberekening's
+  plan does the same on its own (`countedPlan`, next section).
 - **Release order**: the frontend first, the backend 20-30 minutes later, never the other way: an older frontend
   would judge a document that stores a spill on the bare floor (false "te hoog", "Omdoosmaten gewijzigd"). This
   frontend reads both shapes: no field = 0, the row hidden until the server echoes the spill; an older backend ignores
   the field in a body. Rollback of the backend: an older image counts spill documents without it; fix forward.
+  The pick / spill-used split needs nothing from the order of release either: on a backend that never sets a pick
+  aside the two values are equal, the line never shows and every screen reads as before.
 - **Checked** (throwaway Node drivers outside the repo, the model files bundled per tree): spill 0 = the base commit
   (776f35f) value by value on today's 42 omdoos sizes + 2,000 random ones × 16 carrier heights (fits, layer places,
   planPallets, packPallets box by box, bestPlan, the 3D helpers, the copy source): 0 differences; the 48 real documents
@@ -6332,5 +6399,214 @@ parts after it.
   62 × 42 × 39 → 24 per pallet, kar: 58,5 × 40 × 36 → 15; 3,492 documents with a spill built with the frontend's twins
   of the server's count: 0 pages where the count fits and the 3D does not show it, 0 "Omdoosmaten gewijzigd", 0 copied
   layouts "te hoog". `npx ng build`: the six known warnings, no new one. Not checked here: the frontend against the
-  backend at a spill above 0 (packPallets vs PalletPacker, palletFit vs PalletCalculator.fit on the same decks), and no
-  screen was looked at in a browser.
+  backend at a spill above 0 (packPallets vs PalletPacker, palletFit vs PalletCalculator.fit on the same decks; the
+  proof round did that afterwards on BE-1's and FE-1's heads: 0 differences on 294,456 order cases), and no screen was
+  looked at in a browser.
+- **Checked, the pick, the copies** (the fix round; drivers in scratchpad/fix-fe-check, "before" = the merged head
+  26e0bd5, text = everything the planner's and the order 3D's models return, every box):
+  - nothing old moved: the 48 real documents in three shapes (as sent, totals 0 / no pick, totals 0 / stored 0) and
+    BE-1's 228 real answers (its ten new quotes at spill 0 to 5, the existing documents, their previews at 1, 2, 5):
+    the same text before and after, byte for byte; FE-1's 3,492 synthetic documents with a spill: one hash over
+    220,362 boxes, equal;
+  - pick 2, counted with 0 (644 views: BE-1's real answers at spill 0 with the pick set to 2, the 48 real documents,
+    582 synthetic ones, automatic and Zelf indelen): the spec has no spill axis, the text equals the same view with pick
+    0, null and no pick field (nothing reads the pick), 29,298 boxes all inside the real floor, no "Omdoosmaten
+    gewijzigd", no label names a spill, all 1,258 sources written in that state have six parts, `pickedSpillCm` 2,
+    `spillSetAside` true, the transport snapshot carries 2;
+  - a copy made at 0, 1, 2, 3 read at 0 to 5, untouched and after a lowered quantity (5,178 views, 27 sets of real
+    omdozen × 6 carriers): at the copy's spill or a larger one 0 rows "te hoog" (20 views before), 0 boxes past the
+    allowance or above the height, every copy that counts stands box for box where it stood on the day of the copy
+    (35,773 pallets compared), and only those 20 views changed at all; at a smaller spill the same text as before
+    (1,308 views; 309 of them read "te hoog", as before);
+  - BE-1's six real hand layouts copied at 2: read at 5 all "compleet" (ENR-2026-0053 read "te hoog" on 4 of 15
+    before: 215 cm, now 189,4 cm as copied), read at 2 and at 0 the same text as before;
+  - `pricedPick` walked with Angular's own signals through 19 steps (step, await, answer, type under a set-aside pick,
+    a failed preview): the line never shows against the figures of another pick. Mind its comment: it is read on every
+    pass on purpose; short-circuited behind `spillSetAside` its first look came too late and the line flashed on the
+    very first step of an old document.
+  Not run in a browser: the stepper showing the pick, the line and the basis line are component code, type-checked by
+  the build only.
+
+## Palletberekening: Spill, and 3D laden draws what the plan counts (2026-11-26)
+
+Emre: "Alsook de 3d pallet is vreemd want bij calculatie niet 3d zie ik bijvoorbeeld op sommige inkoop orders dat dat
+past en als ik op 3d druk dan heeft die geen ruimte. Je mag ook standaard maximaal 2cm spill doen. De spill willen wij
+ook kunnen aanpassen." What was wrong (all in Palletberekening › 3D laden, never on a sales order): the plan is
+`bestPlan` (the packer's, unless whole layers need fewer carriers) while Automatisch always filled ONE carrier with the
+packer, so wherever the layers stood it left omdozen on the panel (Verdeel 1 pallet for two real products: 9 % of the
+pairs on a europallet, 44 % on a kar with kantelen uit); a tap looked for a corner and stopped below the card's own
+count wherever a layer needs both turns (the 90 × 60 × 73 bear: card 4, taps 2); the view showed one carrier while the
+cards counted five; and it opened on the build last kept per carrier, whatever height it was made at.
+
+- **Spill in the settings** (`pallet-calculator-page.ts`): signal `spill` (whole cm, 0 to `SPILL_LIMIT_CM`, starts at
+  `STANDARD_SPILL_CM`), one figure for the pallet and the kar. A row "Spill" under "Max. hoogte" in the shared settings
+  template (desk panel and the phone's sheet): the page's own `.pc-step` (− input +, the buttons off at 0 and 5, a typed
+  number clamped, nonsense shows what stays), hint "cm per kant", on the kar "cm per lange zijde". It is in the page's
+  one spec: `pallet = karSpec(karHeight, spill)` / `palletSpec(profile, palletHeight, spill)`, so the cards, the browser's
+  tiles and Verdeel count with it, and so do the plan, "Past nog bij" and 3D laden unless the spill costs a carrier
+  (the next bullet). `palletLabel` names the picked spill above 0: "Europallet 120 × 80 · max 260 cm · spill 2 cm" (the
+  phone's caption); the 3D's subtitle is `builderLabel`, the same line with the spill its pages stand on. No
+  "Standaard" button (the heights have none here either).
+- **Never more carriers with the spill than without** (`counted`, the ONE place the page asks for its plan;
+  `countedPlan` in pallet-packed-plan.ts). A spill gives every layer more room, yet a plan can need a carrier more
+  with it: the packer is a search and another first block can win on a slightly larger deck, the layers are first-fit
+  and an omdoos that stands on another side changes their order (80 × DOM-7X23 + 17 × BOX16 on a europallet at 260: 3
+  carriers at 0 and 1 cm, 4 at 2 and 3 cm). `countedPlan(own, bare, sides)` takes `bestPlan` on the page's spec and,
+  when that has two or more carriers and the spec a spill, `bestPlan` of the same cards on the same carrier without
+  spill (the page hands over the cards' fits on the bare floor, by the same `cardFit` / `planLine` / `packOf` the
+  cards use; not beyond `MAX_PLANNED_PALLETS`). Where the bare plan carries the very same omdozen on FEWER carriers it
+  stands, and the answer says so: `{ plan, pallet, layers, packs, saved }` is the plan WITH the basis it was counted
+  on, `saved` the carriers it spares (0: the picked spill counts). A bare plan that leaves omdozen behind (an omdoos
+  that fits only with the spill) never stands. The server does the same to a document (it prices it without its
+  spill), so page and quote keep agreeing.
+  - **Whatever shows the plan reads the basis from `counted()`**, never `pallet()`: `plan`, `palletGroups` (a layer's
+    height is the plan's own fit's), `room` ("Past nog bij": on the floor the plan stands on, so an offer never
+    promises room only the spill would give), `builderPlan` / `builderLoads` / `builderView` (the cards' sides come
+    from `counted().layers` where `saved`), the builder's `[spec]` and `builderLabel` (no "· spill 2 cm", no band, no
+    allowance on pages counted without), and the kept build's key (the spill the plan was counted with).
+  - **The cards and the tiles keep the picked spill** (`lines()`, `pallet()`): a card may say 98 per pallet while the
+    plan under it was counted on the bare floor. One muted line under the result's figures says so (`spillNote`):
+    "Geteld zonder spill: dat scheelt een pallet." / "… dat scheelt 2 pallets." (on the kar "een kar", "karren").
+  - Compared with spill 0 only, as the server does: where a pick of 3 needs as many carriers as no spill and a pick of
+    2 would need one fewer, the plan is the one at 3.
+- **Kept per device**: `enrosed.palletCalculator` gains `spillCm` and `spillStandardCm` (the standard it was saved
+  under). As for the heights: a spill equal to the standard it was saved under was never picked and follows today's
+  standard; a state without the two fields (before 2026-11-26) takes the standard. So every device starts at 2.
+- **The plan in 3D** (`pallet-plan-3d.ts`, no Angular, no three.js; nothing in it counts):
+  `plan3d(cards, counted, pallet, sides)`: with quantities on the cards the page's own plan (`paged`); without, one
+  carrier as the count would fill it: one product at its card's `cartonsPerPallet`, several as `shareOnePallet` shares
+  them, then `bestPlan`. `planLoads` = `packedLoads` when the plan is the packer's. `planPage(planned, loaded, items,
+  spec, sides)` lays one carrier, in this order:
+  1. `'packed'`: the plan's carrier is the packer's: its own boxes (`packedLoads`, the same run as `packedPlan`).
+  2. `'full'`: counted in whole layers, but its omdozen go on one carrier as full as it goes (`packedFill`) AND that
+     stands no higher than the plan says this carrier is: those boxes. (The height test is FE-2's, not DESIGN's: the
+     packer can build a tower where the layers lie low; without it 163 of the 1,936 such pages in the random
+     mixes stood higher than their row in the plan, e.g. 234 cm beside a row of 156 cm.)
+  3. `'layers'`: else whole layers bottom to top (`stackAbove`, each product on its card's side), settled. Up to four
+     products every order of the products is tried and the one with the fewest omdozen partly carried stands (the
+     count's own order, tallest first, on a tie); it halves the partly carried omdozen. Same layers, same height.
+  Invariants (checked): a page holds exactly its carrier's omdozen of the plan; none above the height; none past the
+  spill; none through another; never higher than its row in the plan. In `'layers'` an omdoos need not be carried in
+  full by the layer under it, as the count does not ask it either: about 12 % of the omdozen on such pages, 0,1 % by
+  less than half. The page then shows "In hele lagen gestapeld, zoals geteld" while it stands as counted.
+- **The page's side** (`builderPlan`, `builderLoads`, `builderView`, all on `counted()`): `builderView` gives the builder its items (the
+  panel's "van n" is what THIS carrier holds), `pages` ("Pallet 2" / "Kar 2", only with more than one carrier), `page`,
+  `heading` (the page's name, else "3D laden"), `start` (the page as counted, only with quantities), `auto` (what
+  Automatisch lays), `note`, and `key`. `openBuilder()` opens on page 0. Above `MAX_PLANNED_PALLETS` (no plan) the old
+  behaviour stays: one carrier, Automatisch fills it with `packedFill` from everything on the cards.
+- **Builder inputs** (`pallet-builder.ts`): `parts` is GONE. `autoBoxes`: what Automatisch lays in free mode (the fixed
+  mode still lays `initialBoxes`); the button rests while the page stands so (`asCounted`). `initialBoxes` now also
+  serves the free mode: what the view starts from when nothing is kept under `storeKey`. `countedNote`: a line under
+  the figures only while `asCounted()`. `storeKey` and `buildKey` get the same string from Palletberekening; a sales
+  order's 3D passes no `storeKey` and no `autoBoxes` and is as it was.
+- **A tap or "+"** (`spotFor`): `patternSpot` first (pallet-builder-model.ts: the places of `layerSlots` for the product
+  on that side, each where it rests, the lowest first), then the corner search `nextSpot`. From an empty carrier that
+  reaches the card's count for every real omdoos on every carrier (0 short in 3,484 cases). It is NOT promised from a
+  page the packer laid on other sides (there the page already holds what the plan counts). Past the weight limit the
+  omdoos stands and the note says "Meer dan 700 kg op deze pallet" (`stand`).
+- **The kept build**: `enrosed.palletBuilder` is now `{ v: 2, builds: [{ key, boxes }] }`, newest first, at most 8
+  builds and 2,400 boxes (`loadBuild`, `saveBuild`, `dropBuild`). The key is `builderStoreKey(...)`: carrier, pallet
+  type, height, the spill the plan was counted with (0 where it was left out: the same pages as at a picked 0), the
+  kantelen switch, every card's product, omdoos sizes, weight and omdozen, and the page. Only
+  a build the user changed is kept: one that stands as the page starts, or holds nothing, drops its entry (so Leeg on
+  a counted page opens on the plan next time). A value of the old shape (`{ kar: [...], EURO_120X80: [...] }`) reads as
+  nothing kept and is removed on the first read. Adding something the count depends on? Put it in the key.
+- **The builder with a spill** (pallet-builder-model.ts): `landing`, `snap`, `nearestSpot`, `nextSpot` accept places
+  down to minus the allowance and up to the floor plus it (the kar: across its width only). Inside the real floor
+  first: a dragged box takes the place within the allowance only where it rests LOWER there than inside (beside its
+  neighbour instead of on it); `nextSpot` hangs over only where no place inside is as low; `nearestSpot` prefers its
+  own level, then inside, then near; a turn or tip in place tries inside, then within the allowance (`placesNear`,
+  `insideFirst`) so a box of a layer that hangs over stays in its row. A box larger than the floor and its allowance
+  stays centred and warns. Without spill every function gives what it gave. By hand a row that needs BOTH ends to hang
+  (two 62 cm boxes on 120 cm) cannot be made by dragging the first box (it lands flush, inside); a tap lays it.
+- **What a box says**: within the allowance no warning and not in "n steken uit"; its card says "Steekt 1,5 cm uit" in
+  the card's own colour (`allowedText`, class `pb3-card__spill--ok`). Past it "Steekt n cm uit" in orange, red beyond
+  5 cm more; the passing note only for warnings.
+- **The scene** (`pallet-builder-scene.ts` `spillOutline`): the carrier is drawn as it is; a faint band on the floor's
+  level from the edge out to the spill, closed by a dashed line: around a pallet, along the two long sides of a kar.
+  `setCarrier` draws again when the spill changes; `frameView` frames the floor with its spill.
+- **Shared**: `stackAbove(rest, boxes, fromY, spec)` and `LayerStock` live in pallet-builder-model.ts now; the order's
+  3D calls it through `stackListed` (the side from `palletFit`, as before). `pallet-packed-plan.ts`: `packedPlan` and
+  the new `packedLoads` share one run of the packer (`packedRun`); no counting step changed.
+- **Checked** (throwaway drivers under scratchpad/fe2-check, the model files bundled; a headless Chrome on a local dev
+  build + the base backend on the production copy): `packedPlan` / `bestPlan` against FE-1's head on 52,800 plans, the
+  builder's searches without spill on 1,500 random builds, the order's 3D on the 48 real documents and on 3,492
+  synthetic ones with a spill (220,362 boxes, one hash): no difference. Taps: 3,484 omdoos × carrier × height × switch
+  × spill cases, 0 short of the card (the corner search alone: 9 of 40 on a europallet at 260). Plans: 109,808 mixes
+  (Verdeel pairs and triples, random quantities, other heights; spill 0 and 2), 152,114 pages, 2.83 million boxes: 0
+  pages not drawing the plan, 0 boxes above the height or past the spill. The 25 purchase orders typed in: pages = the
+  plan's carriers, every omdoos drawn. `npx ng build`: the six known warnings; three.js only in the pallet-builder
+  chunk. Looked at on desk 1280 / 1070 and a phone of 390 (also on its side).
+- **Checked, `countedPlan`** (scratchpad/fix-fe-check, a twin of the page's `counted` and 3D): every pair of the 42 real
+  omdozen with typed quantities and the proof round's 3,033 line sets, four carriers at their standard heights, both
+  switches, spill 0 to 5: 152,912 comparisons with spill 0, **0 with more carriers** for the same omdozen (13,014 carry
+  more omdozen with the spill and are not compared); the spill was left out on 3,112 plans (7,339 carriers spared, 25
+  on one plan; at the standard 2 cm on a europallet 122 of 2,970 sets with kantelen aan, 1 of 861 real pairs), each of
+  them text-equal to the page's own plan and pages at spill 0, every other plan text-equal to `bestPlan` as before;
+  1,026,400 pages drawn (15.6 million boxes): 0 not drawing their carrier, 0 boxes above the height, past the
+  allowance, overlapping or floating, 0 boxes over the edge on a page counted without spill; 1,730 "Past nog bij"
+  offers on such plans, none takes a carrier more; the slowest plan 37 ms.
+- **Not done**: the order's fixed 3D against a backend that sends a spill (FE-1's open point stands); the Duo's poses
+  and the iOS shell were not looked at in this round; the catalogue studio and the product page are in the next
+  section; the line "Geteld zonder spill" and a 3D page of a plan counted without spill were not looked at in a browser.
+
+## Catalogus PDF: Laadhoogte en spill (2026-11-26)
+
+Emre: "Catalogus pdf zowel korte en lange daar moet ik ook eigenlijk kunnen aanpassen op pallet en deense car de hoogte
+zodat dan de aantallen kunnen veranderen ook dynamisch want sommige klanten hebben andere standaard hoogtes en die willen
+dan een andere overzicht van ons", and of the spill: "De spill willen wij ook kunnen aanpassen". One catalogue PDF can
+count its per-pallet and per-kar figures on its own pallet height, kar height and spill. The backend counts and prints
+(both layouts, the basis sentences name the height and a spill above 0); the studio picks, previews and guards.
+
+| File | Role | Styles (budget size) |
+|---|---|---|
+| `catalog-load.ts` | Pure: `CatalogLoad` { palletHeightCm, karHeightCm, spillCm }, `CATALOG_LOAD_STANDARD` (260 / 230 / 2), `CATALOG_LOAD_BOUNDS`, `catalogCarriers`, `catalogueUnits`, `catalogLoadFields`, `catalogLoadProblem`, `catalogLoadSummary`, `boundedLoadValue`, `storeCatalogLoad` / `restoreCatalogLoad` | – |
+| `catalog-load-settings.ts` | `app-catalog-load-settings`: the card "Laadhoogte en spill" | 2.4 kB |
+| `catalog-export.ts` | `loadChoice` (the pick), `carriers` (the two specs), `loadExample`, the request fields, the guard in `download()` | unchanged: at its 16 kB budget, see below |
+| `core/api/catalog-api.ts` | `CatalogExportRequest` + `palletHeightCm`, `karHeightCm`, `spillCm`; `CatalogPreflightResult` + `load` (`CatalogLoadEcho`) | – |
+
+- **The card** sits under "Volgorde in PDF", in BOTH modes (both PDFs print the figures), collapsed like its neighbour.
+  Its line always says the three values, "Pallet 260 cm · Deense kar 230 cm · spill 2 cm", and is tinted (accent, heavier;
+  class `load--set`) while one differs from the standard, so a deviation is seen without opening anything. Open: three
+  rows with the shared `app-pallet-stepper` (label and a muted hint left, stepper and "cm" right; 'md' on the desk, 'lg'
+  on a phone): Pallet ("incl. pallet", 16 to 260, step 10), Deense kar ("incl. kar", 18 to 300, step 10), Spill
+  ("per kant · kar: alleen lange zijden", 0 to 5, step 1). Any whole number within the bounds can be typed; one outside
+  comes back as the nearest bound (the stepper's rule). A europallet's standard is its ceiling, so its "+" is off at 260.
+  `allowEmpty` stays off: an emptied field shows its value again. Under the rows: the example line and "Standaard"
+  (all three back at once), which is there only while something differs.
+- **The example line** ("Bijv. {naam} · n per pallet · n per kar") is the live feedback where the preview shows no
+  figures (Handelscatalogus) or has scrolled away (a phone, and a desk window where the studio is one column: at
+  1070 px it is, at 1280 px it has two). It names the
+  first selected product, in the PDF's order, that has a per-pallet figure on the STANDARD (so the same product stays
+  there while a value is stepped), by the name the preview's card uses (the family's name in the document language),
+  with the preview's own figures in the document's number format; "–" where nothing fits. One line on a card of 520 px
+  or more (the name ends in an ellipsis, the figures never give way; the full name is the `title`), two lines below
+  that. The longest names (91 characters in Polish, 74 in Greek) were looked at.
+- **The preview follows live**: `carriers()` = `catalogCarriers(loadChoice())` = `palletSpec('EURO_120X80', height,
+  spill)` and `karSpec(height, spill)`, so the kar takes the spill across its width only through FE-1's `karSpec`
+  (never write that rule again here). `compactRows` reads `catalogueUnits(product, carrier)` (whole omdozen of
+  `palletFit` × `piecesPerCarton`), and its card signature still holds the two figures, so the grouping follows too.
+  No server call, no debounce. The two module constants `CATALOGUE_PALLET` / `CATALOGUE_KAR` are gone.
+- **The request**: `catalogLoadFields(loadChoice())` adds `palletHeightCm`, `karHeightCm`, `spillCm`, EACH only when it
+  differs from the standard; `spillCm: 0` is a value and travels. A request without them is the one every server knows
+  and means the standard. `requestKey` holds them, so a pick clears an old error card like any other change.
+- **Older-server guard** (`catalogLoadProblem`, next to the prices guard in `download()`): a request that carries one
+  of the fields is exported only when the preflight answers `load: { palletHeightCm, karHeightCm, spillCm }` AND those
+  three are what is on screen (the picked value, the standard for a field that did not travel; read with `Number()`,
+  0.001 tolerance). No `load`: "De server kent een eigen laadhoogte en spill nog niet. Zet Laadhoogte en spill op
+  Standaard, of probeer het later opnieuw." Another load than the one on screen: "De server telt met een andere
+  laadhoogte of spill dan hier staat. …". A server from before the round drops unknown fields silently and would print
+  the standard figures in a PDF made for another height. A STANDARD request is never held: it exports on any server.
+- **Kept in this tab only**: sessionStorage `enrosed.catalogBuilder.load.v1` (`{ version: 1, …only what differs }`,
+  removed again on "Standaard"), read back value by value (a whole number within the bounds, else the standard). Never
+  in the device draft (`enrosed.catalogBuilder.v3`), like the recipient and the one-off prices: the next customer must
+  not inherit a height unseen. A tab that picked nothing follows the standard of the day.
+- **Styles**: the studio's own stylesheet did not change by a byte (measured 16 006 B outside the build with the map's
+  script, before and after; the production build shows no warning for it in either). Its room is zero: every new style
+  for the studio goes in a child component, as this card's did.
+- **Release order**: frontend first is safe for a picked height (the guard holds the export until the backend answers
+  `load`). In the window between the two deploys a STANDARD export is not held, and its preview already counts with the
+  standard spill of 2 cm while the older server's PDF still counts without: 11 of the 84 products' pallet figures and
+  21 kar figures differ for those minutes (e.g. Bowl M: preview 3.920, PDF 3.360 per pallet).
+- **Not built**: no per-customer stored height, nothing in the file name, nothing in the action bar or the download
+  toast about a deviating load.
