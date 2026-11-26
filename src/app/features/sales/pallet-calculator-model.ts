@@ -130,9 +130,17 @@ export function specSpillCm(spec: SpillAxes): number {
   return Math.max(spillOn(spec.spillLengthCm), spillOn(spec.spillWidthCm));
 }
 
-/** Parts joined with " · ", each kept whole on one line: a break falls only after a dot ("… max 260 cm ·" / "spill 2 cm"). */
+/**
+ * Parts joined with " · " for a line that wraps on a phone: a number stays with its unit and the word before it
+ * ("max 260 cm", "spill 2 cm", "kar 127 × 54,5") and a dot with what it follows, so no line starts with a dot
+ * or holds a lone "cm". A long floor name may still break between its words ("Deense" / "kar 127 × 54,5").
+ */
 export function joinUnbroken(parts: readonly string[]): string {
-  return parts.map((part) => part.replaceAll(' ', '\u00a0')).join('\u00a0· ');
+  const glued = (part: string) => {
+    const words = part.split(' ');
+    return words.slice(1).reduce((text, word, index) => text + (/[\d×]$/.test(words[index]) || /^[\d×]/.test(word) ? '\u00a0' : ' ') + word, words[0]);
+  };
+  return parts.map(glued).join('\u00a0· ');
 }
 
 /** The floor the count reads, and where the real floor lies in it. */

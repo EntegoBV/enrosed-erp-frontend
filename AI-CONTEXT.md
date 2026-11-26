@@ -6369,7 +6369,10 @@ PDF: Laadhoogte en spill" after that.
   parts with a no-break space before each dot and no-break spaces inside a part ("… · max 260 cm ·" over "spill 2 cm
   · zelf ingedeeld", never a lone "cm" or a dot at the start of a line). The editable line stays inside its 44 px
   button (hero 128 px); the read-only line grows the hero by 11 px. The 3D's subtitle wraps over three lines at most
-  on a phone (pallet-builder.ts, next section).
+  on a phone (pallet-builder.ts, next section); `palletLabel3d` and Palletberekening's `labelWith` join their parts
+  with `joinUnbroken` (pallet-calculator-model.ts): a number stays with its unit and the word before it, a dot with
+  what it follows, and a floor name may break between its words ("Deense" / "kar 127 × 54,5": as one piece it was
+  wider than the title at 375 px). The passing note (`.pb3-note`) wraps inside the screen (it ran off both edges).
 - **The order's 3D** (`order-pallets-3d-model.ts`, `order-pallets-3d.ts`): `Deck` (pallet-builder-model.ts) keeps the
   real floor and knows the allowance per axis (`spillXCm`, `spillZCm`; `deckOf(spec)`). `spillOf` measures against the
   real floor and judges only what is past the allowance (`pastCm`): within it no warning and not in "n steken uit",
@@ -6560,16 +6563,22 @@ cards counted five; and it opened on the build last kept per carrier, whatever h
      lower: then that one. `patternSpot` takes a layer place wherever it rests, also on boxes that stand otherwise (a
      page the packer laid, a box dragged by hand); alone it put an omdoos on top of them, partly in the air, with room
      on the floor. From an empty carrier no corner is ever lower, so nothing changed there.
-  2. When `tapSpot` has no place: `relaidWithOne`. If EVERY omdoos on the carrier has the tapped one's sizes (by
+  2. When `tapSpot` has no place, OR its place is partly in the air (`spotHangs`: `carriedShare` of the new box under
+     1; added after the final look of 2026-11-26, where Rose in Dome 12x20 typed 1 built a tower of 13 on the
+     packer's one centred box, lying across it): `relaidWithOne`. If EVERY omdoos on the carrier has the tapped one's sizes (by
      size, not by product: the colours of a tile and other products in the same omdoos share its layers), the same
      omdozen and one more are laid in the count's own layers on the side the card counts them (`stackAbove`), each
      keeping its id and product (the lowest standing in the lowest places, so the meshes glide: `animateNext`), the
      new one last; one step for Ongedaan; the note says "Opnieuw gestapeld in hele lagen" (the weight note wins).
-     Only when that holds under the height. Else "Geen plaats meer op deze pallet".
+     Only when that holds under the height. Else the place of step 1 stands (also when it hangs), or, without one,
+     "Geen plaats meer op deze pallet".
   So the card's count is reachable by tapping from an empty carrier AND from the page as counted (a page the packer
   laid stands centred, often on another side than the card: before, the bear with 4 on the card and 3 typed said
-  "Geen plaats meer" at the first tap). Not covered: a carrier that holds several omdoos sizes is never laid again,
-  and before the re-lay a tap can still rest partly on the packer's centred load where no corner is lower. Past the
+  "Geen plaats meer" at the first tap). Checked on 9,847 pages as counted (13 settings): 0 below the card, 0 tapped omdozen carried by
+  less than half (29 to 104 per setting before `spotHangs`). Not covered: a carrier that holds several omdoos sizes is
+  never laid again, so there a tap can still rest partly in the air.
+  A drag from the panel (`trayMove`, `trayTurned`) lies straight unless only a quarter turn fits within the floor and
+  its allowance (58 × 59 across the kar's 54,5 + 2 × 2 landed 59 across, orange, while the card counts it turned). Past the
   weight limit the omdoos stands and the note says "Meer dan 700 kg op deze pallet".
 - **The bar on a phone** (pallet-builder.ts, `@media (hover: none) and (max-width: 440px)`): since the pager came to
   Palletberekening, pager + three tools left the title 31 to 58 px ("Pallet" over "5"). Now the bar wraps
