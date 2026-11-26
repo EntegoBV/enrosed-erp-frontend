@@ -171,6 +171,12 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
   return order.lines.length > 0 && order.lines.every((line) => (line.priceBasis ?? 'EXW') === 'DDP') ? 'DDP' : 'EXW';
 }
 
+const QUANTITY_UNIT_KEY = 'enrosed.purchase.quantityUnit';
+
+function storedQuantityUnit(): 'piece' | 'carton' {
+  try { return globalThis.localStorage?.getItem(QUANTITY_UNIT_KEY) === 'carton' ? 'carton' : 'piece'; } catch { return 'piece'; }
+}
+
 @Component({
   selector: 'app-purchase-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -434,6 +440,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                 <div class="mpo-rate"><span>Geland</span>
                   <app-segmented variant="ios" label="Bedragen tonen als" [options]="amountModes" [value]="perPiece() ? 'piece' : 'total'" (changed)="perPiece.set($event === 'piece')" />
                 </div>
+                @if (!isReceived()) {
+                  <div class="mpo-rate"><span>Aantal invoeren in</span>
+                    <app-segmented variant="ios" label="Aantal invoeren in" [options]="quantityUnits" [value]="quantityUnit()" (changed)="setQuantityUnit($event)" />
+                  </div>
+                }
                 @for (section of lineSections(); track section.key) {
                   <section class="ios-section" [attr.aria-labelledby]="'purchase-line-category-' + section.key">
                     <div class="ios-section__head"><h2 [id]="'purchase-line-category-' + section.key">{{ section.label }}</h2>
@@ -486,14 +497,18 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                                   } @else if (version) {
                                     <span class="ios-cell__sub mpo-wrap">{{ version }}</span>
                                   }
-                                  <span class="ios-cell__sub mpo-wrap">{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
+                                  @if (byCarton() && !isReceived()) {
+                                    <span class="ios-cell__sub mpo-wrap">{{ draftQuantity(line.productId, line.quantity) | num }} st · {{ piecesPerCarton(line.productId) | num }}/doos · {{ line.cbm | cbm }}</span>
+                                  } @else {
+                                    <span class="ios-cell__sub mpo-wrap">{{ line.cartons | num }} dozen · {{ line.cbm | cbm }}</span>
+                                  }
                                   <span class="ios-cell__sub mpo-wrap">@if (rowPriceText(line.productId); as price) {<span class="mpo-nowrap">{{ price }}</span> · }<span class="mpo-nowrap">{{ line.landedUnitEur | eurUp: 3 }}{{ display ? ' /display' : '' }} geland</span></span>
                                 </span>
                                 <span class="mpo-line__qty">
                                   <input class="mpo-input mpo-qty" [id]="'qty-' + line.productId" type="number" min="0" step="1" inputmode="numeric"
-                                         [attr.aria-label]="'Aantal stuks ' + line.productName" [disabled]="isReceived()"
+                                         [attr.aria-label]="(byCarton() ? 'Aantal omdozen ' : 'Aantal stuks ') + line.productName" [disabled]="isReceived()"
                                          [ngModel]="quantityValue(line.productId, line.quantity)" (ngModelChange)="typeQuantity(line.productId, $event)"
-                                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">st</span>
+                                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">{{ byCarton() && !isReceived() ? 'dz' : 'st' }}</span>
                                 </span>
                               </div>
                               @if (cartonNote || ordered) {
@@ -904,10 +919,11 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
             <div class="mpo-sheet__block">
               <div class="ios-group">
                 <label class="ios-cell mpo-field-row" [attr.for]="'qty-sheet-' + line.productId">
-                  <span class="ios-cell__body"><span class="ios-cell__title">Aantal stuks</span></span>
+                  <span class="ios-cell__body"><span class="ios-cell__title">{{ byCarton() && !isReceived() ? 'Aantal omdozen' : 'Aantal stuks' }}</span>
+                    @if (byCarton() && !isReceived()) { <span class="ios-cell__sub">{{ piecesPerCarton(line.productId) | num }}/doos · {{ draftQuantity(line.productId, line.quantity) | num }} st</span> }</span>
                   <span class="mpo-line__qty"><input class="mpo-input mpo-qty" [id]="'qty-sheet-' + line.productId" type="number" min="0" step="1" inputmode="numeric"
                          [disabled]="isReceived()" [ngModel]="quantityValue(line.productId, line.quantity)" (ngModelChange)="typeQuantity(line.productId, $event)"
-                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">st</span></span>
+                         (blur)="leaveQuantity(line.productId)" /><span class="mpo-line__unit" aria-hidden="true">{{ byCarton() && !isReceived() ? 'dz' : 'st' }}</span></span>
                 </label>
                 <div class="ios-cell mpo-field-row">
                   <span class="ios-cell__body"><label class="ios-cell__title mpo-wrap" [attr.for]="'exw-sheet-' + line.productId">Afgesproken prijs per stuk</label>
@@ -1548,6 +1564,7 @@ export class PurchaseEditor {
   readonly basisOptions: SegmentOption[] = [{ id: 'EXW', label: 'EXW' }, { id: 'CIF', label: 'CIF' }, { id: 'DDP', label: 'DDP' }];
   readonly currencyOptions: SegmentOption[] = [{ id: 'USD', label: '$ USD' }, { id: 'CNY', label: '¥ CNY' }, { id: 'EUR', label: '€ EUR' }];
   readonly amountModes: SegmentOption[] = [{ id: 'total', label: 'Totaal' }, { id: 'piece', label: 'Per stuk' }];
+  readonly quantityUnits: SegmentOption[] = [{ id: 'piece', label: 'Stuks' }, { id: 'carton', label: 'Omdozen' }];
   readonly lineModes: SegmentOption[] = [{ id: 'piece', label: 'Per stuk' }, { id: 'total', label: 'Totaal' }];
 
   /** From Besteld on the Ordernummer is fixed: the applied cost prices on the product cards point at it (I-B5). */
@@ -4802,10 +4819,36 @@ export class PurchaseEditor {
    */
   readonly quantityDrafts = signal<Record<number, string>>({});
 
-  /** The text the quantity box shows: the draft while typing, else the order line. */
+  /**
+   * What the quantity boxes count: pieces, or whole omdozen. The order line
+   * always keeps pieces; per omdoos only changes what is typed and shown.
+   * Remembered per browser.
+   */
+  readonly quantityUnit = signal<'piece' | 'carton'>(storedQuantityUnit());
+
+  setQuantityUnit(unit: string): void {
+    const next = unit === 'carton' ? 'carton' : 'piece';
+    this.quantityDrafts.set({});
+    this.quantityUnit.set(next);
+    try { globalThis.localStorage?.setItem(QUANTITY_UNIT_KEY, next); } catch { /* private mode: the choice lasts this visit */ }
+  }
+
+  byCarton(): boolean {
+    return this.quantityUnit() === 'carton';
+  }
+
+  /** Pieces behind one typed unit: the omdoos content per omdoos, else 1. */
+  private quantityFactor(productId: number): number {
+    return this.byCarton() ? Math.max(1, this.piecesPerCarton(productId)) : 1;
+  }
+
+  /** The text the quantity box shows: the draft while typing, else the order line (a part omdoos reads with decimals). */
   quantityValue(productId: number, shown: number): string | number {
     const draft = this.quantityDrafts()[productId];
-    return draft !== undefined ? draft : this.draftQuantity(productId, shown);
+    if (draft !== undefined) return draft;
+    const factor = this.quantityFactor(productId);
+    const pieces = this.draftQuantity(productId, shown);
+    return factor === 1 ? pieces : Math.round((pieces / factor) * 100) / 100;
   }
 
   /** The quantity as the draft order has it, before the calculation caught up. */
@@ -4818,7 +4861,7 @@ export class PurchaseEditor {
     const text = raw === null || raw === undefined ? '' : String(raw).trim();
     this.quantityDrafts.update((drafts) => ({ ...drafts, [productId]: text }));
     const parsed = Number(text);
-    if (text !== '' && Number.isInteger(parsed) && parsed >= 0) this.setLine(productId, { quantity: parsed });
+    if (text !== '' && Number.isInteger(parsed) && parsed >= 0) this.setLine(productId, { quantity: parsed * this.quantityFactor(productId) });
   }
 
   /** An emptied box means "unchanged": the order line keeps its last complete number. */

@@ -311,6 +311,10 @@ export class PurchaseDeskStyles {}
                 <button type="button" [class.on]="!perPiece()" [attr.aria-pressed]="!perPiece()" (click)="perPiece.set(false)">Totaal</button>
               </span>
               @if (editing() && !isReceived()) {
+                <span class="per-toggle" role="group" aria-label="Aantal invoeren in">
+                  <button type="button" [class.on]="!byCarton()" [attr.aria-pressed]="!byCarton()" (click)="setQuantityUnit('piece')">Stuks</button>
+                  <button type="button" [class.on]="byCarton()" [attr.aria-pressed]="byCarton()" (click)="setQuantityUnit('carton')">Omdozen</button>
+                </span>
                 <button class="btn btn--primary btn--sm" type="button" (click)="openAdd()">
                   <span aria-hidden="true">＋</span> Product
                 </button>
@@ -424,18 +428,27 @@ export class PurchaseDeskStyles {}
                           </div>
                         </td>
                         <td class="c-qty num">
-                          @if (editing() && !isReceived()) {
+                          @if (editing() && !isReceived() && !byCarton()) {
                             <input class="input num right desk-cell" type="number" min="0" step="1" inputmode="numeric"
                                    [attr.aria-label]="'Aantal ' + line.productName"
                                    [ngModel]="quantityValue(line.productId, line.quantity)"
                                    (ngModelChange)="typeQuantity(line.productId, $event)"
                                    (blur)="leaveQuantity(line.productId)" />
                           } @else {
-                            <b>{{ line.quantity | num }}</b>
+                            <b>{{ (editing() ? draftQuantity(line.productId, line.quantity) : line.quantity) | num }}</b>
                           }
                         </td>
                         <td class="c-cartons num">
-                          <b>{{ line.cartons | num }}</b>
+                          <!-- Per omdoos: the box moves here; the order line still keeps pieces. -->
+                          @if (editing() && !isReceived() && byCarton()) {
+                            <input class="input num right desk-cell desk-cell--cartons" type="number" min="0" step="1" inputmode="numeric"
+                                   [attr.aria-label]="'Aantal omdozen ' + line.productName"
+                                   [ngModel]="quantityValue(line.productId, line.quantity)"
+                                   (ngModelChange)="typeQuantity(line.productId, $event)"
+                                   (blur)="leaveQuantity(line.productId)" />
+                          } @else {
+                            <b>{{ line.cartons | num }}</b>
+                          }
                           <small>{{ piecesPerCarton(line.productId) | num }}/doos · {{ line.cbm | cbm }}</small>
                         </td>
                         <td class="c-price">
@@ -1416,7 +1429,7 @@ export class PurchaseDeskStyles {}
     .desk-stale{margin:12px 16px}.desk-stale .wk-link{color:inherit;white-space:nowrap}
     .desk-table{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:12.5px}.desk-table--extra{min-width:840px}.desk-table--editing.desk-table--extra{min-width:960px}
     .c-price__basis{margin-left:3px;color:var(--muted);font-weight:600;opacity:.75}
-    .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}
+    .desk-table--editing td.c-qty .desk-cell{padding-inline:6px;text-align:center}.desk-cell--cartons{display:block;width:68px;margin-left:auto;padding-inline:6px;text-align:center}
     .desk-price--target{margin-top:4px}.desk-price__sym--wide{padding:0 5px;font-size:9.5px;letter-spacing:.02em;text-transform:uppercase}.desk-table--editing.desk-table--extra{min-width:1000px}
     .desk-table--editing td.c-price .desk-price{width:auto;max-width:128px;margin-left:auto}.desk-table--editing td.c-extra .desk-price{width:auto;max-width:132px;margin-left:auto}.desk-table td.c-extra small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;white-space:nowrap}
     .desk-table thead th{padding:9px 10px 9px 12px;border-bottom:1px solid var(--line);background:var(--surface-2);color:var(--muted);font-size:9.5px;font-weight:750;letter-spacing:.04em;text-align:right;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
