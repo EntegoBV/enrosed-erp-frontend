@@ -1,7 +1,7 @@
 import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
-import { handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
+import { copiedLoader, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
 import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
   MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
@@ -281,9 +281,11 @@ export function handCarton(productId: number, products: ReadonlyMap<number, Prod
 /**
  * The hand-built pallets with their measured or estimated height and their weight. On a PACKED document (2026-11-25), a
  * pallet of the order's own type that carries what one of the server's pallets carries stands as high as the server
- * counted it (what Zelf indelen copied); any other is judged as the server would load it (handLoader: with the pallets
- * after it, alone, or with omdozen a lowered quantity took off). Otherwise, on any other document or pallet type, or
- * without the catalogue, every product stands in whole layers of its own, added up: the way MIXED and STRICT count.
+ * counted it (what Zelf indelen copied); one that holds no more of any product than the pallet Zelf indelen copied it
+ * from (its source, the copy-time run loaded again) stands as that part of it; any other is judged as the server would
+ * load it (handLoader: with the pallets after it, alone, or with omdozen a lowered quantity took off). Otherwise, on any
+ * other document or pallet type, or without the catalogue, every product stands in whole layers of its own, added up:
+ * the way MIXED and STRICT count.
  */
 export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
   products?: ReadonlyMap<number, Product>): PalletVm[] {
@@ -298,6 +300,7 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
   const loadOf = packedDoc && products?.size
     ? handLoader(pallets.map((pallet) => pallet.items), order, cartonOf, packDeck(spec), ALL_SIDES, own)
     : null;
+  const copiedOf = packedDoc && products?.size ? copiedLoader(spec, cartonOf, packDeck(spec), ALL_SIDES) : null;
   const serverLoadOf = packedDoc && products?.size && server.length
     ? handLoader(server.map((pallet) => pallet.items), order, cartonOf, packDeck(spec), ALL_SIDES)
     : null;
@@ -317,7 +320,11 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
       const same = server[index] && sameItems(server[index].items, pallet.items) ? server[index]
         : server.find((candidate) => sameItems(candidate.items, pallet.items));
       const load = same || !loadOf ? null : loadOf(index);
-      packedCm = same ? same.heightCm : load ? spec.baseHeightCm + load.top / 100 : null;
+      /* Copied by Zelf indelen and holding no more of any product than then: that part of the copied pallet, at most as
+         high (after the tries above, which load it fully carried where they can). */
+      const copied = same || load || !copiedOf ? null : copiedOf(pallet.source);
+      const part = copied ? partOf(copied, pallet.items, cartonOf) : null;
+      packedCm = same ? same.heightCm : load ? spec.baseHeightCm + load.top / 100 : part ? spec.baseHeightCm + part.top / 100 : null;
       /* No more of any product than a server pallet carries: it fits as that part of the server's pallet, at most as high. */
       if (packedCm === null) {
         const holder = server.findIndex((candidate) => within(pallet.items, candidate.items));

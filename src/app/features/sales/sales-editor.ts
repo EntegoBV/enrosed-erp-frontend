@@ -76,7 +76,8 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
-import { checkLayout, freightGap, layoutComplete } from './shipping-planner-model';
+import { checkLayout, freightGap, layoutComplete, plannerSpec } from './shipping-planner-model';
+import { copySources } from './pallet-hand-load';
 import { OrderPallets3d } from './order-pallets-3d';
 import { orderPallets3d } from './order-pallets-3d-model';
 import { PALLET_LEGACY_MAX_HEIGHT_CM } from './pallet-calculator-model';
@@ -5350,19 +5351,26 @@ export class SalesEditor {
    * under Nakijken); when nothing fits, the layout starts from one empty
    * pallet, since an empty list is Automatisch itself. The figures are
    * brought up to date first, so the pallets are never cut from an older
-   * pallet type, height or quantity.
+   * pallet type, height or quantity. On a PACKED document every copied
+   * pallet remembers the run it comes from (OrderPallet.source), so the
+   * planner and the 3D judge it as that pallet whatever edits follow.
    */
   async autoLayout(): Promise<void> {
     if (!this.canEditShipping() || !(await this.pricingSettled())) return;
     this.enqueueShipping((order) => {
       const type = palletTypeLabel(order.palletProfile);
-      const priced = this.view()?.priced;
+      const data = this.view();
+      const priced = data?.priced;
       const pallets: OrderPallet[] = [];
-      const add = (items: OrderPallet['items']) =>
-        pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null, items });
+      const add = (items: OrderPallet['items'], source: string | null = null) =>
+        pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null, items, source });
       const automatic = priced?.totals.autoPallets;
-      if (priced && automatic && automatic.length === automaticPallets(priced.totals)) {
-        for (const pallet of automatic) add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })));
+      if (data && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
+        const spec = plannerSpec(data);
+        const sources = priced.totals.palletRule === 'PACKED'
+          ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items))
+          : [];
+        automatic.forEach((pallet, index) => add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })), sources[index] ?? null));
       } else {
         for (const line of priced?.lines ?? []) {
           const per = line.cartonsPerPallet;

@@ -5249,7 +5249,9 @@ are tiles, hand pallets are cards edited in place.
   products that fit no pallet stay loose (Nakijken), nothing fits → one empty
   "Pallet 1". "Indeling bijwerken" (Levering, loose omdozen that fit) and
   "Indeling opnieuw maken" (after a pallet type change) run the same copy, so
-  the server must send `autoPallets` with a hand layout present too.
+  the server must send `autoPallets` with a hand layout present too. On a
+  PACKED document every copied pallet gets its `source` (see "The copy
+  remembered" under Zo vol mogelijk).
 - **A hand pallet's weight** (`handPallets`) is its omdozen times the line's
   weight over its omdozen; the server rounds a line's weight to 0.1 kg, so a
   pallet it filled to exactly 700 kg can read 700.04 here. "te zwaar" (the
@@ -5410,19 +5412,50 @@ ontbreekt", "kan beter en mooier op iPhone Duo in webvorm".
   and what stood on them comes down (settled). Any try that works is a real arrangement of the pallet's own omdozen,
   so more tries never make a pallet fit that does not. Planner (PACKED, own type): a pallet that carries what an
   `autoPallets` pallet carries takes the server's height; else `handLoader`'s top; else, when it holds no more of any
-  product than a server pallet (`within`), that part of the server's pallet (`partOf`), at most its height; else whole
-  layers (the layer estimate, which may say "te hoog" and block Versturen). MIXED/STRICT documents and other pallet
-  types keep the layer estimate and whole-layer glyphs, as before. On the reviewers' 4,600 orders after a server
-  re-price: 0 false "te hoog" for fresh copies, one product lowered by any amount, raised with the extra on a new or the
-  last pallet, reversed, split, moved, retyped or measured pallets; 0.02-0.09 % for two lowered, all lowered by one or a
-  product removed; 1 % for a reorder followed by a lowered quantity (needs the copy remembered: a later round).
+  product than the pallet Zelf indelen copied it from (its `source`, below), that part of the copied pallet; else, when
+  it holds no more of any product than a server pallet (`within`), that part of the server's pallet (`partOf`), at most
+  its height; else whole layers (the layer estimate, which may say "te hoog" and block Versturen). MIXED/STRICT
+  documents and other pallet types keep the layer estimate and whole-layer glyphs, as before. On the reviewers' 4,600
+  orders after a server re-price, before the copy was remembered: 0 false "te hoog" for fresh copies, one product
+  lowered by any amount, raised with the extra on a new or the last pallet, reversed, split, moved, retyped or measured
+  pallets; 0.02-0.09 % for two lowered, all lowered by one or a product removed; 1 % for a reorder followed by a lowered
+  quantity. With the copy remembered: 0 in all 18 flows.
 - 3D listed branch: on PACKED a pallet of the order's own type that carries what server pallet j carries is drawn from
   `handLoader` over the server's own list at j (whatever its place in a hand list), else from the hand list's tries,
-  else as `partOf` a server pallet that holds it; any other pallet (MIXED, STRICT, another type) is packed on its own,
-  as before (a STRICT part pallet stays one low layer); where nothing takes it, whole layers per product from the floor,
-  as the planner estimates it. Checked: nothing drawn above the height where the planner says it fits (47,000 pallets,
-  PACKED and MIXED, copies, trims, automatic), no new STRICT towers. A PACKED document loaded otherwise than the server
-  listed reads "Omdoosmaten gewijzigd sinds de berekening" on every page.
+  else as `partOf` the pallet it was copied from (its `source`), else as `partOf` a server pallet that holds it; any
+  other pallet (MIXED, STRICT, another type) is packed on its own, as before (a STRICT part pallet stays one low layer);
+  where nothing takes it, whole layers per product from the floor, as the planner estimates it. Checked: nothing drawn
+  above the height where the planner says it fits (47,000 pallets, PACKED and MIXED, copies, trims, automatic), no new
+  STRICT towers. A PACKED document loaded otherwise than the server listed reads "Omdoosmaten gewijzigd sinds de
+  berekening" on every page.
+- The copy remembered (2026-11-26, `OrderPallet.source`; backend `sales_pallet.copy_source`, varchar(4000)). The packer
+  is greedy, so once a quantity is lowered or the pallets are reordered neither the server's new run nor `handLoader`
+  always rebuilds a pallet the server loaded at copy time. `SalesEditor.autoLayout` (Zelf indelen, Indeling bijwerken,
+  the planner's Indeling opnieuw maken) therefore writes on every copied pallet of a PACKED document
+  `PACKED|<profile>|<loaded height>|<run: productId:omdozen,… in line order>|<place in the run>|<its own omdozen>`, e.g.
+  `PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8` (`copySources` in pallet-hand-load.ts; a source past 4,000
+  characters is not written). `copiedLoader` reads it back (`readCopySource`, strict; anything else is no source):
+  only while the order's profile and loaded height (`plannerSpec`) are the source's, it loads the run again as
+  `PalletCalculator.packedPallets` does (`copyRun`: one kind per omdoos size in line order, the heaviest colour's weight,
+  every side, the colours handing out a size's boxes in turn; memo of 24 runs keyed on deck, sides, run and catalogue),
+  on today's deck with today's catalogue, so it is always a real load; and it counts only when the pallet at the
+  source's place carries exactly the source's own omdozen (a run the server laid out in layers instead, MIXED
+  fallback, or sizes changed since the copy: nothing). A hand pallet that holds no more of any product than that is
+  `partOf` it, never higher; one that holds more of any product gets nothing from its source. The step comes after
+  `handLoader`, which loads a trimmed pallet fully carried where it can (`partOf` lets what stood on a box that came off
+  come down, so a box may stand partly carried: 3D shows that only where handLoader finds nothing). Edits keep the
+  source (the editor's pallet actions spread the pallet, `trimPallets`, `relabelPallets`; the server's reconcile, prune,
+  renumber, Factuur maken and Kopie maken carry it); a pallet made by hand (+ Pallet, Gemengd indelen, MIXED/STRICT
+  copies, an older server's strict derivation) has none. Checked on the reviewers' 4,600 orders (the PACKED round's
+  scen10.ts and 3d-model/hand.ts with copies that carry their source, plus neg.ts; kept in the hand-source notes next
+  to the session notes): the run loaded again equals the server's pallet, omdozen and height, on all 24,154 pallets of
+  documents the server packed (the 281 of MIXED-fallback documents get no use of their source); 0 false "te hoog" in
+  all 18 edit flows (production before: 1 % after reorder + lower, up to 0.09 % for a product removed); every pass from
+  a source is a real load (22,026 trimmed and shuffled pallets: no overlap, nothing off the deck or above it); a pallet
+  with 1-3 omdozen more than its copy reads exactly as without a source (4,600 pallets), one loaded past the deck's
+  volume by hand always reads "te hoog" and blocks (4,600); 3D draws nothing above the height where the planner says it
+  fits. Release order is free: an older backend ignores the field (Jackson's FAIL_ON_UNKNOWN_PROPERTIES is off), an
+  older frontend keeps it on pallets it loads and writes none.
 - Glyphs (`glyphBlocks`): whole layers per product where those add up to the pallet's height (MIXED,
   PACKED's fallback to layers, a layer estimate), else each product's share of the load's volume.
 - Builder: the order's view now has Kantel (`turnable` true). `reshape` acts in place: same base

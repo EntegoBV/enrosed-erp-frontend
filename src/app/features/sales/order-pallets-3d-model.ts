@@ -2,7 +2,7 @@ import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { settle, type BuilderBox, type BuilderItem } from './pallet-builder-model';
 import { cartonStanding, layerSlots, palletFit, productUnits, type CartonUp } from './pallet-calculator-model';
-import { handLoader, partOf, sameItems, within } from './pallet-hand-load';
+import { copiedLoader, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, PACK_UNITS, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, type PlannerSpec } from './shipping-planner-model';
@@ -37,6 +37,8 @@ export interface OrderPallet3d {
   measuredCm: number | null;
   /** A hand-built pallet of another type than the order's ("Blokpallet 120×100"); the planner counts it on the order's pallet. */
   ownType: string | null;
+  /** What Zelf indelen copied a hand-built pallet from (OrderPallet.source); absent on automatic pallets. */
+  source?: string | null;
 }
 
 /**
@@ -57,6 +59,7 @@ export function orderPallets3d(view: SalesOrderView, spec: PlannerSpec = planner
         items: pallet.items.map(({ productId, cartons }) => ({ productId, cartons })),
         measuredCm: pallet.heightCm ?? null,
         ownType: type && type !== palletTypeLabel(spec.profile) ? type : null,
+        source: pallet.source ?? null,
       };
     });
   }
@@ -317,6 +320,12 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
   for (const pallet of listed) {
     for (const item of pallet.items) if (!stocks.has(item.productId)) stocks.set(item.productId, stockOf(item.productId, lineOf, products));
   }
+  /* A copied pallet's run is loaded again with every omdoos it held, also of a product no hand pallet carries any more. */
+  for (const pallet of listed) {
+    for (const total of readCopySource(pallet.source)?.totals ?? []) {
+      if (!stocks.has(total.productId)) stocks.set(total.productId, stockOf(total.productId, lineOf, products));
+    }
+  }
 
   /* Loaded again only where Automatisch mixes: PACKED (since 2026-11-25 the server counts these very pallets, PalletPacker) and
      MIXED (the server stacks whole layers; 3D shows how full they go). A document counted product by product (STRICT, sent
@@ -352,9 +361,10 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
 
   /* Every pallet keeps its own omdozen. On a PACKED document a pallet of the order's own type stands as the server loads it:
      one that carries what a server pallet carries as that pallet within the server's own list (whatever its place in a hand
-     list), any other as the server would load this list (pallet-hand-load.ts). Any other pallet is packed on its own. Where no
-     try takes it, in whole layers per product from the floor, as the planner estimates it (past the height in orange and red).
-     An omdoos without sizes, or too large for the pallet on any side, is left out and named. */
+     list), one that holds no more than the pallet Zelf indelen copied it from as that part of the copied pallet (its source's
+     run loaded again), any other as the server would load this list (pallet-hand-load.ts). Any other pallet is packed on its
+     own. Where no try takes it, in whole layers per product from the floor, as the planner estimates it (past the height in
+     orange and red). An omdoos without sizes, or too large for the pallet on any side, is left out and named. */
   const drawable = new Map<number, boolean>();
   for (const [productId, stock] of stocks) {
     drawable.set(productId, stock.measured && packPallets([{ key: 1, length: packUnits(stock.lengthCm), width: packUnits(stock.widthCm),
@@ -374,6 +384,8 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
   /* Joined as the server loads a list only on PACKED and on the order's own pallet type; any other pallet is packed on its own
      (as before 2026-11-25: a STRICT part pallet stays low, a MIXED hand pallet as full as it goes). */
   const listLoad = handLoader(drawn, order, cartonOf, deck, ALL_SIDES, (index) => packedDoc && !listed[index].ownType);
+  /* The pallet Zelf indelen copied a hand pallet from, its run loaded again (the planner judges it the same way). */
+  const copiedOf = packedDoc ? copiedLoader(spec, cartonOf, deck, ALL_SIDES) : null;
   const builds = listed.map((pallet, index) => {
     const unmeasured: Loadable['unmeasured'] = [];
     const tooLarge: { name: string; cartons: number }[] = [];
@@ -391,6 +403,11 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
       load = twin >= 0 && serverLoad ? serverLoad(twin) : null;
     }
     if (!load) load = listLoad(index);
+    /* Holding no more of any product than the pallet Zelf indelen copied it from: drawn as that part of it. */
+    if (!load && packedDoc && !pallet.ownType && copiedOf) {
+      const copied = copiedOf(pallet.source);
+      load = copied ? partOf(copied, drawn[index], cartonOf) : null;
+    }
     /* No more of any product than a server pallet carries: drawn as that part of the server's pallet. */
     if (!load && packedDoc && !pallet.ownType && serverLoad) {
       const holder = server.findIndex((candidate) => within(pallet.items, candidate.items));

@@ -291,3 +291,153 @@ export function handLoader(pallets: readonly Items[], order: readonly number[], 
     return load;
   }
 }
+
+/*
+ * What Zelf indelen copied (OrderPallet.source, 2026-11-25). The server's PACKED run depends on everything still waiting,
+ * so once a quantity is lowered or the pallets are put in another order, neither the server's new run nor a re-run of
+ * the hand list (handLoader) may rebuild a copied pallet as the server loaded it (1 % false "te hoog" after a reorder
+ * and a lowered quantity). Each copied pallet therefore remembers the run: the profile, the loaded height, the run's
+ * omdozen per product in line order, its own place and its own omdozen. Loaded again from those omdozen, the run gives
+ * the copied pallet box for box; it counts only when it does (same omdozen as copied: a run the server laid out in
+ * layers instead, or catalogue sizes changed since the copy, give another pallet and nothing is taken from it). A hand
+ * pallet that holds no more of any product than its copy is that part of it (partOf: the lowest boxes per product stay,
+ * what stood on a box that came off comes down), never higher; one that holds more of any product gets nothing from it.
+ * The run is loaded on the pallet as it is now (packDeck of today's spec, today's catalogue), so it is always a real load.
+ */
+
+/** The longest source the backend keeps (sales_pallet.copy_source); a longer one is not written. */
+export const COPY_SOURCE_MAX = 4000;
+
+/** A hand pallet's source, read. */
+export interface CopySource {
+  profile: string;
+  maxHeightCm: number;
+  /** What the copied run loaded, per product in the order's line order (the server's kinds follow it). */
+  totals: { productId: number; cartons: number }[];
+  /** The pallet's place in that run, from 0. */
+  index: number;
+  /** What the pallet carried when it was copied. */
+  items: { productId: number; cartons: number }[];
+}
+
+function entries(items: ReadonlyMap<number, number>, order: readonly number[]): string {
+  return order.filter((productId) => Number.isSafeInteger(productId) && productId > 0 && (items.get(productId) ?? 0) > 0)
+    .map((productId) => `${productId}:${items.get(productId)}`).join(',');
+}
+
+function readEntries(text: string): { productId: number; cartons: number }[] | null {
+  const list: { productId: number; cartons: number }[] = [];
+  const seen = new Set<number>();
+  for (const entry of text.split(',')) {
+    const match = /^(\d{1,12}):(\d{1,7})$/.exec(entry);
+    if (!match) return null;
+    const productId = Number(match[1]);
+    const cartons = Number(match[2]);
+    if (!(productId > 0) || !(cartons > 0) || seen.has(productId)) return null;
+    seen.add(productId);
+    list.push({ productId, cartons });
+  }
+  return list.length ? list : null;
+}
+
+/**
+ * The source of every pallet of a PACKED run that Zelf indelen copies, by its place:
+ * "PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8" (rule, pallet profile, loaded height, the run's omdozen per product,
+ * the pallet's place, its own omdozen). `lineOrder` is the order's product order (the priced lines); a product the run
+ * carries that no line names goes last. Null for a pallet without omdozen or whose source would be longer than the
+ * backend keeps.
+ */
+export function copySources(profile: string, maxHeightCm: number, lineOrder: readonly number[], pallets: readonly Items[]): (string | null)[] {
+  const totals = count(pallets.flat());
+  const order = [...new Set([...lineOrder.filter((productId) => totals.has(productId)), ...totals.keys()])];
+  const run = entries(totals, order);
+  const height = String(Math.round(maxHeightCm * 100) / 100);
+  if (!run || !/^[A-Z0-9_]+$/.test(profile) || !(maxHeightCm > 0)) return pallets.map(() => null);
+  return pallets.map((items, index) => {
+    const own = entries(count(items), order);
+    const text = `PACKED|${profile}|${height}|${run}|${index}|${own}`;
+    return own && text.length <= COPY_SOURCE_MAX ? text : null;
+  });
+}
+
+/** A source as copySources writes it; null for anything else (another rule, a malformed or overlong text). */
+export function readCopySource(text: string | null | undefined): CopySource | null {
+  if (!text || text.length > COPY_SOURCE_MAX) return null;
+  const parts = text.split('|');
+  if (parts.length !== 6 || parts[0] !== 'PACKED' || !/^[A-Z0-9_]+$/.test(parts[1]) || !/^\d{1,4}(\.\d{1,2})?$/.test(parts[2])
+      || !/^\d{1,4}$/.test(parts[4])) return null;
+  const totals = readEntries(parts[3]);
+  const items = readEntries(parts[5]);
+  const maxHeightCm = Number(parts[2]);
+  return totals && items && maxHeightCm > 0 ? { profile: parts[1], maxHeightCm, totals, index: Number(parts[4]), items } : null;
+}
+
+/** Runs loaded again, by everything the run reads: every hand pallet of one copy shares one. */
+const RUNS = new Map<string, HandLoad[] | null>();
+const RUNS_SIZE = 24;
+/** A run of more omdozen than this is not loaded again (a copied run has what one order holds). */
+const RUN_MAX_CARTONS = 50_000;
+
+/**
+ * The copied run loaded again as PalletCalculator.packedPallets loads it: one kind per omdoos size in line order, the
+ * heaviest colour's weight for the size, every side allowed, the products of a size handing out its boxes in turn;
+ * pallet by pallet, each box with its product. Null when a product lacks sizes.
+ */
+function copyRun(copy: CopySource, cartonOf: (productId: number) => HandCarton | null, deck: PackDeck,
+  sides: readonly CartonUp[]): HandLoad[] | null {
+  const cartons = copy.totals.map((total) => cartonOf(total.productId));
+  if (cartons.some((carton) => !carton) || copy.totals.reduce((sum, total) => sum + total.cartons, 0) > RUN_MAX_CARTONS) return null;
+  const key = [deck.length, deck.width, deck.height, deck.maxWeight, sides.join(''), copy.totals.map((total, at) => {
+    const carton = cartons[at] as HandCarton;
+    return `${total.productId}:${total.cartons}:${sizeOf(carton)}/${packUnits(carton.weightKg)}`;
+  }).join(',')].join('|');
+  if (RUNS.has(key)) return RUNS.get(key) as HandLoad[] | null;
+  const bySize = new Map<string, PackKind>();
+  const members = new Map<number, { productId: number; left: number }[]>();
+  copy.totals.forEach((total, at) => {
+    const carton = cartons[at] as HandCarton;
+    const size = sizeOf(carton);
+    let kind = bySize.get(size);
+    if (!kind) {
+      kind = { key: bySize.size + 1, length: packUnits(carton.lengthCm), width: packUnits(carton.widthCm),
+        height: packUnits(carton.heightCm), weight: 0, count: 0, sides };
+      bySize.set(size, kind);
+      members.set(kind.key, []);
+    }
+    kind.weight = Math.max(kind.weight, packUnits(carton.weightKg));
+    kind.count += total.cartons;
+    (members.get(kind.key) as { productId: number; left: number }[]).push({ productId: total.productId, left: total.cartons });
+  });
+  const run = packPallets([...bySize.values()], deck).pallets.map((packed) => {
+    const boxes: HandBox[] = [];
+    for (const box of packed.boxes) {
+      const member = members.get(box.key)?.find((candidate) => candidate.left > 0);
+      if (!member) continue;
+      member.left -= 1;
+      boxes.push({ productId: member.productId, x: box.x, y: box.y, z: box.z, up: box.up, turned: box.turned });
+    }
+    return { boxes, top: packed.top };
+  });
+  if (RUNS.size >= RUNS_SIZE) RUNS.delete(RUNS.keys().next().value as string);
+  RUNS.set(key, run);
+  return run;
+}
+
+/**
+ * The copied pallet of a hand pallet's source, loaded again on today's pallet: null without a source, for another rule,
+ * when the order's profile or loaded height changed since the copy (Indeling opnieuw maken copies again), when a product
+ * of the run lacks sizes, or when the run loaded again does not give the pallet that was copied. Judge a hand pallet with
+ * partOf(copied, its items): null there when it holds more of any product than the copied pallet.
+ */
+export function copiedLoader(spec: { profile: string; maxHeightCm: number }, cartonOf: (productId: number) => HandCarton | null,
+  deck: PackDeck, sides: readonly CartonUp[]): (source: string | null | undefined) => HandLoad | null {
+  return (source) => {
+    const copy = readCopySource(source);
+    if (!copy || copy.profile !== spec.profile || Math.abs(copy.maxHeightCm - spec.maxHeightCm) > 1e-6) return null;
+    const copied = copyRun(copy, cartonOf, deck, sides)?.[copy.index];
+    if (!copied) return null;
+    const carried = new Map<number, number>();
+    for (const box of copied.boxes) carried.set(box.productId, (carried.get(box.productId) ?? 0) + 1);
+    return sameItems([...carried].map(([productId, cartons]) => ({ productId, cartons })), copy.items) ? copied : null;
+  };
+}

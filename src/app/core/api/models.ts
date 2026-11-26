@@ -2117,6 +2117,15 @@ export interface OrderPallet {
   /** Stacked height in cm; the transporter asks for it on every booking. */
   heightCm: number | null;
   items: { productId: number; cartons: number }[];
+  /**
+   * What Zelf indelen copied this pallet from on a PACKED document (2026-11-25), e.g.
+   * "PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8": the rule, the pallet profile, the loaded height, the run's omdozen
+   * per product in line order, the pallet's place in that run and its own omdozen (pallet-hand-load.ts copySources). The
+   * planner and the 3D load that run again, so a pallet that holds no more than it did is judged as that part of it,
+   * whatever edits follow. Null or absent on a pallet built by hand, on other rules and on older servers; edits keep it
+   * (a pallet that gains omdozen no longer matches it).
+   */
+  source?: string | null;
 }
 
 /** One pallet of the server's automatic layout: bottom to top, each product in whole layers of its own. */
