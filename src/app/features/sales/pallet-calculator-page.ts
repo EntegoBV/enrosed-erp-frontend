@@ -438,14 +438,14 @@ function packOf(line: CalcLine): PackLine {
         <span class="pc-set__hint">cm</span>
       </div>
       <div class="pc-set__row">
-        <span class="pc-set__label" id="pc-spill-label">Spill</span>
+        <!-- The unit under the label, as the switch below has its hint: both steppers then start at the same place. -->
+        <span class="pc-set__label" id="pc-spill-label">Spill<small class="pc-set__hint">{{ carrier() === 'kar' ? 'cm per lange zijde' : 'cm per kant' }}</small></span>
         <div class="pc-step" role="group" aria-labelledby="pc-spill-label">
           <button type="button" [disabled]="spill() <= 0" (click)="setSpill(spill() - 1)" aria-label="1 cm minder">−</button>
           <input type="text" inputmode="numeric" aria-labelledby="pc-spill-label" [value]="spill()"
                  (change)="typeSpill($event)" (keydown.enter)="blur($event)" />
           <button type="button" [disabled]="spill() >= spillLimit" (click)="setSpill(spill() + 1)" aria-label="1 cm meer">+</button>
         </div>
-        <span class="pc-set__hint">{{ carrier() === 'kar' ? 'cm per lange zijde' : 'cm per kant' }}</span>
       </div>
       @if (carrier() === 'kar') {
         <p class="pc-set__hint">{{ karSize }} cm binnen de stijlen ({{ karPosts }} cm hoog) · max {{ karMaxWeight | num }} kg · zonder legborden</p>
@@ -534,7 +534,10 @@ function packOf(line: CalcLine): PackLine {
     .pc-set{display:flex;flex-direction:column;gap:12px}
     .pc-set__row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
     .pc-set__label{font-size:13px;font-weight:600}
-    .pc-set__switch{justify-content:space-between;flex-wrap:nowrap;cursor:pointer}.pc-set__switch .pc-set__label small{display:block;font-weight:400}.pc-set__hint{margin:0;font-size:12px;color:var(--muted)}
+    .pc-set__label small{display:block;font-weight:400}
+    /* The two stepper rows (Max. hoogte, Spill): one label width, so the steppers stand under each other ("cm per lange zijde" is 104 px). */
+    .pc-set__row:not(.pc-set__switch) .pc-set__label{min-width:106px}
+    .pc-set__switch{justify-content:space-between;flex-wrap:nowrap;cursor:pointer}.pc-set__hint{margin:0;font-size:12px;color:var(--muted)}
     .pc-step{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);overflow:hidden}
     .pc-step:focus-within{border-color:var(--rose-mid);box-shadow:0 0 0 3px rgb(209 74 103 / 14%)}
     .pc-step button{display:grid;place-items:center;width:42px;height:42px;border:0;background:none;color:var(--ink);font-size:20px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent}
