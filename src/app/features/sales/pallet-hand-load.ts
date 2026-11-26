@@ -1,4 +1,4 @@
-import { cartonStanding, type CartonUp } from './pallet-calculator-model';
+import { cartonStanding, specSpillCm, type CartonUp } from './pallet-calculator-model';
 import { packPallets, packUnits, type PackDeck, type PackKind, type PackedBox } from './pallet-pack';
 
 /**
@@ -303,6 +303,10 @@ export function handLoader(pallets: readonly Items[], order: readonly number[], 
  * pallet that holds no more of any product than its copy is that part of it (partOf: the lowest boxes per product stay,
  * what stood on a box that came off comes down), never higher; one that holds more of any product gets nothing from it.
  * The run is loaded on the pallet as it is now (packDeck of today's spec, today's catalogue), so it is always a real load.
+ * Since 2026-11-26 a run counted with a spill remembers that too, as a seventh part ("…|2", cm per side), written only
+ * when it is not 0: the six parts of every source from before read as spill 0, byte for byte what they were. The copy
+ * counts only while the order's spill is still the copy's, as for the profile and the height, so the run is always
+ * loaded again on the deck (the floor plus that spill) it was copied from.
  */
 
 /** The longest source the backend keeps (sales_pallet.copy_source); a longer one is not written. */
@@ -312,6 +316,8 @@ export const COPY_SOURCE_MAX = 4000;
 export interface CopySource {
   profile: string;
   maxHeightCm: number;
+  /** The spill the copied run was counted with, cm per side; 0 for a source of six parts. */
+  spillCm: number;
   /** What the copied run loaded, per product in the order's line order (the server's kinds follow it). */
   totals: { productId: number; cartons: number }[];
   /** The pallet's place in that run, from 0. */
@@ -343,33 +349,43 @@ function readEntries(text: string): { productId: number; cartons: number }[] | n
 /**
  * The source of every pallet of a PACKED run that Zelf indelen copies, by its place:
  * "PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8" (rule, pallet profile, loaded height, the run's omdozen per product,
- * the pallet's place, its own omdozen). `lineOrder` is the order's product order (the priced lines); a product the run
- * carries that no line names goes last. Null for a pallet without omdozen or whose source would be longer than the
- * backend keeps.
+ * the pallet's place, its own omdozen), and for a run counted with a spill that spill as a seventh part:
+ * "PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8|2". `lineOrder` is the order's product order (the priced lines); a
+ * product the run carries that no line names goes last. Null for a pallet without omdozen or whose source would be longer
+ * than the backend keeps.
  */
-export function copySources(profile: string, maxHeightCm: number, lineOrder: readonly number[], pallets: readonly Items[]): (string | null)[] {
+export function copySources(profile: string, maxHeightCm: number, lineOrder: readonly number[], pallets: readonly Items[],
+  spillCm = 0): (string | null)[] {
   const totals = count(pallets.flat());
   const order = [...new Set([...lineOrder.filter((productId) => totals.has(productId)), ...totals.keys()])];
   const run = entries(totals, order);
   const height = String(Math.round(maxHeightCm * 100) / 100);
-  if (!run || !/^[A-Z0-9_]+$/.test(profile) || !(maxHeightCm > 0)) return pallets.map(() => null);
+  /* No seventh part at 0: a source without spill stays the text it always was. */
+  const spill = spillCm > 0 ? Math.round(spillCm * 100) / 100 : 0;
+  if (!run || !/^[A-Z0-9_]+$/.test(profile) || !(maxHeightCm > 0) || !(spill < 100)) return pallets.map(() => null);
   return pallets.map((items, index) => {
     const own = entries(count(items), order);
-    const text = `PACKED|${profile}|${height}|${run}|${index}|${own}`;
+    const text = `PACKED|${profile}|${height}|${run}|${index}|${own}${spill > 0 ? `|${spill}` : ''}`;
     return own && text.length <= COPY_SOURCE_MAX ? text : null;
   });
 }
 
-/** A source as copySources writes it; null for anything else (another rule, a malformed or overlong text). */
+/**
+ * A source as copySources writes it; null for anything else (another rule, a malformed or overlong text). Six parts
+ * read as spill 0; a seventh is the spill and is there only when it is above 0.
+ */
 export function readCopySource(text: string | null | undefined): CopySource | null {
   if (!text || text.length > COPY_SOURCE_MAX) return null;
   const parts = text.split('|');
-  if (parts.length !== 6 || parts[0] !== 'PACKED' || !/^[A-Z0-9_]+$/.test(parts[1]) || !/^\d{1,4}(\.\d{1,2})?$/.test(parts[2])
-      || !/^\d{1,4}$/.test(parts[4])) return null;
+  if ((parts.length !== 6 && parts.length !== 7) || parts[0] !== 'PACKED' || !/^[A-Z0-9_]+$/.test(parts[1])
+      || !/^\d{1,4}(\.\d{1,2})?$/.test(parts[2]) || !/^\d{1,4}$/.test(parts[4])) return null;
+  if (parts.length === 7 && !/^\d{1,2}(\.\d{1,2})?$/.test(parts[6])) return null;
   const totals = readEntries(parts[3]);
   const items = readEntries(parts[5]);
   const maxHeightCm = Number(parts[2]);
-  return totals && items && maxHeightCm > 0 ? { profile: parts[1], maxHeightCm, totals, index: Number(parts[4]), items } : null;
+  const spillCm = parts.length === 7 ? Number(parts[6]) : 0;
+  if (parts.length === 7 && !(spillCm > 0)) return null;
+  return totals && items && maxHeightCm > 0 ? { profile: parts[1], maxHeightCm, spillCm, totals, index: Number(parts[4]), items } : null;
 }
 
 /** Runs loaded again, by everything the run reads: every hand pallet of one copy shares one. */
@@ -425,15 +441,19 @@ function copyRun(copy: CopySource, cartonOf: (productId: number) => HandCarton |
 
 /**
  * The copied pallet of a hand pallet's source, loaded again on today's pallet: null without a source, for another rule,
- * when the order's profile or loaded height changed since the copy (Indeling opnieuw maken copies again), when a product
- * of the run lacks sizes, or when the run loaded again does not give the pallet that was copied. Judge a hand pallet with
- * partOf(copied, its items): null there when it holds more of any product than the copied pallet.
+ * when the order's profile, loaded height or spill changed since the copy (Indeling opnieuw maken copies again), when a
+ * product of the run lacks sizes, or when the run loaded again does not give the pallet that was copied. Judge a hand
+ * pallet with partOf(copied, its items): null there when it holds more of any product than the copied pallet. `deck` is
+ * packDeck of the same spec, so the run is loaded again on the spill it was copied with.
  */
-export function copiedLoader(spec: { profile: string; maxHeightCm: number }, cartonOf: (productId: number) => HandCarton | null,
+export function copiedLoader(spec: { profile: string; maxHeightCm: number; spillLengthCm?: number; spillWidthCm?: number },
+  cartonOf: (productId: number) => HandCarton | null,
   deck: PackDeck, sides: readonly CartonUp[]): (source: string | null | undefined) => HandLoad | null {
+  const spill = specSpillCm(spec);
   return (source) => {
     const copy = readCopySource(source);
-    if (!copy || copy.profile !== spec.profile || Math.abs(copy.maxHeightCm - spec.maxHeightCm) > 1e-6) return null;
+    if (!copy || copy.profile !== spec.profile || Math.abs(copy.maxHeightCm - spec.maxHeightCm) > 1e-6
+        || Math.abs(copy.spillCm - spill) > 1e-6) return null;
     const copied = copyRun(copy, cartonOf, deck, sides)?.[copy.index];
     if (!copied) return null;
     const carried = new Map<number, number>();
