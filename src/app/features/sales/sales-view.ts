@@ -294,7 +294,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             @if (isAdvanceInvoice(data)) {
             <div><span>Producten</span><strong>{{ advanceSummary(data).lines ?? '—' }}</strong><small>{{ advanceSummary(data).pieces }}</small></div>
             <div><span>Lading container</span><strong>{{ advanceSummary(data).load }}</strong><small>{{ advanceSummary(data).volume }}</small></div>
-            } @else if (isServiceDoc()) {
+            } @else if (isServiceDoc() && !isCreditNote()) {
             <!-- A service (Btw-regeling › Dienst): what it is, in place of pieces and pallets. -->
             <div><span>Regels</span><strong>{{ (data.order.extraLines ?? []).length }}</strong><small>zonder producten</small></div>
             <div><span>Soort</span><strong>Dienst</strong><small>geen levering</small></div>

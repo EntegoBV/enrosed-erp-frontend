@@ -220,7 +220,7 @@ interface JourneyStep {
             <!-- A service (Btw-regeling › Dienst): nothing is packed or shipped, so the goods tiles make way for what the document is. -->
             <div class="desk-kpi"><small>Regels</small><strong>{{ (data.order.extraLines ?? []).length | num }}</strong><span>zonder producten</span></div>
             <div class="desk-kpi"><small>Soort</small><strong>Dienst</strong><span>geen levering of vracht</span></div>
-            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('order')"><small>Btw</small><strong>{{ data.priced.totals.vatLegalMention ? '0 % · verlegd' : (data.priced.totals.vatRatePct | pct: 0) }}</strong><span>{{ vatLabel(data.priced.totals.vatTreatment) }}</span></button>
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('order')"><small>Btw</small><strong>{{ data.priced.totals.vatTreatment === 'DIENST_VERLEGD' ? '0 % · verlegd' : (data.priced.totals.vatRatePct | pct: 0) }}</strong><span>{{ vatLabel(data.priced.totals.vatTreatment) }}</span></button>
             <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('order')"><small>{{ isInvoiceDoc() ? 'Vervalt' : 'Geldig tot' }}</small><strong>{{ ((isInvoiceDoc() ? data.order.invoiceDueDate : data.order.validUntil) | dateNl) || '—' }}</strong><span>{{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</span></button>
             } @else {
             @if (isAdvanceInvoice(data)) {
@@ -828,7 +828,7 @@ interface JourneyStep {
                       @if (customerVatNumber()) { <span class="hint">BTW {{ customerVatNumber() }} · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                       @else { <span class="hint">Geen BTW-nummer bij de klant · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                     </div>
-                    <app-sales-vat-choice [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="vatChoiceSaved($event)" />
+                    <app-sales-vat-choice [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" [save]="saveVatChoice" />
                     <div class="desk-form__duo">
                       <div class="field">
                         <label class="req" for="sd-country">Land van levering</label>
@@ -1891,11 +1891,11 @@ export class SalesDesk extends SalesEditor {
     /* The rail survives document navigation in this reused instance: a tab the new document does not offer falls back to Klant. */
     effect(() => {
       const id = this.view()?.order.id;
-      const credit = this.isCreditNoteDoc(), claim = this.isClaimDoc(), reports = this.reportLocked();
+      const credit = this.isCreditNoteDoc(), claim = this.isClaimDoc(), reports = this.reportLocked(), service = this.isServiceDoc();
       untracked(() => {
         if (id == null) return;
         const tab = this.railTab();
-        if ((tab === 'delivery' && (credit || reports)) || (tab === 'payments' && !claim)) this.railTab.set('order');
+        if ((tab === 'delivery' && (credit || reports || service)) || (tab === 'payments' && !claim)) this.railTab.set('order');
       });
     });
     /* A consumed receipt or refund request must not reopen its sheet when the tab is re-entered. */

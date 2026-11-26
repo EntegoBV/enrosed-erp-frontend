@@ -388,8 +388,10 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
           } @else {
           <div class="card">
             <div class="card__body">
+              @if (!plain()) {
               <div class="stat-row"><span>{{ t('subtotal') }}</span>
                 <span class="num">{{ data.totals.subtotal | eur: 2: locale() }}</span></div>
+              }
               @if (data.totals.orderDiscountAmount) {
                 <div class="stat-row stat-row--discount">
                   <span>{{ t('orderDiscount') }} {{ data.totals.orderDiscountPercent | pct: 0: locale() }}</span>
@@ -401,16 +403,20 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                     ({{ data.totals.extraDiscountPercent | pct: 1: locale() }})</span>
                   <span class="num">− {{ data.totals.extraDiscountAmount | eur: 2: locale() }}</span></div>
               }
+              @if (!plain()) {
               <div class="stat-row stat-row--sub"><span>{{ t('goodsValue') }}</span>
                 <span class="num">{{ data.totals.goodsTotal | eur: 2: locale() }}</span></div>
+              }
               @if (data.totals.extraLinesTotal) {
                 <div class="stat-row"><span>{{ t('extraLines') }}</span>
                   <span class="num">{{ data.totals.extraLinesTotal | eur: 2: locale() }}</span></div>
               }
+              <!-- A quote without product lines (a service, free lines only) names freight and handling only where an amount stands, as its PDF does. -->
+              @if (!plain() || freightPending() || data.totals.freight) {
               <div class="stat-row">
                 <span>
                   {{ t('freight') }}
-                  @if (!freightPending()) { ({{ freightBasis(data) }}) }
+                  @if (!freightPending() && !plain()) { ({{ freightBasis(data) }}) }
                 </span>
                 <span class="num">
                   @if (freightPending()) {
@@ -419,8 +425,11 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                     {{ data.totals.freight | eur: 2: locale() }}
                   }
                 </span></div>
+              }
+              @if (!plain() || data.totals.handling) {
               <div class="stat-row"><span>{{ t('handling') }}</span>
                 <span class="num">{{ data.totals.handling | eur: 2: locale() }}</span></div>
+              }
               <div class="stat-row stat-row--total"><span>{{ t(freightPending() ? 'portalTotalWithoutFreight' : 'total') }}</span>
                 <span class="num">{{ data.totals.total | eur: 2: locale() }}</span></div>
               @if (data.totals.vatLegalMention) {
@@ -939,7 +948,10 @@ export class PortalPage implements OnDestroy {
   }
 
   /** Is the customer still waiting on a freight amount from us? */
-  readonly freightPending = computed(() => this.quote()?.freight === 'TE_BEPALEN');
+  /** A service (regime DIENST_*) ships nothing: a freight state left open is no open point for the customer. */
+  readonly freightPending = computed(() => this.quote()?.freight === 'TE_BEPALEN' && !(this.quote()?.totals.vatTreatment ?? '').startsWith('DIENST_'));
+  /** No product lines: a service or free lines only. */
+  readonly plain = computed(() => !(this.quote()?.lines ?? []).length);
 
   freightBasis(quote: PortalQuote): string {
     if (quote.freight === 'TE_BEPALEN') return '';

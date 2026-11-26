@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import type { SalesOrderView } from '../../core/api/models';
 import { SalesVatChoiceApi, type SalesVatChoice as Choice, type SalesVatRoute } from '../../core/api/sales-vat-choice-api';
 import { messageOf } from '../../core/api/errors';
@@ -43,8 +43,11 @@ export class SalesVatChoice implements OnDestroy {
   /** Unsaved edits or a busy host: the choice waits. */
   readonly blocked = input(false);
   readonly variant = input<'desk' | 'ios'>('desk');
-  /** The document as the server prices it on the new route. */
-  readonly changed = output<SalesOrderView>();
+  /**
+   * Stores the route and shows the repriced document. The host owns it: this control is destroyed
+   * when its tab or step is left, and the answer must still reach the screen.
+   */
+  readonly save = input.required<(route: SalesVatRoute, confirmed: boolean) => Promise<void>>();
 
   readonly choice = signal<Choice | null>(null);
   readonly pending = signal<SalesVatRoute | null>(null);
@@ -71,7 +74,8 @@ export class SalesVatChoice implements OnDestroy {
   private version = 0;
 
   constructor() {
-    effect(() => { this.key(); void this.load(); });
+    /* Read again when a stored fact changes, and when edits were saved (blocked clears): never per keystroke. */
+    effect(() => { this.key(); if (this.blocked()) return; untracked(() => void this.load()); });
   }
 
   private async load(): Promise<void> {
@@ -100,27 +104,28 @@ export class SalesVatChoice implements OnDestroy {
         message: `${this.view().order.number} is eerder uitgereikt met btw-regeling “${vatRouteName(choice.route, choice)}”. `
           + `Wijzigen naar “${vatRouteName(route, choice)}” verandert de factuur zoals de klant ze kreeg.`,
         confirmLabel: 'Toch wijzigen', danger: true,
-      }, () => { void this.store(orderId, route, choice, true); });
+      }, () => { void this.store(route, choice, true); });
       return;
     }
-    await this.store(orderId, route, choice, false);
+    await this.store(route, choice, false);
   }
 
-  private async store(orderId: number, route: SalesVatRoute, choice: Choice, confirmed: boolean): Promise<void> {
+  private async store(route: SalesVatRoute, choice: Choice, confirmed: boolean): Promise<void> {
     if (this.pending() !== null) return;
     const version = this.version;
     this.error.set(''); this.pending.set(route);
     try {
-      const updated = await this.api.save(orderId, route, confirmed);
+      await this.save()(route, confirmed);
+      this.ui.toast('Btw-regeling aangepast', 'ok');
       if (version !== this.version) return;
       this.choice.set({ ...choice, route, chosen: route !== choice.customerRoute });
       this.pending.set(null);
-      this.ui.toast('Btw-regeling aangepast', 'ok');
-      this.changed.emit(updated);
     } catch (failure) {
-      if (version !== this.version) return;
+      const message = messageOf(failure, 'De btw-regeling kon niet worden aangepast.');
+      /* Left behind by a tab or step change: say it where the user is now. */
+      if (version !== this.version) { this.ui.toast(message, 'err'); return; }
       this.pending.set(null);
-      this.error.set(messageOf(failure, 'De btw-regeling kon niet worden aangepast.'));
+      this.error.set(message);
     }
   }
 

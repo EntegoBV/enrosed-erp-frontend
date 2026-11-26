@@ -29,6 +29,7 @@ import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
 import { SalesVatChoice } from './sales-vat-choice';
+import { SalesVatChoiceApi, type SalesVatRoute } from '../../core/api/sales-vat-choice-api';
 import { isServiceTreatment, vatTreatmentLabel } from './sales-vat-choice-state';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
@@ -202,7 +203,7 @@ function layoutKey(order: SalesOrder): string {
               }
               <div class="quote-hero__meta">
                 {{ data.order.countryCode || 'Nog geen leverland' }}
-                · {{ data.order.incoterm || 'Geen incoterm' }}
+                · {{ isServiceDoc() ? 'dienst' : data.order.incoterm || 'Geen incoterm' }}
               </div>
               @if (billingTag(); as tag) { <a class="adv-tag" [routerLink]="['/sales', billingQuoteId()]">{{ tag }}</a> }
             </div>
@@ -227,9 +228,15 @@ function layoutKey(order: SalesOrder): string {
             <div class="hero-fact"><span class="hero-fact__label">Producten</span><strong>{{ advanceSummary(data).lines ?? '—' }}</strong><span>{{ advanceSummary(data).pieces }}</span></div>
             <div class="hero-fact"><span class="hero-fact__label">Lading container</span><strong>{{ advanceSummary(data).load }}</strong><span>{{ advanceSummary(data).volume }}</span></div>
             } @else {<div class="hero-fact">
+              @if (isServiceDoc() && !isCreditNoteDoc()) {
+              <span class="hero-fact__label">Regels</span>
+              <strong>{{ (data.order.extraLines ?? []).length }}</strong>
+              <span>zonder producten</span>
+              } @else {
               <span class="hero-fact__label">Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
               <span>{{ data.priced.totals.pieces | num }} {{ quantityLabel(data.priced.lines) }}</span>
+              }
             </div>
             @if (isCreditNoteDoc()) {
             <!-- A credit note delivers nothing: the tile that matters is the tegoed. -->
@@ -244,6 +251,13 @@ function layoutKey(order: SalesOrder): string {
               <span class="hero-fact__label">Netto opbrengst</span>
               <strong>{{ reportNetFigure() === null ? '—' : (reportNetFigure()! | eur: 0) }}</strong>
               <span>{{ reportMeldingenLine() }}</span>
+            </div>
+            } @else if (isServiceDoc()) {
+            <!-- A service: nothing is delivered. -->
+            <div class="hero-fact">
+              <span class="hero-fact__label">Soort</span>
+              <strong>Dienst</strong>
+              <span>geen levering</span>
             </div>
             } @else {
             <div class="hero-fact">
@@ -338,7 +352,7 @@ function layoutKey(order: SalesOrder): string {
           <app-sales-web-order-note class="web-order-note" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="webOrderMailed($event)" />
         }
         <app-sales-fulfillment-card [view]="data" [blocked]="dirty() || saving() || mobileSplitBusy()" (changed)="mobileFulfillmentChanged($event)" />
-        @if (!data.fulfillment && !isPartnerDocument(data.order) && !isCreditNoteDoc() && !isWebOrder()) {
+        @if (!data.fulfillment && !isPartnerDocument(data.order) && !isCreditNoteDoc() && !isWebOrder() && !isServiceDoc()) {
           <section class="mobile-split-entry"><div><b>Een deel later leveren?</b><span>{{ mobileSplitBlockReason(data) || 'Verplaats producten naar een gekoppelde nalevering.' }}</span></div><button class="btn btn--sm" type="button" [disabled]="!!mobileSplitBlockReason(data) || dirty() || saving() || sending() || documentMutationBusy() || invoiceConversionBusy()" (click)="openMobileSplit()">Order splitsen</button></section>
         }
 
@@ -584,7 +598,7 @@ function layoutKey(order: SalesOrder): string {
                 @if (isCreditNoteDoc() && data.creditedInvoiceNumber) { <span class="hint">Klant en land volgen factuur <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a></span> }
                 @else if (customerVatNumber()) { <span class="hint">BTW {{ customerVatNumber() }} · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
               </div>
-              <div class="span-2"><app-sales-vat-choice variant="ios" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="vatChoiceSaved($event)" /></div>
+              <div class="span-2"><app-sales-vat-choice variant="ios" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" [save]="saveVatChoice" /></div>
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
@@ -1160,7 +1174,7 @@ function layoutKey(order: SalesOrder): string {
         <section class="card totals-card erp-workspace__section" id="quote-check" aria-labelledby="totals-title">
           <div class="section-card-head">
             <div class="section-heading">
-              <span class="section-heading__number">{{ reportLocked() ? 3 : 4 }}</span>
+              <span class="section-heading__number">{{ noDelivery() ? 3 : 4 }}</span>
               <div>
                 <h2 id="totals-title">Controleren</h2>
                 <p>{{ advanceAgreement() ? 'Opgeslagen voorschottermijnen en latere slotfactuur' : 'Bedragen en voorwaarden vóór het versturen' }}</p>
@@ -2945,7 +2959,7 @@ export class SalesEditor {
   readonly phoneStep = signal(0);
   readonly phoneStepLabels = ['Gegevens', 'Producten', 'Levering', 'Controle'] as const;
   /** The phone's steps (indexes into phoneStepLabels): a document from Veilingverkopen has no Levering. */
-  readonly phoneSteps = computed<readonly number[]>(() => (this.reportLocked() ? [0, 1, 3] : [0, 1, 2, 3]));
+  readonly phoneSteps = computed<readonly number[]>(() => (this.noDelivery() ? [0, 1, 3] : [0, 1, 2, 3]));
   /** Where phoneStep stands in that list (0 when it is not in it). */
   readonly phoneStepAt = computed(() => Math.max(0, this.phoneSteps().indexOf(this.phoneStep())));
   /** The rail's stops: Levering only on a document that delivers. */
@@ -3265,7 +3279,7 @@ export class SalesEditor {
     if (text.includes('vracht') || text.includes('pallet') || text.includes('omdo')
         || text.includes('transport') || /\bkar(ren|indeling)?\b/.test(text)) {
       /* A document from Veilingverkopen ships nothing: its Controle is the place, never the transport sheet. */
-      if (this.reportLocked()) { this.scrollToSection('quote-check'); return; }
+      if (this.noDelivery()) { this.scrollToSection('quote-check'); return; }
       this.palletSheet.set(true);
       return;
     }
@@ -3273,7 +3287,7 @@ export class SalesEditor {
       this.scrollToSection('quote-setup');
       return;
     }
-    if (text.includes('product') || text.includes('minimum')) {
+    if (text.includes('product') || text.includes('minimum') || text.includes('regel')) {
       this.scrollToSection('order-lines');
       return;
     }
@@ -3372,7 +3386,7 @@ export class SalesEditor {
     void this.catalog.unitNames().catch(() => undefined);
     /* A reused editor on a document without Levering: a stale Levering step moves on to Controle. */
     effect(() => {
-      if (this.reportLocked() && this.phoneStep() === 2) untracked(() => this.phoneStep.set(3));
+      if (this.noDelivery() && this.phoneStep() === 2) untracked(() => this.phoneStep.set(3));
     });
     /* Another document in this screen (a link in the customer's price popup): the open customer sheet was the old one's. */
     effect(() => {
@@ -3552,6 +3566,8 @@ export class SalesEditor {
     if (!this.advanceAgreement() && data.priced.lines.some((line) => !this.lineUnavailable(line.productId) && !(line.unitPrice > 0))) {
       issues.push('Vul voor elk product een geldige stukprijs groter dan € 0 in');
     }
+    /* A service ships nothing: the server skips these checks too (validateForSend). */
+    if (!this.isServiceDoc()) {
     if (data.order.loadMode === 'LOOSE_CARTONS'
         && data.priced.validation.productsWithoutCartonDimensions?.length) {
       issues.push('Vul de buitenmaten van alle omdozen in');
@@ -3608,6 +3624,7 @@ export class SalesEditor {
       if (kar && data.order.loadMode !== 'LOOSE_CARTONS' && (strategy === 'COUNTRY_PALLET' || strategy === 'CARRIER')) {
         issues.push('Kies voor karren een vast vrachtbedrag');
       }
+    }
     }
     if (data.order.orderDate && data.order.validUntil
         && data.order.validUntil < data.order.orderDate) {
@@ -4687,10 +4704,23 @@ export class SalesEditor {
   /** No Levering step: a document from Veilingverkopen (the meldingen shipped it) or a service. */
   readonly noDelivery = computed(() => this.reportLocked() || this.isServiceDoc());
 
-  /** The Btw-regeling control saved a route: the server's repriced document replaces the one on screen. */
+  /**
+   * The Btw-regeling control picked a route. The save runs here, not in the control: the control is
+   * destroyed when its rail tab or phone step is left, and the repriced document must still land.
+   */
+  readonly saveVatChoice = async (route: SalesVatRoute, confirmed: boolean): Promise<void> => {
+    const id = this.view()?.order.id;
+    if (id == null) return;
+    this.vatChoiceSaved(await this.vatChoiceApi.save(id, route, confirmed));
+  };
+  private readonly vatChoiceApi = inject(SalesVatChoiceApi);
+
+  /** The server's repriced document replaces the one on screen. */
   vatChoiceSaved(updated: SalesOrderView): void {
     const current = this.view();
-    if (!current || current.order.id !== updated.order.id || this.dirty() || this.saving()) return;
+    if (!current || current.order.id !== updated.order.id) return;
+    /* The control waits while the document is dirty, so this is a late answer: keep the edits, take the new pricing. */
+    if (this.dirty() || this.saving()) { this.view.set({ ...current, priced: updated.priced }); return; }
     this.adopt(updated);
   }
 
@@ -5132,7 +5162,7 @@ export class SalesEditor {
     if (!data) return '';
     const customer = this.customers().find((c) => c.id === data.order.customerId);
     const parts = [customer?.company ?? 'Geen klant', data.order.countryCode ?? '',
-        data.order.incoterm ?? ''].filter(Boolean);
+        this.isServiceDoc() ? '' : data.order.incoterm ?? ''].filter(Boolean);
     return parts.join(' · ');
   }
 
