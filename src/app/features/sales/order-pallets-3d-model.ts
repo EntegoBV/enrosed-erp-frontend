@@ -35,6 +35,11 @@ import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, 
  * measured from the load floor's corner, so the spill comes off it
  * (packedPlace); a layer of layerSlots is centred on the real floor already.
  * A load wider than the floor hangs over evenly, never more than the spill.
+ * The spill is the one the server counted with (plannerSpec), which is 0
+ * where it priced the document without its stored spill. A hand pallet copied
+ * while the document counted with a smaller spill is drawn as it was copied:
+ * loaded on the floor of that day and put in its place on the real floor
+ * (copiedLoader), so it hangs over no further than then.
  *
  * An order on the Deense kar shows its karren ("Kar 2"). The view-only
  * Pallet | Deense kar switch (2026-11-25) shows the other carrier too:
@@ -395,7 +400,8 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
   /* Joined as the server loads a list only on PACKED and on the order's own pallet type; any other pallet is packed on its own
      (as before 2026-11-25: a STRICT part pallet stays low, a MIXED hand pallet as full as it goes). */
   const listLoad = handLoader(drawn, order, cartonOf, deck, ALL_SIDES, (index) => packedDoc && !listed[index].ownType);
-  /* The pallet Zelf indelen copied a hand pallet from, its run loaded again (the planner judges it the same way). */
+  /* The pallet Zelf indelen copied a hand pallet from, its run loaded again on the floor it was copied on and given in today's
+     load floor's places, so packedPlace below draws it where it stood (the planner judges it the same way). */
   const copiedOf = packedDoc ? copiedLoader(spec, cartonOf, deck, ALL_SIDES) : null;
   const builds = listed.map((pallet, index) => {
     const unmeasured: Loadable['unmeasured'] = [];

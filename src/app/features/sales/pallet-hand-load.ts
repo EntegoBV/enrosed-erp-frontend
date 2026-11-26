@@ -1,5 +1,6 @@
-import { cartonStanding, specSpillCm, type CartonUp } from './pallet-calculator-model';
-import { packPallets, packUnits, type PackDeck, type PackKind, type PackedBox } from './pallet-pack';
+import type { PalletProfile } from '../../core/api/models';
+import { cartonStanding, loadFloor, specSpillCm, spillAxes, type CartonUp, type PalletSpec } from './pallet-calculator-model';
+import { packDeck, packPallets, packUnits, type PackDeck, type PackKind, type PackedBox } from './pallet-pack';
 
 /**
  * How one pallet of a PACKED list stands with its omdozen loaded as full as
@@ -304,9 +305,13 @@ export function handLoader(pallets: readonly Items[], order: readonly number[], 
  * what stood on a box that came off comes down), never higher; one that holds more of any product gets nothing from it.
  * The run is loaded on the pallet as it is now (packDeck of today's spec, today's catalogue), so it is always a real load.
  * Since 2026-11-26 a run counted with a spill remembers that too, as a seventh part ("…|2", cm per side), written only
- * when it is not 0: the six parts of every source from before read as spill 0, byte for byte what they were. The copy
- * counts only while the order's spill is still the copy's, as for the profile and the height, so the run is always
- * loaded again on the deck (the floor plus that spill) it was copied from.
+ * when it is not 0: the six parts of every source from before read as spill 0, byte for byte what they were. It is the
+ * spill the run was COUNTED with (totals.palletSpillCm), never the document's stored pick: the server prices a document
+ * without its spill when that saves a carrier, and the copy then is a run on the floor itself. The run is always loaded
+ * again on the deck it was copied from (the floor plus the copy's spill). The copy counts while the document's spill is
+ * at least the copy's: the floor only got larger, so the load still stands on it (a copy made without spill on a
+ * document that later counts with 2 cm stays good, and so does one made at 2 when he sets 5). Below the copy's spill the
+ * load would pass the edge by more than the document allows: the copy is not used, as for another profile or height.
  */
 
 /** The longest source the backend keeps (sales_pallet.copy_source); a longer one is not written. */
@@ -440,24 +445,41 @@ function copyRun(copy: CopySource, cartonOf: (productId: number) => HandCarton |
 }
 
 /**
- * The copied pallet of a hand pallet's source, loaded again on today's pallet: null without a source, for another rule,
- * when the order's profile, loaded height or spill changed since the copy (Indeling opnieuw maken copies again), when a
- * product of the run lacks sizes, or when the run loaded again does not give the pallet that was copied. Judge a hand
- * pallet with partOf(copied, its items): null there when it holds more of any product than the copied pallet. `deck` is
- * packDeck of the same spec, so the run is loaded again on the spill it was copied with.
+ * The copied pallet of a hand pallet's source, loaded again as it was copied: null without a source, for another rule,
+ * when the order's profile or loaded height changed since the copy or its spill is now SMALLER than the copy's (Indeling
+ * opnieuw maken copies again), when a product of the run lacks sizes, or when the run loaded again does not give the
+ * pallet that was copied. Judge a hand pallet with partOf(copied, its items): null there when it holds more of any
+ * product than the copied pallet. `spec` is the order's carrier as it counts now and `deck` its packDeck. A copy made
+ * with the same spill is loaded on that deck. One made with a smaller spill is loaded on the deck of its own spill (the
+ * packer is a search: on a larger deck the same omdozen can end higher, which read "te hoog" on a load that fits) and
+ * its boxes are then moved to where they stand seen from today's load floor: both floors lie centred on the real one,
+ * so a box keeps its place on the real floor and hangs over no further than the copy's spill.
  */
-export function copiedLoader(spec: { profile: string; maxHeightCm: number; spillLengthCm?: number; spillWidthCm?: number },
+export function copiedLoader(spec: PalletSpec & { profile: PalletProfile },
   cartonOf: (productId: number) => HandCarton | null,
   deck: PackDeck, sides: readonly CartonUp[]): (source: string | null | undefined) => HandLoad | null {
   const spill = specSpillCm(spec);
+  const floor = loadFloor(spec);
   return (source) => {
     const copy = readCopySource(source);
     if (!copy || copy.profile !== spec.profile || Math.abs(copy.maxHeightCm - spec.maxHeightCm) > 1e-6
-        || Math.abs(copy.spillCm - spill) > 1e-6) return null;
-    const copied = copyRun(copy, cartonOf, deck, sides)?.[copy.index];
+        || copy.spillCm > spill + 1e-6) return null;
+    const own = Math.abs(copy.spillCm - spill) <= 1e-6;
+    /* The carrier as the copy counted it: the same floor, base, height and weight limit, with the copy's spill. */
+    const copySpec: PalletSpec = own ? spec : {
+      lengthCm: spec.lengthCm, widthCm: spec.widthCm, baseHeightCm: spec.baseHeightCm, maxHeightCm: spec.maxHeightCm,
+      maxWeightKg: spec.maxWeightKg, ...spillAxes(spec.profile, copy.spillCm),
+    };
+    const copied = copyRun(copy, cartonOf, own ? deck : packDeck(copySpec), sides)?.[copy.index];
     if (!copied) return null;
     const carried = new Map<number, number>();
     for (const box of copied.boxes) carried.set(box.productId, (carried.get(box.productId) ?? 0) + 1);
-    return sameItems([...carried].map(([productId, cartons]) => ({ productId, cartons })), copy.items) ? copied : null;
+    if (!sameItems([...carried].map(([productId, cartons]) => ({ productId, cartons })), copy.items)) return null;
+    if (own) return copied;
+    /* A place is measured from the corner of the load floor it was packed on; today's corner lies further out. */
+    const from = loadFloor(copySpec);
+    const dx = packUnits(floor.offsetXCm) - packUnits(from.offsetXCm);
+    const dz = packUnits(floor.offsetZCm) - packUnits(from.offsetZCm);
+    return { boxes: copied.boxes.map((box) => ({ ...box, x: box.x + dx, z: box.z + dz })), top: copied.top };
   };
 }
