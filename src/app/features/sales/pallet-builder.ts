@@ -421,7 +421,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     .plp-row .ios-thumb{margin-top:2px}
     .plp-thumb--empty{display:grid;place-items:center;color:var(--muted-2);font-size:16px}
     .plp-row--inactive>*{opacity:.66}
-    .plp-row--nested{min-height:54px;padding-left:28px;background:var(--surface)}
+    .plp-row--nested{min-height:54px;padding-left:28px}
     .plp-row--nested::after{content:'';position:absolute;top:0;bottom:0;left:16px;z-index:2;width:2px;border-radius:1px;background:var(--line-strong);pointer-events:none}
     .plp-head--open{background:color-mix(in srgb,var(--ink) 3%,var(--surface))}
     .plp-body{display:grid;flex:1;gap:2px;min-width:0}
@@ -454,10 +454,9 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
       .pb3-main{grid-template-rows:none;grid-template-columns:384px minmax(0,1fr)}
       .pb3-list{order:-1;border-top:0;border-right:1px solid var(--line)}
-      .pb3-list__bar{cursor:default;pointer-events:none;min-height:0;padding:14px 16px 8px}
+      .pb3-list__bar{cursor:default;pointer-events:none;min-height:0;padding:14px 16px 8px;flex-direction:column;align-items:flex-start;gap:2px}
       .pb3-list__grab,.pb3-list__chev{display:none}
       .pb3-list__hint{white-space:normal}
-      .pb3-list__bar{flex-direction:column;align-items:flex-start;gap:2px}
       .pb3-list__body,.pb3-list--shut .pb3-list__body{display:block;flex:1;max-height:none;padding:4px 0 16px}
       .pb3-row{touch-action:none}
       .pb3-pick__info .pb3-card__size,.pb3-pick__info .pb3-card__here{display:none}
@@ -471,9 +470,8 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-list__bar{padding-top:14px}
       .pb3-list--shut .pb3-list__bar{padding-bottom:calc(6px + var(--safe-b))}
       .pb3-pick{left:10px;right:10px;bottom:24px;transform:none;flex-direction:column;align-items:stretch;gap:6px;max-width:none;padding:10px 10px 6px}
-      .pb3-pick__info{max-width:none;padding:0 2px}
+      .pb3-pick__info{min-width:0;max-width:none;padding:0 2px}
       .pb3-pick__colours{max-width:none;padding:2px 0 0;border:0;gap:4px}
-      .pb3-pick__info{min-width:0;max-width:none}
       .pb3-pick__actions{justify-content:space-between}
       .pb3-pick__actions button{flex:1;height:52px;font-size:12px}
       .pb3-pick .pb3-pick__close{flex:none;min-width:44px}
@@ -502,10 +500,20 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       .pb3-list .plp-price{display:none}
       .pb3-list .plp-end{min-width:40px}.pb3-list .plp-end strong{font-size:15px}
     }
-    /* A phone held upright: the title's second line may wrap; a tool that cannot do anything yet waits out of sight. */
-    @media (hover: none) and (max-width: 420px){
-      .pb3-title p{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3}
+    /*
+     * A phone held upright, the widest ones too (430, 440 px): the title's second line may wrap, over three lines
+     * at most; a tool that cannot do anything yet waits out of sight. The title keeps its room: since the pager
+     * came to Palletberekening (2026-11-26) three tools beside it left the title 31 to 58 px ("Pallet" over "5"),
+     * so the tools go to a second row, on the right, as soon as the title would get under 120 px. One tool
+     * (a page as counted: Leeg) stays beside the pager from 375 px. These styles stand some 40 bytes under the 16 kB
+     * budget (15.954 B minified): a rule added here needs one merged or dropped elsewhere.
+     */
+    @media (hover: none) and (max-width: 440px){
+      .pb3-title p{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;line-height:1.3}
       .pb3-tools .pb3-btn:disabled{display:none}
+      .pb3-bar{flex-wrap:wrap}.pb3-title{flex:1 1 120px}.pb3-tools{margin-left:auto}
+    }
+    @media (hover: none) and (max-width: 420px){
       /* The chosen box's card leaves more of the load in sight: the count stands in the list under it. */
       .pb3-pick .pb3-card__here{display:none}
       .pb3-pick .pb3-card__img{width:40px;height:40px}
