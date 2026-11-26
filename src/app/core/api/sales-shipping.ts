@@ -6,14 +6,15 @@ export const shippingFields = [
   'freightCarrierExtraEur', 'freight', 'pallets',
 ] as const satisfies readonly (keyof SalesOrder)[];
 
-/** Complete snapshot for the narrow shipping endpoint; null explicitly resets a value. */
+/** Complete snapshot for the narrow shipping endpoint; null explicitly resets a value. A kar's freight defaults to FIXED, never per pallet. */
 export function shippingSnapshot(order: SalesOrder) {
   return {
     loadMode: order.loadMode ?? 'PALLETS',
     palletProfile: order.palletProfile ?? 'EURO_120X80',
     maxPalletHeightCm: order.maxPalletHeightCm ?? null,
     freightPricingStrategy: order.freightPricingStrategy
-      ?? (order.manualFreightEur != null ? 'FIXED' : order.loadMode === 'LOOSE_CARTONS' ? 'PER_CBM' : 'COUNTRY_PALLET'),
+      ?? (order.manualFreightEur != null || order.palletProfile === 'DEENSE_KAR' ? 'FIXED'
+        : order.loadMode === 'LOOSE_CARTONS' ? 'PER_CBM' : 'COUNTRY_PALLET'),
     freightRatePerCbmEur: order.freightRatePerCbmEur ?? null,
     manualFreightEur: order.manualFreightEur ?? null,
     freightCarrierId: order.freightCarrierId ?? null,

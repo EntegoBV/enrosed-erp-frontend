@@ -25,31 +25,38 @@ export function automaticLinePallets(totals: Pick<PalletTotals, 'autoPallets'>, 
   return pallets ? pallets.filter((pallet) => pallet.items.some((item) => item.productId === line.productId)).length : line.pallets;
 }
 
-/** The type a new pallet of this profile carries (and the pakbon prints). */
+/** The type a new pallet of this profile carries (and the pakbon prints); a hand kar is a "Deense kar". */
 export function palletTypeLabel(profile: PalletProfile | null | undefined): string {
   switch (profile) {
     case 'BLOCK_120X100': return 'Blokpallet 120×100';
     case 'HALF_80X60': return 'Halve pallet 80×60';
+    case 'DEENSE_KAR': return 'Deense kar';
     default: return 'Europallet';
   }
 }
 
-const NUMBERED = /^Pallet \d+$/;
+/** "Pallet 3", or "Kar 3" on an order on the Deense kar. */
+const NUMBERED = /^(Pallet|Kar) \d+$/;
 
-/** A pallet still called "Pallet n" follows its position; a name of its own stays. */
-export function relabelPallets(pallets: OrderPallet[]): OrderPallet[] {
+/**
+ * A pallet still called "Pallet n" (or a kar "Kar n") follows its position, in its own word unless
+ * another is given (the order went from pallets to karren or back); a name of its own stays.
+ */
+export function relabelPallets(pallets: OrderPallet[], word?: string): OrderPallet[] {
   return pallets.map((pallet, index) => {
-    const label = `Pallet ${index + 1}`;
-    return NUMBERED.test(pallet.label.trim()) && pallet.label !== label ? { ...pallet, label } : pallet;
+    const numbered = NUMBERED.exec(pallet.label.trim());
+    if (!numbered) return pallet;
+    const label = `${word ?? numbered[1]} ${index + 1}`;
+    return pallet.label !== label ? { ...pallet, label } : pallet;
   });
 }
 
-/** "Pallet n" for a pallet added at the end, never a number another pallet already carries. */
-export function nextPalletLabel(pallets: readonly { label: string }[]): string {
+/** "Pallet n" (or "Kar n") for a pallet added at the end, never a number another one already carries. */
+export function nextPalletLabel(pallets: readonly { label: string }[], word = 'Pallet'): string {
   const taken = new Set(pallets.map((pallet) => pallet.label.trim()));
   let number = pallets.length + 1;
-  while (taken.has(`Pallet ${number}`)) number++;
-  return `Pallet ${number}`;
+  while (taken.has(`${word} ${number}`)) number++;
+  return `${word} ${number}`;
 }
 
 /**
@@ -94,6 +101,7 @@ export function normalizeManualPalletType(value: string): string {
     return 'Halve pallet 80×60';
   }
   if (key === 'europallet' || key === 'europallet120×80') return 'Europallet';
+  if (key === 'deensekar') return 'Deense kar';
   return trimmed;
 }
 
@@ -128,6 +136,16 @@ export const PALLET_TYPES = [
   { value: 'Blokpallet 120×100', label: 'Blokpallet 120 × 100', short: 'Blok' },
   { value: 'Halve pallet 80×60', label: 'Halve pallet 80 × 60', short: 'Half' },
 ] as const;
+
+/** A hand unit's type on an order on the Deense kar (palletTypeLabel('DEENSE_KAR')). */
+export const KAR_TYPE = { value: 'Deense kar', label: 'Deense kar 127 × 54,5', short: 'Kar' } as const;
+
+export type CarrierType = (typeof PALLET_TYPES)[number] | typeof KAR_TYPE;
+
+/** The types a hand unit can take: the three pallets; on an order on the kar, the kar first. */
+export function carrierTypes(profile: PalletProfile | null | undefined): readonly CarrierType[] {
+  return profile === 'DEENSE_KAR' ? [KAR_TYPE, ...PALLET_TYPES] : PALLET_TYPES;
+}
 
 /** One colour per product on the pallets, so a mixed pallet reads at a glance. */
 export const PALLET_PRODUCT_COLOURS = [

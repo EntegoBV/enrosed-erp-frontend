@@ -48,8 +48,9 @@ export const PALLET_HEIGHT_LIMIT_CM = 300;
 /** A europallet is loaded at most 2,60 m high, the pallet included (Emre, 2026-11-10); the backend refuses a new pick above it. */
 export const EURO_PALLET_HEIGHT_LIMIT_CM = 260;
 
-/** The highest height that can be picked for a pallet type. */
+/** The highest height that can be picked for a pallet type, or the Deense kar (KAR_HEIGHT_LIMIT_CM). */
 export function palletHeightLimit(profile: PalletProfile): number {
+  if (profile === 'DEENSE_KAR') return KAR_HEIGHT_LIMIT_CM;
   return profile === 'EURO_120X80' ? EURO_PALLET_HEIGHT_LIMIT_CM : PALLET_HEIGHT_LIMIT_CM;
 }
 
@@ -80,7 +81,9 @@ export interface PalletSpec {
   maxWeightKg: number;
 }
 
+/** A pallet type's spec at this height; the Deense kar (an order's DEENSE_KAR) is karSpec. */
 export function palletSpec(profile: PalletProfile, maxHeightCm: number): PalletSpec {
+  if (profile === 'DEENSE_KAR') return karSpec(maxHeightCm);
   const choice = PALLET_CHOICES.find((candidate) => candidate.id === profile) ?? PALLET_CHOICES[0];
   return {
     lengthCm: choice.lengthCm, widthCm: choice.widthCm, baseHeightCm: PALLET_BASE_HEIGHT_CM,
@@ -88,8 +91,9 @@ export function palletSpec(profile: PalletProfile, maxHeightCm: number): PalletS
   };
 }
 
-/** A picked maximum height within the bounds: above the wood, at most what the pallet type allows, whole centimetres. */
+/** A picked maximum height within the bounds: above the wood, at most what the pallet type allows, whole centimetres (a kar: clampKarHeight). */
 export function clampPalletHeight(value: number, profile: PalletProfile): number {
+  if (profile === 'DEENSE_KAR') return clampKarHeight(value);
   const limit = palletHeightLimit(profile);
   if (!Number.isFinite(value)) return Math.min(PALLET_MAX_HEIGHT_CM, limit);
   return Math.min(limit, Math.max(Math.ceil(PALLET_BASE_HEIGHT_CM + 1), Math.round(value)));
@@ -135,6 +139,69 @@ export function karSpec(maxHeightCm: number): PalletSpec {
 export function clampKarHeight(value: number): number {
   if (!Number.isFinite(value)) return KAR_MAX_HEIGHT_CM;
   return Math.min(KAR_HEIGHT_LIMIT_CM, Math.max(Math.ceil(KAR_BASE_HEIGHT_CM + 1), Math.round(value)));
+}
+
+/**
+ * The Deense kar as a sales order can go on it (2026-11-25, Emre: "ook hier deense kar kunnen
+ * selecteren"): the profile DEENSE_KAR next to the three pallet types in Transport & levering ›
+ * Lading. Never in PALLET_CHOICES: that is Palletberekening's Pallettype, beside its own
+ * Pallet | Deense kar switch. The figures are karSpec's (the backend's PalletSpec.deenseKar()).
+ */
+export const KAR_CHOICE: PalletChoice = {
+  id: 'DEENSE_KAR', label: 'Deense kar', short: 'Kar', size: '127 × 54,5', lengthCm: KAR_LENGTH_CM, widthCm: KAR_WIDTH_CM,
+};
+
+/** What a sales order can go on: the three pallet types, then the Deense kar. */
+export const ORDER_LOAD_CHOICES: readonly PalletChoice[] = [...PALLET_CHOICES, KAR_CHOICE];
+
+/** An order's profile as a choice; an unknown or missing one reads as the europallet, as the server does. */
+export function loadChoice(profile: PalletProfile | null | undefined): PalletChoice {
+  return ORDER_LOAD_CHOICES.find((choice) => choice.id === profile) ?? PALLET_CHOICES[0];
+}
+
+/** Which carrier an order's profile is: the Deense kar, or a pallet of one of the three types. */
+export function carrierOf(profile: PalletProfile | null | undefined): CarrierKind {
+  return profile === 'DEENSE_KAR' ? 'kar' : 'pallet';
+}
+
+/** The standard loading height a document takes when it goes on this profile: 230 cm on the kar, 260 on a pallet. */
+export function standardHeightCm(profile: PalletProfile | null | undefined): number {
+  return profile === 'DEENSE_KAR' ? KAR_MAX_HEIGHT_CM : PALLET_MAX_HEIGHT_CM;
+}
+
+/** The lowest height that can be picked, just above the base: 18 cm on the kar, 16 on a pallet. */
+export function minHeightCm(profile: PalletProfile | null | undefined): number {
+  return Math.ceil((profile === 'DEENSE_KAR' ? KAR_BASE_HEIGHT_CM : PALLET_BASE_HEIGHT_CM) + 1);
+}
+
+/** The words of what the omdozen go on: "3 pallets", "3 karren", "Kar 2". */
+export interface CarrierWords {
+  one: string;
+  other: string;
+  /** The card's row and the settings' name: "Pallet", "Deense kar". */
+  title: string;
+  /** The plan's list: "Pallets", "Karren". */
+  list: string;
+  /** A numbered one: "Pallet 2", "Kar 2" (Palletberekening's "Kar 1 · vol", an order's hand karren). */
+  label: string;
+}
+
+/** One set of words for Palletberekening, the order screens and the 3D. */
+export const CARRIER_WORDS: Readonly<Record<CarrierKind, CarrierWords>> = {
+  pallet: { one: 'pallet', other: 'pallets', title: 'Pallet', list: 'Pallets', label: 'Pallet' },
+  kar: { one: 'kar', other: 'karren', title: 'Deense kar', list: 'Karren', label: 'Kar' },
+};
+
+export const CARRIERS: readonly CarrierKind[] = ['pallet', 'kar'];
+
+/** The words of an order's carrier: kar / karren on DEENSE_KAR, pallet / pallets otherwise. */
+export function carrierWords(profile: PalletProfile | null | undefined): CarrierWords {
+  return CARRIER_WORDS[carrierOf(profile)];
+}
+
+/** "pallet" or "pallets", "kar" or "karren", for a count. */
+export function carrierNoun(count: number, words: CarrierWords): string {
+  return count === 1 ? words.one : words.other;
 }
 
 export type ContainerId = '20GP' | '40GP' | '40HQ';

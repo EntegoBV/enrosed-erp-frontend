@@ -30,10 +30,10 @@ import { ALL_SIDES, UPRIGHT } from './pallet-pack';
 import { bestPlan, type PackLine } from './pallet-packed-plan';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
-  CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
+  CARRIERS, CARRIER_WORDS, CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
   containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
-  type CalcUnit, type CarrierKind, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
+  type CalcUnit, type CarrierKind, type CarrierWords, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
 /** One picked product: what was typed, in which unit, and its colour on the pallets. */
@@ -85,23 +85,6 @@ const UNITS: readonly CalcUnit[] = ['carton', 'display', 'piece'];
 const MAX_ROWS = 12;
 const MAX_RECENT = 12;
 const collator = new Intl.Collator('nl-BE', { numeric: true, sensitivity: 'base' });
-
-/** The words of what the omdozen go on: "3 pallets", "3 karren". */
-interface CarrierWords {
-  one: string;
-  other: string;
-  /** The card's row and the settings' name. */
-  title: string;
-  /** The plan's list: "Pallets", "Karren". */
-  list: string;
-}
-
-const CARRIER_WORDS: Readonly<Record<CarrierKind, CarrierWords>> = {
-  pallet: { one: 'pallet', other: 'pallets', title: 'Pallet', list: 'Pallets' },
-  kar: { one: 'kar', other: 'karren', title: 'Deense kar', list: 'Karren' },
-};
-
-const CARRIERS: readonly CarrierKind[] = ['pallet', 'kar'];
 
 function problemText(problem: string, words: CarrierWords): string {
   switch (problem) {

@@ -4,11 +4,12 @@ import type {
 import { copiedLoader, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
 import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
-  MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM, PALLET_CHOICES, PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG,
-  planPallets, roomWithoutExtraPallet, separatePallets, type PalletSpec, type PlanLine,
+  CARRIER_WORDS, KAR_BASE_HEIGHT_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM,
+  PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG, carrierWords, loadChoice, palletSpec, planPallets, roomWithoutExtraPallet,
+  separatePallets, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
-  PALLET_PRODUCT_COLOURS, PALLET_TYPES, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
+  PALLET_PRODUCT_COLOURS, carrierTypes, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
 } from './pallet-stack';
 import { salesLineUnavailable } from './sales-line-availability';
 
@@ -24,22 +25,46 @@ import { salesLineUnavailable } from './sales-line-availability';
 
 export interface PlannerSpec extends PalletSpec {
   profile: PalletProfile;
-  /** "Europallet 120 × 80". */
+  /** "Europallet 120 × 80", "Deense kar 127 × 54,5". */
   name: string;
-  /** The loaded height left above the wood. */
+  /** The loaded height left above the wood (the kar's base plate). */
   usableCm: number;
 }
 
+/**
+ * The order's carrier as the server priced it: a pallet type, or the Deense kar (DEENSE_KAR: 127 ×
+ * 54,5 cm, base 16,5 cm, 450 kg). The server sends the base and the height it counted with.
+ */
 export function plannerSpec(view: SalesOrderView): PlannerSpec {
   const profile = view.order.palletProfile ?? 'EURO_120X80';
-  const choice = PALLET_CHOICES.find((candidate) => candidate.id === profile) ?? PALLET_CHOICES[0];
-  const base = view.priced.totals.palletBaseHeightCm ?? PALLET_BASE_HEIGHT_CM;
-  /* The server's effective height; an older server without it priced a document without a height on 260. */
-  const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM;
+  const kar = profile === 'DEENSE_KAR';
+  const base = view.priced.totals.palletBaseHeightCm ?? (kar ? KAR_BASE_HEIGHT_CM : PALLET_BASE_HEIGHT_CM);
+  /* The server's effective height; an older server without it priced a document without a height on 260 (a kar has no
+     such past: it reads its own standard, 230). */
+  const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? (kar ? KAR_MAX_HEIGHT_CM : PALLET_LEGACY_MAX_HEIGHT_CM);
+  return specFor(profile, base, max);
+}
+
+/** A carrier's spec as the planner and the 3D read it: the profile's floor, name and weight limit at this base and height. */
+export function specFor(profile: PalletProfile, baseHeightCm: number, maxHeightCm: number): PlannerSpec {
+  const choice = loadChoice(profile);
   return {
     profile, name: `${choice.label} ${choice.size}`, lengthCm: choice.lengthCm, widthCm: choice.widthCm,
-    baseHeightCm: base, maxHeightCm: max, maxWeightKg: PALLET_MAX_WEIGHT_KG, usableCm: Math.max(1, max - base),
+    baseHeightCm, maxHeightCm, maxWeightKg: profile === 'DEENSE_KAR' ? KAR_MAX_WEIGHT_KG : PALLET_MAX_WEIGHT_KG,
+    usableCm: Math.max(1, maxHeightCm - baseHeightCm),
   };
+}
+
+/** The other carrier at its standard, for the 3D's view-only switch: a Deense kar at 230 cm, a europallet at 260 cm. */
+export function standardSpec(kind: CarrierKind): PlannerSpec {
+  const profile: PalletProfile = kind === 'kar' ? 'DEENSE_KAR' : 'EURO_120X80';
+  const spec = palletSpec(profile, standardHeightCm(profile));
+  return specFor(profile, spec.baseHeightCm, spec.maxHeightCm);
+}
+
+/** An order on the Deense kar (2026-11-25): its freight is set by hand (Vast bedrag), its screens say kar and karren. */
+export function isKarOrder(order: Pick<SalesOrder, 'palletProfile'>): boolean {
+  return order.palletProfile === 'DEENSE_KAR';
 }
 
 /** One product of the order as the planner sees it. */
@@ -74,6 +99,7 @@ const EPSILON = 1e-9;
 export function plannerLines(view: SalesOrderView, spec: PlannerSpec): PlannerLine[] {
   const palletised = (view.order.loadMode ?? 'PALLETS') === 'PALLETS';
   const missing = new Set(view.priced.validation.productsWithoutCartonDimensions ?? []);
+  const words = carrierWords(spec.profile);
   return view.priced.lines.flatMap((line, index) => {
     /* The order line's flag too: a product just set unavailable drops at once, before the new figures arrive. */
     const ordered = view.order.lines.find((item) => item.productId === line.productId);
@@ -90,7 +116,7 @@ export function plannerLines(view: SalesOrderView, spec: PlannerSpec): PlannerLi
     let problem: string | null = null;
     if (palletised && cartons > 0 && perPallet <= 0) {
       problem = missing.has(line.sku) ? 'Omdoosmaten ontbreken'
-        : perLayer <= 0 ? 'Omdoos te groot voor deze pallet' : 'Omdoos te hoog of te zwaar';
+        : perLayer <= 0 ? `Omdoos te groot voor deze ${words.one}` : 'Omdoos te hoog of te zwaar';
     } else if (!palletised && missing.has(line.sku)) problem = 'Omdoosmaten ontbreken';
     const rest = perPallet > 0 ? cartons % perPallet : 0;
     return [{
@@ -114,7 +140,7 @@ export type PalletStatus = 'nakijken' | 'te hoog' | 'te zwaar' | 'leeg' | 'vol' 
 
 export interface PalletPart { productId: number; name: string; colour: string; photoUrl: string | null; cartons: number }
 
-/** One pallet row, or a run of equal full pallets ("Pallet 1–2") of the automatic count. */
+/** One pallet row, or a run of equal full pallets ("Pallet 1–2", on the kar "Kar 1–2") of the automatic count. */
 export interface PalletVm {
   /** Position in the list (hand) or of the first pallet of the run (automatic), from 0. */
   index: number;
@@ -197,6 +223,7 @@ export function serverPallets(view: SalesOrderView, lines: readonly PlannerLine[
   const pallets = view.priced.totals.autoPallets;
   if (!pallets) return null;
   const byId = new Map(lines.map((line) => [line.productId, line]));
+  const word = carrierWords(spec.profile).label;
   const rows: PalletVm[] = [];
   pallets.forEach((pallet, index) => {
     const parts = pallet.items.map((item) => {
@@ -212,11 +239,11 @@ export function serverPallets(view: SalesOrderView, lines: readonly PlannerLine[
     if (full && only && run?.full && run.parts.length === 1 && run.parts[0].productId === only.productId
         && run.cartons === cartons && run.heightCm === pallet.heightCm && run.weightKg === pallet.weightKg) {
       run.to = index + 1;
-      run.label = `Pallet ${run.from}–${run.to}`;
+      run.label = `${word} ${run.from}–${run.to}`;
       return;
     }
     rows.push({
-      index, from: index + 1, to: index + 1, label: `Pallet ${index + 1}`, contents: contents(parts), parts, cartons,
+      index, from: index + 1, to: index + 1, label: `${word} ${index + 1}`, contents: contents(parts), parts, cartons,
       heightCm: pallet.heightCm, measured: false, weightKg: pallet.weightKg, fill: full ? 1 : fill, full,
       over: false, heavy: false, status: full ? 'vol' : 'pct',
       blocks: glyphBlocks(pallet.items, byId, pallet.heightCm, spec, (item) => item.layers),
@@ -229,6 +256,7 @@ export function serverPallets(view: SalesOrderView, lines: readonly PlannerLine[
 /** An older server's automatic count, laid out the way "Zelf indelen" copies it: per product, its full pallets, then the rest. */
 export function autoPallets(lines: readonly PlannerLine[], spec: PlannerSpec): PalletVm[] {
   const rows: PalletVm[] = [];
+  const word = carrierWords(spec.profile).label;
   let next = 0;
   for (const line of lines) {
     if (line.problem || line.perPallet <= 0 || line.cartons <= 0) continue;
@@ -244,7 +272,7 @@ export function autoPallets(lines: readonly PlannerLine[], spec: PlannerSpec): P
         weightShare(weightKg, spec)));
       const parts = [part(cartons)];
       return {
-        index: from - 1, from, to, label: from === to ? `Pallet ${from}` : `Pallet ${from}–${to}`,
+        index: from - 1, from, to, label: from === to ? `${word} ${from}` : `${word} ${from}–${to}`,
         contents: line.name, parts, cartons, heightCm, measured: false, weightKg, fill, full: isFull,
         over: false, heavy: false, status: isFull ? 'vol' : 'pct', blocks: h === null ? [] : [block(line, layers, spec)],
         type: null, typeNote: null,
@@ -266,7 +294,7 @@ export function palletCount(rows: readonly PalletVm[]): number {
 function typeNote(type: string, profile: PalletProfile): string | null {
   const normal = normalizeManualPalletType(type);
   if (!normal || normal === palletTypeLabel(profile)) return null;
-  return PALLET_TYPES.find((choice) => choice.value === normal)?.short ?? normal;
+  return carrierTypes(profile).find((choice) => choice.value === normal)?.short ?? normal;
 }
 
 /** A product's omdoos as the packer reads it: the catalogue's sizes, its weight or the line's; null without sizes. */
@@ -292,6 +320,7 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
   const byId = new Map(lines.map((line) => [line.productId, line]));
   const priced = new Set(view.priced.lines.map((line) => line.productId));
   const pallets = view.order.pallets;
+  const word = carrierWords(spec.profile).label;
   const packedDoc = view.priced.totals.palletRule === 'PACKED';
   const server = packedDoc ? view.priced.totals.autoPallets ?? [] : [];
   const own = (index: number) => typeNote(pallets[index].type, spec.profile) === null;
@@ -350,7 +379,7 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
     const status: PalletStatus = broken ? 'nakijken' : over ? 'te hoog' : heavy ? 'te zwaar'
       : !pallet.items.length ? 'leeg' : full ? 'vol' : 'pct';
     return {
-      index, from: index + 1, to: index + 1, label: pallet.label.trim() || `Pallet ${index + 1}`, contents: contents(parts),
+      index, from: index + 1, to: index + 1, label: pallet.label.trim() || `${word} ${index + 1}`, contents: contents(parts),
       parts, cartons: pallet.items.reduce((sum, item) => sum + item.cartons, 0),
       heightCm: stack.heightCm, measured: stack.measured, weightKg, fill, full, over, heavy, status,
       blocks: packedDoc ? glyphBlocks(pallet.items, byId, stack.heightCm, spec, layersOf) : pallet.items.map((item) => block(byId.get(item.productId), layersOf(item), spec)),
@@ -416,11 +445,12 @@ export function mixedLayout(lines: readonly PlannerLine[], spec: PlannerSpec, au
   const byId = new Map(lines.map((line) => [line.productId, line]));
   const widest = planned.reduce((best, pallet) => (pallet.parts.length > best.parts.length ? pallet : best), planned[0]);
   const type = palletTypeLabel(spec.profile);
+  const word = carrierWords(spec.profile).label;
   return {
     count: planned.length,
     saving: autoCount - planned.length,
     pallets: planned.map((pallet, index) => ({
-      id: null, label: `Pallet ${index + 1}`, type, heightCm: null,
+      id: null, label: `${word} ${index + 1}`, type, heightCm: null,
       items: pallet.parts.map((part) => ({ productId: part.key, cartons: part.cartons })),
     })),
     blocks: widest.parts.map((part) => block(byId.get(part.key), part.layers, spec)),
@@ -485,9 +515,9 @@ export function layoutComplete(check: LayoutCheck): boolean {
   return !check.empty && !check.broken && !check.measuredOut && !check.tooHigh && !check.tooHeavy && !check.over && !check.loose;
 }
 
-/** The one pill a hand layout gets: what to look at first. */
-export function layoutPill(check: LayoutCheck): { text: string; tone: 'ok' | 'warn' | 'danger' } {
-  if (check.empty) return { text: 'lege pallet', tone: 'warn' };
+/** The one pill a hand layout gets: what to look at first ("lege kar" on the kar). */
+export function layoutPill(check: LayoutCheck, words: CarrierWords = CARRIER_WORDS.pallet): { text: string; tone: 'ok' | 'warn' | 'danger' } {
+  if (check.empty) return { text: `lege ${words.one}`, tone: 'warn' };
   if (check.broken) return { text: 'nakijken', tone: 'danger' };
   if (check.measuredOut || check.tooHigh) return { text: 'te hoog', tone: 'danger' };
   if (check.tooHeavy) return { text: 'te zwaar', tone: 'danger' };
@@ -496,10 +526,10 @@ export function layoutPill(check: LayoutCheck): { text: string; tone: 'ok' | 'wa
   return { text: 'compleet', tone: 'ok' };
 }
 
-/** The freight basis an order uses, the stored one or the legacy default. */
+/** The freight basis an order uses, the stored one or the legacy default; a kar's is a fixed amount by hand. */
 export function freightStrategy(order: SalesOrder): FreightPricingStrategy {
   if (order.freightPricingStrategy) return order.freightPricingStrategy;
-  if (order.manualFreightEur != null) return 'FIXED';
+  if (order.manualFreightEur != null || isKarOrder(order)) return 'FIXED';
   return order.loadMode === 'LOOSE_CARTONS' ? 'PER_CBM' : 'COUNTRY_PALLET';
 }
 
@@ -521,5 +551,9 @@ export function freightGap(order: SalesOrder): string | null {
   if (strategy === 'PER_CBM' && !((order.freightRatePerCbmEur ?? 0) > 0)) return 'Vul het tarief per m³ in';
   if (strategy === 'FIXED' && order.manualFreightEur == null) return 'Vul het vaste bedrag in';
   if (strategy === 'COUNTRY_PALLET' && order.loadMode === 'LOOSE_CARTONS') return 'Kies Per m³ of Vast bedrag';
+  /* Landentarief and the staffels count pallets (Euro, Blok, Half): never a kar's freight. */
+  if ((strategy === 'COUNTRY_PALLET' || strategy === 'CARRIER') && isKarOrder(order) && order.loadMode !== 'LOOSE_CARTONS') {
+    return 'Kies Vast bedrag voor karren';
+  }
   return null;
 }

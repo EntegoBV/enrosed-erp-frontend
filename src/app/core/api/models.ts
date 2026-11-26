@@ -13,7 +13,8 @@ export type MarkupMode = 'PRODUCT' | 'ORDER' | 'CONTAINER_COST';
 /** How a container-level cost is shared out; MANUAL is the buyer's own split per line, for the Enrosed kost only. */
 export type Allocation = 'CBM' | 'VALUE' | 'PIECES' | 'MANUAL' | 'SEPARATE';
 export type LoadMode = 'PALLETS' | 'LOOSE_CARTONS';
-export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60';
+/** What the omdozen go on: a pallet type, or the Deense kar (DEENSE_KAR, 2026-11-25: 127 × 54,5 cm, 450 kg, the order's words say kar / karren). */
+export type PalletProfile = 'EURO_120X80' | 'BLOCK_120X100' | 'HALF_80X60' | 'DEENSE_KAR';
 /** How the automatic pallets count. STRICT: every product on pallets of its own; MIXED: whole layers stacked together; PACKED (2026-11-25): pallet by pallet as full as it goes. */
 export type PalletRule = 'STRICT' | 'MIXED' | 'PACKED';
 export type FreightPricingStrategy = 'COUNTRY_PALLET' | 'PER_CBM' | 'FIXED' | 'CARRIER' | 'PICKUP';
@@ -2180,7 +2181,7 @@ export interface SalesOrder {
   manualFreightEur: number | null;
   /** Physical load calculation; absent on legacy orders means pallets. */
   loadMode?: LoadMode | null;
-  /** Footprint used by the server's pallet fit calculation. */
+  /** Footprint used by the server's pallet fit calculation: a pallet type or the Deense kar. */
   palletProfile?: PalletProfile | null;
   /** Order override for total loaded height, including the pallet base. */
   maxPalletHeightCm?: number | null;
@@ -2302,10 +2303,10 @@ export interface PricedOrder {
      * The automatic count and its pallets, what the freight, the PDF and the portal follow without a
      * hand layout: MIXED stacks products together (new and concept documents), STRICT keeps every
      * product on pallets of its own (documents past concept keep the count they were sent with).
-     * Absent from older servers, which count palletsStrict.
+     * Absent from older servers, which count palletsStrict. On an order on the Deense kar these count karren.
      */
     palletRule?: PalletRule; palletsAutomatic?: number; autoPallets?: AutoPallet[];
-    /** Effective server settings used for this calculation. */
+    /** Effective server settings used for this calculation (a kar: its 16,5 cm base and the document's height). */
     palletBaseHeightCm?: number; palletMaxHeightCm?: number;
     cbm: number; weightKg: number;
     gross: number; lineDiscountTotal: number; subtotal: number;
@@ -3032,6 +3033,8 @@ export interface PortalQuote {
   /** Optional while an older portal backend is still serving cached quotes. */
   loadMode?: LoadMode;
   freightPricingStrategy?: FreightPricingStrategy;
+  /** The carrier: on DEENSE_KAR the counts read karren (portalKarrenShort); optional while an older backend answers. */
+  palletProfile?: PalletProfile | null;
   lines: PortalLine[];
   totals: {
     pieces: number; cartons: number; pallets: number; cbm?: number;
