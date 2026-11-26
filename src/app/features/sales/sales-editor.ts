@@ -428,7 +428,7 @@ function layoutKey(order: SalesOrder): string {
                 <span class="website-review__step">3 · Levering &amp; vracht</span>
                 <strong>{{ freightStrategyLabel(data) }}</strong>
                 <small>
-                  @if (data.order.freight === 'TE_BEPALEN') {
+                  @if (data.order.freight === 'TE_BEPALEN' || karFreightOpen(data)) {
                     Vrachtprijs moet nog worden ingevuld
                   } @else {
                     {{ data.priced.totals.freight | eur }} vracht
@@ -1336,13 +1336,15 @@ function layoutKey(order: SalesOrder): string {
                 <span class="num">
                   @if (data.order.freight === 'TE_BEPALEN') {
                     <span class="danger-text">nog te bepalen</span>
+                  } @else if (karFreightOpen(data)) {
+                    <span class="danger-text">nog in te vullen</span>
                   } @else {
                     {{ data.priced.totals.freight + data.priced.totals.handling | eur }}
                   }
                 </span>
               </div>
               }
-              @if (data.order.freight !== 'TE_BEPALEN' && (!reportLocked() || data.priced.totals.freight)) {
+              @if (data.order.freight !== 'TE_BEPALEN' && !karFreightOpen(data) && (!reportLocked() || data.priced.totals.freight)) {
                 <div class="receipt__row receipt__row--sub">
                   <span>Vracht · {{ freightBasisLabel(data) }}</span>
                   <span class="num">{{ data.priced.totals.freight | eur }}</span>

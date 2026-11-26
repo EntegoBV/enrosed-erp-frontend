@@ -1008,8 +1008,8 @@ interface JourneyStep {
                         <div class="desk-chain__row"><i>+</i><span>Andere regels <small>eigen lijnen, buiten de staffels</small></span><b>{{ data.priced.totals.extraLinesTotal | eur }}</b></div>
                       }
                       @if (!reportBacked(data) || data.priced.totals.freight + data.priced.totals.handling) {
-                      <div class="desk-chain__row"><i>+</i><span>Verzending <small>{{ data.order.freight === 'TE_BEPALEN' ? 'nog te bepalen' : freightBasisLabel(data) }}</small></span>
-                        <b>@if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">—</span> } @else { {{ data.priced.totals.freight + data.priced.totals.handling | eur }} }</b></div>
+                      <div class="desk-chain__row"><i>+</i><span>Verzending <small>{{ data.order.freight === 'TE_BEPALEN' ? 'nog te bepalen' : karFreightOpen(data) ? 'nog in te vullen' : freightBasisLabel(data) }}</small></span>
+                        <b>@if (data.order.freight === 'TE_BEPALEN' || karFreightOpen(data)) { <span class="danger-text">—</span> } @else { {{ data.priced.totals.freight + data.priced.totals.handling | eur }} }</b></div>
                       }
                       <div class="desk-chain__row desk-chain__row--sub"><i>=</i><span>Totaal excl. btw</span><b>{{ data.priced.totals.total | eur }}</b></div>
                       <div class="desk-chain__row"><i>+</i><span>BTW <small>{{ data.priced.totals.vatLegalMention ? '0% · verlegd' : (data.priced.totals.vatRatePct | pct: 1) }}</small></span><b>{{ (data.priced.totals.vatLegalMention ? 0 : data.priced.totals.vatAmount) | eur }}</b></div>

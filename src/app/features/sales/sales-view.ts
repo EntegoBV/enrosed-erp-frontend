@@ -76,7 +76,7 @@ import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/p
 import { SalesPdfChoice, SalesPdfSheet } from './sales-pdf-sheet';
 import { shippedPallets } from './pallet-stack';
 import { carrierNoun, carrierWords, type CarrierWords } from './pallet-calculator-model';
-import { isKarOrder } from './shipping-planner-model';
+import { freightGap, isKarOrder } from './shipping-planner-model';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -2398,15 +2398,22 @@ export class SalesView {
   }
 
   freightLabel(data: SalesOrderView): string {
+    if (this.karFreightOpen(data)) return 'nog in te vullen';
     return data.order.freight === 'TE_BEPALEN'
       ? 'Nog te bepalen'
       : new EurPipe().transform(data.priced.totals.freight, 2);
   }
 
   freightAmount(data: SalesOrderView): string {
+    if (this.karFreightOpen(data)) return 'nog in te vullen';
     return data.order.freight === 'TE_BEPALEN'
       ? 'open post'
       : new EurPipe().transform(data.priced.totals.freight, 2);
+  }
+
+  /** A kar order on Vast bedrag without its amount, as the switch to the kar leaves it: "nog in te vullen", never "€ 0,00". */
+  private karFreightOpen(data: SalesOrderView): boolean {
+    return isKarOrder(data.order) && freightGap(data.order) !== null;
   }
 
   vatLabel(data: SalesOrderView): string {

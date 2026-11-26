@@ -605,7 +605,8 @@ export class ShippingPlanner {
   /** What freight a switch to loose cartons replaced, so switching straight back restores it. */
   private looseSwitch: { strategy: FreightPricingStrategy; prefill: number | null } | null = null;
   /** What freight the switch onto the Deense kar replaced (Vast bedrag took its place), so straight back onto a pallet restores it. */
-  private karSwitch: { strategy: FreightPricingStrategy; rate: number | null } | null = null;
+  /** What the switch onto the kar replaced, while this planner is open: the freight basis (null: it was Vast bedrag) and the height. */
+  private karSwitch: { strategy: FreightPricingStrategy | null; rate: number | null; height: number | null } | null = null;
   private drag: { id: number; from: number; x: number; y: number; scroller: HTMLElement | null } | null = null;
   readonly draggingIndex = signal<number | null>(null);
   readonly dropIndex = signal<number | null>(null);
@@ -835,16 +836,22 @@ export class ShippingPlanner {
     const changes: ShippingOrderPatch = { palletProfile: profile, maxPalletHeightCm: standardHeightCm(profile) };
     this.looseSwitch = null;
     if (carrierOf(profile) === 'kar') {
-      this.karSwitch = current === 'FIXED' ? null
-        : { strategy: current, rate: current === 'PER_CBM' ? order.freightRatePerCbmEur ?? null : null };
+      this.karSwitch = {
+        strategy: current === 'FIXED' ? null : current, rate: current === 'PER_CBM' ? order.freightRatePerCbmEur ?? null : null,
+        height: order.maxPalletHeightCm ?? null,
+      };
       Object.assign(changes, {
         freightPricingStrategy: 'FIXED', freightRatePerCbmEur: null, manualFreightEur: current === 'FIXED' ? order.manualFreightEur ?? null : null,
       });
     } else {
       const back = this.karSwitch;
       this.karSwitch = null;
-      if (back && current === 'FIXED' && order.manualFreightEur == null) {
+      if (back?.strategy && current === 'FIXED' && order.manualFreightEur == null) {
         Object.assign(changes, { freightPricingStrategy: back.strategy, freightRatePerCbmEur: back.rate, manualFreightEur: null });
+      }
+      /* Straight back, the kar's height untouched: the height the document had (a sent quote at 220 keeps counting at 220). */
+      if (back && back.height !== null && this.heightCm() === standardHeightCm(this.spec().profile)) {
+        changes.maxPalletHeightCm = Math.min(back.height, palletHeightLimit(profile));
       }
     }
     this.switchProfile(changes, carrierOf(profile) === 'kar' ? 'Nu op karren' : 'Nu op pallets');
@@ -858,8 +865,10 @@ export class ShippingPlanner {
     const to = palletTypeLabel(changes.palletProfile!);
     const retyped = pallets.map((pallet) => (normalizeManualPalletType(pallet.type) === from ? { ...pallet, type: to } : pallet));
     const carrier = carrierOf(changes.palletProfile);
+    /* Across pallet and kar a measured height belonged to the other load: it goes (the server would refuse one over the new height). */
     this.patch.emit({ ...changes,
-      pallets: carrier === carrierOf(this.spec().profile) ? retyped : relabelPallets(retyped, carrierWords(changes.palletProfile).label) });
+      pallets: carrier === carrierOf(this.spec().profile) ? retyped
+        : relabelPallets(retyped.map((pallet) => ({ ...pallet, heightCm: null })), carrierWords(changes.palletProfile).label) });
     this.profileOffer.set(offer);
   }
 
