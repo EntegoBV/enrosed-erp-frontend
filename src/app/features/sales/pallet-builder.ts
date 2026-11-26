@@ -11,8 +11,7 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { CARRIERS, CARRIER_WORDS, type CarrierKind, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import {
   MAX_BUILDER_BOXES, collides, deckOf, dropBuild, extentOf, insideFirst, landing, loadBuild, nearestSpot, placesNear, relaidWithOne, ridersOf, sameBuild,
-  saveBuild, settle, sidesOf, sized, solidsOf, spillOf, tapSpot, type BuilderBox, type BuilderItem, type Landing, type Solid, type Spill, type SpillLevel,
-  type Spot,
+  saveBuild, settle, sidesOf, sized, solidsOf, spillOf, spotHangs, tapSpot, type BuilderBox, type BuilderItem, type Landing, type Solid, type Spill, type SpillLevel,
 } from './pallet-builder-model';
 import { BuilderScene } from './pallet-builder-scene';
 
@@ -378,7 +377,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     .pb3-stats .pb3-bad,.pb3-stats .pb3-bad b{color:var(--danger,#b3261e);border-color:color-mix(in srgb,var(--danger,#b3261e) 40%,var(--line))}
     .pb3-view{position:absolute;top:10px;right:12px}
     .pb3-switch{pointer-events:auto;width:min(240px,100%);margin-bottom:6px;background:color-mix(in srgb,var(--ink) 9%,var(--surface));backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-    .pb3-note{position:absolute;top:max(56px,var(--pb3-inset,0px));left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650}
+    .pb3-note{position:absolute;top:max(56px,var(--pb3-inset,0px));left:12px;right:12px;width:fit-content;margin:0 auto;white-space:normal;color:var(--warn);font-weight:650}
     .pb3-empty{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 32px);margin:0;font-size:13.5px;color:var(--muted);text-align:center;pointer-events:none}
     .pb3-empty p{margin:0}.pb3-empty .btn{pointer-events:auto}
     .pb3-dot{display:inline-block;flex:none;width:12px;height:12px;border-radius:50%;background:var(--dot);box-shadow:inset 0 0 0 1px rgb(26 22 20 / 18%)}
@@ -1078,23 +1077,20 @@ export class PalletBuilder {
     this.hostBridge.haptic('success');
   }
 
-  /** The place of one more omdoos on this side: the count's own layer, unless a corner rests lower (tapSpot). */
-  private spotFor(item: BuilderItem, up: CartonUp): Spot | null {
-    return tapSpot(solidsOf(this.boxes(), this.itemMap()), item, up, this.deck());
-  }
-
   /**
-   * One more omdoos of this product, on this side: on the place tapSpot gives. When there is none and the carrier
-   * holds only omdozen of its size, they are laid again in the count's own layers with the new one (relaidWithOne:
-   * one step for Ongedaan, the standing ones glide to their places), so a page as counted takes taps up to the
-   * card's count. Else there is no place. It is chosen, and it is said when the load is now past the carrier's
-   * weight (it stands all the same).
+   * One more omdoos of this product, on this side: on the place tapSpot gives. When there is none, or that place
+   * is partly in the air (spotHangs), and the carrier holds only omdozen of its size, they are laid again in the
+   * count's own layers with the new one (relaidWithOne: one step for Ongedaan, the standing ones glide to their
+   * places), so a page as counted takes taps up to the card's count and nothing rests half on a box. Else the
+   * place stands, or there is none. It is chosen, and it is said when the load is now past the carrier's weight
+   * (it stands all the same).
    */
   private addBox(item: BuilderItem, up: CartonUp): void {
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
     const id = this.nextId;
-    const spot = this.spotFor(item, up);
-    const relaid = spot ? null : relaidWithOne(this.boxes(), this.itemMap(), item, id, this.deck());
+    const solids = solidsOf(this.boxes(), this.itemMap());
+    const spot = tapSpot(solids, item, up, this.deck());
+    const relaid = spot && !spotHangs(solids, item, spot) ? null : relaidWithOne(this.boxes(), this.itemMap(), item, id, this.deck());
     if (!spot && !relaid) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
     this.nextId = id + 1;
     if (relaid) this.scene?.animateNext(new Set(this.boxes().map((box) => box.id)));
@@ -1333,8 +1329,22 @@ export class PalletBuilder {
     }
     const over = this.scene.contains(event.clientX, event.clientY);
     this.chip.set(over ? null : { x: event.clientX, y: event.clientY, colour: press.item.colourHex || press.item.colour });
-    this.target = over ? this.aimAt(event, press.item, press.item.up, false) : null;
+    this.target = over ? this.aimAt(event, press.item, press.item.up, this.trayTurned(press.item)) : null;
     if (!over) this.scene.showGhost(null, null, 'none');
+  }
+
+  /**
+   * A drag from the panel lies straight, unless only a quarter turn fits within the floor and its allowance: a
+   * 58 × 59 omdoos across the kar's 54,5 + 2 × 2 (final look of 2026-11-26: it landed 59 across, orange, while the
+   * card counts it turned).
+   */
+  private trayTurned(item: BuilderItem): boolean {
+    const deck = this.deck();
+    const fits = (turned: boolean) => {
+      const extent = extentOf(item, item.up, turned);
+      return extent.sx <= deck.lengthCm + 2 * deck.spillXCm + 1e-6 && extent.sz <= deck.widthCm + 2 * deck.spillZCm + 1e-6;
+    };
+    return !fits(false) && fits(true);
   }
 
   private trayUp(event: PointerEvent): void {

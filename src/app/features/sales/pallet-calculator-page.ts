@@ -33,7 +33,7 @@ import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CARRIERS, CARRIER_WORDS, CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  clampSpill, containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, specSpillCm, startUnit, unitsPerCarton,
+  clampSpill, containerCapacity, containerFill, joinUnbroken, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, specSpillCm, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type CarrierWords, type ContainerCapacity, type ContainerChoice, type PalletFit, type PalletSpec, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -1289,12 +1289,14 @@ export class PalletCalculatorPage {
     return parts.join(' · ');
   }
 
-  /** "Europallet 120 × 80 · max 260 cm · spill 2 cm": the floor as it is, the height, and this spill when it is above 0. */
+  /**
+   * "Europallet 120 × 80 · max 260 cm · spill 2 cm": the floor as it is, the height, and this spill when it is above 0.
+   * It wraps between its parts only on a phone (joinUnbroken), never "spill 2" / "cm".
+   */
   private labelWith(spillCm: number): string {
-    const spill = spillCm > 0 ? ` · spill ${spillCm} cm` : '';
-    if (this.carrier() === 'kar') return `Deense kar ${this.karSize} · max ${this.maxHeight()} cm${spill}`;
     const choice = PALLET_CHOICES.find((candidate) => candidate.id === this.profile()) ?? PALLET_CHOICES[0];
-    return `${choice.label} ${choice.size} · max ${this.maxHeight()} cm${spill}`;
+    const floor = this.carrier() === 'kar' ? `Deense kar ${this.karSize}` : `${choice.label} ${choice.size}`;
+    return joinUnbroken([floor, `max ${this.maxHeight()} cm`, ...(spillCm > 0 ? [`spill ${spillCm} cm`] : [])]);
   }
 
   palletsText(): string {

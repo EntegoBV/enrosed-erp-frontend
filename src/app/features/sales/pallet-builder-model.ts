@@ -142,6 +142,21 @@ export function restingHeight(solids: readonly Solid[], x: number, z: number, sx
   return y;
 }
 
+function shared(a: number, aSize: number, b: number, bSize: number): number {
+  return Math.max(0, Math.min(a + aSize, b + bSize) - Math.max(a, b));
+}
+
+/** How much of a box's footprint rests on the floor or on a top right under it: 1 when it is carried in full. */
+export function carriedShare(solid: Solid, solids: readonly Solid[]): number {
+  if (solid.y < 0.01) return 1;
+  let area = 0;
+  for (const other of solids) {
+    if (other.id === solid.id || Math.abs(other.y + other.sy - solid.y) > 0.01) continue;
+    area += shared(solid.x, solid.sx, other.x, other.sx) * shared(solid.z, solid.sz, other.z, other.sz);
+  }
+  return area / (solid.sx * solid.sz);
+}
+
 /** Every box drops onto what is under it, the lowest first: nothing floats after a box moves or goes. */
 export function settle(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>): BuilderBox[] {
   const solids = solidsOf(boxes, items);
@@ -439,6 +454,16 @@ export function tapSpot(
   const layer = patternSpot(solids, item, up, deck);
   const corner = nextSpot(solids, item, [up], deck);
   return layer && corner ? (corner.y < layer.y - 0.01 ? corner : layer) : layer ?? corner;
+}
+
+/**
+ * The place tapSpot gives is partly in the air: one more omdoos there would rest on less than its whole footprint.
+ * On a page as counted by the packer one omdoos stands centred on the floor; every tap then went on top of it,
+ * lying across it, and twelve taps built a tower on one box (final look of 2026-11-26: Rose in Dome 12x20, typed
+ * 1). The tap lays the carrier again in whole layers then (relaidWithOne), when it holds only omdozen of this size.
+ */
+export function spotHangs(solids: readonly Solid[], item: Pick<BuilderItem, 'lengthCm' | 'widthCm' | 'heightCm'>, spot: Spot): boolean {
+  return carriedShare({ id: Number.NaN, x: spot.x, y: spot.y, z: spot.z, ...extentOf(item, spot.up, spot.turned) }, solids) < 1 - EPSILON;
 }
 
 /**

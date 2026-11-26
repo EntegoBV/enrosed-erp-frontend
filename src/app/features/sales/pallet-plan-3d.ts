@@ -1,5 +1,5 @@
 import {
-  deckOf, packedFill, packedPlace, settle, solidsOf, stackAbove, type BuilderBox, type BuilderItem, type LayerStock, type Solid,
+  carriedShare, deckOf, packedFill, packedPlace, settle, solidsOf, stackAbove, type BuilderBox, type BuilderItem, type LayerStock,
 } from './pallet-builder-model';
 import { shareOnePallet, type CartonUp, type PalletSpec, type PlanLine, type PlannedPallet } from './pallet-calculator-model';
 import { bestPlan, packedLoads, type LoadedBox, type PackLine } from './pallet-packed-plan';
@@ -136,20 +136,8 @@ function layerOrders(layers: readonly LayerStock[]): LayerStock[][] {
   return orders;
 }
 
-function shared(a: number, aSize: number, b: number, bSize: number): number {
-  return Math.max(0, Math.min(a + aSize, b + bSize) - Math.max(a, b));
-}
-
-/** How much of a box's footprint rests on the floor or on a top right under it: 1 when it is carried in full. */
-export function carriedShare(solid: Solid, solids: readonly Solid[]): number {
-  if (solid.y < 0.01) return 1;
-  let area = 0;
-  for (const other of solids) {
-    if (other.id === solid.id || Math.abs(other.y + other.sy - solid.y) > 0.01) continue;
-    area += shared(solid.x, solid.sx, other.x, other.sx) * shared(solid.z, solid.sz, other.z, other.sz);
-  }
-  return area / (solid.sx * solid.sz);
-}
+/* carriedShare lives in pallet-builder-model since the tap reads it too; it stays exported here for the plan's readers. */
+export { carriedShare };
 
 /** Of these boxes, how many are not carried in full (loose) and how many by less than half (weak). */
 function carriedBy(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>): { loose: number; weak: number } {

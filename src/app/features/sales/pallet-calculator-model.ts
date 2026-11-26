@@ -130,6 +130,11 @@ export function specSpillCm(spec: SpillAxes): number {
   return Math.max(spillOn(spec.spillLengthCm), spillOn(spec.spillWidthCm));
 }
 
+/** Parts joined with " · ", each kept whole on one line: a break falls only after a dot ("… max 260 cm ·" / "spill 2 cm"). */
+export function joinUnbroken(parts: readonly string[]): string {
+  return parts.map((part) => part.replaceAll(' ', '\u00a0')).join('\u00a0· ');
+}
+
 /** The floor the count reads, and where the real floor lies in it. */
 export interface LoadFloor {
   lengthCm: number;

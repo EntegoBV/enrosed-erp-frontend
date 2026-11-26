@@ -2,7 +2,7 @@ import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { deckOf, packedPlace, settle, stackAbove, type BuilderBox, type BuilderItem, type Deck, type LayerStock } from './pallet-builder-model';
 import {
-  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, palletFit, productUnits, specSpillCm, type CarrierWords,
+  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, joinUnbroken, palletFit, productUnits, specSpillCm, type CarrierWords,
 } from './pallet-calculator-model';
 import { copiedLoader, copiedOnSmallerFloor, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
@@ -520,10 +520,15 @@ export function otherNotice3d(load: OtherLoad3d, shown: CarrierWords, own: Carri
   return notes.join(' · ');
 }
 
-/** "Europallet 120 × 80 · max 260 cm": what the 3D stands on; with a spill above 0 also that ("… · max 260 cm · spill 2 cm"). */
+/**
+ * "Europallet 120 × 80 · max 260 cm": what the 3D stands on; with a spill above 0 also that ("… · max 260 cm · spill 2 cm").
+ * On a phone it wraps between its parts only, never inside one, as the planner's basis line (specText).
+ */
 export function palletLabel3d(spec: PlannerSpec): string {
   const spill = specSpillCm(spec);
-  return `${spec.name} · max ${Math.round(spec.maxHeightCm).toLocaleString('nl-BE')} cm${spill > 0 ? ` · spill ${spill.toLocaleString('nl-BE')} cm` : ''}`;
+  const parts = [spec.name, `max ${Math.round(spec.maxHeightCm).toLocaleString('nl-BE')} cm`];
+  if (spill > 0) parts.push(`spill ${spill.toLocaleString('nl-BE')} cm`);
+  return joinUnbroken(parts);
 }
 
 /** The line over the view: what it does not draw, and where it differs from the order. */

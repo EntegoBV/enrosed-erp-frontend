@@ -95,7 +95,7 @@ export class OrderPallets3d {
   readonly pages = computed(() => this.pallets().map((pallet) => pallet.label));
   readonly heading = computed(() => this.pallet()?.label ?? CARRIER_WORDS[this.carrier()].label);
   /** "Europallet 120 × 80 · max 260 cm · zo vol mogelijk": the automatic pallets filled one after the other (the other carrier always). */
-  readonly label = computed(() => `${palletLabel3d(this.spec())}${this.load().source === 'packed' ? ' · zo vol mogelijk' : ''}`);
+  readonly label = computed(() => `${palletLabel3d(this.spec())}${this.load().source === 'packed' ? '\u00a0· zo\u00a0vol\u00a0mogelijk' : ''}`);
   readonly notice = computed(() => {
     const load = this.load();
     if (this.other() && 'capped' in load) {
