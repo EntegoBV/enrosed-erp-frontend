@@ -33,7 +33,11 @@ import { SalesApi } from '../../core/api/sales-api';
 import { DateField } from '../../shared/date-field';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
-import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
+import {
+  CATALOG_LOAD_STANDARD, catalogCarriers, catalogLoadFields, catalogLoadProblem, catalogueUnits, restoreCatalogLoad, storeCatalogLoad,
+  type CatalogLoad,
+} from './catalog-load';
+import { CatalogLoadSettings, type CatalogLoadExample } from './catalog-load-settings';
 import { CatalogPriceSheet } from './catalog-price-sheet';
 import {
   basisChanged, changesPrint, printedPrice, recipientSlug, requestOverrides, standardPrice, storedOverride, todayIso,
@@ -90,10 +94,8 @@ function unitAfterPrice(product: Product, language: LanguageCode, copy: { perPie
   return language === 'NL' ? unit.piece.per : copy.perPiece;
 }
 
-/** SalesSettings.pallet(), as the PDF counts: a Europallet 120 × 80 at the standard loaded height (the wood included), 700 kg. */
-const CATALOGUE_PALLET = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
-/** The catalogue's Deense kar: the standard height, omdozen upright (the server's PalletSpec.deenseKar). */
-const CATALOGUE_KAR = karSpec(KAR_MAX_HEIGHT_CM);
+/** The pallet and the kar of a PDF nobody picked a height or a spill for (260 / 230 / 2 cm): what decides which product the example names. */
+const STANDARD_CARRIERS = catalogCarriers(CATALOG_LOAD_STANDARD);
 
 interface CatalogBuilderState extends CatalogBrochureDraft {
   version: 2 | 3;
@@ -146,6 +148,7 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
   imports: [
     AuthImage,
     CatalogBrochureSettings,
+    CatalogLoadSettings,
     CatalogPriceSheet,
     CatalogProductSelection,
     CatalogProductArrangement,
@@ -369,6 +372,10 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
             (orderChange)="reorderProducts($event)" (resetRequested)="resetProductOrder()"
             (saveRequested)="saveProductOrder()" (reloadRequested)="reloadSavedOrder()"
           />
+
+          <!-- In both modes: both PDFs print per-pallet and per-kar figures and name the height they count with. -->
+          <app-catalog-load-settings [settings]="loadChoice()" [example]="loadExample()" [desk]="desktop.active()"
+                                     [disabled]="busy()" (settingsChange)="loadChoice.set($event)" />
 
           @if (layout() === 'BROCHURE') {
             <app-catalog-brochure-settings
@@ -759,6 +766,13 @@ export class CatalogExport {
   /** Emre, 2026-11-07: "pdf rond 10 mb … zet dit standaard aan". */
   readonly compressPdf = signal(true);
   readonly brochure = signal<CatalogBrochureDraft>({ ...DEFAULT_BROCHURE });
+  /**
+   * "Laadhoogte en spill" (Emre, 2026-11-26): the pallet's and the kar's loading height and the spill this PDF
+   * counts with. Kept in this tab only, as the recipient is (catalog-load.ts): never in the device draft.
+   */
+  readonly loadChoice = signal<CatalogLoad>(restoreCatalogLoad());
+  /** The server's two carriers for that pick: the preview counts on them as the PDF will. */
+  readonly carriers = computed(() => catalogCarriers(this.loadChoice()));
 
   /* Who the PDF is for and its one-off prices: they count only while "Prijzen tonen" is on (PRICE_STATE_KEY). */
   readonly customers = signal<Customer[]>([]);
@@ -875,11 +889,13 @@ export class CatalogExport {
     const copy = this.compactCopy();
     const familyNames = new Map(this.families().map((family) => [family.id,
       family.texts.find((text) => text.language === language)?.name?.trim() || family.name]));
+    const carriers = this.carriers();
     const figures = (product: Product) => {
       const gp = readGpCapacity(product.carton);
-      /* The PDF's figures: whole omdozen on the pallet or kar times what one omdoos holds, in the unit of 20ft and 40ft. */
+      /* The PDF's figures: whole omdozen on the pallet or kar times what one omdoos holds, in the unit of 20ft and 40ft,
+         on the heights and the spill picked for this PDF (catalogueUnits). */
       const perCarton = product.carton.piecesPerCarton;
-      const load = (cartons: number) => cartons > 0 && perCarton ? count.format(cartons * perCarton) : null;
+      const load = (units: number | null) => units === null ? null : count.format(units);
       const override = overrides.get(product.id!);
       /* A one-off typed on a unit the product has since left is no price at its unit now: it waits to be typed again
          (the server refuses it, BASIS_CHANGED), as the sheet says. */
@@ -895,8 +911,8 @@ export class CatalogExport {
         /* A display of known contents also prints its total price (the PDF's catalogPrices), sold as one or not. */
         displayPieces: packaging.kind === 'DISPLAY' && (packaging.piecesPerUnit ?? 0) > 1 ? packaging.piecesPerUnit : null,
         perBox: perCarton,
-        perPallet: load(palletFit(product.carton, CATALOGUE_PALLET).cartonsPerPallet),
-        perKar: load(palletFit(product.carton, CATALOGUE_KAR).cartonsPerPallet),
+        perPallet: load(catalogueUnits(product, carriers.pallet)),
+        perKar: load(catalogueUnits(product, carriers.kar)),
         per20Ft: gp.value === null ? null : count.format(gp.value),
         per20FtAuto: isAutoGpCapacity(gp),
         per20FtHint: gpCapacityHint(gp, product.carton),
@@ -912,7 +928,8 @@ export class CatalogExport {
     for (const product of this.selectedProducts()) {
       const printed = figures(product);
       /* What the PDF groups on (compactFigures): the unit, the carton and its size, the loads, and the price only
-         when prices are printed. The carton size goes as typed: the PDF prints it so. */
+         when prices are printed. The carton size goes as typed: the PDF prints it so. Another height or spill can
+         give two colours other loads, and then they stand on cards of their own, here and in the PDF. */
       const carton = product.carton;
       const signature = [printed.unit, printed.perBox, [carton.lengthCm, carton.widthCm, carton.heightCm].join('x'),
         printed.perPallet, printed.perKar, printed.per20Ft, printed.per40Ft,
@@ -960,6 +977,29 @@ export class CatalogExport {
   /** The selected colours the preview leaves out. */
   readonly compactHidden = computed(() => this.selectedProducts().length
     - this.compactRows().reduce((sum, row) => sum + row.colourCount, 0));
+  /**
+   * The example under "Laadhoogte en spill": one selected product as the PDF names it, with its per-pallet and
+   * per-kar figures on the picked load, in the document's number format (the preview's figures). It is the first
+   * in the PDF's order that has a per-pallet figure on the standard, whatever is picked, so the same product
+   * stays there while a height or the spill is stepped and only its figures move.
+   */
+  readonly loadExample = computed<CatalogLoadExample | null>(() => {
+    const products = this.selectedProducts();
+    const product = products.find((candidate) => catalogueUnits(candidate, STANDARD_CARRIERS.pallet) !== null) ?? products[0];
+    if (!product) return null;
+    const language = this.language();
+    const count = new Intl.NumberFormat(language.toLowerCase());
+    const carriers = this.carriers();
+    const figure = (units: number | null) => units === null ? null : count.format(units);
+    const family = product.familyId === null ? undefined : this.families().find((candidate) => candidate.id === product.familyId);
+    return {
+      /* The card's name in the preview: the family's in the document language, else the product's own. */
+      name: (family ? family.texts.find((text) => text.language === language)?.name?.trim() || family.name : null)
+        || product.texts.find((text) => text.language === language)?.name?.trim() || product.name,
+      perPallet: figure(catalogueUnits(product, carriers.pallet)),
+      perKar: figure(catalogueUnits(product, carriers.kar)),
+    };
+  });
   readonly targetKnown = computed(() => this.customers().some((customer) => customer.id === this.customerId()));
   /** The stored customer's id while prices are on: their prices load for it. */
   private readonly targetCustomerId = computed(() => this.includePrices() ? this.customerId() : null);
@@ -1031,6 +1071,7 @@ export class CatalogExport {
       const customerId = this.targetCustomerId();
       untracked(() => void this.loadCustomerPrices(customerId));
     });
+    effect(() => storeCatalogLoad(this.loadChoice()));
     effect(() => this.persistPriceState({
       version: 1,
       customerId: this.customerId(),
@@ -1167,6 +1208,12 @@ export class CatalogExport {
       /* An older server drops what it does not know: the PDF would leave without the customer or the typed prices. */
       if (this.needsPriceServer(request) && !Array.isArray(preflight.prices)) {
         this.showRenderProblem('De server kent prijzen per klant nog niet. Maak de PDF zonder klant, geldigheid en aangepaste prijzen, of probeer het later opnieuw.');
+        return;
+      }
+      /* The same for a height or a spill of this PDF's own: without the server's echo the PDF would carry the standard figures. */
+      const loadProblem = catalogLoadProblem(request, preflight.load);
+      if (loadProblem) {
+        this.showRenderProblem(loadProblem);
         return;
       }
       const missingPaths = this.validMissingPaths(preflight.missingPaths);
@@ -1418,6 +1465,8 @@ export class CatalogExport {
       ...(recipientName ? { recipientName } : {}),
       ...(prices && this.pricesValidUntil() ? { pricesValidUntil: this.pricesValidUntil() } : {}),
       ...(overrides.length ? { priceOverrides: overrides } : {}),
+      /* A height or the spill of this PDF's own: each only when it differs from the standard (260 / 230 / 2). */
+      ...catalogLoadFields(this.loadChoice()),
     };
   }
 

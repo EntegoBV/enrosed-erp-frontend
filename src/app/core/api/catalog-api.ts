@@ -71,6 +71,22 @@ export interface CatalogExportRequest {
   pricesValidUntil?: string | null;
   /** Only with includePrices; a product at most once, and only a selected one. */
   priceOverrides?: CatalogPriceOverride[];
+  /**
+   * This PDF's own loading heights and spill, in whole centimetres: the europallet's loaded height with the
+   * wood (16 to 260), the Deense kar's from the floor (18 to 300) and how far an omdoos may stick out past an
+   * edge (0 to 5; on the kar across its width only). Each absent or null = the standard (260 / 230 / 2); the
+   * studio sends one only when it differs. Both layouts count every per-pallet and per-kar figure with them.
+   */
+  palletHeightCm?: number | null;
+  karHeightCm?: number | null;
+  spillCm?: number | null;
+}
+
+/** The loading heights and the spill a PDF is counted with, as the server resolved them (the standard for what the request left out). */
+export interface CatalogLoadEcho {
+  palletHeightCm: number;
+  karHeightCm: number;
+  spillCm: number;
 }
 
 export type CatalogPriceSource = 'CATALOGUE' | 'CUSTOMER' | 'ONE_OFF' | 'ON_REQUEST';
@@ -110,6 +126,8 @@ export interface CatalogPreflightResult {
   prices?: CatalogResolvedPrice[];
   priceWarnings?: CatalogPriceIssue[];
   recipient?: { customerId: number | null; name: string } | null;
+  /** There on a server that counts a PDF with its own height and spill (2026-11-26); one without it drops those fields silently. */
+  load?: CatalogLoadEcho | null;
 }
 
 export interface WebsiteVisibilityResult {
