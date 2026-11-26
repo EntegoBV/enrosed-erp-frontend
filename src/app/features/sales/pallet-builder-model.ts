@@ -423,6 +423,51 @@ export function patternSpot(
   return best;
 }
 
+/**
+ * The place of one more omdoos on this side (a tap, "+", "+1"): the next place of the count's own layer
+ * (patternSpot), so tapping lays what the card counts, unless the search by corners (nextSpot) has a place that
+ * rests lower. patternSpot takes a layer place wherever it rests, also on boxes that stand otherwise (the
+ * packer's page, a box dragged by hand): the omdoos then went on top of them, partly in the air, with room on
+ * the floor (review of 2026-11-26: Foam Heart 15, the first "+" on a page of 22 landed 94,5 cm up, 70 % carried).
+ * The rule landing() has: the preferred place unless another rests lower. From an empty carrier no corner is
+ * ever lower than the layer's next place, so the card's count is tapped as before. Null when neither has a
+ * place under the height (relaidWithOne is the last try then).
+ */
+export function tapSpot(
+  solids: readonly Solid[], item: Pick<BuilderItem, 'lengthCm' | 'widthCm' | 'heightCm'>, up: CartonUp, deck: Deck,
+): Spot | null {
+  const layer = patternSpot(solids, item, up, deck);
+  const corner = nextSpot(solids, item, [up], deck);
+  return layer && corner ? (corner.y < layer.y - 0.01 ? corner : layer) : layer ?? corner;
+}
+
+/**
+ * No place left for one more omdoos (tapSpot gave none) on a carrier that holds only omdozen of its size: the
+ * same omdozen and one more in the count's own layers, on the side the card counts them (item.up). A page starts
+ * as the plan counts it, and a carrier the packer planned stands centred, often on another side than the card
+ * counts: taps then ran out of room below the card's count (review of 2026-11-26: the bear, 4 on the card, 3
+ * typed, the first tap said "Geen plaats meer"; DESIGN 4.3: the card's count is always reachable by tapping).
+ * By omdoos size, not by product: the colours of a tile and other products in the same omdoos share its layers
+ * (a carrier of FB-25-PK takes an FBH-25-RD the same way). Each omdoos keeps its id and its product, the lowest
+ * standing ones in the lowest places; the new one gets `newId` and the last place. Null when another size
+ * stands on the carrier or the layers do not take one more under the height: then there is no place.
+ */
+export function relaidWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>, item: BuilderItem, newId: number, deck: Deck):
+  BuilderBox[] | null {
+  if (!boxes.length || !sized(item)) return null;
+  const sameSize = (other: BuilderItem | undefined) => !!other && Math.abs(other.lengthCm - item.lengthCm) <= EPSILON
+    && Math.abs(other.widthCm - item.widthCm) <= EPSILON && Math.abs(other.heightCm - item.heightCm) <= EPSILON;
+  if (!boxes.every((box) => sameSize(items.get(box.key)))) return null;
+  const laid: BuilderBox[] = [];
+  stackAbove([{ key: item.key, cartons: boxes.length + 1, lengthCm: item.lengthCm, widthCm: item.widthCm, heightCm: item.heightCm, up: item.up }],
+    laid, 0, floorOf(deck));
+  if (laid.length !== boxes.length + 1) return null;
+  const standing = [...boxes].sort((left, right) => left.y - right.y || left.id - right.id);
+  const relaid = settle(laid.map((box, index) => (index < standing.length
+    ? { ...box, id: standing[index].id, key: standing[index].key } : { ...box, id: newId, key: item.key })), items);
+  return solidsOf(relaid, items).every((solid) => solid.y + solid.sy <= deck.usableCm + EPSILON) ? relaid : null;
+}
+
 /** One product's omdozen for a stack of whole layers: its omdoos and the side the count stands it on. */
 export interface LayerStock { key: number; cartons: number; lengthCm: number; widthCm: number; heightCm: number; up: CartonUp }
 
