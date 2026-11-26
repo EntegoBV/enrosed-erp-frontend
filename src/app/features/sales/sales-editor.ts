@@ -4134,11 +4134,14 @@ export class SalesEditor {
        changed here, a number then (0 too); without one the server keeps the document's own, so a screen that
        still holds an older spill never writes it back. What travels is the draft's pick (order.palletSpillCm),
        which only the Spill stepper changes: never the spill the figures were counted with (totals.palletSpillCm),
-       so a document the server priced without its spill keeps the pick it stores through every save. */
+       so a document the server priced without its spill keeps the pick it stores through every save.
+       No stored spill and 0 count the same, so a draft back at 0 ("+" then "−" on a document from before) never
+       gives a document its first stored spill: it would log "Spill: leeg → 0" for nothing and bring "Standaard",
+       one tap from re-counting a sent document at 2 cm. A stored 2 stepped to 0 differs and is sent. */
     const stored = this.savedDocument();
     let sent: SalesOrder = data.order;
     if ((sent.maxPalletHeightCm ?? null) === (stored?.maxPalletHeightCm ?? null)) sent = { ...sent, maxPalletHeightCm: null };
-    if ((sent.palletSpillCm ?? null) === (stored?.palletSpillCm ?? null)) sent = { ...sent, palletSpillCm: null };
+    if ((sent.palletSpillCm ?? 0) === (stored?.palletSpillCm ?? 0)) sent = { ...sent, palletSpillCm: null };
     const heightPicked = sent.maxPalletHeightCm != null;
     try {
       const saved = fullDraft
