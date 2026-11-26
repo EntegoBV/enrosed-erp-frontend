@@ -79,11 +79,10 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
-import { checkLayout, freightGap, isKarOrder, layoutComplete, plannerSpec } from './shipping-planner-model';
-import { copySources } from './pallet-hand-load';
+import { checkLayout, copiedLayout, freightGap, isKarOrder, layoutComplete, plannerSpec } from './shipping-planner-model';
 import { OrderPallets3d } from './order-pallets-3d';
 import { orderPallets3d } from './order-pallets-3d-model';
-import { PALLET_LEGACY_MAX_HEIGHT_CM, carrierNoun, carrierWords, specSpillCm, type CarrierWords } from './pallet-calculator-model';
+import { PALLET_LEGACY_MAX_HEIGHT_CM, carrierNoun, carrierWords, type CarrierWords } from './pallet-calculator-model';
 import {
   automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
 } from './pallet-stack';
@@ -5454,48 +5453,42 @@ export class SalesEditor {
   }
 
   /**
-   * "Zelf indelen" starts from the automatic pallets, one to one: the
-   * server's layout under its rule (products stacked together on a new or
-   * concept document), or on an older server every product on pallets of
-   * its own. A product that fits no pallet stays loose (the planner lists it
-   * under Nakijken); when nothing fits, the layout starts from one empty
-   * pallet, since an empty list is Automatisch itself. The figures are
-   * brought up to date first, so the pallets are never cut from an older
-   * pallet type, height or quantity. On a PACKED document every copied
-   * pallet remembers the run it comes from (OrderPallet.source), so the
-   * planner and the 3D judge it as that pallet whatever edits follow.
+   * "Zelf indelen" starts from the automatic pallets, one to one (copiedLayout: the server's layout under its
+   * rule, every copied pallet of a PACKED document with the run it comes from). The figures are brought up to
+   * date first, so the pallets are never cut from an older pallet type, height or quantity; a remake under a
+   * hand layout copies from the figures of the draft without that layout (layoutFigures).
    */
   async autoLayout(): Promise<void> {
     if (!this.canEditShipping() || !(await this.pricingSettled())) return;
-    this.enqueueShipping((order) => {
-      const type = palletTypeLabel(order.palletProfile);
-      const word = carrierWords(order.palletProfile).label;
-      const data = this.view();
-      const priced = data?.priced;
-      const pallets: OrderPallet[] = [];
-      const add = (items: OrderPallet['items'], source: string | null = null) =>
-        pallets.push({ id: null, label: `${word} ${pallets.length + 1}`, type, heightCm: null, items, source });
-      const automatic = priced?.totals.autoPallets;
-      if (data && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
-        const spec = plannerSpec(data);
-        /* The spill the run was counted with (the server's, in the spec: 0 when it priced the document without its pick) goes
-           into the source with the profile and the height: the copy is loaded again on that floor. Only into the source:
-           the document's own pick is not touched here. */
-        const sources = priced.totals.palletRule === 'PACKED'
-          ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items),
-            specSpillCm(spec))
-          : [];
-        automatic.forEach((pallet, index) => add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })), sources[index] ?? null));
-      } else {
-        for (const line of priced?.lines ?? []) {
-          const per = line.cartonsPerPallet;
-          if (per <= 0 || salesLineUnavailable(line)) continue;
-          for (let left = line.cartons; left > 0; left -= per) add([{ productId: line.productId, cartons: Math.min(per, left) }]);
-        }
-      }
-      if (!pallets.length) add([]);
-      return { ...order, pallets };
-    });
+    const figures = await this.layoutFigures();
+    if (figures) this.enqueueShipping((order) => ({ ...order, pallets: copiedLayout(order, figures) }));
+  }
+
+  /**
+   * The figures a hand layout is copied from: those on screen, which pricingSettled has just brought up to date.
+   * One exception (2026-11-26): a REMAKE ("Indeling opnieuw maken" after another pallet type, "Indeling
+   * bijwerken") on a document that stores a spill. Under a hand layout the server counts on the stored spill
+   * (its rule "a spill never costs a pallet" prices a document without its spill only while it has no hand
+   * pallets), so the automatic pallets beneath the layout can be one carrier more than Automatisch shows, and a
+   * remake copied that one more (the quote of 80 Rose in Dome 7×23 + 17 Flowerbox 16: 4 pallets where
+   * Automatisch says 3). So the pallets are copied from what the server answers for this very draft WITHOUT its
+   * hand layout: asked once, read only, nothing saved or shown in between. A remake then gives what Automatisch
+   * followed by Zelf indelen gives. A document that stores no spill, and Zelf indelen from Automatisch, copy from
+   * the figures on screen as they always did. Null: it could not be asked or the draft moved on; said, nothing changes.
+   */
+  private async layoutFigures(): Promise<SalesOrderView | null> {
+    const data = this.view();
+    if (!data || !data.order.pallets.length || !((data.order.palletSpillCm ?? 0) > 0)) return data;
+    const bare: SalesOrder = { ...data.order, pallets: [] };
+    try {
+      const figures = await this.sales.previewOrder(bare.id, bare);
+      const now = this.view()?.order;
+      if (now && now.id === bare.id && layoutKey({ ...now, pallets: [] }) === layoutKey(bare)) return figures;
+      this.ui.toast('De cijfers worden nog bijgewerkt; probeer het zo opnieuw.', 'err');
+    } catch (failure: unknown) {
+      this.ui.toast(messageOf(failure, 'De indeling kon niet opnieuw worden gemaakt; probeer het zo opnieuw.'), 'err');
+    }
+    return null;
   }
 
   /** "Indeling bijwerken" (Levering): the hand layout made again for the order as it is now, with a way back. */

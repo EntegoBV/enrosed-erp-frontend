@@ -1,7 +1,7 @@
 import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
-import { copiedLoader, copiedOnSmallerFloor, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
+import { copiedLoader, copiedOnSmallerFloor, copySources, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
 import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
   CARRIER_WORDS, KAR_BASE_HEIGHT_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM,
@@ -9,7 +9,7 @@ import {
   separatePallets, specSpillCm, spillAxes, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
-  PALLET_PRODUCT_COLOURS, carrierTypes, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
+  PALLET_PRODUCT_COLOURS, automaticPallets, carrierTypes, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
 } from './pallet-stack';
 import { salesLineUnavailable } from './sales-line-availability';
 
@@ -66,6 +66,43 @@ export function pickedSpillCm(view: SalesOrderView): number {
  */
 export function spillSetAside(view: SalesOrderView): boolean {
   return (view.order.loadMode ?? 'PALLETS') === 'PALLETS' && pickedSpillCm(view) > 0 && !((view.priced.totals.palletSpillCm ?? 0) > 0);
+}
+
+/**
+ * The hand layout "Zelf indelen" starts from: the automatic pallets of `figures`, one to one. The server's layout
+ * under its rule (products stacked together on a new or concept document), or on an older server every product
+ * on pallets of its own. A product that fits no pallet stays loose (the planner lists it under Nakijken); when
+ * nothing fits, the layout is one empty pallet, since an empty list is Automatisch itself. On a PACKED document
+ * every copied pallet remembers the run it comes from (OrderPallet.source), with the profile, the height and the
+ * spill THOSE figures were counted with (the spec of `figures`: 0 where the server priced the document without
+ * its pick), so the planner and the 3D judge it as that pallet whatever edits follow. The document's own pick is
+ * not touched. `figures` is the answer the caller copies from: the one on screen, or for a remake under a hand
+ * layout the answer for the same draft without it (the editor's layoutFigures says why).
+ */
+export function copiedLayout(order: Pick<SalesOrder, 'palletProfile'>, figures: SalesOrderView | null): OrderPallet[] {
+  const type = palletTypeLabel(order.palletProfile);
+  const word = carrierWords(order.palletProfile).label;
+  const priced = figures?.priced;
+  const pallets: OrderPallet[] = [];
+  const add = (items: OrderPallet['items'], source: string | null = null) =>
+    pallets.push({ id: null, label: `${word} ${pallets.length + 1}`, type, heightCm: null, items, source });
+  const automatic = priced?.totals.autoPallets;
+  if (figures && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
+    const spec = plannerSpec(figures);
+    const sources = priced.totals.palletRule === 'PACKED'
+      ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items),
+        specSpillCm(spec))
+      : [];
+    automatic.forEach((pallet, index) => add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })), sources[index] ?? null));
+  } else {
+    for (const line of priced?.lines ?? []) {
+      const per = line.cartonsPerPallet;
+      if (per <= 0 || salesLineUnavailable(line)) continue;
+      for (let left = line.cartons; left > 0; left -= per) add([{ productId: line.productId, cartons: Math.min(per, left) }]);
+    }
+  }
+  if (!pallets.length) add([]);
+  return pallets;
 }
 
 /**
