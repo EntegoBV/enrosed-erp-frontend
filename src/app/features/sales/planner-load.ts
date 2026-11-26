@@ -1,20 +1,27 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import type { LoadMode, PalletProfile } from '../../core/api/models';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
-import { PALLET_CHOICES } from './pallet-calculator-model';
+import { ORDER_LOAD_CHOICES } from './pallet-calculator-model';
 import { PalletStepper } from './pallet-glyph';
 
 const MODES: SegmentOption[] = [{ id: 'PALLETS', label: 'Op pallets' }, { id: 'LOOSE_CARTONS', label: 'Losse dozen' }];
-/** Palletberekening's labels; the desk aside is too narrow for the sizes, which the hero reads out anyway. */
-const PROFILES: SegmentOption[] = PALLET_CHOICES.map((choice) =>
-  ({ id: choice.id, label: `${choice.short} ${choice.size.replace(/ /g, '')}`, ariaLabel: `${choice.label} ${choice.size} cm` }));
-const PROFILES_SHORT: SegmentOption[] = PALLET_CHOICES.map((choice) =>
+/** An order on the Deense kar travels "Op karren". */
+const KAR_MODES: SegmentOption[] = [{ id: 'PALLETS', label: 'Op karren' }, MODES[1]];
+/**
+ * Palletberekening's labels for the three pallet types, then the Deense kar (2026-11-25). Four
+ * "Euro 120×80" segments do not fit a 375 px phone: there the size stands under the short name
+ * ("Euro" over "120×80"); the desk aside is too narrow for the sizes, which the hero reads out anyway.
+ */
+const PROFILES: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
+  ({ id: choice.id, label: choice.short, sub: choice.size.replace(/ /g, ''), ariaLabel: `${choice.label} ${choice.size} cm` }));
+const PROFILES_SHORT: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
   ({ id: choice.id, label: choice.short, ariaLabel: `${choice.label} ${choice.size} cm` }));
 
 /**
- * How the order travels: on pallets or as loose cartons, which pallet, and
- * how high it may be loaded. The phone shows it in the Lading sheet, the
- * desk in the planner's aside. The planner decides what a choice changes.
+ * How the order travels: on pallets (or karren) or as loose cartons, which
+ * pallet type or the Deense kar, and how high it may be loaded. The phone
+ * shows it in the Lading sheet, the desk in the planner's aside. The planner
+ * decides what a choice changes.
  */
 @Component({
   selector: 'app-planner-load',
@@ -31,14 +38,14 @@ const PROFILES_SHORT: SegmentOption[] = PALLET_CHOICES.map((choice) =>
           <span class="ld-label" id="ld-height">Max. hoogte</span>
           <!-- A new stepper per fieldKey: a typed height the planner did not take leaves no number behind in the field. -->
           @for (key of [fieldKey()]; track key) {
-            <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="16" [max]="maxCm()" [allowEmpty]="overridden()"
+            <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="heightCm()" [step]="10" [min]="minCm()" [max]="maxCm()" [allowEmpty]="overridden()"
                                 [disabled]="!canEdit()" label="Max. hoogte in cm" lessLabel="10 cm lager" moreLabel="10 cm hoger"
                                 (changed)="heightChange.emit($event)" />
           }
           <span class="ld-unit">cm</span>
           @if (overridden() && canEdit()) { <button class="ld-reset" type="button" (click)="heightChange.emit(null)">Standaard</button> }
         </div>
-        <p class="ld-note">incl. pallet {{ baseText() }} cm</p>
+        <p class="ld-note">incl. {{ kar() ? 'kar' : 'pallet' }} {{ baseText() }} cm</p>
       } @else if (layoutNote(); as note) {
         <p class="ld-note">{{ note }}</p>
       }
@@ -66,8 +73,12 @@ export class PlannerLoad {
   readonly mode = input.required<LoadMode>();
   readonly profile = input.required<PalletProfile>();
   readonly heightCm = input.required<number>();
-  /** The highest height the stepper offers: 260 for a europallet, else 300. A higher stored one shows as it is. */
+  /** The highest height the stepper offers: 260 for a europallet, else 300 (the kar too). A higher stored one shows as it is. */
   readonly maxCm = input(300);
+  /** The lowest: just above the base, 16 cm on a pallet, 18 on the kar. */
+  readonly minCm = input(16);
+  /** The order goes on the Deense kar: "Op karren", "incl. kar 16,5 cm". */
+  readonly kar = input(false);
   /** Raised by the planner when it did not take a height from the field: the field then shows the height that stays. */
   readonly fieldKey = input(0);
   readonly overridden = input(false);
@@ -81,7 +92,7 @@ export class PlannerLoad {
   readonly profileChange = output<PalletProfile>();
   readonly heightChange = output<number | null>();
 
-  readonly modes = computed(() => MODES.map((option) => ({ ...option, disabled: !this.canEdit() })));
+  readonly modes = computed(() => (this.kar() ? KAR_MODES : MODES).map((option) => ({ ...option, disabled: !this.canEdit() })));
   readonly profiles = computed(() => (this.desk() ? PROFILES_SHORT : PROFILES).map((option) => ({ ...option, disabled: !this.canEdit() })));
   readonly baseText = computed(() => this.baseCm().toLocaleString('nl-BE', { maximumFractionDigits: 1 }));
 }

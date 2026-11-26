@@ -4,7 +4,8 @@ import type { GlyphBlock } from './shipping-planner-model';
 /**
  * The mini pallet of Palletberekening (.pc-stack): one coloured block per
  * product from the wood up, the frame standing for the maximum height. A
- * pallet above the maximum gets a red top edge.
+ * pallet above the maximum gets a red top edge; a Deense kar (kar) its grey
+ * base and side posts, as .pc-stack--kar.
  */
 @Component({
   selector: 'app-pallet-glyph',
@@ -14,6 +15,7 @@ import type { GlyphBlock } from './shipping-planner-model';
     '[class.pg--sm]': "size() === 'sm'",
     '[class.pg--lg]': "size() === 'lg'",
     '[class.pg--over]': 'over()',
+    '[class.pg--kar]': 'kar()',
   },
   template: `@for (block of blocks(); track $index) { <i [style.height.%]="block.pct" [style.background]="block.colour"></i> }`,
   styles: [`
@@ -21,6 +23,7 @@ import type { GlyphBlock } from './shipping-planner-model';
     :host(.pg--sm){width:20px;height:30px;border-bottom-width:3px}
     :host(.pg--lg){width:44px;height:88px;border-bottom-width:6px;border-radius:6px 6px 2px 2px}
     :host(.pg--over)::after{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--danger)}
+    :host(.pg--kar){padding:0 2px;border-radius:2px 2px 1px 1px;border-bottom-color:color-mix(in srgb,#8d969c 85%,var(--surface));background:var(--surface-2) linear-gradient(90deg,#9aa3a8 0 2px,transparent 2px calc(100% - 2px),#9aa3a8 calc(100% - 2px)) no-repeat}
     i{display:block;flex:none;box-shadow:inset 0 1px 0 rgb(255 255 255/35%);transition:height var(--dur-2,.2s) var(--ease-out,ease)}
   `],
 })
@@ -28,6 +31,8 @@ export class PalletGlyph {
   readonly blocks = input<readonly GlyphBlock[]>([]);
   readonly size = input<'sm' | 'md' | 'lg'>('md');
   readonly over = input(false);
+  /** The Deense kar's look: grey base and posts. */
+  readonly kar = input(false);
 }
 
 /**

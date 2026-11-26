@@ -14,15 +14,18 @@ import { EurPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
 import { OrderPallets3d } from './order-pallets-3d';
-import { PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, clampPalletHeight, palletHeightLimit } from './pallet-calculator-model';
+import {
+  PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, carrierNoun, carrierOf, carrierWords, clampPalletHeight, minHeightCm, palletHeightLimit,
+  standardHeightCm,
+} from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
-import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
+import { automaticPallets, normalizeManualPalletType, palletTypeLabel, relabelPallets } from './pallet-stack';
 import { PlannerFreight } from './planner-freight';
 import { PlannerLoad } from './planner-load';
 import { PlannerPallet, omdozen } from './planner-pallet';
 import {
-  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, layoutPill, mixedLayout, mixedRoom, palletCount,
+  autoPallets, checkLayout, fillWords, freightStrategy, handPallets, isKarOrder, layoutPill, mixedLayout, mixedRoom, palletCount,
   placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
 } from './shipping-planner-model';
 
@@ -83,6 +86,11 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * root of this template, outside .sp-layout: its container query traps
  * position:fixed. 3D shows the pallets as they are laid out here, one at a
  * time (Emre, 2026-11-20); what stands where still changes here only.
+ *
+ * An order can also go on the Deense kar (Lading, 2026-11-25): the same
+ * counting on the kar's floor, height and weight, every word kar / karren,
+ * and the freight by hand (Vast bedrag; Landentarief and the staffels count
+ * pallets). switchCarrier makes that change in one patch.
  */
 @Component({
   selector: 'app-shipping-planner',
@@ -116,7 +124,9 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </section>
       @if (!desk() && showSwitch()) { <ng-container [ngTemplateOutlet]="modeSwitch" /> }
       @if (infoOpen() && showSwitch()) {
-        @if (rule() === 'PACKED') {
+        @if (kar()) {
+          <p class="sp-caption" id="sp-caption">{{ karCaption() }}</p>
+        } @else if (rule() === 'PACKED') {
           <p class="sp-caption" id="sp-caption">Automatisch laadt pallet per pallet zo vol mogelijk: eerst de eerste vol, kantelen mag; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
         } @else if (rule() === 'MIXED') {
           <p class="sp-caption" id="sp-caption">Automatisch zet elk product in eigen lagen en stapelt die samen op zo weinig mogelijk pallets; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
@@ -124,7 +134,7 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
           <p class="sp-caption" id="sp-caption">Automatisch zet elk product op eigen pallets en volgt de aantallen; bij Zelf indelen kies jij wat waar staat en telt de vracht jouw pallets.</p>
         }
       }
-      @if (!lines().length) { <p class="sp-empty">Voeg producten toe: de pallets verschijnen hier vanzelf.</p> }
+      @if (!lines().length) { <p class="sp-empty">Voeg producten toe: de {{ words().other }} verschijnen hier vanzelf.</p> }
 
       <div class="sp-layout">
         <div class="sp-cols">
@@ -147,23 +157,23 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
 
             @if (palletsMode() && (manual() || autoShown())) {
               <section class="sp-sec" aria-labelledby="sp-pallets">
-                <div class="sp-sec__head"><h4 id="sp-pallets">Pallets</h4>
+                <div class="sp-sec__head"><h4 id="sp-pallets">{{ words().list }}</h4>
                   <span class="sp-sec__tools">
                     @if (can3d()) {
                       <button class="sp-3d" [class.btn]="desk()" [class.btn--sm]="desk()" type="button" [disabled]="pricing()"
-                              aria-label="Pallets in 3D bekijken" title="Pallets in 3D bekijken" (click)="open3d(0)">
+                              [attr.aria-label]="words().list + ' in 3D bekijken'" [title]="words().list + ' in 3D bekijken'" (click)="open3d(0)">
                         <app-icon name="cube" [size]="desk() ? 14 : 16" />3D
                       </button>
                     }
                     @if (desk() && manual() && canEdit()) {
-                      <button class="btn btn--sm" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="14" />Pallet</button>
+                      <button class="btn btn--sm" type="button" [attr.aria-label]="words().label + ' toevoegen'" (click)="addPallet()"><app-icon name="plus" [size]="14" />{{ words().label }}</button>
                     } @else { <span>{{ manual() ? handRows().length : autoCount() }}</span> }
                   </span>
                 </div>
                 @if (manual()) {
                   <div [class.sp-grid]="desk()" [class.sp-group]="!desk()">
                     @for (pallet of handRows(); track $index; let i = $index) {
-                      <app-planner-pallet [pallet]="pallet" [look]="desk() ? 'card' : 'row'" [editable]="canEdit()" [count]="handRows().length"
+                      <app-planner-pallet [pallet]="pallet" [look]="desk() ? 'card' : 'row'" [editable]="canEdit()" [count]="handRows().length" [kar]="kar()"
                                           [viewable]="can3d()" (view3d)="open3d($event)"
                                           [lines]="lines()" [placements]="placed()" [chips]="chipsFor() === i"
                                           [dragging]="draggingIndex() === i" [target]="draggingIndex() !== null && draggingIndex() !== i && dropIndex() === i"
@@ -172,28 +182,28 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
                                           (pointerup)="dragEnd($event)" (pointercancel)="dragCancel($event)" />
                     }
                     @if (!desk() && canEdit()) {
-                      <button class="sp-add" type="button" aria-label="Pallet toevoegen" (click)="addPallet()"><app-icon name="plus" [size]="20" />Pallet</button>
+                      <button class="sp-add" type="button" [attr.aria-label]="words().label + ' toevoegen'" (click)="addPallet()"><app-icon name="plus" [size]="20" />{{ words().label }}</button>
                     }
                   </div>
                 } @else {
                   <div [class.sp-tiles]="desk()" [class.sp-group]="!desk()">
                     @for (pallet of autoRows(); track pallet.from) {
                       <!-- Stays a button while the figures are worked out again (no tiles jumping); open3d waits for them. -->
-                      <app-planner-pallet [pallet]="pallet" look="row" [viewable]="can3d()" (view3d)="open3d($event)" />
+                      <app-planner-pallet [pallet]="pallet" look="row" [viewable]="can3d()" [kar]="kar()" (view3d)="open3d($event)" />
                     }
                   </div>
                   @if (canEdit() && mixed(); as mix) {
                     <div class="sp-offer">
-                      <app-pallet-glyph [blocks]="mix.blocks" />
-                      <span class="sp-offer__text"><b>Gemengd: {{ mix.count }} {{ mix.count === 1 ? 'pallet' : 'pallets' }}</b><small>{{ mix.saving }} minder</small></span>
+                      <app-pallet-glyph [blocks]="mix.blocks" [kar]="kar()" />
+                      <span class="sp-offer__text"><b>Gemengd: {{ mix.count }} {{ mix.count === 1 ? words().one : words().other }}</b><small>{{ mix.saving }} minder</small></span>
                       <button class="btn btn--sm btn--primary" type="button" [disabled]="pricing()"
-                              [attr.aria-label]="'Gemengd indelen op ' + mix.count + (mix.count === 1 ? ' pallet' : ' pallets')" (click)="applyMixed(mix)">Indelen</button>
+                              [attr.aria-label]="'Gemengd indelen op ' + mix.count + ' ' + (mix.count === 1 ? words().one : words().other)" (click)="applyMixed(mix)">Indelen</button>
                     </div>
                   }
                 }
-                @if (manual() && canEdit() && profileOffer()) {
+                @if (manual() && canEdit() && profileOffer(); as offer) {
                   <div class="sp-offer">
-                    <span class="sp-offer__text"><b>{{ spec().name }}</b><small>Nieuw pallettype</small></span>
+                    <span class="sp-offer__text"><b>{{ spec().name }}</b><small>{{ offer }}</small></span>
                     <button class="btn btn--sm btn--primary" type="button" [disabled]="pricing()" (click)="redoLayout()">Indeling opnieuw maken</button>
                   </div>
                 }
@@ -229,9 +239,9 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
                         <span class="sp-prod__name">{{ line.name }}</span>
                         @let onPallets = palletsOf().get(line.productId) ?? line.pallets;
                         @let room = roomOf().get(line.productId) ?? 0;
-                        <span class="sp-prod__sub">{{ detailFor() === line.productId ? stacking(line) : omdozen(line.cartons) + ' · ' + onPallets + (onPallets === 1 ? ' pallet' : ' pallets') }}</span>
+                        <span class="sp-prod__sub">{{ detailFor() === line.productId ? stacking(line) : omdozen(line.cartons) + ' · ' + onPallets + ' ' + (onPallets === 1 ? words().one : words().other) }}</span>
                         @if (room > 0) {
-                          <span class="sp-prod__trail"><span class="sp-room" [attr.aria-label]="'Nog ' + room + ' omdozen passen zonder extra pallet'">+{{ room }} past</span></span>
+                          <span class="sp-prod__trail"><span class="sp-room" [attr.aria-label]="'Nog ' + room + ' omdozen passen zonder extra ' + words().one">+{{ room }} past</span></span>
                         }
                       </button>
                     }
@@ -280,7 +290,8 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </span>
     </ng-template>
     <ng-template #load>
-      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [maxCm]="heightLimit()" [overridden]="heightOverridden()" [fieldKey]="heightField()"
+      <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [minCm]="minHeight()" [maxCm]="heightLimit()" [kar]="kar()"
+                        [overridden]="heightOverridden()" [fieldKey]="heightField()"
                         [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
                         (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)" />
     </ng-template>
@@ -301,11 +312,11 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       </app-sheet>
     }
     @if (placeFor(); as place) {
-      <app-context-menu title="Op welke pallet?" variant="ios" [items]="placeItems()" [anchor]="place.point"
+      <app-context-menu [title]="'Op welke ' + words().one + '?'" variant="ios" [items]="placeItems()" [anchor]="place.point"
                         (pick)="placeOn($event)" (closed)="placeFor.set(null)" />
     }
     @if (cardMenu(); as menu) {
-      <app-context-menu [title]="handRows()[menu.index]?.label ?? 'Pallet'" variant="ios" [items]="cardMenuItems()" [anchor]="menu.point"
+      <app-context-menu [title]="handRows()[menu.index]?.label ?? words().label" variant="ios" [items]="cardMenuItems()" [anchor]="menu.point"
                         (pick)="cardPick($event)" (closed)="cardMenu.set(null)" />
     }
   `,
@@ -410,6 +421,9 @@ export class ShippingPlanner {
   readonly palletsMode = computed(() => this.loadMode() === 'PALLETS');
   readonly manual = computed(() => this.palletsMode() && this.order().pallets.length > 0);
   readonly spec = computed(() => plannerSpec(this.view()));
+  /** The order goes on the Deense kar: its words, its height range, its freight by hand. */
+  readonly kar = computed(() => isKarOrder(this.order()));
+  readonly words = computed(() => carrierWords(this.order().palletProfile));
   readonly lines = computed(() => plannerLines(this.view(), this.spec()));
   readonly problems = computed(() => this.lines().filter((line) => line.problem));
   /** How Automatisch counts; an older server knows only every product on pallets of its own. */
@@ -451,8 +465,10 @@ export class ShippingPlanner {
   });
   readonly cells = computed(() => (this.palletsMode() && !this.manual() ? this.lines().filter((line) => !line.problem) : this.lines()));
   readonly heightCm = computed(() => this.order().maxPalletHeightCm ?? Math.round(this.spec().maxHeightCm));
-  /** The highest height that can be picked: 260 cm for a europallet, 300 for the other types. */
+  /** The highest height that can be picked: 260 cm for a europallet, 300 for the other types and the kar. */
   readonly heightLimit = computed(() => palletHeightLimit(this.spec().profile));
+  /** The lowest: just above the base (16 cm, the kar 18). */
+  readonly minHeight = computed(() => minHeightCm(this.spec().profile));
   /**
    * "Standaard" (and an emptied field meaning it) while the document carries a height other than the
    * standard. A document from before 2026-11-07 has none, reads 260 and gets no button. The 220 cm of
@@ -460,12 +476,14 @@ export class ShippingPlanner {
    * ordered on it never moves by one tap, so it offers "Standaard" only on a concept nothing has come
    * from (the server's own line for its one-time move, as far as this screen knows it). An invoice
    * issued without mail and put back on concept has no sent date: its history says it (issued).
-   * Stepping or typing another height stays possible everywhere.
+   * Stepping or typing another height stays possible everywhere. The kar has one standard, 230 cm, and
+   * no older one (kar documents date from 2026-11-25).
    */
   readonly heightOverridden = computed(() => {
     const view = this.view();
     const order = view.order;
     const own = order.maxPalletHeightCm;
+    if (this.kar()) return own != null && own !== standardHeightCm(order.palletProfile);
     if (own == null || own === PALLET_MAX_HEIGHT_CM) return false;
     if (own !== PALLET_FORMER_STANDARD_CM) return true;
     return order.status === 'CONCEPT' && !order.sentAt && !this.issued() && !order.sourceQuoteId && !view.webOrder
@@ -494,7 +512,15 @@ export class ShippingPlanner {
     if (!this.palletsMode()) return omdozen(this.view().priced.totals.cartons);
     const count = this.manual() ? this.order().pallets.length : this.autoCount();
     if (!count && this.problems().length) return 'Past niet';
-    return `${count.toLocaleString('nl-BE')} ${count === 1 ? 'pallet' : 'pallets'}`;
+    return `${count.toLocaleString('nl-BE')} ${carrierNoun(count, this.words())}`;
+  });
+  /** The "i" caption on the kar: as on pallets, without "telt de vracht jouw pallets" (a kar's freight is set by hand). */
+  readonly karCaption = computed(() => {
+    switch (this.rule()) {
+      case 'PACKED': return 'Automatisch laadt kar per kar zo vol mogelijk: eerst de eerste vol, kantelen mag; bij Zelf indelen kies jij wat waar staat.';
+      case 'MIXED': return 'Automatisch zet elk product in eigen lagen en stapelt die samen op zo weinig mogelijk karren; bij Zelf indelen kies jij wat waar staat.';
+      default: return 'Automatisch zet elk product op eigen karren en volgt de aantallen; bij Zelf indelen kies jij wat waar staat.';
+    }
   });
   readonly fill = computed(() => {
     if (!this.palletsMode()) return '';
@@ -502,7 +528,7 @@ export class ShippingPlanner {
   });
   readonly heroPill = computed<{ text: string; tone: string } | null>(() => {
     if (!this.palletsMode() || !this.lines().length) return null;
-    if (this.manual()) return layoutPill(checkLayout(this.view(), this.productMap()));
+    if (this.manual()) return layoutPill(checkLayout(this.view(), this.productMap()), this.words());
     const misfits = this.problems().length;
     return misfits && this.autoCount() > 0 ? { text: `${misfits} past niet`, tone: 'warn' } : null;
   });
@@ -549,8 +575,8 @@ export class ShippingPlanner {
   readonly cardMenu = signal<{ index: number; point: MenuPoint } | null>(null);
   readonly chipsFor = signal<number | null>(null);
   readonly detailFor = signal<number | null>(null);
-  /** After a pallet type change on a hand layout: offer to lay it out again. */
-  readonly profileOffer = signal(false);
+  /** After a pallet type change on a hand layout: offer to lay it out again ("Nieuw pallettype", "Nu op karren"). */
+  readonly profileOffer = signal<string | null>(null);
   readonly announcement = signal('');
 
   readonly placeItems = computed<ContextMenuItem[]>(() => {
@@ -559,7 +585,7 @@ export class ShippingPlanner {
     return [
       ...rows.map((row) => ({ id: String(row.index), label: row.label,
         hint: row.parts.length ? `${omdozen(row.cartons)} · ${Math.round(row.fill * 100)} %` : 'leeg' })),
-      { id: 'new', label: 'Nieuwe pallet', iconName: 'plus', divider: rows.length > 0 },
+      { id: 'new', label: `Nieuwe ${this.words().one}`, iconName: 'plus', divider: rows.length > 0 },
     ];
   });
   readonly cardMenuItems = computed<ContextMenuItem[]>(() => {
@@ -570,7 +596,7 @@ export class ShippingPlanner {
       { id: 'edit', label: 'Soort en hoogte…', iconName: 'pallet' },
       { id: 'up', label: 'Naar voren', iconName: 'chevron-up', disabled: menu.index === 0 },
       { id: 'down', label: 'Naar achteren', iconName: 'chevron-down', disabled: menu.index >= this.handRows().length - 1 },
-      { id: 'remove', label: 'Pallet verwijderen', iconName: 'trash', danger: true, divider: true },
+      { id: 'remove', label: `${this.words().label} verwijderen`, iconName: 'trash', danger: true, divider: true },
     ];
   });
 
@@ -578,6 +604,8 @@ export class ShippingPlanner {
   private readonly toasts: number[] = [];
   /** What freight a switch to loose cartons replaced, so switching straight back restores it. */
   private looseSwitch: { strategy: FreightPricingStrategy; prefill: number | null } | null = null;
+  /** What freight the switch onto the Deense kar replaced (Vast bedrag took its place), so straight back onto a pallet restores it. */
+  private karSwitch: { strategy: FreightPricingStrategy; rate: number | null } | null = null;
   private drag: { id: number; from: number; x: number; y: number; scroller: HTMLElement | null } | null = null;
   readonly draggingIndex = signal<number | null>(null);
   readonly dropIndex = signal<number | null>(null);
@@ -640,7 +668,7 @@ export class ShippingPlanner {
     }
     if (mode === 'auto' && this.manual()) {
       const snapshot = structuredClone(this.order().pallets);
-      this.profileOffer.set(false);
+      this.profileOffer.set(null);
       this.chipsFor.set(null);
       this.action.emit({ type: 'clear-layout' });
       this.undoable('Eigen indeling gewist', () => this.patch.emit({ pallets: snapshot }));
@@ -657,7 +685,7 @@ export class ShippingPlanner {
   redoLayout(): void {
     if (!this.canEdit() || this.pricing()) return;
     const snapshot = structuredClone(this.order().pallets);
-    this.profileOffer.set(false);
+    this.profileOffer.set(null);
     this.action.emit({ type: 'auto-layout' });
     this.undoable('Indeling opnieuw gemaakt', () => this.patch.emit({ pallets: snapshot }));
   }
@@ -677,7 +705,7 @@ export class ShippingPlanner {
         action = { ...action, cartons: Math.min((item?.cartons ?? 0) + free, Math.max(0, Math.floor(action.cartons || 0))) };
       }
     }
-    if (action.type === 'reorder-pallet') this.announce(`Pallet ${action.fromIndex + 1} verplaatst naar positie ${action.toIndex + 1}.`);
+    if (action.type === 'reorder-pallet') this.announce(`${this.words().label} ${action.fromIndex + 1} verplaatst naar positie ${action.toIndex + 1}.`);
     this.action.emit(action);
   }
 
@@ -696,7 +724,7 @@ export class ShippingPlanner {
   removePallet(index: number): void {
     const pallet = this.order().pallets[index];
     if (!this.canEdit() || !pallet) return;
-    const label = this.handRows()[index]?.label ?? `Pallet ${index + 1}`;
+    const label = this.handRows()[index]?.label ?? `${this.words().label} ${index + 1}`;
     const snapshot = structuredClone(this.order().pallets);
     this.sheetIndex.set(null);
     this.chipsFor.set(null);
@@ -716,7 +744,7 @@ export class ShippingPlanner {
     const target = index + direction;
     if (!this.canEdit() || target < 0 || target >= this.order().pallets.length) return false;
     this.action.emit({ type: 'move-pallet', index, direction });
-    this.announce(`Pallet ${index + 1} verplaatst naar positie ${target + 1}.`);
+    this.announce(`${this.words().label} ${index + 1} verplaatst naar positie ${target + 1}.`);
     return true;
   }
 
@@ -782,6 +810,8 @@ export class ShippingPlanner {
   /** Pallets of the old type take the new one; the layout itself may no longer fit, so laying it out again is offered. */
   setPalletProfile(profile: PalletProfile): void {
     if (!this.canEdit() || profile === this.spec().profile) return;
+    /* Onto the Deense kar or back onto a pallet: another carrier, with its own height and freight. */
+    if (carrierOf(profile) !== carrierOf(this.spec().profile)) { this.switchCarrier(profile); return; }
     /* A height the new type does not allow comes down with it (a europallet stops at 260 cm): the server
        would refuse the switch otherwise. */
     const changes: ShippingOrderPatch = { palletProfile: profile };
@@ -790,24 +820,57 @@ export class ShippingPlanner {
     this.askBeforeLowering(limit, limit, () => this.switchProfile({ ...changes, maxPalletHeightCm: limit }));
   }
 
-  private switchProfile(changes: ShippingOrderPatch): void {
+  /**
+   * Onto the Deense kar, or back onto a pallet (2026-11-25), in one patch: the profile and the new carrier's
+   * standard height, sent along because the server keeps a document's height when none is sent (230 cm for the
+   * kar, 260 for a pallet: a Blok at 280 comes down without the question, the kar's limit is 300). Onto the kar
+   * the freight goes on Vast bedrag (Emre: "Vracht met de hand"): an amount already there stays, else he types it
+   * (a sent document's save waits for it, freightGap); Landentarief and the staffels count pallets. What the kar
+   * replaced is remembered while this planner is open: straight back onto a pallet, no amount typed in between,
+   * it returns; otherwise the freight stays as it is.
+   */
+  private switchCarrier(profile: PalletProfile): void {
+    const order = this.order();
+    const current = freightStrategy(order);
+    const changes: ShippingOrderPatch = { palletProfile: profile, maxPalletHeightCm: standardHeightCm(profile) };
+    this.looseSwitch = null;
+    if (carrierOf(profile) === 'kar') {
+      this.karSwitch = current === 'FIXED' ? null
+        : { strategy: current, rate: current === 'PER_CBM' ? order.freightRatePerCbmEur ?? null : null };
+      Object.assign(changes, {
+        freightPricingStrategy: 'FIXED', freightRatePerCbmEur: null, manualFreightEur: current === 'FIXED' ? order.manualFreightEur ?? null : null,
+      });
+    } else {
+      const back = this.karSwitch;
+      this.karSwitch = null;
+      if (back && current === 'FIXED' && order.manualFreightEur == null) {
+        Object.assign(changes, { freightPricingStrategy: back.strategy, freightRatePerCbmEur: back.rate, manualFreightEur: null });
+      }
+    }
+    this.switchProfile(changes, carrierOf(profile) === 'kar' ? 'Nu op karren' : 'Nu op pallets');
+  }
+
+  /** Hand pallets of the old type take the new one; across pallet and kar "Pallet n" becomes "Kar n" (and back). */
+  private switchProfile(changes: ShippingOrderPatch, offer = 'Nieuw pallettype'): void {
     const pallets = this.order().pallets;
     if (!pallets.length) { this.patch.emit(changes); return; }
     const from = palletTypeLabel(this.spec().profile);
     const to = palletTypeLabel(changes.palletProfile!);
+    const retyped = pallets.map((pallet) => (normalizeManualPalletType(pallet.type) === from ? { ...pallet, type: to } : pallet));
+    const carrier = carrierOf(changes.palletProfile);
     this.patch.emit({ ...changes,
-      pallets: pallets.map((pallet) => (normalizeManualPalletType(pallet.type) === from ? { ...pallet, type: to } : pallet)) });
-    this.profileOffer.set(true);
+      pallets: carrier === carrierOf(this.spec().profile) ? retyped : relabelPallets(retyped, carrierWords(changes.palletProfile).label) });
+    this.profileOffer.set(offer);
   }
 
   /**
-   * ±10 cm or typed, within the bounds of the pallet type; "Standaard" or an emptied field (only offered
-   * while heightOverridden) sends the standard's number: the server keeps a document's own height when
-   * none is sent.
+   * ±10 cm or typed, within the bounds of the pallet type (the kar: 18-300 cm); "Standaard" or an emptied
+   * field (only offered while heightOverridden) sends the standard's number, 260 or the kar's 230: the
+   * server keeps a document's own height when none is sent.
    */
   setMaxHeight(value: number | null): void {
     if (!this.canEdit()) return;
-    const height = value === null ? PALLET_MAX_HEIGHT_CM : clampPalletHeight(value, this.spec().profile);
+    const height = value === null ? standardHeightCm(this.spec().profile) : clampPalletHeight(value, this.spec().profile);
     const limit = this.heightLimit();
     if (this.heightCm() <= limit) { this.patch.emit({ maxPalletHeightCm: height }); return; }
     this.askBeforeLowering(height, limit, () => this.patch.emit({ maxPalletHeightCm: height }));

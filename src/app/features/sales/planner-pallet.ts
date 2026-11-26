@@ -48,7 +48,7 @@ export function palletPill(pallet: PalletVm): { text: string; tone: 'ok' | 'neut
     </ng-template>
     @if (look() === 'row') {
       <ng-template #row>
-        <app-pallet-glyph [blocks]="p.blocks" [over]="p.over" />
+        <app-pallet-glyph [blocks]="p.blocks" [over]="p.over" [kar]="kar()" />
         <span class="sp-row__title">{{ p.label }} <small>{{ p.contents }}</small></span>
         <span class="badge" [class]="'badge--' + pill().tone">{{ pill().text }}</span>
         <span class="sp-row__facts">
@@ -74,12 +74,12 @@ export function palletPill(pallet: PalletVm): { text: string; tone: 'ok' | 'neut
           @if (editable()) {
             <button class="sp-card__grip" type="button" data-drag-handle (keydown)="keyMove($event)"
                     [attr.aria-label]="p.label + ' verplaatsen. Sleep of gebruik de pijltjestoetsen.'">
-              <app-pallet-glyph [blocks]="p.blocks" [over]="p.over" />
+              <app-pallet-glyph [blocks]="p.blocks" [over]="p.over" [kar]="kar()" />
             </button>
-            <input class="sp-card__name" [value]="p.label" [attr.aria-label]="'Naam van pallet ' + (p.index + 1)"
+            <input class="sp-card__name" [value]="p.label" [attr.aria-label]="'Naam van ' + (kar() ? 'kar ' : 'pallet ') + (p.index + 1)"
                    (change)="rename($event)" (keydown.enter)="blur($event)" />
           } @else {
-            <app-pallet-glyph class="sp-card__grip" [blocks]="p.blocks" [over]="p.over" />
+            <app-pallet-glyph class="sp-card__grip" [blocks]="p.blocks" [over]="p.over" [kar]="kar()" />
             <b class="sp-card__name">{{ p.label }}</b>
           }
           <span class="badge" [class]="'badge--' + pill().tone">{{ pill().text }}</span>
@@ -187,6 +187,8 @@ export class PlannerPallet {
   readonly chips = input(false);
   readonly dragging = input(false);
   readonly target = input(false);
+  /** The order goes on the Deense kar: the kar glyph, "Naam van kar 2". */
+  readonly kar = input(false);
 
   readonly act = output<ShippingPalletAction>();
   readonly open = output<number>();

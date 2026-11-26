@@ -4,7 +4,7 @@ import { SalesApi } from '../../core/api/sales-api';
 import { Icon } from '../../shared/icon';
 import { CbmPipe, EurPipe, PctPipe } from '../../shared/pipes';
 import { shippedPallets } from './pallet-stack';
-import { freightGap, freightStrategy, strategyLabel } from './shipping-planner-model';
+import { freightGap, freightStrategy, isKarOrder, strategyLabel } from './shipping-planner-model';
 import type { ShippingOrderPatch } from './shipping-planner';
 
 interface FreightOption { id: FreightPricingStrategy; label: string; sub: string }
@@ -14,7 +14,9 @@ interface FreightOption { id: FreightPricingStrategy; label: string; sub: string
  * detail the chosen one needs, "Later bepalen", the carrier's staffel
  * breakdown. The phone shows it as the planner's last section, the desk in
  * the sticky aside. A split order only gets its own amount; a read-only
- * one sees the chosen basis and the amount.
+ * one sees the chosen basis and the amount. An order on the Deense kar is
+ * not offered Landentarief or a staffel (both price pallets: Euro, Blok,
+ * Half): its freight is set by hand (Emre, 2026-11-25: "Vracht met de hand").
  */
 @Component({
   selector: 'app-planner-freight',
@@ -50,7 +52,7 @@ interface FreightOption { id: FreightPricingStrategy; label: string; sub: string
           }
         </div>
 
-        @switch (strategy()) {
+        @switch (kar() && strategy() === 'CARRIER' ? null : strategy()) {
           @case ('CARRIER') {
             <div class="fr-group">
               @if (carriers().length > 1) {
@@ -113,7 +115,7 @@ interface FreightOption { id: FreightPricingStrategy; label: string; sub: string
 
       @if (totals().handling > 0) { <p class="fr-note">+ {{ totals().handling | eur }} handling</p> }
       @if (canEdit() && gap(); as gap) { <p class="fr-warn">{{ gap }}</p> }
-      @if (strategy() === 'CARRIER' && !pending()) {
+      @if (strategy() === 'CARRIER' && !pending() && !kar()) {
         @if (!customerPostcode()) { <p class="fr-warn">Postcode van de klant ontbreekt</p> }
         @else if (quoteMissing()) { <p class="fr-warn">Past niet in de staffel · kies Vast bedrag</p> }
       }
@@ -188,8 +190,9 @@ export class PlannerFreight {
   readonly issue = computed(() => (this.pending() ? null : this.view().priced.validation.freightPricingIssue || null));
   readonly gap = computed(() => freightGap(this.order()));
   readonly label = computed(() => strategyLabel(this.strategy(), this.carriers(), this.order().freightCarrierId));
+  readonly kar = computed(() => isKarOrder(this.order()));
   readonly options = computed<FreightOption[]>(() => {
-    const pallets = (this.order().loadMode ?? 'PALLETS') === 'PALLETS';
+    const pallets = (this.order().loadMode ?? 'PALLETS') === 'PALLETS' && !this.kar();
     const carriers = this.carriers();
     const options: FreightOption[] = [];
     if (pallets) options.push({ id: 'COUNTRY_PALLET', label: 'Landentarief', sub: this.subOf('COUNTRY_PALLET') });
@@ -206,7 +209,7 @@ export class PlannerFreight {
   private readonly quoteKey = computed(() => {
     const data = this.view();
     const carrierId = data.order.freightCarrierId;
-    if (this.strategy() !== 'CARRIER' || !carrierId || !data.order.countryCode) return null;
+    if (this.strategy() !== 'CARRIER' || !carrierId || !data.order.countryCode || this.kar()) return null;
     const totals = data.priced.totals;
     const profile = data.order.palletProfile;
     return JSON.stringify({

@@ -438,6 +438,10 @@ button.ios-hero{width:calc(100% - 2 * var(--ios-inset));cursor:pointer}
 .ios-seg--stacked::before{border-radius:15px}
 .ios-seg--stacked .ios-seg__opt{position:relative;flex-direction:column;gap:3px;padding:0 2px;border-radius:15px;font-size:11px;letter-spacing:-.01em}
 .ios-seg--stacked .ios-seg__dot{position:absolute;top:7px;left:calc(50% + 8px)}
+/* Two-line segments (SegmentOption.sub): a short name over a small second line, so four pallet types fit a 343px sheet ("Euro" over "120×80"). */
+.ios-seg.ios-seg--sub{height:46px}
+.ios-seg--sub .ios-seg__opt{flex-direction:column;gap:1px;padding:0 4px;line-height:1.15}
+.ios-seg__sub{max-width:100%;overflow:hidden;color:var(--muted);font-size:11px;font-weight:600;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 
 /* ==========================================================================
    Foundation additions (redesign 2026-10-16). Additive: no existing class

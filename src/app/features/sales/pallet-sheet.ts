@@ -3,8 +3,9 @@ import { AuthImage } from '../../core/api/auth-image';
 import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
 import { Sheet } from '../../shared/ui';
+import { carrierWords } from './pallet-calculator-model';
 import { PalletGlyph, PalletStepper } from './pallet-glyph';
-import { PALLET_TYPES, normalizeManualPalletType } from './pallet-stack';
+import { carrierTypes, normalizeManualPalletType } from './pallet-stack';
 import { palletPill } from './planner-pallet';
 import type { PalletPart, PalletVm, Placement, PlannerLine, PlannerSpec } from './shipping-planner-model';
 import type { ShippingPalletAction } from './shipping-planner';
@@ -14,6 +15,7 @@ import type { ShippingPalletAction } from './shipping-planner';
  * on, its name, type and measured height, and moving or removing it. The
  * phone opens it from a row; the desk from "Soort en hoogte…" in a card's
  * menu. Removing and moving are the planner's (undo, the sheet follows).
+ * On an order on the Deense kar it speaks of a kar (the spec's profile).
  */
 @Component({
   selector: 'app-pallet-sheet',
@@ -24,7 +26,7 @@ import type { ShippingPalletAction } from './shipping-planner';
     <app-sheet [title]="p.label" variant="ios" (closed)="closed.emit()">
       <div body class="ps">
         <div class="ps-top">
-          <app-pallet-glyph size="lg" [blocks]="p.blocks" [over]="p.over" />
+          <app-pallet-glyph size="lg" [blocks]="p.blocks" [over]="p.over" [kar]="kar()" />
           <div>
             <h3>{{ p.full ? 'vol' : (p.fill * 100 | num) + ' %' }}</h3>
             <p><span [class.is-danger]="p.over">{{ heightText() }}</span>@if (p.weightKg > 0) { · <span [class.is-danger]="p.heavy">{{ p.weightKg | num }} kg</span> }</p>
@@ -37,7 +39,7 @@ import type { ShippingPalletAction } from './shipping-planner';
         }
 
         <section class="ps-sec" aria-labelledby="ps-on">
-          <div class="ps-head"><h4 id="ps-on">Op deze pallet</h4><span>{{ p.cartons | num }}</span></div>
+          <div class="ps-head"><h4 id="ps-on">Op deze {{ words().one }}</h4><span>{{ p.cartons | num }}</span></div>
           @if (p.parts.length) {
             <div class="ps-group">
               @for (part of p.parts; track $index) {
@@ -55,7 +57,7 @@ import type { ShippingPalletAction } from './shipping-planner';
               }
             </div>
           } @else {
-            <p class="ps-empty">Nog leeg: zet hieronder een product op deze pallet.</p>
+            <p class="ps-empty">Nog leeg: zet hieronder een product op deze {{ words().one }}.</p>
           }
         </section>
 
@@ -80,13 +82,13 @@ import type { ShippingPalletAction } from './shipping-planner';
         }
 
         <section class="ps-sec" aria-labelledby="ps-pallet">
-          <div class="ps-head"><h4 id="ps-pallet">Pallet</h4></div>
+          <div class="ps-head"><h4 id="ps-pallet">{{ words().label }}</h4></div>
           <div class="ps-group">
             <label class="ps-field"><span>Naam</span>
               <input [value]="p.label" [disabled]="!canEdit()" (change)="rename($event)" (keydown.enter)="blur($event)" /></label>
             <label class="ps-field"><span>Soort</span>
               <select [disabled]="!canEdit()" (change)="setType($event)">
-                @for (choice of types; track choice.value) { <option [value]="choice.value" [selected]="choice.value === p.type">{{ choice.label }}</option> }
+                @for (choice of types(); track choice.value) { <option [value]="choice.value" [selected]="choice.value === p.type">{{ choice.label }}</option> }
                 @if (customType(); as custom) { <option [value]="custom" selected>{{ custom }}</option> }
               </select></label>
             <label class="ps-field"><span>Gemeten hoogte</span>
@@ -98,7 +100,7 @@ import type { ShippingPalletAction } from './shipping-planner';
               <button class="ps-action" type="button" [disabled]="p.index === 0" (click)="move.emit(-1)">Naar voren</button>
               <button class="ps-action" type="button" [disabled]="p.index >= count() - 1" (click)="move.emit(1)">Naar achteren</button>
             </div>
-            <div class="ps-group"><button class="ps-action ps-action--danger" type="button" (click)="remove.emit(p.index)">Pallet verwijderen</button></div>
+            <div class="ps-group"><button class="ps-action ps-action--danger" type="button" (click)="remove.emit(p.index)">{{ words().label }} verwijderen</button></div>
           }
         </section>
       </div>
@@ -157,10 +159,13 @@ export class PalletSheet {
   readonly remove = output<number>();
   readonly closed = output<void>();
 
-  readonly types = PALLET_TYPES;
+  readonly kar = computed(() => this.spec().profile === 'DEENSE_KAR');
+  readonly words = computed(() => carrierWords(this.spec().profile));
+  /** The pallet types; on an order on the kar, the Deense kar first. */
+  readonly types = computed(() => carrierTypes(this.spec().profile));
   readonly customType = computed(() => {
     const type = this.pallet().type;
-    return type && !PALLET_TYPES.some((choice) => choice.value === type) ? type : null;
+    return type && !this.types().some((choice) => choice.value === type) ? type : null;
   });
   readonly issue = computed(() => {
     const pill = palletPill(this.pallet());

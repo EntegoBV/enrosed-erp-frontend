@@ -17,6 +17,8 @@ export interface SegmentOption {
   label: string;
   /** Replaces the label on a desk when the toolbar is narrower than 900px. */
   shortLabel?: string;
+  /** A small second line under the label, 'ios' only ("Euro" over "120×80"): the control grows to two lines. */
+  sub?: string;
   count?: number | null;
   dot?: 'warn' | 'danger' | null;
   icon?: string;
@@ -41,6 +43,7 @@ export interface SegmentOption {
   host: {
     '[class.wk-seg]': "variant() === 'desk'",
     '[class.ios-seg]': "variant() === 'ios'",
+    '[class.ios-seg--sub]': "variant() === 'ios' && hasSub()",
     '[attr.role]': "tabs() ? 'tablist' : 'radiogroup'",
     '[attr.aria-label]': 'label()',
     '[style.--seg-n]': 'options().length',
@@ -64,6 +67,7 @@ export interface SegmentOption {
         @if (option.shortLabel) {
           <span [class.wk-seg__short]="desk()" [class.ios-seg__short]="!desk()">{{ option.shortLabel }}</span>
         }
+        @if (option.sub && !desk()) { <small class="ios-seg__sub">{{ option.sub }}</small> }
         @if (option.count != null) {
           <span [class.wk-seg__count]="desk()" [class.ios-seg__count]="!desk()">{{ option.count }}</span>
         }
@@ -90,6 +94,7 @@ export class Segmented {
   readonly changed = output<string>();
 
   readonly desk = computed(() => this.variant() === 'desk');
+  readonly hasSub = computed(() => this.options().some((option) => !!option.sub));
   readonly tabs = computed(() => this.semantics() === 'tabs');
   readonly selectedIndex = computed(() =>
     Math.max(0, this.options().findIndex((option) => option.id === this.value())));
