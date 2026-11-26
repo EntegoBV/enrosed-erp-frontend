@@ -91,7 +91,9 @@ the workspaces. All CSS lives in one global partial,
   renders `.ios-page`. A page that renders neither looks as before.
 - Pieces (src/app/shared unless noted): `app-segmented` (desk/ios,
   tabs/radio, arrow keys; `.ios-seg--stacked` puts an icon over an 11px
-  label so five view tabs fit 360px), `app-ios-nav` (large title that
+  label so five view tabs fit 360px; `SegmentOption.sub` puts a small second
+  line under an ios label and makes the control `.ios-seg--sub`, 46 px, as
+  Lading's "Euro" over "120×80", 2026-11-25), `app-ios-nav` (large title that
   condenses into a glass bar; [lead] [trail] [caption] [below] slots;
   `customLarge` + [hero] put the screen's own block in place of the large
   title and the bar condenses when the block's own h1 has gone under it, not
@@ -6122,3 +6124,83 @@ ook niet genoeg is".
   `SalesDesk.markSent`, `SalesView.sendFromView` / `markSent` and `SalesReceipts.issue` ("Uitgeven zonder e-mail").
 - `SalesApi.sendQuote`, `markInvoiceSent` and `issueInvoice` take `belowMinimumAccepted` (default false). Quotes and a
   web order's "Factuur versturen" stay blocked by `sendIssues` as before.
+
+## Deense kar op orders (2026-11-25)
+
+Emre, on a quote's Transport & levering (Lading: Euro | Blok | Half): "Daarna moet ik ook hier deense kar kunnen
+selecteren. Ook bij 3d weergave kunnen switchen." His answers: the freight on a kar is "Vracht met de hand" (choosing the
+kar puts it on Vast bedrag and he types the amount); the 3D switch is "Alleen bekijken" (view only, never changes the
+order, always opens on the order's own carrier, nothing stored). The backend part (enum, check-constraint migration,
+pricing, freight guard, documents in every language) is in the backend's AI-CONTEXT.
+- **One profile value**, `DEENSE_KAR`, in `PalletProfile` (models.ts) and the backend enum; `PortalQuote.palletProfile`
+  (optional) tells the portal. The kar is `loadMode` PALLETS. Release the backend first: an older backend answers 400 to
+  the value. Rollback: an image without DEENSE_KAR cannot boot while a row stores it, so move kar rows to EURO first
+  (backend AI-CONTEXT); an older ERP would show a kar order as a europallet and offer Landentarief, so roll the two back
+  together.
+- **Figures and words, one place** (`pallet-calculator-model.ts`): the kar is `karSpec` and the `KAR_*` constants (127 ×
+  54,5 cm, base 16,5, standard 230, limit 300, 450 kg), identical to `PalletSpec.deenseKar()`; never copy the numbers.
+  `KAR_CHOICE` and `ORDER_LOAD_CHOICES` (the three pallets, then the kar) are the order screens' list; `PALLET_CHOICES`
+  stays pallets only (Palletberekening's Pallettype segment and its stored state read it beside its own Pallet | Deense
+  kar switch). `loadChoice`, `carrierOf(profile)`, `standardHeightCm` (230 / 260), `minHeightCm` (18 / 16); `palletSpec`,
+  `palletHeightLimit` and `clampPalletHeight` have a kar branch (karSpec, 300, `clampKarHeight`). `CARRIER_WORDS` moved
+  here from the page and gained `label` ("Pallet 2", "Kar 2"): one / other / title / list / label = pallet / pallets /
+  Pallet / Pallets / Pallet and kar / karren / Deense kar / Karren / Kar; `CARRIERS`, `carrierWords(profile)`,
+  `carrierNoun(count, words)`.
+- **Counting unchanged**: `pallet-pack.ts`, `pallet-hand-load.ts`, planPallets/palletFit are untouched; `plannerSpec`
+  (shipping-planner-model.ts, via `specFor(profile, base, max)`) gives a kar order the kar's floor, the server's base and
+  height (`?? 16,5 / ?? the order's height ?? 230`) and 450 kg, and every count, packed height, room hint, "te hoog" /
+  "te zwaar", glyph and 3D deck follows. `isKarOrder(order)`; `standardSpec('kar' | 'pallet')` is the 3D's other
+  carrier (kar at 230, europallet at 260).
+- **Words**: on a kar order every screen says kar / karren where a pallet order says pallet / pallets, and pallet orders
+  keep every word byte for byte: planner hero "3 karren", rows "Kar 1" / "Kar 1–2", "lege kar", Nakijken "Omdoos te groot
+  voor deze kar", the "i" captions (without "telt de vracht jouw pallets"), "Karren" section, "Kar toevoegen", "Op welke
+  kar?", "Nieuwe kar", "Kar verwijderen", announcements, the product rows, the mixed offer, the kar glyph
+  (`app-pallet-glyph [kar]`: grey base and posts, as `.pc-stack--kar`), the pallet sheet ("Op deze kar", Soort with the
+  Deense kar first: `carrierTypes`), Lading "Op karren" and "incl. kar 16,5 cm"; the editor's and desk's hero, KPI,
+  Levering card and rail, line cards, `palletSummary`, `freightBasisLabel`, "Karren in 3D bekijken" and the send checks
+  ("Wijs alle dozen toe aan de handmatige karren", "Een kar weegt meer dan 450 kg" from the spec, "Controleer de
+  omdoosmaten: niet elk product past op de Deense kar", "Vernieuw de karindeling…"; `fixIssue` routes
+  `/\bkar(ren|indeling)?\b/`, never "karton"); `SalesView`; the Verkoop list's Inhoud; the portal (`loadShort()`: the
+  server's `portalKarrenShort` in the customer's language, else "pallets" from an older server). Hand units: type
+  "Deense kar" (`palletTypeLabel`, `normalizeManualPalletType` maps "deense kar"), labels "Kar n" (Zelf indelen,
+  `nextPalletLabel(pallets, word)`); `relabelPallets` renumbers "Pallet n" and "Kar n" each in its own word (so a
+  hand-typed "Kar 3" on a pallet order now follows its position too) and takes a word when the carrier changes.
+- **Lading** (`planner-load.ts`): a fourth choice after Euro | Blok | Half: desk "Kar"; phone two lines per segment
+  ("Euro" over "120×80", "Kar" over "127×54,5", `SegmentOption.sub`), since four "Euro 120×80" segments ellipsise at
+  343 px. Label "Pallettype" kept (his word). Height on a kar: 18-300 cm (`minCm`, `maxCm`), "Standaard" whenever it is
+  not 230 and it sends 230 (the 220 / issued rules are pallets only).
+- **The switch** (`ShippingPlanner.setPalletProfile` → `switchCarrier` when pallet ↔ kar): one patch. Onto the kar:
+  `palletProfile: 'DEENSE_KAR'`, `maxPalletHeightCm: 230` (sent explicitly: the server keeps a document's height when
+  none is sent; a Blok at 280 comes down without the lowering question), `freightPricingStrategy: 'FIXED'`,
+  `freightRatePerCbmEur: null`, `manualFreightEur` kept only when the order was already on FIXED, else null (he types
+  it; the server's "Vul het vaste vrachtbedrag in" shows as "nakijken", the Levering card and rail say "nog in te
+  vullen" (`karFreightOpen`), a sent document's save waits for the amount: `freightGap` / `transportHold`). Back onto a
+  pallet: its standard 260 and the freight left as it is, except: the basis the kar replaced (Landentarief, staffel,
+  Per m³ with its rate, Afhalen) is remembered in `karSwitch` while the planner is open, and comes back on a straight
+  switch back when no amount was typed in between (my call, "keep it simple": a reload forgets it; FIXED then stays).
+  The switch also clears `looseSwitch`, so only one memo restores. Hand pallets: the old carrier's type becomes the new
+  one's, numbered labels take the new word, and "Indeling opnieuw maken" is offered ("Nu op karren" / "Nu op pallets").
+- **Freight**: `freightStrategy`, `shippingSnapshot` and the editor's / view's own copies read a kar without a stored
+  strategy as FIXED; Vracht (`planner-freight.ts`) offers no Landentarief and no staffel on a kar (Per m³, Vast bedrag,
+  Afhalen stay), never asks the staffel's Opbouw, and `freightGap` says "Kies Vast bedrag voor karren" for a kar left on
+  either; Verstuur says "Kies voor karren een vast vrachtbedrag".
+- **3D, view only** (`order-pallets-3d.ts`): the builder now gets the order's own carrier (`[carrier]`, the kar model for
+  a kar order) and `[carrierSwitch]="true"`: `app-segmented` "Pallet | Deense kar" (Palletberekening's names,
+  `.pb3-switch`, ios look on every pose) as the first row of `.pb3-top`, inside the dialog and its Tab trap, left of the
+  Duo hinge, never in the bar; `carrierPicked` goes back to the wrapper only. It opens on the order's carrier; the other
+  one shows `orderLoadOn(lines, products, standardSpec(kind))` (order-pallets-3d-model.ts): every line's omdozen
+  (also those the own carrier cannot take, and a hand layout's loose ones) packed with `packPallets` on `packDeck`,
+  every side allowed, at most `MAX_PLANNED_PALLETS` (200), labels "Kar n" / "Pallet n", always "· zo vol mogelijk", no
+  sizes-changed check, computed only while shown. Notice `otherNotice3d`: "Alleen bekijken · de order telt 3 pallets"
+  (the order's own count and words), then "meer dan 200 karren, niet alles getekend", "n omdozen te groot voor deze
+  kar, niet getekend", "n omdozen zonder maten niet getekend", also with nothing drawn. Switching goes to the other
+  carrier's first page and back to the own page it left; `buildKey` starts with the carrier. Pager words follow the
+  carrier ("Kar 2 van 5", "Vorige kar"). A passing `.pb3-note` on the desk now sits under the measured top
+  (`--pb3-inset`, at least the old 56 px). Not stored, nothing emitted to the order.
+- Not changed: Palletberekening (only its words' import), the product page and catalogue (karSpec at 230 as before), the
+  website and the iOS shell (customers never choose a kar).
+- Checked: `npx tsc -p tsconfig.app.json --noEmit` and `npx ng build --configuration production` (the six known
+  warnings, no new one; initial 988.21 kB). Not yet seen live: every changed screen on desk 1280 and phone 375 (and the
+  Duo poses for the 3D switch) on a backend that knows DEENSE_KAR: Euro ↔ kar on a concept and on a sent document (the
+  hold), a hand layout with "Indeling opnieuw maken", MIXED / PACKED / STRICT documents, the 3D switch both ways with the
+  pager and a large order (the other carrier is packed on the main thread when chosen), long product names.
