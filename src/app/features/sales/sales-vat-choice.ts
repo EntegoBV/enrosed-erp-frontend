@@ -74,8 +74,14 @@ export class SalesVatChoice implements OnDestroy {
   private version = 0;
 
   constructor() {
-    /* Read again when a stored fact changes, and when edits were saved (blocked clears): never per keystroke. */
-    effect(() => { this.key(); if (this.blocked()) return; untracked(() => void this.load()); });
+    /* Read again when a stored fact changes and when edits were saved (blocked clears), never per keystroke.
+       A control created while the document is dirty (rail tab or phone step re-entered) reads the stored choice
+       once and shows it disabled with its hint. */
+    effect(() => {
+      this.key();
+      const blocked = this.blocked();
+      untracked(() => { if (!blocked || this.choice() === null) void this.load(); });
+    });
   }
 
   private async load(): Promise<void> {

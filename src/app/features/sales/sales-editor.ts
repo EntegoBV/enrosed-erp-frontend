@@ -3556,7 +3556,12 @@ export class SalesEditor {
     if (invoice) return issues;
     if (!data.order.countryCode) issues.push('Kies een land van levering');
     /* A service has no products by design: one line of its own with a description is what it sells. */
-    if (this.isServiceDoc()) { if (!this.serviceLines(data)) issues.push('Voeg minstens één regel met omschrijving toe'); }
+    if (this.isServiceDoc()) {
+      if (!this.serviceLines(data)) issues.push('Voeg minstens één regel met omschrijving toe');
+      /* The server sends no quote without product lines by the customer link (QuoteService.send): say so here,
+         not after the press. A service is invoiced directly, or its quote PDF goes out by hand. */
+      issues.push('Een offerte zonder productregels gaat niet via de klantlink: stuur de PDF zelf, of maak een factuur');
+    }
     else if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
     if (data.priced.lines.some((line) => !this.lineUnavailable(line.productId) && line.quantity <= 0)) {
       issues.push(websiteCartonRequests(data.order).length
@@ -4719,8 +4724,13 @@ export class SalesEditor {
   vatChoiceSaved(updated: SalesOrderView): void {
     const current = this.view();
     if (!current || current.order.id !== updated.order.id) return;
-    /* The control waits while the document is dirty, so this is a late answer: keep the edits, take the new pricing. */
-    if (this.dirty() || this.saving()) { this.view.set({ ...current, priced: updated.priced }); return; }
+    /* The control waits while the document is dirty, so this is a late answer under fresh edits: keep them and
+       price the draft again on the stored new route (a save under way brings its own answer; a typing pause
+       already waits to price). Never the stored document's pricing under unsaved edits. */
+    if (this.dirty() || this.saving()) {
+      if (!this.saving() && this.previewTimer === null) this.schedulePreview();
+      return;
+    }
     this.adopt(updated);
   }
 

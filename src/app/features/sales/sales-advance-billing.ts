@@ -106,7 +106,8 @@ export function advanceInvoiceBlock(view: SalesOrderView | null | undefined): st
   if (order.archivedAt) return 'Deze offerte is gearchiveerd.';
   if (view.fulfillment?.groupId) return 'Een gesplitste order krijgt geen voorschotfacturen.';
   if (DEAD.has(order.status)) return 'Deze offerte is afgesloten.';
-  if (order.freight === 'TE_BEPALEN') return 'Vul eerst de vracht in.';
+  /* A service ships nothing: an open freight state holds no advance back (the server agrees). */
+  if (order.freight === 'TE_BEPALEN' && !(view.priced?.totals?.vatTreatment ?? '').startsWith('DIENST_')) return 'Vul eerst de vracht in.';
   if (!(advanceBaseExcl(view) > 0)) return 'De offerte heeft nog geen bedrag.';
   if (!(remainingToInvoiceExcl(view) > 0)) return 'De offerte is volledig gefactureerd als voorschot.';
   return null;

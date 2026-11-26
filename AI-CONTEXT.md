@@ -2812,8 +2812,13 @@ regime whatever setting changes afterwards.
   the Klant field on the desk rail and in the phone editor. Shown only when
   there is something to choose (or an issued invoice holds a regime, then
   read-only inside the locked form). Saves at once and hands the view to
-  `vatChoiceSaved`; waits while the document is dirty. A reopened invoice
-  (`needsConfirm`) asks "Toch wijzigen" first.
+  the host (`[save]="saveVatChoice"` on SalesEditor: the control is destroyed
+  when its rail tab or phone step is left, the repriced document must still
+  land); waits while the document is dirty. A reopened invoice
+  (`needsConfirm`) asks "Toch wijzigen" first. A service QUOTE keeps one open
+  point: the server sends no quote without product lines by the customer
+  link, so it is invoiced ("Factuur maken zonder versturen") or its PDF goes
+  out by hand.
 - Service documents (`isServiceTreatment`: `vatTreatment` starts with
   `DIENST_`; `isServiceDoc` on SalesEditor and SalesView, `noDelivery` =
   report-backed or service): no Levering tab/step/section, no incoterm, own
