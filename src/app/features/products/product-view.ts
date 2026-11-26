@@ -41,7 +41,7 @@ import {
 } from './product-variant-navigation';
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { gpCapacityHint, isAutoGpCapacity, readGpCapacity } from './carton-capacity';
-import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM } from '../sales/pallet-calculator-model';
+import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM, STANDARD_SPILL_CM } from '../sales/pallet-calculator-model';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -439,7 +439,7 @@ export type { ReceivedContainer } from './received-containers';
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Volume</span>@if (product.pieceCbm) { <span class="ios-cell__sub">{{ product.pieceCbm | cbm: 5 }} per {{ salesUnit(product).singular }}</span> }</span>
               <span class="ios-cell__value num">@if (product.cartonCbm) { {{ product.cartonCbm | cbm }} } @else { — }</span></div>
             @for (load of carrierLoads(); track load.label) {
-              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ load.label }}</span>@if (load.units !== null) { <span class="ios-cell__sub">{{ load.cartons }}</span> }</span>
+              <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">{{ load.label }}</span>@if (load.units !== null) { <span class="ios-cell__sub pph-wrap">{{ load.cartons }}</span> }</span>
                 <span class="ios-cell__value num">@if (load.units !== null) { {{ load.units | num }} {{ salesUnit(product).plural }} } @else { — }</span></div>
             }
             <div class="ios-cell"><span class="ios-cell__body"><span class="ios-cell__title">Per 20ft GP</span>@if (gpCapacity().value !== null) { <span class="ios-cell__sub" [title]="gpCapacityHint(gpCapacity(), product.carton)">{{ isAutoGpCapacity(gpCapacity()) ? 'Auto' : 'handmatig' }}</span> }</span>
@@ -734,24 +734,33 @@ export class ProductView {
   readonly isAutoGpCapacity = isAutoGpCapacity;
   readonly gpCapacityHint = gpCapacityHint;
   /**
-   * Whole omdozen on one europallet and on one Deense kar, as the catalogue prints them: upright, laid
-   * down only when they fit no pallet upright, at the standard heights (260 cm, 230 cm). Palletberekening
-   * can count other heights and tip every omdoos.
+   * Whole omdozen on one europallet and on one Deense kar, as a standard catalogue prints them: upright, laid
+   * down only when they fit no pallet upright, at the standard heights (260 cm, 230 cm) with the standard
+   * spill (2 cm past the edge since 2026-11-26; on the kar across its width only, karSpec). Palletberekening
+   * can count other heights and another spill and tip every omdoos; a catalogue PDF can be made for other
+   * heights too (the studio's "Laadhoogte en spill").
    */
   readonly carrierLoads = computed(() => {
     const product = this.product();
     if (!product) return [];
     const perCarton = product.carton.piecesPerCarton ?? 0;
+    const carton = product.carton;
     return [
-      { label: 'Per europallet', one: 'pallet', fit: palletFit(product.carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)) },
-      { label: 'Per Deense kar', one: 'kar', fit: palletFit(product.carton, karSpec(KAR_MAX_HEIGHT_CM)) },
-    ].map(({ label, one, fit }) => {
+      { label: 'Per europallet', one: 'pallet', fit: palletFit(carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM, STANDARD_SPILL_CM)),
+        inside: palletFit(carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)) },
+      { label: 'Per Deense kar', one: 'kar', fit: palletFit(carton, karSpec(KAR_MAX_HEIGHT_CM, STANDARD_SPILL_CM)),
+        inside: palletFit(carton, karSpec(KAR_MAX_HEIGHT_CM)) },
+    ].map(({ label, one, fit, inside }) => {
       const cartons = perCarton > 0 ? fit.cartonsPerPallet : 0;
+      /* Said only where it decides the figure: this many (or this way up) stand there only because an omdoos may pass the
+         edge. Its words stay together when the line wraps (the phone's cell wraps it: pph-wrap). */
+      const onSpill = fit.cartonsPerPallet !== inside.cartonsPerPallet || fit.up !== inside.up;
       return {
         label,
         units: cartons > 0 ? cartons * perCarton : null,
         cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${fit.heightCm.toLocaleString('nl-BE')} cm hoog`
-          + (fit.up === 'w' ? ' · op de zij' : fit.up === 'l' ? ' · op de korte kant' : '') : '',
+          + (fit.up === 'w' ? ' · op de zij' : fit.up === 'l' ? ' · op de korte kant' : '')
+          + (onSpill ? ` · met\u00a0${STANDARD_SPILL_CM}\u00a0cm\u00a0spill` : '') : '',
         /* Why nothing fits, in Palletberekening's words (its problemText), naming this carrier. */
         problem: perCarton <= 0 ? 'inhoud per omdoos ontbreekt'
           : fit.problem === 'afmetingen ontbreken' ? 'Omdoosmaten ontbreken'
