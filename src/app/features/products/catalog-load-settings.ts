@@ -8,7 +8,7 @@ import {
 /** The example under the fields: one selected product as the PDF names it, with its figures on the picked load. */
 export interface CatalogLoadExample {
   name: string;
-  /** Pieces per pallet and per kar in the document's number format; null where nothing fits (the PDF's "-"). */
+  /** Pieces per pallet and per kar in the staff format (nl-BE: the line is a Dutch sentence); null where nothing fits (the PDF's "-"). */
   perPallet: string | null;
   perKar: string | null;
 }

@@ -137,9 +137,12 @@ export function catalogLoadProblem(request: CatalogLoadFields, echo: unknown): s
   if (!echo || typeof echo !== 'object') {
     return 'De server kent een eigen laadhoogte en spill nog niet. Zet Laadhoogte en spill op Standaard, of probeer het later opnieuw.';
   }
-  /* What is on screen: the picked value, the standard for a field that did not travel. */
+  /* What is on screen: the picked value, the standard for a field that did not travel. The echo is read strictly:
+     a number, or a number as text (180, "180.0"). A null, an empty text, false or a list is no answer, where
+     Number() would have read each of them as 0 and let a picked spill of 0 through unconfirmed. */
   const honoured = KEYS.every((key) => {
-    const answered = Number((echo as Record<string, unknown>)[key]);
+    const raw = (echo as Record<string, unknown>)[key];
+    const answered = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : NaN;
     return Number.isFinite(answered) && Math.abs(answered - (request[key] ?? CATALOG_LOAD_STANDARD[key])) < 0.001;
   });
   return honoured ? null

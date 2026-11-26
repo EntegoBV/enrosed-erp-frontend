@@ -987,16 +987,18 @@ export class CatalogExport {
     - this.compactRows().reduce((sum, row) => sum + row.colourCount, 0));
   /**
    * The example under "Laadhoogte en spill": one selected product as the PDF names it, with its per-pallet and
-   * per-kar figures on the picked load, in the document's number format (the preview's figures). It is the first
-   * in the PDF's order that has a per-pallet figure on the standard, whatever is picked, so the same product
-   * stays there while a height or the spill is stepped and only its figures move.
+   * per-kar figures on the picked load, in the staff format nl-BE: the line is a Dutch sentence ("Bijv. … 3.920
+   * per pallet"), where the document's format would read "3,920" in an English catalogue (the preview keeps the
+   * document's format: it imitates the paper). It is the first in the PDF's order that has a per-pallet figure
+   * on the standard, whatever is picked, so the same product stays there while a height or the spill is stepped
+   * and only its figures move.
    */
   readonly loadExample = computed<CatalogLoadExample | null>(() => {
     const products = this.selectedProducts();
     const product = products.find((candidate) => catalogueUnits(candidate, STANDARD_CARRIERS.pallet) !== null) ?? products[0];
     if (!product) return null;
     const language = this.language();
-    const count = new Intl.NumberFormat(language.toLowerCase());
+    const count = new Intl.NumberFormat('nl-BE');
     const carriers = this.carriers();
     const figure = (units: number | null) => units === null ? null : count.format(units);
     const family = product.familyId === null ? undefined : this.families().find((candidate) => candidate.id === product.familyId);
@@ -1223,7 +1225,8 @@ export class CatalogExport {
       /* The same for a height or a spill of this PDF's own: without the server's echo the PDF would carry the standard figures. */
       const loadProblem = catalogLoadProblem(request, preflight.load);
       if (loadProblem) {
-        this.showRenderProblem(loadProblem);
+        /* The card under the button says it in full; the toast only where to look. */
+        this.showRenderProblem(loadProblem, 'PDF niet gemaakt: kijk Laadhoogte en spill na');
         return;
       }
       const missingPaths = this.validMissingPaths(preflight.missingPaths);
