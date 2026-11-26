@@ -1,7 +1,9 @@
 import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
 import { settle, type BuilderBox, type BuilderItem } from './pallet-builder-model';
-import { cartonStanding, layerSlots, palletFit, productUnits, type CartonUp } from './pallet-calculator-model';
+import {
+  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, layerSlots, palletFit, productUnits, type CarrierWords, type CartonUp,
+} from './pallet-calculator-model';
 import { copiedLoader, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, PACK_UNITS, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
@@ -25,11 +27,16 @@ import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, 
  * estimates it. The count and the freight stay the server's. Nothing floats,
  * nothing hangs over an edge; what goes past the height shows in the
  * builder's orange and red, as the planner says "te hoog".
+ *
+ * An order on the Deense kar shows its karren ("Kar 2"). The view-only
+ * Pallet | Deense kar switch (2026-11-25) shows the other carrier too:
+ * orderLoadOn loads all of the order's omdozen on it as full as they go, for
+ * a look only; the order, its count and its freight do not change.
  */
 
 /** One pallet of the order as 3D shows it. */
 export interface OrderPallet3d {
-  /** "Pallet 2", or the name a hand-built pallet was given. */
+  /** "Pallet 2" ("Kar 2" on the kar), or the name a hand-built pallet was given. */
   label: string;
   /** What stands on it, bottom to top. */
   items: readonly { productId: number; cartons: number }[];
@@ -51,11 +58,12 @@ export interface OrderPallet3d {
 export function orderPallets3d(view: SalesOrderView, spec: PlannerSpec = plannerSpec(view),
   lines: readonly PlannerLine[] = plannerLines(view, spec)): OrderPallet3d[] {
   if ((view.order.loadMode ?? 'PALLETS') !== 'PALLETS') return [];
+  const word = carrierWords(spec.profile).label;
   if (view.order.pallets.length) {
     return view.order.pallets.map((pallet, index) => {
       const type = normalizeManualPalletType(pallet.type);
       return {
-        label: pallet.label.trim() || `Pallet ${index + 1}`,
+        label: pallet.label.trim() || `${word} ${index + 1}`,
         items: pallet.items.map(({ productId, cartons }) => ({ productId, cartons })),
         measuredCm: pallet.heightCm ?? null,
         ownType: type && type !== palletTypeLabel(spec.profile) ? type : null,
@@ -68,14 +76,14 @@ export function orderPallets3d(view: SalesOrderView, spec: PlannerSpec = planner
   if (server) {
     if (server.length !== expected) return [];
     return server.map((pallet, index) => ({
-      label: `Pallet ${index + 1}`, items: pallet.items.map(({ productId, cartons }) => ({ productId, cartons })),
+      label: `${word} ${index + 1}`, items: pallet.items.map(({ productId, cartons }) => ({ productId, cartons })),
       measuredCm: null, ownType: null,
     }));
   }
   const rows = autoPallets(lines, spec);
   if (!rows.length || palletCount(rows) !== expected) return [];
   return rows.flatMap((row) => Array.from({ length: row.to - row.from + 1 }, (_, offset) => ({
-    label: `Pallet ${row.from + offset}`, items: row.parts.map(({ productId, cartons }) => ({ productId, cartons })),
+    label: `${word} ${row.from + offset}`, items: row.parts.map(({ productId, cartons }) => ({ productId, cartons })),
     measuredCm: null, ownType: null,
   })));
 }
@@ -344,9 +352,10 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     if (plan && !plan.left.size && plan.pallets.length && plan.pallets.length <= listed.length) {
       const pallets: OrderPallet3d[] = [];
       const builds: PalletBuild[] = [];
+      const word = carrierWords(spec.profile).label;
       plan.pallets.forEach((packed, index) => {
         const { boxes, counts } = buildOf(packed, goods.members);
-        pallets.push({ label: `Pallet ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null });
+        pallets.push({ label: `${word} ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null });
         builds.push(finished(boxes, counts, stocks, goods.unmeasured, [], spec));
       });
       const matchesList = pallets.length === listed.length && pallets.every((pallet, index) => sameItems(pallet.items, listed[index].items));
@@ -427,6 +436,75 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
   return { pallets: listed, builds, source: 'listed', counted: null, listed, matchesList: true };
 }
 
+/**
+ * The order's omdozen on another carrier than its own (the 3D's view-only Pallet | Deense kar switch), for a look:
+ * every carrier as full as it goes, the first before the next, as a new PACKED document on that carrier would count,
+ * apart from the server's guard that keeps whole layers when those need fewer. The order, its count, its freight and
+ * the planner's rows stay as they are.
+ */
+export interface OtherLoad3d extends OrderLoad3d {
+  /** Omdozen without sizes, and omdozen this carrier takes on no side: not drawn. */
+  unmeasured: number;
+  tooLarge: number;
+  /** More omdozen than MAX_PLANNED_PALLETS carriers take: the rest is not drawn. */
+  capped: boolean;
+}
+
+/**
+ * All of the order's omdozen on the carrier of spec, as full as they go (pallet-pack.ts, every side allowed, as the
+ * order's own 3D and PACKED): every line with omdozen, also one the order's own carrier cannot take (it may go on this
+ * one on its side) and the loose omdozen of a hand layout. At most MAX_PLANNED_PALLETS carriers. No sizes-changed check:
+ * the order's per-layer counts belong to its own carrier.
+ */
+export function orderLoadOn(lines: readonly PlannerLine[], products: ReadonlyMap<number, Product>, spec: PlannerSpec): OtherLoad3d {
+  const lineOf = new Map(lines.map((line) => [line.productId, line]));
+  const totals = new Map<number, number>();
+  for (const line of lines) if (line.cartons > 0) totals.set(line.productId, (totals.get(line.productId) ?? 0) + line.cartons);
+  const stocks = new Map<number, Stock>();
+  for (const productId of totals.keys()) stocks.set(productId, stockOf(productId, lineOf, products));
+  const goods = loadable([...totals].map(([productId, cartons]) => ({ productId, cartons })), stocks);
+  const deck = packDeck(spec);
+  const plan = packPallets(goods.kinds, deck, MAX_PLANNED_PALLETS);
+  const word = carrierWords(spec.profile).label;
+  const placed = plan.pallets.map((packed) => buildOf(packed, goods.members));
+  /* What the plan left: a kind that fits no side of this carrier (or weighs more than it carries) is too large; any
+     other was left over the limit of carriers. */
+  const tooLarge: { name: string; cartons: number }[] = [];
+  let capped = false;
+  for (const kind of goods.kinds) {
+    if (!(plan.left.get(kind.key) ?? 0)) continue;
+    if (packPallets([{ ...kind, count: 1 }], deck, 1).pallets.length) { capped = true; continue; }
+    for (const member of goods.members.get(kind.key) ?? []) {
+      if (member.left > 0) tooLarge.push({ name: stocks.get(member.productId)?.name ?? 'Verwijderd product', cartons: member.left });
+    }
+  }
+  const pallets: OrderPallet3d[] = placed.map(({ counts }, index) => ({
+    label: `${word} ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null,
+  }));
+  const builds = placed.map(({ boxes, counts }) => ({ ...finished(boxes, counts, stocks, goods.unmeasured, tooLarge, spec), differs: false }));
+  return {
+    pallets, builds, source: 'packed', counted: null, listed: pallets, matchesList: true,
+    unmeasured: goods.unmeasured.reduce((sum, part) => sum + part.cartons, 0),
+    tooLarge: tooLarge.reduce((sum, part) => sum + part.cartons, 0), capped,
+  };
+}
+
+function omdozenText(n: number): string {
+  return `${n.toLocaleString('nl-BE')} ${n === 1 ? 'omdoos' : 'omdozen'}`;
+}
+
+/**
+ * The line over the other carrier's view: that it is a look only and what the order counts ("Alleen bekijken · de
+ * order telt 3 pallets"), then what it does not draw. Also when nothing could be drawn at all.
+ */
+export function otherNotice3d(load: OtherLoad3d, shown: CarrierWords, own: CarrierWords, ownCount: number): string {
+  const notes = [`Alleen bekijken · de order telt ${ownCount.toLocaleString('nl-BE')} ${carrierNoun(ownCount, own)}`];
+  if (load.capped) notes.push(`meer dan ${MAX_PLANNED_PALLETS} ${shown.other}, niet alles getekend`);
+  if (load.tooLarge) notes.push(`${omdozenText(load.tooLarge)} te groot voor deze ${shown.one}, niet getekend`);
+  if (load.unmeasured) notes.push(`${omdozenText(load.unmeasured)} zonder maten niet getekend`);
+  return notes.join(' · ');
+}
+
 /** "Europallet 120 × 80 · max 260 cm": what the 3D stands on. */
 export function palletLabel3d(spec: PlannerSpec): string {
   return `${spec.name} · max ${Math.round(spec.maxHeightCm).toLocaleString('nl-BE')} cm`;
@@ -438,12 +516,12 @@ export function palletNotice3d(pallet: OrderPallet3d | undefined, build: PalletB
   const notes: string[] = [];
   const count = (why: PalletBuild['missing'][number]['why']) => build.missing.filter((part) => part.why === why)
     .reduce((sum, part) => sum + part.cartons, 0);
-  const omdozen = (n: number) => `${n.toLocaleString('nl-BE')} ${n === 1 ? 'omdoos' : 'omdozen'}`;
+  const words = carrierWords(spec.profile);
   const unmeasured = count('sizes');
   const tooLarge = count('size');
-  if (load?.counted) notes.push(`Past op ${load.pallets.length} ${load.pallets.length === 1 ? 'pallet' : 'pallets'} · de order telt er ${load.counted}`);
-  if (unmeasured) notes.push(`${omdozen(unmeasured)} zonder maten niet getekend`);
-  if (tooLarge) notes.push(`${omdozen(tooLarge)} te groot voor deze pallet, niet getekend`);
+  if (load?.counted) notes.push(`Past op ${load.pallets.length} ${carrierNoun(load.pallets.length, words)} · de order telt er ${load.counted}`);
+  if (unmeasured) notes.push(`${omdozenText(unmeasured)} zonder maten niet getekend`);
+  if (tooLarge) notes.push(`${omdozenText(tooLarge)} te groot voor deze ${words.one}, niet getekend`);
   if (build.differs) notes.push('Omdoosmaten gewijzigd sinds de berekening');
   if (pallet.measuredCm !== null) notes.push(`Gemeten ${Math.round(pallet.measuredCm).toLocaleString('nl-BE')} cm`);
   if (pallet.ownType) notes.push(`${pallet.ownType}, getekend als ${spec.name}`);

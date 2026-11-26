@@ -7,7 +7,8 @@ import { AuthImage } from '../../core/api/auth-image';
 import { HostBridge } from '../../core/platform/host-bridge';
 import { Icon } from '../../shared/icon';
 import { NumPipe } from '../../shared/pipes';
-import type { CarrierKind, CartonUp, PalletSpec } from './pallet-calculator-model';
+import { Segmented, type SegmentOption } from '../../shared/segmented';
+import { CARRIERS, CARRIER_WORDS, type CarrierKind, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import {
   MAX_BUILDER_BOXES, collides, deckOf, extentOf, landing, loadBuild, nearestSpot, nextSpot, packedFill, ridersOf, saveBuild, settle, sidesOf,
   sized, solidsOf, spillOf, type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid, type Spill, type SpillLevel,
@@ -93,13 +94,14 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
  * A sales order shows its pallets here too (fixed): its omdozen loaded as
  * full as they go, one pallet at a time with arrows between them; they turn,
  * tip and move, none comes or goes, "Zoals berekend" lays them back, and
- * nothing is kept.
+ * nothing is kept. With carrierSwitch the top of the view gets Pallet |
+ * Deense kar (the order's view-only switch); the host answers carrierPicked.
  * three.js loads with this screen only (a @defer on the page).
  */
 @Component({
   selector: 'app-pallet-builder',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthImage, Icon, NgTemplateOutlet, NumPipe],
+  imports: [AuthImage, Icon, NgTemplateOutlet, NumPipe, Segmented],
   host: { '(document:keydown)': 'key($event)' },
   template: `
     <div class="pb3" [class.pb3--duo]="duo" role="dialog" aria-modal="true" aria-labelledby="pb3-title">
@@ -112,12 +114,12 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
           <p>{{ label() }}</p>
         </div>
         @if (pages().length > 1) {
-          <div class="pb3-pager" role="group" [attr.aria-label]="'Pallet ' + (page() + 1) + ' van ' + pages().length">
+          <div class="pb3-pager" role="group" [attr.aria-label]="words().label + ' ' + (page() + 1) + ' van ' + pages().length">
             <button class="pb3-btn pb3-btn--round" type="button" [disabled]="page() <= 0" (click)="turnPage(-1)"
-                    [attr.aria-label]="'Vorige: ' + (pages()[page() - 1] ?? '')" title="Vorige pallet"><app-icon name="chevron-left" [size]="18" /></button>
+                    [attr.aria-label]="'Vorige: ' + (pages()[page() - 1] ?? '')" [title]="'Vorige ' + one()"><app-icon name="chevron-left" [size]="18" /></button>
             <span class="pb3-pager__at" aria-hidden="true">{{ page() + 1 }}/{{ pages().length }}</span>
             <button class="pb3-btn pb3-btn--round" type="button" [disabled]="page() >= pages().length - 1" (click)="turnPage(1)"
-                    [attr.aria-label]="'Volgende: ' + (pages()[page() + 1] ?? '')" title="Volgende pallet"><app-icon name="chevron-right" [size]="18" /></button>
+                    [attr.aria-label]="'Volgende: ' + (pages()[page() + 1] ?? '')" [title]="'Volgende ' + one()"><app-icon name="chevron-right" [size]="18" /></button>
           </div>
         }
         <div class="pb3-tools">
@@ -144,6 +146,10 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
       <div class="pb3-main">
         <div class="pb3-stage" #stage [class.pb3-stage--box]="hoverId() !== null" (pointermove)="hover($event)" (pointerleave)="unhover()">
           <div class="pb3-top">
+            @if (carrierSwitch()) {
+              <app-segmented class="pb3-switch" label="Bekijken op pallet of Deense kar" variant="ios" [options]="carrierOptions" [value]="carrier()"
+                             (changed)="carrierPicked.emit($any($event))" />
+            }
             <div class="pb3-stats" aria-live="polite">
               <span><b>{{ stats().count | num }}</b> {{ stats().count === 1 ? 'omdoos' : 'omdozen' }}</span>
               <span [class.pb3-warn]="stats().tooHigh"><b>{{ stats().topCm | num }}</b> / {{ spec().maxHeightCm | num }} cm</span>
@@ -351,7 +357,8 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     .pb3-stats .pb3-warn,.pb3-stats .pb3-warn b{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
     .pb3-stats .pb3-bad,.pb3-stats .pb3-bad b{color:var(--danger,#b3261e);border-color:color-mix(in srgb,var(--danger,#b3261e) 40%,var(--line))}
     .pb3-view{position:absolute;top:10px;right:12px}
-    .pb3-note{position:absolute;top:56px;left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650}
+    .pb3-switch{pointer-events:auto;width:min(240px,100%);margin-bottom:6px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+    .pb3-note{position:absolute;top:max(56px,var(--pb3-inset,0px));left:50%;transform:translateX(-50%);margin:0;color:var(--warn);font-weight:650}
     .pb3-empty{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:10px;width:max-content;max-width:calc(100% - 32px);margin:0;font-size:13.5px;color:var(--muted);text-align:center;pointer-events:none}
     .pb3-empty p{margin:0}.pb3-empty .btn{pointer-events:auto}
     .pb3-dot{display:inline-block;flex:none;width:12px;height:12px;border-radius:50%;background:var(--dot);box-shadow:inset 0 0 0 1px rgb(26 22 20 / 18%)}
@@ -543,6 +550,9 @@ export class PalletBuilder {
   readonly paged = output<number>();
   /** A standing line under the figures: what the view does not draw, or how it differs. */
   readonly notice = input<string | null>(null);
+  /** Pallet | Deense kar over the view (a sales order's, view only): carrierPicked says which, the host shows it. */
+  readonly carrierSwitch = input(false);
+  readonly carrierPicked = output<CarrierKind>();
   readonly closed = output<void>();
 
   private readonly stage = viewChild.required<ElementRef<HTMLElement>>('stage');
@@ -576,7 +586,10 @@ export class PalletBuilder {
 
   readonly itemMap = computed(() => new Map(this.items().map((item) => [item.key, item])));
   readonly deck = computed(() => deckOf(this.spec()));
-  readonly one = computed(() => (this.carrier() === 'kar' ? 'kar' : 'pallet'));
+  readonly words = computed(() => CARRIER_WORDS[this.carrier()]);
+  readonly one = computed(() => this.words().one);
+  /** Palletberekening's carrier names: "Pallet", "Deense kar". */
+  readonly carrierOptions: SegmentOption[] = CARRIERS.map((id) => ({ id, label: CARRIER_WORDS[id].title }));
   readonly counts = computed(() => {
     const counts = new Map<number, number>();
     for (const box of this.boxes()) counts.set(box.key, (counts.get(box.key) ?? 0) + 1);
@@ -788,10 +801,14 @@ export class PalletBuilder {
       this.failed.set(true);
       return;
     }
-    /* The figures and the legend over the top of the view: the picture centres under them. */
+    /* The figures and the legend over the top of the view: the picture centres under them, a passing note stays below them. */
     const top = stage.querySelector<HTMLElement>('.pb3-top');
     if (top) {
-      const measure = () => this.scene?.setInsetTop(top.offsetTop + top.offsetHeight + 6);
+      const measure = () => {
+        const inset = top.offsetTop + top.offsetHeight + 6;
+        stage.style.setProperty('--pb3-inset', `${inset}px`);
+        this.scene?.setInsetTop(inset);
+      };
       measure();
       this.topObserver = new ResizeObserver(measure);
       this.topObserver.observe(top);
