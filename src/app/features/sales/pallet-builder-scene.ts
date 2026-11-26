@@ -1,5 +1,5 @@
 import {
-  BoxGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DirectionalLight, EdgesGeometry, Group, HemisphereLight,
+  BoxGeometry, CanvasTexture, CircleGeometry, Color, CylinderGeometry, DirectionalLight, DoubleSide, EdgesGeometry, Group, HemisphereLight,
   LineBasicMaterial, LineDashedMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, PCFShadowMap,
   PerspectiveCamera, Plane, Quaternion, Raycaster, RepeatWrapping, Scene, ShadowMaterial, SRGBColorSpace, Vector2, Vector3, WebGLRenderer,
   BufferGeometry, Float32BufferAttribute, type Material,
@@ -17,7 +17,11 @@ import { extentOf, type BuilderBox, type BuilderItem, type Deck, type Extent, ty
  * focus (the others fade) and marked (its boxes get edges in its colour);
  * the box under the mouse gets a light shell; a box that sticks out over the
  * floor's edge or the loading height an orange shell (a little) or a red one
- * (too much). It renders only when something changed.
+ * (too much). The carrier is always drawn as it is (120 × 80); where omdozen
+ * may pass its edge (the deck's spill, 2026-11-26) a faint band on the
+ * floor's level, closed by a dashed line, shows how far: around a pallet,
+ * along the two long sides of a Deense kar. It renders only when something
+ * changed.
  */
 
 const X_AXIS = new Vector3(1, 0, 0);
@@ -159,10 +163,11 @@ export class BuilderScene {
   /** OrbitControls listens on the canvas: off while a box is being dragged. */
   set orbit(enabled: boolean) { this.controls.enabled = enabled; }
 
-  /** The pallet or the kar, with the loading height drawn as a dashed frame; the camera frames it. */
+  /** The pallet or the kar, with the loading height drawn as a dashed frame and the spill as a faint line around the floor; the camera frames it. */
   setCarrier(kind: 'pallet' | 'kar', spec: PalletSpec, deck: Deck): void {
     const changed = this.deck.lengthCm !== deck.lengthCm || this.deck.widthCm !== deck.widthCm || this.base !== spec.baseHeightCm
-      || this.carrier.userData['kind'] !== kind || this.deck.usableCm !== deck.usableCm;
+      || this.carrier.userData['kind'] !== kind || this.deck.usableCm !== deck.usableCm
+      || this.deck.spillXCm !== deck.spillXCm || this.deck.spillZCm !== deck.spillZCm;
     this.deck = deck;
     this.base = spec.baseHeightCm;
     if (!changed && this.carrier.children.length) return;
@@ -171,6 +176,8 @@ export class BuilderScene {
     this.carrier.userData['kind'] = kind;
     this.carrier.add(kind === 'kar' ? karModel(deck, this.base) : palletModel(deck, this.base, this.woodTexture));
     this.carrier.add(heightFrame(deck, this.base, this.accent));
+    const allowance = spillOutline(deck, this.base, this.accent);
+    if (allowance) this.carrier.add(allowance);
     const reach = Math.max(deck.lengthCm, deck.widthCm);
     this.ground.scale.setScalar(reach * 2.4);
     const shadow = this.sun.shadow.camera;
@@ -416,7 +423,9 @@ export class BuilderScene {
 
   /** Back to the view that shows the whole carrier. */
   frameView(): void {
-    const { lengthCm, widthCm, usableCm } = this.deck;
+    const { usableCm } = this.deck;
+    /* The floor with its spill: omdozen may stand that far out, and the line around it must be in view. */
+    const lengthCm = this.deck.lengthCm + 2 * this.deck.spillXCm; const widthCm = this.deck.widthCm + 2 * this.deck.spillZCm;
     const top = this.base + usableCm;
     /* The whole carrier and its loading height in view, with room for the figures along the top. */
     const target = new Vector3(0, top * 0.47, 0);
@@ -876,6 +885,43 @@ function heightFrame(deck: Deck, base: number, accent: Color): LineSegments {
   const lines = new LineSegments(geometry, new LineDashedMaterial({ color: accent, dashSize: 4, gapSize: 3, transparent: true, opacity: 0.6 }));
   lines.computeLineDistances();
   return lines;
+}
+
+/**
+ * How far an omdoos may pass the floor's edge: on the floor's level a faint band from the edge out to the deck's
+ * spill, closed by a dashed line. Around a pallet; on the Deense kar, where the spill counts across the width only
+ * (its posts stand at the short ends), a band along each long side. Null without spill.
+ */
+function spillOutline(deck: Deck, base: number, accent: Color): Group | null {
+  const { lengthCm: length, widthCm: width, spillXCm: sx, spillZCm: sz } = deck;
+  if (!(sx > 0) && !(sz > 0)) return null;
+  const x0 = -length / 2; const x1 = length / 2; const z0 = -width / 2; const z1 = width / 2;
+  /* A hair above the floor, so neither flickers in the deck's own face. */
+  const y = base + 0.15;
+  const band: number[] = [];
+  const quad = (ax: number, az: number, bx: number, bz: number) => band.push(ax, y, az, bx, y, az, bx, y, bz, ax, y, az, bx, y, bz, ax, y, bz);
+  const edge: number[] = [];
+  if (sz > 0) {
+    /* Along the long sides, the corners included. */
+    quad(x0 - sx, z0 - sz, x1 + sx, z0);
+    quad(x0 - sx, z1, x1 + sx, z1 + sz);
+    edge.push(x0 - sx, y, z0 - sz, x1 + sx, y, z0 - sz, x0 - sx, y, z1 + sz, x1 + sx, y, z1 + sz);
+  }
+  if (sx > 0) {
+    quad(x0 - sx, z0, x0, z1);
+    quad(x1, z0, x1 + sx, z1);
+    edge.push(x0 - sx, y, z0 - sz, x0 - sx, y, z1 + sz, x1 + sx, y, z0 - sz, x1 + sx, y, z1 + sz);
+  }
+  const group = new Group();
+  const fill = new BufferGeometry();
+  fill.setAttribute('position', new Float32BufferAttribute(band, 3));
+  group.add(new Mesh(fill, new MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.14, depthWrite: false, side: DoubleSide })));
+  const line = new BufferGeometry();
+  line.setAttribute('position', new Float32BufferAttribute(edge, 3));
+  const lines = new LineSegments(line, new LineDashedMaterial({ color: accent, dashSize: 2.4, gapSize: 1.8, transparent: true, opacity: 0.6 }));
+  lines.computeLineDistances();
+  group.add(lines);
+  return group;
 }
 
 /** A shell a little larger than the box (margin in cm), drawn with these materials. */
