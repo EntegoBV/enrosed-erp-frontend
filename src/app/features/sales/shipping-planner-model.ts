@@ -6,7 +6,7 @@ import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
   CARRIER_WORDS, KAR_BASE_HEIGHT_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM,
   PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG, carrierWords, loadChoice, palletSpec, planPallets, roomWithoutExtraPallet,
-  separatePallets, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
+  separatePallets, spillAxes, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
   PALLET_PRODUCT_COLOURS, carrierTypes, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
@@ -33,7 +33,7 @@ export interface PlannerSpec extends PalletSpec {
 
 /**
  * The order's carrier as the server priced it: a pallet type, or the Deense kar (DEENSE_KAR: 127 ×
- * 54,5 cm, base 16,5 cm, 450 kg). The server sends the base and the height it counted with.
+ * 54,5 cm, base 16,5 cm, 450 kg). The server sends the base, the height and the spill it counted with.
  */
 export function plannerSpec(view: SalesOrderView): PlannerSpec {
   const profile = view.order.palletProfile ?? 'EURO_120X80';
@@ -42,24 +42,32 @@ export function plannerSpec(view: SalesOrderView): PlannerSpec {
   /* The server's effective height; an older server without it priced a document without a height on 260 (a kar has no
      such past: it reads its own standard, 230). */
   const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? (kar ? KAR_MAX_HEIGHT_CM : PALLET_LEGACY_MAX_HEIGHT_CM);
-  return specFor(profile, base, max);
+  /* The spill the server counted with (2026-11-26): 0 for a document that stores none. A server that does not say counted
+     without one, whatever the draft holds: what this screen works out itself must stand on the floor the figures came from. */
+  return specFor(profile, base, max, view.priced.totals.palletSpillCm ?? 0);
 }
 
-/** A carrier's spec as the planner and the 3D read it: the profile's floor, name and weight limit at this base and height. */
-export function specFor(profile: PalletProfile, baseHeightCm: number, maxHeightCm: number): PlannerSpec {
+/**
+ * A carrier's spec as the planner and the 3D read it: the profile's floor, name and weight limit at this base and height,
+ * with this spill (cm per side; on the kar across the width only, spillAxes). The name stays the real floor's.
+ */
+export function specFor(profile: PalletProfile, baseHeightCm: number, maxHeightCm: number, spillCm = 0): PlannerSpec {
   const choice = loadChoice(profile);
   return {
     profile, name: `${choice.label} ${choice.size}`, lengthCm: choice.lengthCm, widthCm: choice.widthCm,
     baseHeightCm, maxHeightCm, maxWeightKg: profile === 'DEENSE_KAR' ? KAR_MAX_WEIGHT_KG : PALLET_MAX_WEIGHT_KG,
-    usableCm: Math.max(1, maxHeightCm - baseHeightCm),
+    usableCm: Math.max(1, maxHeightCm - baseHeightCm), ...spillAxes(profile, spillCm),
   };
 }
 
-/** The other carrier at its standard, for the 3D's view-only switch: a Deense kar at 230 cm, a europallet at 260 cm. */
-export function standardSpec(kind: CarrierKind): PlannerSpec {
+/**
+ * The other carrier at its standard height, for the 3D's view-only switch: a Deense kar at 230 cm, a europallet at
+ * 260 cm, with the spill given: the document's own (0 without one), so the look counts as the document does.
+ */
+export function standardSpec(kind: CarrierKind, spillCm = 0): PlannerSpec {
   const profile: PalletProfile = kind === 'kar' ? 'DEENSE_KAR' : 'EURO_120X80';
   const spec = palletSpec(profile, standardHeightCm(profile));
-  return specFor(profile, spec.baseHeightCm, spec.maxHeightCm);
+  return specFor(profile, spec.baseHeightCm, spec.maxHeightCm, spillCm);
 }
 
 /** An order on the Deense kar (2026-11-25): its freight is set by hand (Vast bedrag), its screens say kar and karren. */
@@ -313,7 +321,8 @@ export function handCarton(productId: number, products: ReadonlyMap<number, Prod
  * from (its source, the copy-time run loaded again) stands as that part of it; any other is judged as the server would
  * load it (handLoader: with the pallets after it, alone, or with omdozen a lowered quantity took off). Otherwise, on any
  * other document or pallet type, or without the catalogue, every product stands in whole layers of its own, added up:
- * the way MIXED and STRICT count.
+ * the way MIXED and STRICT count. Every load here stands on the document's load floor (packDeck(spec): the floor plus
+ * the document's spill), as the server's count does.
  */
 export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
   products?: ReadonlyMap<number, Product>): PalletVm[] {

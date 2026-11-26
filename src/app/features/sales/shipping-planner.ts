@@ -15,8 +15,8 @@ import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { Sheet, Ui } from '../../shared/ui';
 import { OrderPallets3d } from './order-pallets-3d';
 import {
-  PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, carrierNoun, carrierOf, carrierWords, clampPalletHeight, minHeightCm, palletHeightLimit,
-  standardHeightCm,
+  PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM, carrierNoun, carrierOf, carrierWords, clampPalletHeight,
+  clampSpill, minHeightCm, palletHeightLimit, standardHeightCm,
 } from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
@@ -40,6 +40,8 @@ export interface ShippingOrderPatch {
   loadMode?: LoadMode;
   palletProfile?: PalletProfile;
   maxPalletHeightCm?: number | null;
+  /** The document's spill, whole cm per side (0 to 5); the editor sends it only when it changed. */
+  palletSpillCm?: number | null;
   freightPricingStrategy?: FreightPricingStrategy;
   freightRatePerCbmEur?: number | null;
   manualFreightEur?: number | null;
@@ -91,6 +93,12 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * counting on the kar's floor, height and weight, every word kar / karren,
  * and the freight by hand (Vast bedrag; Landentarief and the staffels count
  * pallets). switchCarrier makes that change in one patch.
+ *
+ * Spill (Lading, 2026-11-26; Emre: "De spill willen wij ook kunnen
+ * aanpassen"): how far an omdoos may stick out past the floor, per document,
+ * under "Max. hoogte". The server counts with it and says which it used
+ * (totals.palletSpillCm); the row shows only then. A document from before has
+ * none stored and counts with 0 until he sets one here himself.
  */
 @Component({
   selector: 'app-shipping-planner',
@@ -292,8 +300,10 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
     <ng-template #load>
       <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [minCm]="minHeight()" [maxCm]="heightLimit()" [kar]="kar()"
                         [overridden]="heightOverridden()" [fieldKey]="heightField()"
+                        [spillShown]="spillKnown()" [spillCm]="spillCm()" [spillMaxCm]="spillLimit" [spillOverridden]="spillOverridden()"
                         [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
-                        (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)" />
+                        (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)"
+                        (spillChange)="setSpill($event)" />
     </ng-template>
 
     @if (sheetPallet(); as pallet) {
@@ -491,6 +501,20 @@ export class ShippingPlanner {
   });
   /** Raised when a height from the field was not taken (the question below answered with Annuleren). */
   readonly heightField = signal(0);
+  /** The server counts with a spill and says which (totals.palletSpillCm): only then the Spill row shows. An older server counts without. */
+  readonly spillKnown = computed(() => this.view().priced.totals.palletSpillCm != null);
+  /** The document's spill in cm per side: the draft's own, else what the server counted with (0 for a document that stores none). */
+  readonly spillCm = computed(() => (this.spillKnown() ? this.order().palletSpillCm ?? this.view().priced.totals.palletSpillCm ?? 0 : 0));
+  readonly spillLimit = SPILL_LIMIT_CM;
+  /**
+   * "Standaard" (and an emptied field meaning it) only on a document that carries its own spill and it is not the
+   * standard's 2 cm. A document from before 2026-11-26 stores none, counts with 0 and gets no button: one tap must
+   * never re-count what was sent. Stepping or typing a spill stays possible wherever the height can be changed.
+   */
+  readonly spillOverridden = computed(() => {
+    const own = this.order().palletSpillCm;
+    return this.spillKnown() && own != null && own !== STANDARD_SPILL_CM;
+  });
   readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
   readonly modeOptions = computed<SegmentOption[]>(() => [
     { id: 'auto', label: 'Automatisch' },
@@ -503,7 +527,9 @@ export class ShippingPlanner {
 
   readonly specText = computed(() => {
     if (!this.palletsMode()) return 'Losse dozen';
-    const text = `${this.spec().name} · max ${this.heightCm()} cm`;
+    /* The load basis in one line; a spill is named only when the document has one ("… · max 260 cm · spill 2 cm"). */
+    const spill = this.spillCm();
+    const text = `${this.spec().name} · max ${this.heightCm()} cm${spill > 0 ? ` · spill ${spill.toLocaleString('nl-BE')} cm` : ''}`;
     if (this.canEdit() || !this.lines().length) return text;
     return `${text} · ${this.manual() ? 'zelf ingedeeld' : 'automatisch'}`;
   });
@@ -883,6 +909,19 @@ export class ShippingPlanner {
     const limit = this.heightLimit();
     if (this.heightCm() <= limit) { this.patch.emit({ maxPalletHeightCm: height }); return; }
     this.askBeforeLowering(height, limit, () => this.patch.emit({ maxPalletHeightCm: height }));
+  }
+
+  /**
+   * The spill, ±1 cm or typed, 0 to 5 cm; "Standaard" or an emptied field (only offered while spillOverridden)
+   * sends the standard's number, 2: the server keeps a document's own spill when none is sent. The same lock as
+   * the height (canEdit). A number that is the document's spill already changes nothing: a document without a
+   * stored spill is not given one by a typed 0.
+   */
+  setSpill(value: number | null): void {
+    if (!this.canEdit() || !this.spillKnown()) return;
+    const spill = value === null ? STANDARD_SPILL_CM : clampSpill(value);
+    if (spill === this.spillCm()) return;
+    this.patch.emit({ palletSpillCm: spill });
   }
 
   /**

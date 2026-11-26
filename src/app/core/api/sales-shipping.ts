@@ -1,17 +1,23 @@
 import type { SalesOrder } from './models';
 
 export const shippingFields = [
-  'loadMode', 'palletProfile', 'maxPalletHeightCm', 'freightPricingStrategy',
+  'loadMode', 'palletProfile', 'maxPalletHeightCm', 'palletSpillCm', 'freightPricingStrategy',
   'freightRatePerCbmEur', 'manualFreightEur', 'freightCarrierId',
   'freightCarrierExtraEur', 'freight', 'pallets',
 ] as const satisfies readonly (keyof SalesOrder)[];
 
-/** Complete snapshot for the narrow shipping endpoint; null explicitly resets a value. A kar's freight defaults to FIXED, never per pallet. */
+/**
+ * Complete snapshot for the narrow shipping endpoint; null explicitly resets a value. A kar's freight defaults to FIXED,
+ * never per pallet. The height and the spill are the exceptions: without one the server keeps the document's own (for
+ * the spill a number, 0 included, sets it). The spill belongs here so a change of it is a transport change: a sent
+ * document can save it and "Wijzigingen weggooien" puts it back.
+ */
 export function shippingSnapshot(order: SalesOrder) {
   return {
     loadMode: order.loadMode ?? 'PALLETS',
     palletProfile: order.palletProfile ?? 'EURO_120X80',
     maxPalletHeightCm: order.maxPalletHeightCm ?? null,
+    palletSpillCm: order.palletSpillCm ?? null,
     freightPricingStrategy: order.freightPricingStrategy
       ?? (order.manualFreightEur != null || order.palletProfile === 'DEENSE_KAR' ? 'FIXED'
         : order.loadMode === 'LOOSE_CARTONS' ? 'PER_CBM' : 'COUNTRY_PALLET'),

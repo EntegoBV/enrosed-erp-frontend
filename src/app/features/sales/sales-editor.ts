@@ -83,7 +83,7 @@ import { checkLayout, freightGap, isKarOrder, layoutComplete, plannerSpec } from
 import { copySources } from './pallet-hand-load';
 import { OrderPallets3d } from './order-pallets-3d';
 import { orderPallets3d } from './order-pallets-3d-model';
-import { PALLET_LEGACY_MAX_HEIGHT_CM, carrierNoun, carrierWords, type CarrierWords } from './pallet-calculator-model';
+import { PALLET_LEGACY_MAX_HEIGHT_CM, carrierNoun, carrierWords, specSpillCm, type CarrierWords } from './pallet-calculator-model';
 import {
   automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
 } from './pallet-stack';
@@ -104,9 +104,10 @@ import type { SalesStockCost } from '../../core/api/stock-batch-models';
 import { batchFormat } from '../../core/api/stock-batch-units';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 
-/** What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. */
+/** What the pallet fits of a draft depend on (the spill too, 2026-11-26): the figures on screen belong to the draft when this matches. */
 function layoutKey(order: SalesOrder): string {
   return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
+    order.palletSpillCm ?? null,
     order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line), line.perPiece === true])]);
 }
 
@@ -4120,9 +4121,13 @@ export class SalesEditor {
        without a height the server keeps the document's own. A screen opened before the server put a
        concept quote back on the standard (2026-11-10, 220 to 260 cm) would otherwise write its old 220
        back with any other save; the answer brings the server's height onto the screen
-       (mergeOrderAfterSave compares with data.order). */
-    const sent: SalesOrder = (data.order.maxPalletHeightCm ?? null) === (this.savedDocument()?.maxPalletHeightCm ?? null)
-      ? { ...data.order, maxPalletHeightCm: null } : data.order;
+       (mergeOrderAfterSave compares with data.order). The spill (2026-11-26) goes the same way: only when it was
+       changed here, a number then (0 too); without one the server keeps the document's own, so a screen that
+       still holds an older spill never writes it back. */
+    const stored = this.savedDocument();
+    let sent: SalesOrder = data.order;
+    if ((sent.maxPalletHeightCm ?? null) === (stored?.maxPalletHeightCm ?? null)) sent = { ...sent, maxPalletHeightCm: null };
+    if ((sent.palletSpillCm ?? null) === (stored?.palletSpillCm ?? null)) sent = { ...sent, palletSpillCm: null };
     const heightPicked = sent.maxPalletHeightCm != null;
     try {
       const saved = fullDraft
@@ -5459,8 +5464,10 @@ export class SalesEditor {
       const automatic = priced?.totals.autoPallets;
       if (data && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
         const spec = plannerSpec(data);
+        /* The run's spill goes into the source with its profile and height: the copy is loaded again on that floor. */
         const sources = priced.totals.palletRule === 'PACKED'
-          ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items))
+          ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items),
+            specSpillCm(spec))
           : [];
         automatic.forEach((pallet, index) => add(pallet.items.map(({ productId, cartons }) => ({ productId, cartons })), sources[index] ?? null));
       } else {

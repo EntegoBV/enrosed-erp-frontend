@@ -2123,8 +2123,9 @@ export interface OrderPallet {
    * "PACKED|EURO_120X80|260|12:24,15:8|0|12:20,15:8": the rule, the pallet profile, the loaded height, the run's omdozen
    * per product in line order, the pallet's place in that run and its own omdozen (pallet-hand-load.ts copySources). The
    * planner and the 3D load that run again, so a pallet that holds no more than it did is judged as that part of it,
-   * whatever edits follow. Null or absent on a pallet built by hand, on other rules and on older servers; edits keep it
-   * (a pallet that gains omdozen no longer matches it).
+   * whatever edits follow. A run counted with a spill carries it as a seventh part ("…|2", cm per side, 2026-11-26);
+   * six parts are a run without spill. Null or absent on a pallet built by hand, on other rules and on older servers;
+   * edits keep it (a pallet that gains omdozen no longer matches it).
    */
   source?: string | null;
 }
@@ -2185,6 +2186,13 @@ export interface SalesOrder {
   palletProfile?: PalletProfile | null;
   /** Order override for total loaded height, including the pallet base. */
   maxPalletHeightCm?: number | null;
+  /**
+   * Spill (2026-11-26): how far an omdoos may stick out past an edge of the floor, whole cm per side, 0 to 5; on the
+   * Deense kar across its width only. The stored value: null on every document from before (null counts as 0, never
+   * as the standard), 2 on a document made since. In a write an absent or null value keeps what is stored, a number
+   * (0 included) sets it. Absent from older servers.
+   */
+  palletSpillCm?: number | null;
   /** Mutually exclusive source of the freight amount. */
   freightPricingStrategy?: FreightPricingStrategy | null;
   /** Used only with PER_CBM; the inactive strategy keeps no shadow value. */
@@ -2308,6 +2316,11 @@ export interface PricedOrder {
     palletRule?: PalletRule; palletsAutomatic?: number; autoPallets?: AutoPallet[];
     /** Effective server settings used for this calculation (a kar: its 16,5 cm base and the document's height). */
     palletBaseHeightCm?: number; palletMaxHeightCm?: number;
+    /**
+     * The spill this calculation counted with, cm per side: 0 for a document that stores none. Its presence says the
+     * server knows spill (the planner then shows its Spill row); absent from older servers, which count without one.
+     */
+    palletSpillCm?: number;
     cbm: number; weightKg: number;
     gross: number; lineDiscountTotal: number; subtotal: number;
     orderDiscountPercent: number; orderDiscountAmount: number;

@@ -19,7 +19,8 @@ const PROFILES_SHORT: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
 
 /**
  * How the order travels: on pallets (or karren) or as loose cartons, which
- * pallet type or the Deense kar, and how high it may be loaded. The phone
+ * pallet type or the Deense kar, how high it may be loaded and how far an
+ * omdoos may stick out past the floor (Spill). The phone
  * shows it in the Lading sheet, the desk in the planner's aside. The planner
  * decides what a choice changes.
  */
@@ -46,6 +47,17 @@ const PROFILES_SHORT: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
           @if (overridden() && canEdit()) { <button class="ld-reset" type="button" (click)="heightChange.emit(null)">Standaard</button> }
         </div>
         <p class="ld-note">incl. {{ kar() ? 'kar' : 'pallet' }} {{ baseText() }} cm</p>
+        @if (spillShown()) {
+          <div class="ld-row">
+            <span class="ld-label" id="ld-spill">Spill</span>
+            <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="spillCm()" [step]="1" [min]="0" [max]="spillMaxCm()" [allowEmpty]="spillOverridden()"
+                                [disabled]="!canEdit()" label="Spill in cm per kant" lessLabel="1 cm minder" moreLabel="1 cm meer"
+                                (changed)="spillChange.emit($event)" />
+            <span class="ld-unit">cm per kant</span>
+            @if (spillOverridden() && canEdit()) { <button class="ld-reset" type="button" (click)="spillChange.emit(null)">Standaard</button> }
+          </div>
+          @if (kar()) { <p class="ld-note">op de kar alleen aan de lange zijden</p> }
+        }
       } @else if (layoutNote(); as note) {
         <p class="ld-note">{{ note }}</p>
       }
@@ -82,6 +94,14 @@ export class PlannerLoad {
   /** Raised by the planner when it did not take a height from the field: the field then shows the height that stays. */
   readonly fieldKey = input(0);
   readonly overridden = input(false);
+  /**
+   * The Spill row (2026-11-26): how far an omdoos may stick out past the floor, cm per side, under the height. Shown
+   * only when the server counts with a spill and says so (the planner decides); "Standaard" while spillOverridden.
+   */
+  readonly spillShown = input(false);
+  readonly spillCm = input(0);
+  readonly spillMaxCm = input(5);
+  readonly spillOverridden = input(false);
   readonly baseCm = input(14.4);
   readonly canEdit = input(true);
   readonly desk = input(false);
@@ -91,6 +111,8 @@ export class PlannerLoad {
   readonly modeChange = output<LoadMode>();
   readonly profileChange = output<PalletProfile>();
   readonly heightChange = output<number | null>();
+  /** A picked spill in cm; null: back to the standard. */
+  readonly spillChange = output<number | null>();
 
   readonly modes = computed(() => (this.kar() ? KAR_MODES : MODES).map((option) => ({ ...option, disabled: !this.canEdit() })));
   readonly profiles = computed(() => (this.desk() ? PROFILES_SHORT : PROFILES).map((option) => ({ ...option, disabled: !this.canEdit() })));
