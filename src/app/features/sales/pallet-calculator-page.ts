@@ -27,14 +27,14 @@ import {
   palletBrowserSections, rememberRecent, tilesByProduct, type PalletBrowserColour, type PalletBrowserTile,
 } from './pallet-browser-model';
 import { ALL_SIDES, UPRIGHT } from './pallet-pack';
-import { bestPlan, type PackLine } from './pallet-packed-plan';
+import { bestPlan, countedPlan, type CountedPlan, type PackLine } from './pallet-packed-plan';
 import { builderStoreKey, plan3d, planLoads, planPage } from './pallet-plan-3d';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CARRIERS, CARRIER_WORDS, CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  clampSpill, containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, startUnit, unitsPerCarton,
-  type CalcUnit, type CarrierKind, type CarrierWords, type ContainerCapacity, type ContainerChoice, type PalletFit, type PlanLine, type ProductUnits,
+  clampSpill, containerCapacity, containerFill, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, specSpillCm, startUnit, unitsPerCarton,
+  type CalcUnit, type CarrierKind, type CarrierWords, type ContainerCapacity, type ContainerChoice, type PalletFit, type PalletSpec, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
 /** One picked product: what was typed, in which unit, and its colour on the pallets. */
@@ -122,6 +122,33 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
   return next;
 }
 
+/** A card's fit on a carrier. "Omdozen mogen kantelen" off: upright only, also where a quote would lay an omdoos down. */
+function cardFit(product: Product, pallet: PalletSpec, turnable: boolean): PalletFit {
+  return turnable ? palletFitTurnable(product.carton, pallet) : palletFitUpright(product.carton, pallet);
+}
+
+function cartonWeight(product: Product): number {
+  const weightKg = product.carton.weightKg;
+  return weightKg && weightKg > 0 ? weightKg : 0;
+}
+
+/** A card as the plan counts it in whole layers: the layers stand as high as the side the fit chose. */
+function planLine(product: Product, cartons: number, fit: PalletFit): PlanLine {
+  return {
+    key: product.id as number, cartons, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : product.carton.heightCm ?? 0,
+    cartonWeightKg: cartonWeight(product),
+  };
+}
+
+/** A card as the packer takes it: its omdozen and the omdoos's own sizes and weight. */
+function packOf(line: CalcLine): PackLine {
+  const carton = line.product.carton;
+  return {
+    key: line.plan.key, cartons: line.cartons, lengthCm: carton.lengthCm ?? 0, widthCm: carton.widthCm ?? 0, heightCm: carton.heightCm ?? 0,
+    weightKg: line.weightKg,
+  };
+}
+
 /**
  * Palletberekening (Verkoop): what fits on a pallet or a Deense kar and in a
  * 20ft or 40ft container, for one product or a mix, counted in omdozen,
@@ -142,6 +169,11 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
  * laden all count with it.
  * 3D laden shows what the plan says: every carrier of the plan is a page
  * laid as the plan counts it (pallet-plan-3d.ts).
+ * The plan never takes more carriers with the spill than without (`counted`,
+ * the one place the page asks for its plan): where it would, the plan is the
+ * one on the bare floor, its rows, room hints and 3D pages stand on that
+ * floor, and one line under the result says so. The cards and the tiles keep
+ * their figures at the picked spill.
  */
 @Component({
   selector: 'app-pallet-calculator-page',
@@ -235,6 +267,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
                       @if (totals().weightKg > 0) { {{ totals().weightKg | num }} kg }
                     </p>
                   }
+                  @if (spillNote(); as note) { <p class="pc-sum__facts">{{ note }}</p> }
                   <div class="pc-cont" aria-label="Containers">
                     @for (fill of containerFills(); track fill.container.id) {
                       <div class="pc-cont__tile">
@@ -472,7 +505,7 @@ function withRow(rows: readonly CalcRow[], row: CalcRow, index: number): CalcRow
 
     @if (builderOpen()) {
       @defer (on immediate) {
-        <app-pallet-builder [items]="builderView().items" [carrier]="carrier()" [spec]="pallet()" [label]="palletLabel()" [turnable]="turnable()"
+        <app-pallet-builder [items]="builderView().items" [carrier]="carrier()" [spec]="counted().pallet" [label]="builderLabel()" [turnable]="turnable()"
                             [heading]="builderView().heading" [pages]="builderView().pages" [page]="builderView().page" (paged)="builderPage.set($event)"
                             [storeKey]="builderView().key" [buildKey]="builderView().key" [initialBoxes]="builderView().start"
                             [autoBoxes]="builderView().auto" [countedNote]="builderView().note" (closed)="builderOpen.set(false)" />
@@ -672,13 +705,10 @@ export class PalletCalculatorPage {
   readonly segVariant = computed<'desk' | 'ios'>(() => (this.desktop.active() ? 'desk' : 'ios'));
   /** The one spec the whole page counts with: the carrier, its height and the spill (a kar's across its width only). */
   readonly pallet = computed(() => (this.carrier() === 'kar' ? karSpec(this.karHeight(), this.spill()) : palletSpec(this.profile(), this.palletHeight(), this.spill())));
-  /** "Europallet 120 × 80 · max 260 cm · spill 2 cm": the floor as it is, the height, and a spill above 0. */
-  readonly palletLabel = computed(() => {
-    const spill = this.spill() > 0 ? ` · spill ${this.spill()} cm` : '';
-    if (this.carrier() === 'kar') return `Deense kar ${this.karSize} · max ${this.maxHeight()} cm${spill}`;
-    const choice = PALLET_CHOICES.find((candidate) => candidate.id === this.profile()) ?? PALLET_CHOICES[0];
-    return `${choice.label} ${choice.size} · max ${this.maxHeight()} cm${spill}`;
-  });
+  /** "Europallet 120 × 80 · max 260 cm · spill 2 cm": the floor as it is, the height, and the picked spill above 0. */
+  readonly palletLabel = computed(() => this.labelWith(this.spill()));
+  /** 3D laden's subtitle: what its pages stand on, so without the spill where the plan was counted without (counted). */
+  readonly builderLabel = computed(() => this.labelWith(specSpillCm(this.counted().pallet)));
 
   private readonly byId = computed(() => new Map((this.products() ?? []).map((product) => [product.id as number, product])));
   readonly sections = computed(() => palletBrowserSections(this.products() ?? [], this.families(), this.categories()));
@@ -771,13 +801,38 @@ export class PalletCalculatorPage {
    * that fit no carrier stay out, as on a quote.
    */
   private readonly sides = computed(() => (this.turnable() ? ALL_SIDES : UPRIGHT));
-  private readonly packs = computed<PackLine[]>(() => this.lines().filter((line) => line.fit.cartonsPerPallet > 0).map((line) => ({
-    key: line.plan.key, cartons: line.cartons, lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0,
-    heightCm: line.product.carton.heightCm ?? 0, weightKg: line.weightKg,
-  })));
+  private readonly packs = computed<PackLine[]>(() => this.lines().filter((line) => line.fit.cartonsPerPallet > 0).map((line) => packOf(line)));
   /* The cards' own fits (Emre 2026-11-15/20: the switch "Omdozen mogen kantelen" stays this page's own, every card on the side
      that fits the most): the plan, Verdeel, the room and the glyphs all weigh the same layers as the cards show. */
-  readonly plan = computed(() => (this.tooMany() ? [] : bestPlan(this.lines().map((line) => line.plan), this.packs(), this.pallet(), this.sides())));
+  /**
+   * The one place the page asks for its plan (2026-11-26): the plan with what it was counted on. Counted on the
+   * page's spec, unless the spill costs a carrier (countedPlan: the packer and the layers can both need one more on
+   * a slightly larger floor): then it is the plan on the same carrier without spill, with the cards' fits on that
+   * floor, and `saved` says how many carriers that spares. Everything that shows the plan reads its `pallet` and
+   * `layers` from here (palletGroups, room, 3D laden); the cards and the tiles keep the picked spill.
+   */
+  readonly counted = computed<CountedPlan>(() => {
+    const lines = this.lines();
+    const own = { layers: lines.map((line) => line.plan), packs: this.packs(), pallet: this.pallet() };
+    if (this.tooMany()) return { ...own, plan: [], saved: 0 };
+    return countedPlan(own, () => {
+      const pallet = this.carrier() === 'kar' ? karSpec(this.karHeight()) : palletSpec(this.profile(), this.palletHeight());
+      const turnable = this.turnable();
+      const layers = lines.map((line) => planLine(line.product, line.cartons, cardFit(line.product, pallet, turnable)));
+      /* Not beyond what the page works out pallet by pallet (the bare floor takes fewer per carrier). */
+      if (separatePallets(layers) > MAX_PLANNED_PALLETS) return null;
+      const fits = new Set(layers.filter((layer) => layer.fit.cartonsPerPallet > 0).map((layer) => layer.key));
+      return { layers, packs: lines.filter((line) => fits.has(line.plan.key)).map((line) => packOf(line)), pallet };
+    }, this.sides());
+  });
+  readonly plan = computed(() => this.counted().plan);
+  /** "Geteld zonder spill: dat scheelt een pallet.": the plan is the one without spill (counted); null when the picked spill counts. */
+  readonly spillNote = computed(() => {
+    const saved = this.counted().saved;
+    if (!saved) return null;
+    const words = this.words();
+    return `Geteld zonder spill: dat scheelt ${saved === 1 ? `een ${words.one}` : `${saved} ${words.other}`}.`;
+  });
   readonly canShare = computed(() => this.lines().length > 1 && this.lines().some((line) => line.fit.cartonsPerPallet > 0));
   readonly full = computed(() => this.rows().length >= MAX_ROWS);
   readonly unplaced = computed(() => this.lines().filter((line) => line.cartons > 0 && line.fit.cartonsPerPallet <= 0));
@@ -803,9 +858,12 @@ export class PalletCalculatorPage {
   });
 
   readonly palletGroups = computed<PalletGroup[]>(() => {
-    const pallet = this.pallet();
+    const counted = this.counted();
+    const pallet = counted.pallet;
     const usable = pallet.maxHeightCm - pallet.baseHeightCm;
     const lines = new Map(this.lines().map((line) => [line.product.id as number, line]));
+    /* A layer is as high as the side the plan's own fit stands it on (the bare floor's where the plan was counted without spill). */
+    const layerCm = new Map(counted.layers.map((layer) => [layer.key, layer.cartonHeightCm]));
     const groups: PalletGroup[] = [];
     let previous: string | null = null;
     this.plan().forEach((planned, index) => {
@@ -824,7 +882,7 @@ export class PalletCalculatorPage {
         blocks: planned.parts.map((part) => ({
           colour: lines.get(part.key)?.colour ?? 'var(--muted)',
           pct: planned.packed ? (total > 0 ? loaded * (volume(part) / total) : 0)
-            : Math.min(100, (part.layers * (lines.get(part.key)?.plan.cartonHeightCm ?? 0) / usable) * 100),
+            : Math.min(100, (part.layers * (layerCm.get(part.key) ?? 0) / usable) * 100),
         })),
         parts: planned.parts.map((part) => ({
           name: lines.get(part.key)?.title ?? '', cartons: part.cartons, colour: lines.get(part.key)?.colour ?? '',
@@ -840,11 +898,13 @@ export class PalletCalculatorPage {
    * layers only, which never promise more room than the fuller plan has.
    */
   readonly room = computed(() => {
-    const count = this.plan().length;
+    const counted = this.counted();
+    const count = counted.plan.length;
     if (count === 0 || count > 30) return [];
-    const pallet = this.pallet();
-    const plan = this.lines().map((line) => line.plan);
-    const packs = new Map(this.packs().map((pack) => [pack.key, pack]));
+    /* On the floor the plan was counted on: a plan without spill has no room the spill would give. */
+    const pallet = counted.pallet;
+    const plan = counted.layers;
+    const packs = new Map(counted.packs.map((pack) => [pack.key, pack]));
     const sides = this.sides();
     /* Packed tries only for small mixes: each is a whole re-pack, per card and per step, on every keystroke. */
     const fuller = count <= 10 && plan.length <= 6 ? (tried: readonly PlanLine[]) => bestPlan(tried, tried.flatMap((line) => {
@@ -861,16 +921,15 @@ export class PalletCalculatorPage {
    * the cards: the page's own plan, a page per carrier. Without: one carrier, which Automatisch fills as the
    * count would: one product at its card's own count, several shared out as Verdeel does it.
    */
-  private readonly builderPlan = computed(() => plan3d(this.lines().map((line) => ({
-    plan: line.plan,
-    pack: {
-      key: line.plan.key, cartons: line.cartons, lengthCm: line.product.carton.lengthCm ?? 0, widthCm: line.product.carton.widthCm ?? 0,
-      heightCm: line.product.carton.heightCm ?? 0, weightKg: line.weightKg,
-    },
-  })), () => this.plan(), this.pallet(), this.sides()));
+  private readonly builderPlan = computed(() => {
+    /* The cards as the plan counted them, on the plan's own floor: the page's, or the bare one (counted). */
+    const counted = this.counted();
+    const lines = this.lines();
+    return plan3d(counted.layers.map((plan, index) => ({ plan, pack: packOf(lines[index]) })), () => counted.plan, counted.pallet, this.sides());
+  });
 
   /** The packer's boxes of that plan's carriers, where the plan is the packer's own: the same run, so a page holds what its row in the plan says. */
-  private readonly builderLoads = computed(() => planLoads(this.builderPlan(), this.pallet(), this.sides()));
+  private readonly builderLoads = computed(() => planLoads(this.builderPlan(), this.counted().pallet, this.sides()));
 
   /**
    * 3D laden's page: the carrier of the plan it shows, laid as the plan counts it (pallet-plan-3d.ts). With
@@ -879,10 +938,13 @@ export class PalletCalculatorPage {
    * count depends on, so a build changed by hand comes back only for this very plan and page.
    */
   readonly builderView = computed(() => {
-    const stock = this.builderStock();
+    const counted = this.counted();
+    /* Where the plan was counted without spill, every card lies on the side that plan stands it on. */
+    const sideOf = new Map(counted.saved ? counted.layers.map((layer) => [layer.key, layer.fit.cartonsPerPallet > 0 ? layer.fit.up : 'h'] as const) : []);
+    const stock = sideOf.size ? this.builderStock().map((item) => ({ ...item, up: sideOf.get(item.group) ?? item.up })) : this.builderStock();
     const cards = new Map(stock.map((item) => [item.key, item]));
     const { paged, plan } = this.builderPlan();
-    const pallet = this.pallet();
+    const pallet = counted.pallet;
     const words = this.words();
     const page = paged ? Math.min(Math.max(0, this.builderPage()), Math.max(0, plan.length - 1)) : 0;
     const planned = plan[page];
@@ -904,7 +966,7 @@ export class PalletCalculatorPage {
       auto,
       note: laid?.how === 'layers' ? 'In hele lagen gestapeld, zoals geteld' : null,
       key: builderStoreKey({
-        carrier: this.carrier(), type: this.carrier() === 'kar' ? 'kar' : this.profile(), maxHeightCm: this.maxHeight(), spillCm: this.spill(),
+        carrier: this.carrier(), type: this.carrier() === 'kar' ? 'kar' : this.profile(), maxHeightCm: this.maxHeight(), spillCm: specSpillCm(pallet),
         turnable: this.turnable(), page,
         cards: this.lines().map((line) => [line.row.productId, line.product.carton.lengthCm ?? 0, line.product.carton.widthCm ?? 0,
           line.product.carton.heightCm ?? 0, line.weightKg, line.cartons] as const),
@@ -1223,6 +1285,14 @@ export class PalletCalculatorPage {
     return parts.join(' · ');
   }
 
+  /** "Europallet 120 × 80 · max 260 cm · spill 2 cm": the floor as it is, the height, and this spill when it is above 0. */
+  private labelWith(spillCm: number): string {
+    const spill = spillCm > 0 ? ` · spill ${spillCm} cm` : '';
+    if (this.carrier() === 'kar') return `Deense kar ${this.karSize} · max ${this.maxHeight()} cm${spill}`;
+    const choice = PALLET_CHOICES.find((candidate) => candidate.id === this.profile()) ?? PALLET_CHOICES[0];
+    return `${choice.label} ${choice.size} · max ${this.maxHeight()} cm${spill}`;
+  }
+
   palletsText(): string {
     const words = this.words();
     if (this.tooMany()) return `Meer dan ${MAX_PLANNED_PALLETS} ${words.other}`;
@@ -1300,10 +1370,9 @@ export class PalletCalculatorPage {
     if (units.piecesPerCarton) unitOptions.push({ id: 'piece', label: capitalize(piece.one) });
     const unit = unitOptions.some((option) => option.id === row.unit) ? row.unit : 'carton';
     const carton = product.carton;
-    /* "Omdozen mogen kantelen" off: upright only, also where a quote would lay an omdoos down. */
-    const fit = turnable ? palletFitTurnable(carton, pallet) : palletFitUpright(carton, pallet);
+    const fit = cardFit(product, pallet, turnable);
     const cartons = cartonsFor(row.quantity, unit, units);
-    const weightKg = carton.weightKg && carton.weightKg > 0 ? carton.weightKg : 0;
+    const weightKg = cartonWeight(product);
     const problem = fit.problem ? problemText(fit.problem, words) : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;
     const colour = product.colour?.trim() || null;
     return {
@@ -1314,8 +1383,7 @@ export class PalletCalculatorPage {
       photo: tile?.photo ?? salesPhotoUrl(product),
       pieceLabel: capitalize(piece.other),
       containers: CONTAINERS.map((container) => ({ container, capacity: containerCapacity(product, units, container) })),
-      /* The layers stand as high as the side the fit chose. */
-      plan: { key: product.id as number, cartons, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : carton.heightCm ?? 0, cartonWeightKg: weightKg },
+      plan: planLine(product, cartons, fit),
       cbm: (product.cartonCbm && product.cartonCbm > 0 ? product.cartonCbm : null) ?? cartonCbm(carton),
     };
   }

@@ -1,5 +1,5 @@
 import {
-  MAX_PLANNED_PALLETS, planPallets, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
+  MAX_PLANNED_PALLETS, planPallets, specSpillCm, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
 } from './pallet-calculator-model';
 import { packDeck, packPallets, packUnits, type PackKind, type PackResult, type PackedBox } from './pallet-pack';
 
@@ -129,4 +129,46 @@ export function bestPlan(layers: readonly PlanLine[], packs: readonly PackLine[]
   const fullAt = new Map(layers.map((line) => [line.key, line.fit.cartonsPerPallet]));
   const packed = packedPlan(packs, pallet, sides, (key) => fullAt.get(key) ?? Number.POSITIVE_INFINITY, Math.max(1, stacked.length));
   return packed && packed.length && packed.length <= stacked.length ? packed : stacked;
+}
+
+/** What a plan is counted from: the cards as whole layers count them, the same omdozen as the packer takes them, and the carrier. */
+export interface PlanBasis { layers: readonly PlanLine[]; packs: readonly PackLine[]; pallet: PalletSpec }
+
+/** A plan with the basis it was counted on. */
+export interface CountedPlan extends PlanBasis {
+  plan: PlannedPallet[];
+  /** Carriers the spill would have cost: the plan is the one without spill, and `layers`, `packs` and `pallet` are the bare ones. 0: counted on its own basis. */
+  saved: number;
+}
+
+/** The omdozen per product on the carriers of a plan. */
+function carried(plan: readonly PlannedPallet[]): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const planned of plan) for (const part of planned.parts) counts.set(part.key, (counts.get(part.key) ?? 0) + part.cartons);
+  return counts;
+}
+
+/**
+ * bestPlan, never on more carriers with a spill than without (2026-11-26). A spill gives every layer more room, yet
+ * the plan can need a carrier more with it: the packer is a search and on a slightly larger deck another first block
+ * can win; the whole layers are first-fit, and an omdoos that stands on another side changes their order (about 4 % of
+ * the 1 cm steps of mixed loads in the proof round). No load gets worse by leaving room unused, so where the plan on
+ * the bare floor carries the very same omdozen on fewer carriers, that plan stands, with the basis it was counted on:
+ * whatever shows or draws the plan (the rows, the room hints, 3D laden's pages) must read `pallet` and `layers` from
+ * the answer, not the spec that was asked. The server prices a document the same way (it drops the spill for the
+ * whole document). `bare` gives the same cards on the same carrier without spill, or null when that is not to be
+ * worked out; it is asked only when the plan has two or more carriers (one cannot be bettered) and its spec a spill.
+ * A plan without spill that leaves omdozen behind (an omdoos that fits only with the spill) never stands.
+ */
+export function countedPlan(own: PlanBasis, bare: () => PlanBasis | null, sides: readonly CartonUp[]): CountedPlan {
+  const plan = bestPlan(own.layers, own.packs, own.pallet, sides);
+  if (plan.length < 2 || !(specSpillCm(own.pallet) > 0)) return { ...own, plan, saved: 0 };
+  const without = bare();
+  if (!without) return { ...own, plan, saved: 0 };
+  const lean = bestPlan(without.layers, without.packs, without.pallet, sides);
+  if (!lean.length || lean.length >= plan.length) return { ...own, plan, saved: 0 };
+  const asked = carried(plan);
+  const taken = carried(lean);
+  const same = asked.size === taken.size && [...asked].every(([key, cartons]) => taken.get(key) === cartons);
+  return same ? { ...without, plan: lean, saved: plan.length - lean.length } : { ...own, plan, saved: 0 };
 }
