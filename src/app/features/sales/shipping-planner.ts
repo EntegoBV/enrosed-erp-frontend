@@ -388,7 +388,11 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
     .sp-prod__trail{grid-area:trail;display:flex;align-items:center;color:var(--ok)}
     .sp-room{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;background:var(--rose-soft);color:var(--rose-dark);font-size:12px;font-weight:700;white-space:nowrap}
     .sp-link{color:var(--rose);font-size:15px;font-weight:600;text-decoration:none}
-    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){.sp,.sp-loadsheet{padding-inline:var(--ios-inset,16px)}}
+    @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){
+      .sp,.sp-loadsheet{padding-inline:var(--ios-inset,16px)}
+      /* The basis line with a spill is wider than a phone (311 px of text in 293 at 375 px): it wraps, between its parts (specText). */
+      .sp-hero__spec span{white-space:normal;line-height:1.25}
+    }
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
       .sp{gap:14px}
       .sp-hero{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
@@ -564,9 +568,13 @@ export class ShippingPlanner {
     if (!this.palletsMode()) return 'Losse dozen';
     /* The load basis in one line; a spill is named only when the figures were counted with one ("… · max 260 cm · spill 2 cm"). */
     const spill = this.spillUsed();
-    const text = `${this.spec().name} · max ${this.heightCm()} cm${spill > 0 ? ` · spill ${spill.toLocaleString('nl-BE')} cm` : ''}`;
-    if (this.canEdit() || !this.lines().length) return text;
-    return `${text} · ${this.manual() ? 'zelf ingedeeld' : 'automatisch'}`;
+    const parts = [this.spec().name, `max ${this.heightCm()} cm`];
+    if (spill > 0) parts.push(`spill ${spill.toLocaleString('nl-BE')} cm`);
+    if (!this.canEdit() && this.lines().length) parts.push(this.manual() ? 'zelf ingedeeld' : 'automatisch');
+    /* A phone wraps this line (the phone rule of .sp-hero__spec span): only between the parts and after the dot,
+       never inside a part ("… · spill 2" over a lone "cm") and never with the dot at the start of a line: the
+       spaces within a part and the one before each dot do not break. */
+    return parts.map((part) => part.replaceAll(' ', '\u00a0')).join('\u00a0· ');
   });
   readonly heroTitle = computed(() => {
     if (!this.lines().length) return 'Nog geen producten';
