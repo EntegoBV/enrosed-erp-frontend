@@ -10,11 +10,10 @@ import { NumPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { CARRIERS, CARRIER_WORDS, type CarrierKind, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import {
-  MAX_BUILDER_BOXES, collides, deckOf, extentOf, landing, loadBuild, nearestSpot, nextSpot, packedFill, ridersOf, saveBuild, settle, sidesOf,
-  sized, solidsOf, spillOf, type BuilderBox, type BuilderItem, type BuilderPart, type Landing, type Solid, type Spill, type SpillLevel,
+  MAX_BUILDER_BOXES, collides, deckOf, dropBuild, extentOf, insideFirst, landing, loadBuild, nearestSpot, nextSpot, patternSpot, placesNear, ridersOf, sameBuild,
+  saveBuild, settle, sidesOf, sized, solidsOf, spillOf, type BuilderBox, type BuilderItem, type Landing, type Solid, type Spill, type SpillLevel,
 } from './pallet-builder-model';
 import { BuilderScene } from './pallet-builder-scene';
-import { ALL_SIDES, UPRIGHT } from './pallet-pack';
 
 interface Target extends Landing { up: CartonUp; turned: boolean }
 
@@ -34,8 +33,11 @@ interface TrayPress { item: BuilderItem; pointerId: number; x: number; y: number
 /** What a box's card says: the product and colour, its size and weight, how many stand here; the product's colours to switch to. */
 export interface BoxCard {
   item: BuilderItem; size: string; here: string; colours: readonly BuilderItem[];
-  /** "Steekt 2 cm uit", "6 cm boven de max. hoogte"; null when it stays within the carrier. */
-  spill: { text: string; much: boolean } | null;
+  /**
+   * "Steekt 2 cm uit", "6 cm boven de max. hoogte"; null when it stays within the floor. `allowed`: over the
+   * edge but within the carrier's spill, a plain fact in the card's own colour, no warning.
+   */
+  spill: { text: string; much: boolean; allowed: boolean } | null;
 }
 
 /** "Steekt 2 cm uit · 6 cm te hoog": how a box goes past the carrier. Over an edge only once it passes the carrier's spill (pastCm); the figure is the whole overhang. */
@@ -43,6 +45,11 @@ function spillText(spill: Spill): string | null {
   const side = spill.pastCm > 0.05 ? `Steekt ${cm(Math.ceil(spill.sideCm * 2) / 2)} cm uit` : null;
   const top = spill.topCm > 0.05 ? `${cm(Math.ceil(spill.topCm * 2) / 2)} cm boven de max. hoogte` : null;
   return side && top ? `${side} · ${cm(Math.ceil(spill.topCm * 2) / 2)} cm te hoog` : side ?? top;
+}
+
+/** "Steekt 1,5 cm uit" for a box over the edge within the carrier's spill: what the card says of it, as a fact. */
+function allowedText(spill: Spill): string | null {
+  return spill.level === 'none' && spill.sideCm > 0.05 ? `Steekt ${cm(Math.ceil(spill.sideCm * 2) / 2)} cm uit` : null;
 }
 
 /** One product in the panel: its colours under it. */
@@ -82,9 +89,19 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
  * loading height. A chosen box turns (Draai) or lies on its side (Kantel,
  * when omdozen may tip) where it stands, what stands on it going up or down
  * with it; it gets a twin (+1) or goes (Weg); drag it to move it, and what
- * stood on it drops down. Automatisch fills the carrier as full as it goes
- * from everything on the cards (pallet-pack.ts). The build stays on this
- * device per carrier.
+ * stood on it drops down.
+ * It draws what Palletberekening counts (2026-11-26, Emre: "bij calculatie
+ * ... dat past en als ik op 3d druk dan heeft die geen ruimte"): with
+ * quantities on the cards every carrier of the plan is a page (the arrows,
+ * as on a sales order) that starts as the plan counts it; Automatisch lays
+ * the page shown as counted again; a tap or "+" follows the count's own
+ * layer (patternSpot) before it looks for a corner, so the card's count can
+ * always be tapped onto an empty carrier. A build changed by hand stays on
+ * this device under a key that names everything the count depends on
+ * (storeKey), so another height, spill or quantity opens on the plan.
+ * Spill: an omdoos may pass the floor's edge by the carrier's spill; within
+ * it nothing warns (the card still says how far), past it orange up to 5 cm
+ * further and red beyond. The height keeps its own rule.
  * Which product is where: the mouse over a box shows its card and draws the
  * edges of all its boxes in its colour; a product in the legend (Op de kar)
  * or on the tray puts it in focus and fades the rest. On a phone a tap on a
@@ -132,7 +149,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
               <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Zoals berekend</span>
             </button>
           } @else {
-            <button class="pb3-btn" type="button" [disabled]="!parts().length" (click)="autoFill()" aria-label="Automatisch vullen"
+            <button class="pb3-btn" type="button" [disabled]="!autoBoxes()?.length || asCounted()" (click)="autoFill()" aria-label="Automatisch vullen"
                     title="Vul zoals Palletberekening telt">
               <app-icon name="auto" [size]="16" /><span class="pb3-lbl">Automatisch</span>
             </button>
@@ -158,7 +175,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
                 <span class="pb3-warn" [class.pb3-bad]="spillSum().much"><b>{{ spillSum().count | num }}</b> {{ spillSum().count === 1 ? 'steekt uit' : 'steken uit' }}</span>
               }
             </div>
-            @if (notice(); as text) { <p class="pb3-notice">{{ text }}</p> }
+            @if (notice() ?? (asCounted() ? countedNote() : null); as text) { <p class="pb3-notice">{{ text }}</p> }
           </div>
           <button class="pb3-btn pb3-btn--round pb3-view" type="button" (click)="frameView()" aria-label="Beeld terugzetten" title="Beeld terugzetten">
             <app-icon name="expand" [size]="16" />
@@ -172,7 +189,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
                 <p>Niets om te tekenen op deze {{ one() }}.</p>
               } @else {
                 <p>Kies een kleur bij Producten om een omdoos op de {{ one() }} te zetten.</p>
-                @if (parts().length) {
+                @if (autoBoxes()?.length) {
                   <button class="btn btn--primary btn--sm" type="button" (click)="autoFill()"><app-icon name="auto" [size]="15" /><span>Automatisch vullen</span></button>
                 }
               }
@@ -324,7 +341,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
           }
           <span class="pb3-card__size">{{ card.size }}</span>
           <span class="pb3-card__here">{{ card.here }}</span>
-          @if (card.spill; as spill) { <span class="pb3-card__spill" [class.pb3-card__spill--much]="spill.much">{{ spill.text }}</span> }
+          @if (card.spill; as spill) { <span class="pb3-card__spill" [class.pb3-card__spill--much]="spill.much" [class.pb3-card__spill--ok]="spill.allowed">{{ spill.text }}</span> }
         </span>
       </span>
     </ng-template>
@@ -371,7 +388,7 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
     .pb3-card__text>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .pb3-card__colour{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-weight:650}
     .pb3-card__colour .pb3-dot{width:10px;height:10px}.pb3-card__colour small{font-weight:500;color:var(--muted)}
-    .pb3-card__text .pb3-card__spill{color:#c2701a;font-weight:700}.pb3-card__text .pb3-card__spill--much{color:var(--danger,#b3261e)}
+    .pb3-card__text .pb3-card__spill{color:#c2701a;font-weight:700}.pb3-card__text .pb3-card__spill--much{color:var(--danger,#b3261e)}.pb3-card__text .pb3-card__spill--ok{color:inherit;font-weight:inherit}
     .pb3-pick{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:calc(100% - 20px);padding:6px 6px 6px 8px;border:1px solid var(--line);border-radius:18px;background:color-mix(in srgb,var(--surface) 95%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 28px rgb(40 28 18 / 16%);animation:pb3-in .15s ease-out}
     .pb3-pick__info{flex:0 1 auto;min-width:210px;max-width:300px;padding-right:4px}
     .pb3-pick__info .pb3-card__text b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -527,22 +544,27 @@ export class PalletBuilder {
   readonly items = input.required<readonly BuilderItem[]>();
   readonly carrier = input.required<CarrierKind>();
   readonly spec = input.required<PalletSpec>();
-  /** Where the build is kept on this device: 'kar' or the pallet type; null keeps nothing. */
+  /**
+   * Where a build changed by hand is kept on this device; null keeps nothing. The host's key names everything
+   * its count depends on (Palletberekening: carrier, type, height, spill, switch, the cards' omdozen and the
+   * page), so a kept build only comes back for the plan it was made on. A build that stands as the page starts
+   * (initialBoxes, or empty) is not kept.
+   */
   readonly storeKey = input<string | null>(null);
   /** The title over the view: "3D laden", or the pallet shown ("Pallet 2"). */
   readonly heading = input('3D laden');
   readonly label = input('');
   readonly turnable = input(true);
-  /** The first carrier as Palletberekening counts it: what Automatisch lays. */
-  readonly parts = input<readonly BuilderPart[]>([]);
+  /** The page shown as Palletberekening counts it: what Automatisch lays (free mode; fixed lays initialBoxes). */
+  readonly autoBoxes = input<readonly BuilderBox[] | null>(null);
   /**
    * The omdozen are given (a sales order's pallet): they turn and move, none
    * comes or goes, and Automatisch ("Zoals berekend") lays initialBoxes again.
    */
   readonly fixed = input(false);
-  /** The boxes to start from instead of the build kept on this device. */
+  /** The boxes the view starts from where no build is kept under storeKey: the carrier as counted; null starts empty. */
   readonly initialBoxes = input<readonly BuilderBox[] | null>(null);
-  /** Changes when another carrier is shown (the next pallet): the build starts again from initialBoxes. */
+  /** Changes when another carrier is shown (the next pallet): the build starts again, from the one kept under storeKey, else from initialBoxes. */
   readonly buildKey = input('');
   /** Carriers to page through ("Pallet 1", "Pallet 2") and the one shown; paged asks for another. */
   readonly pages = input<readonly string[]>([]);
@@ -550,6 +572,8 @@ export class PalletBuilder {
   readonly paged = output<number>();
   /** A standing line under the figures: what the view does not draw, or how it differs. */
   readonly notice = input<string | null>(null);
+  /** A line under the figures only while the page stands as counted: how the count laid it ("In hele lagen gestapeld, zoals geteld"). */
+  readonly countedNote = input<string | null>(null);
   /** Pallet | Deense kar over the view (a sales order's, view only): carrierPicked says which, the host shows it. */
   readonly carrierSwitch = input(false);
   readonly carrierPicked = output<CarrierKind>();
@@ -618,6 +642,11 @@ export class PalletBuilder {
       return !!now && now.key === box.key && now.up === box.up && now.turned === box.turned
         && Math.abs(now.x - box.x) < 0.01 && Math.abs(now.y - box.y) < 0.01 && Math.abs(now.z - box.z) < 0.01;
     });
+  });
+  /** The page stands as Automatisch lays it: nothing to lay again. */
+  readonly asCounted = computed(() => {
+    const auto = this.autoBoxes();
+    return !!auto && sameBuild(this.boxes(), settle([...auto], this.itemMap()));
   });
   readonly selectedBox = computed(() => this.boxes().find((box) => box.id === this.selected()) ?? null);
   readonly selectedItem = computed(() => {
@@ -705,6 +734,8 @@ export class PalletBuilder {
   private scene: BuilderScene | null = null;
   private readonly sceneReady = signal(false);
   private loaded = false;
+  /** The key the boxes on screen are kept under: the storeKey they were started with (a page shown later has its own). */
+  private keptKey: string | null = null;
   private nextId = 1;
   private history: BuilderBox[][] = [];
   private press: StagePress | null = null;
@@ -746,16 +777,21 @@ export class PalletBuilder {
       const levels = new Map<number, SpillLevel>([...this.spills()].map(([id, spill]) => [id, spill.level]));
       if (this.sceneReady()) this.scene?.setSpill(levels);
     });
-    /* The build stays on this device under its key (Palletberekening); without one nothing is kept.
-       Untracked: a key that changed while the view is open must not receive this build. */
+    /* A build changed by hand stays on this device under the key it was started with (Palletberekening); without one
+       nothing is kept. One that stands as the page starts, or holds nothing, is not a build of the user's: nothing is
+       kept under its key, so the view opens on the count again. */
     effect(() => {
       const boxes = this.boxes();
-      const key = untracked(() => this.storeKey());
-      if (this.loaded && key) saveBuild(key, boxes);
+      untracked(() => {
+        const key = this.keptKey;
+        if (!this.loaded || !key) return;
+        if (!boxes.length || sameBuild(boxes, this.startBoxes())) dropBuild(key);
+        else saveBuild(key, boxes);
+      });
     });
     /* Another carrier (the next pallet, or other omdozen on this one): start again from what the host gives. */
     effect(() => {
-      this.buildKey();
+      this.buildKey(); this.storeKey();
       untracked(() => { if (this.loaded) this.restart(); });
     });
 
@@ -820,9 +856,8 @@ export class PalletBuilder {
     /* While a held colour is dragged out, the panel must not scroll under the finger. */
     document.addEventListener('touchmove', this.holdScroll, { passive: false });
 
-    const initial = this.initialBoxes();
-    const key = this.storeKey();
-    const stored = settle(initial ? [...initial] : key ? loadBuild(key, this.itemMap()) : [], this.itemMap());
+    this.keptKey = this.storeKey();
+    const stored = this.opening();
     this.nextId = stored.reduce((max, box) => Math.max(max, box.id), 0) + 1;
     this.boxes.set(stored);
     this.loaded = true;
@@ -845,9 +880,22 @@ export class PalletBuilder {
     this.canUndo.set(false);
     clearTimeout(this.noteTimer);
     this.note.set('');
-    const boxes = settle([...(this.initialBoxes() ?? [])], this.itemMap());
+    this.keptKey = this.storeKey();
+    const boxes = this.opening();
     this.nextId = boxes.reduce((max, box) => Math.max(max, box.id), 0) + 1;
     this.boxes.set(boxes);
+  }
+
+  /** The carrier as the host gives it: what the view shows where nothing of the user's is kept. */
+  private startBoxes(): BuilderBox[] {
+    return settle([...(this.initialBoxes() ?? [])], this.itemMap());
+  }
+
+  /** What the view opens on: the build kept under the key (the user's own, made on this very count), else the carrier as the host gives it. */
+  private opening(): BuilderBox[] {
+    const key = this.keptKey;
+    const kept = key ? settle(loadBuild(key, this.itemMap()), this.itemMap()) : [];
+    return kept.length ? kept : this.startBoxes();
   }
 
   /** The previous or next carrier of the pages. */
@@ -890,10 +938,11 @@ export class PalletBuilder {
       here.push(`${pieces.toLocaleString('nl-BE')} ${pieces === 1 ? item.units.one : item.units.other}`);
     }
     const spill = this.spills().get(box.id);
-    const text = spill ? spillText(spill) : null;
+    const warning = spill ? spillText(spill) : null;
+    const text = warning ?? (spill ? allowedText(spill) : null);
     return {
       item, size: size.join(' · '), here: here.join(' · '), colours: (group?.items ?? [item]).filter(sized),
-      spill: text && spill ? { text, much: spill.level === 'much' } : null,
+      spill: text && spill ? { text, much: spill.level === 'much', allowed: !warning } : null,
     };
   }
 
@@ -1006,26 +1055,42 @@ export class PalletBuilder {
       this.hostBridge.haptic('success');
       return;
     }
-    /* As full as the carrier goes from everything on the cards: on its side only when omdozen may tip. */
-    const filled = packedFill(this.itemMap(), this.parts(), this.deck(), this.spec().maxWeightKg, this.turnable() ? ALL_SIDES : UPRIGHT, this.nextId);
-    if (!filled.length) { this.say('Hier valt niets automatisch te vullen'); return; }
-    this.nextId += filled.length;
+    /* The page as Palletberekening counts it (the host's autoBoxes): the plan's own carrier, not whatever the packer makes of the cards. */
+    const counted = this.autoBoxes();
+    if (!counted?.length) { this.say('Hier valt niets automatisch te vullen'); return; }
+    const filled = settle([...counted], this.itemMap());
+    this.nextId = Math.max(this.nextId, filled.reduce((max, box) => Math.max(max, box.id), 0) + 1);
     this.scene?.animateNext(null);
-    this.commit(settle(filled, this.itemMap()));
+    this.commit(filled);
     this.selected.set(null);
     this.hostBridge.haptic('success');
+  }
+
+  /**
+   * The place of one more omdoos on this side: the next free place of the count's own layer (patternSpot), so
+   * tapping lays what the card counts; when the layers are full or taken, the lowest corner still free (nextSpot).
+   */
+  private spotFor(item: BuilderItem, up: CartonUp): ReturnType<typeof nextSpot> {
+    const solids = solidsOf(this.boxes(), this.itemMap());
+    return patternSpot(solids, item, up, this.deck()) ?? nextSpot(solids, item, [up], this.deck());
+  }
+
+  /** One more omdoos stands: chosen, and said when the load is now past the carrier's weight (it stands all the same). */
+  private stand(box: BuilderBox, item: BuilderItem): void {
+    this.commit([...this.boxes(), box]);
+    this.selected.set(box.id);
+    if (item.weightKg > 0 && this.stats().tooHeavy) {
+      this.say(`Meer dan ${this.spec().maxWeightKg.toLocaleString('nl-BE')} kg op deze ${this.one()}`);
+    } else this.hostBridge.haptic('selection');
   }
 
   /** Tap on a product: one omdoos on the next free place, on the side Palletberekening counts it. */
   addOne(item: BuilderItem): void {
     if (!sized(item) || this.fixed()) return;
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
-    const spot = nextSpot(solidsOf(this.boxes(), this.itemMap()), item, [item.up], this.deck());
+    const spot = this.spotFor(item, item.up);
     if (!spot) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
-    const box: BuilderBox = { id: this.nextId++, key: item.key, ...spot };
-    this.commit([...this.boxes(), box]);
-    this.selected.set(box.id);
-    this.hostBridge.haptic('selection');
+    this.stand({ id: this.nextId++, key: item.key, ...spot }, item);
   }
 
   turn(): void {
@@ -1048,12 +1113,9 @@ export class PalletBuilder {
     const item = this.selectedItem();
     if (!box || !item || this.fixed()) return;
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
-    const spot = nextSpot(solidsOf(this.boxes(), this.itemMap()), item, [box.up], this.deck());
+    const spot = this.spotFor(item, box.up);
     if (!spot) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
-    const twin: BuilderBox = { id: this.nextId++, key: item.key, ...spot };
-    this.commit([...this.boxes(), twin]);
-    this.selected.set(twin.id);
-    this.hostBridge.haptic('selection');
+    this.stand({ id: this.nextId++, key: item.key, ...spot }, item);
   }
 
   remove(): void {
@@ -1085,14 +1147,18 @@ export class PalletBuilder {
     const rest = all.filter((solid) => solid.id !== box.id && !riders.has(solid.id));
     const turnedBox = { ...box, up, turned };
 
-    /* In place: the same floor, the same middle, kept on the carrier where it fits on it. */
-    const x = after.sx > deck.lengthCm ? (deck.lengthCm - after.sx) / 2 : Math.min(Math.max(0, centreX - after.sx / 2), deck.lengthCm - after.sx);
-    const z = after.sz > deck.widthCm ? (deck.widthCm - after.sz) / 2 : Math.min(Math.max(0, centreZ - after.sz / 2), deck.widthCm - after.sz);
-    const here = { id: box.id, x: round(x), y: box.y, z: round(z), ...after };
+    /* In place: the same floor, the same middle, kept on the carrier where it fits on it: inside the real floor
+       first, and within the carrier's spill only where the place inside runs into a neighbour (a box of a layer
+       that hangs over stays in its row when it turns). */
+    const xs = placesNear(centreX - after.sx / 2, after.sx, deck.lengthCm, deck.spillXCm);
+    const zs = placesNear(centreZ - after.sz / 2, after.sz, deck.widthCm, deck.spillZCm);
     /* What stands on it goes up with its top; neither it nor they may run into anything else (a box resting on a taller neighbour). */
     const rise = after.sy - before.sy;
     const raised = rise > 0 ? all.filter((solid) => riders.has(solid.id)).map((solid) => ({ ...solid, y: solid.y + rise })) : [];
-    if (!rest.some((solid) => collides(solid, here) || raised.some((rider) => collides(solid, rider)))) {
+    const blocked = raised.length > 0 && rest.some((solid) => raised.some((rider) => collides(solid, rider)));
+    const places = insideFirst(xs, zs).map(([x, z]) => ({ id: box.id, x: round(x), y: box.y, z: round(z), ...after }));
+    const here = blocked ? undefined : places.find((place) => !rest.some((solid) => collides(solid, place)));
+    if (here) {
       const moved = new Set([box.id, ...riders]);
       const next = this.boxes().map((other) => other.id === box.id ? { ...turnedBox, x: here.x, z: here.z }
         : riders.has(other.id) && rise > 0 ? { ...other, y: round(other.y + rise) } : other);
