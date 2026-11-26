@@ -108,10 +108,15 @@ import { ProductCostHistorySheet } from '../products/product-cost-history-sheet'
  * What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. The spill in
  * it (2026-11-26) is the draft's PICK (order.palletSpillCm), as every other part is the draft's own; the spill the server
  * then counted with (totals.palletSpillCm, 0 when it priced the document without its spill) is an answer, not part of the key.
+ * On a document that stores a spill the floor also depends on whether it has a hand layout: the server sets the spill
+ * aside only for a document without hand pallets, and counts on the stored spill again once it has them. So "a hand
+ * layout or none" is part of the key there: right after Automatisch the figures on screen are still those of the hand
+ * layout (the automatic pallets beneath it, counted with the spill), and Zelf indelen must not copy them. A document
+ * that stores no spill (every one from before 2026-11-26) has the key it always had.
  */
 function layoutKey(order: SalesOrder): string {
   return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
-    order.palletSpillCm ?? null,
+    order.palletSpillCm ?? null, ...((order.palletSpillCm ?? 0) > 0 ? [order.pallets.length > 0] : []),
     order.lines.map((line) => [line.productId, line.quantity, salesLineUnavailable(line), line.perPiece === true])]);
 }
 
