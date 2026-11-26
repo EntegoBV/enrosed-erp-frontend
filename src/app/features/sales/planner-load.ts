@@ -51,12 +51,11 @@ const PROFILES_SHORT: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
           <div class="ld-row">
             <span class="ld-label" id="ld-spill">Spill</span>
             <app-pallet-stepper [size]="desk() ? 'md' : 'lg'" [value]="spillCm()" [step]="1" [min]="0" [max]="spillMaxCm()" [allowEmpty]="spillOverridden()"
-                                [disabled]="!canEdit()" label="Spill in cm per kant" lessLabel="1 cm minder" moreLabel="1 cm meer"
+                                [disabled]="!canEdit()" [label]="'Spill in ' + spillUnit()" lessLabel="1 cm minder" moreLabel="1 cm meer"
                                 (changed)="spillChange.emit($event)" />
-            <span class="ld-unit">cm per kant</span>
+            <span class="ld-unit">{{ spillUnit() }}</span>
             @if (spillOverridden() && canEdit()) { <button class="ld-reset" type="button" (click)="spillChange.emit(null)">Standaard</button> }
           </div>
-          @if (kar()) { <p class="ld-note">op de kar alleen aan de lange zijden</p> }
           @if (spillNote(); as note) { <p class="ld-note">{{ note }}</p> }
         }
       } @else if (layoutNote(); as note) {
@@ -98,7 +97,8 @@ export class PlannerLoad {
   /**
    * The Spill row (2026-11-26): how far an omdoos may stick out past the floor, cm per side, under the height. Shown
    * only when the server counts with a spill and says so (the planner decides); "Standaard" while spillOverridden.
-   * spillCm is the document's stored pick, not the spill the figures were counted with (see spillNote).
+   * spillCm is the document's stored pick, not the spill the figures were counted with (see spillNote). The unit
+   * says where it counts: "cm per kant", on the kar "cm per lange zijde" (spillUnit).
    */
   readonly spillShown = input(false);
   readonly spillCm = input(0);
@@ -121,4 +121,9 @@ export class PlannerLoad {
   readonly modes = computed(() => (this.kar() ? KAR_MODES : MODES).map((option) => ({ ...option, disabled: !this.canEdit() })));
   readonly profiles = computed(() => (this.desk() ? PROFILES_SHORT : PROFILES).map((option) => ({ ...option, disabled: !this.canEdit() })));
   readonly baseText = computed(() => this.baseCm().toLocaleString('nl-BE', { maximumFractionDigits: 1 }));
+  /**
+   * The Spill row's unit, and what a screen reader hears of the stepper. On the Deense kar an omdoos sticks out
+   * across the open long sides only: one wording wherever a kar's spill is set (Palletberekening says the same).
+   */
+  readonly spillUnit = computed(() => (this.kar() ? 'cm per lange zijde' : 'cm per kant'));
 }
