@@ -1,8 +1,8 @@
 import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
-import { deckOf, packedPlace, settle, type BuilderBox, type BuilderItem, type Deck } from './pallet-builder-model';
+import { deckOf, packedPlace, settle, stackAbove, type BuilderBox, type BuilderItem, type Deck, type LayerStock } from './pallet-builder-model';
 import {
-  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, layerSlots, palletFit, productUnits, specSpillCm, type CarrierWords, type CartonUp,
+  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, palletFit, productUnits, specSpillCm, type CarrierWords,
 } from './pallet-calculator-model';
 import { copiedLoader, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
@@ -258,11 +258,13 @@ function buildOf(packed: PackedPallet | undefined, members: Map<number, { produc
 
 /**
  * Omdozen in whole layers of their own pattern, on the side the count stands
- * them, on top of what is already laid (from the floor when nothing is): a
- * pallet the packer cannot show on one pallet stands as the planner estimates
- * it, past the height where it says "te hoog".
+ * them (palletFit: upright, lying only when it must), on top of what is
+ * already laid (from the floor when nothing is): a pallet the packer cannot
+ * show on one pallet stands as the planner estimates it, past the height
+ * where it says "te hoog". The layers themselves are the builder's stackAbove
+ * (pallet-builder-model.ts), shared with Palletberekening's 3D.
  */
-function stackAbove(rest: readonly { productId: number; cartons: number }[], boxes: BuilderBox[], stocks: ReadonlyMap<number, Stock>,
+function stackListed(rest: readonly { productId: number; cartons: number }[], boxes: BuilderBox[], stocks: ReadonlyMap<number, Stock>,
   spec: PlannerSpec, counts: Map<number, number>): void {
   let y = 0;
   for (const box of boxes) {
@@ -271,25 +273,17 @@ function stackAbove(rest: readonly { productId: number; cartons: number }[], box
     const standing = cartonStanding(stock, box.up);
     y = Math.max(y, box.y + standing.heightCm);
   }
+  const layers: LayerStock[] = [];
   for (const entry of rest) {
     const stock = stocks.get(entry.productId);
     if (!stock?.measured || entry.cartons <= 0) continue;
     const fit = palletFit({ lengthCm: stock.lengthCm, widthCm: stock.widthCm, heightCm: stock.heightCm, weightKg: stock.weightKg || null }, spec);
-    const up: CartonUp = fit.cartonsPerPallet > 0 ? fit.up : 'h';
-    const standing = cartonStanding(stock, up);
-    const slots = layerSlots({ lengthCm: standing.lengthCm, widthCm: standing.widthCm }, spec);
-    if (!slots.length) continue;
-    for (let left = entry.cartons; left > 0; left -= slots.length) {
-      for (const slot of slots.slice(0, Math.min(left, slots.length))) {
-        boxes.push({
-          id: boxes.length + 1, key: entry.productId, x: round(slot.x), y: round(y), z: round(slot.z), up,
-          turned: Math.abs(slot.lengthCm - standing.lengthCm) > 1e-6,
-        });
-        counts.set(entry.productId, (counts.get(entry.productId) ?? 0) + 1);
-      }
-      y += standing.heightCm;
-    }
+    layers.push({
+      key: entry.productId, cartons: entry.cartons, lengthCm: stock.lengthCm, widthCm: stock.widthCm, heightCm: stock.heightCm,
+      up: fit.cartonsPerPallet > 0 ? fit.up : 'h',
+    });
   }
+  for (const [productId, cartons] of stackAbove(layers, boxes, y, spec)) counts.set(productId, (counts.get(productId) ?? 0) + cartons);
 }
 
 /** The catalogue's omdoos lays another number per layer than the order counted with: its sizes changed since. */
@@ -436,7 +430,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
         boxes.push({ id: boxes.length + 1, key: box.productId, ...packedPlace(box, floor), up: box.up, turned: box.turned });
         counts.set(box.productId, (counts.get(box.productId) ?? 0) + 1);
       }
-    } else stackAbove(drawn[index], boxes, stocks, spec, counts);
+    } else stackListed(drawn[index], boxes, stocks, spec, counts);
     const build = finished(boxes, counts, stocks, unmeasured, tooLarge, spec);
     return stale ? { ...build, differs: true } : build;
   });

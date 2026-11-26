@@ -1,4 +1,4 @@
-import { cartonStanding, loadFloor, type CartonUp, type PalletSpec } from './pallet-calculator-model';
+import { cartonStanding, layerSlots, loadFloor, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import { PACK_UNITS, packPallets, packUnits, type PackKind } from './pallet-pack';
 
 /**
@@ -7,6 +7,13 @@ import { PACK_UNITS, packPallets, packUnits, type PackKind } from './pallet-pack
  * box, and the fill as full as it goes (pallet-pack.ts). Every size is in cm.
  * The floor is the pallet's deck or the kar's base plate: x runs along its
  * length, z along its width, y up from the floor.
+ *
+ * Spill (2026-11-26): a place may pass the real floor's edge by at most the
+ * deck's allowance (spillXCm along the length, spillZCm across the width; on
+ * the Deense kar only across the width). Every search here takes a place
+ * inside the real floor first and hangs an omdoos over only where that gains
+ * a place: one that stands lower, or the only one there is. Without spill
+ * every function gives what it gave before there was one.
  */
 
 /**
@@ -186,29 +193,56 @@ export interface Landing { x: number; y: number; z: number; spill: Spill }
  * Where a box of this size lands when its middle is aimed at (centreX,
  * centreZ): kept on the floor, pulled onto a nearby edge of the floor or of
  * another box (a few cm, so rows line up by hand), on top of what is under it.
- * A box larger than the floor stays centred and sticks out on both sides; its
- * spill says how far, over the edge and over the height.
+ * With a spill the place inside the real floor stands unless the place within
+ * the allowance rests lower (the box then goes beside its neighbour instead
+ * of on top of it). A box larger than the floor and its allowance stays
+ * centred and sticks out on both sides; its spill says how far, over the edge
+ * and over the height.
  */
 export function landing(solids: readonly Solid[], extent: Extent, centreX: number, centreZ: number, deck: Deck, skip: number | null): Landing {
   const others = solids.filter((solid) => solid.id !== skip);
-  const x = extent.sx > deck.lengthCm + EPSILON ? (deck.lengthCm - extent.sx) / 2
-    : snap(clamp(centreX - extent.sx / 2, 0, deck.lengthCm - extent.sx), extent.sx, deck.lengthCm, others.map((solid) => [solid.x, solid.sx]));
-  const z = extent.sz > deck.widthCm + EPSILON ? (deck.widthCm - extent.sz) / 2
-    : snap(clamp(centreZ - extent.sz / 2, 0, deck.widthCm - extent.sz), extent.sz, deck.widthCm, others.map((solid) => [solid.z, solid.sz]));
-  const y = restingHeight(others, x, z, extent.sx, extent.sz);
-  const placed = { x: round(x), y: round(y), z: round(z) };
+  const xs = aimed(centreX - extent.sx / 2, extent.sx, deck.lengthCm, deck.spillXCm, others.map((solid) => [solid.x, solid.sx]));
+  const zs = aimed(centreZ - extent.sz / 2, extent.sz, deck.widthCm, deck.spillZCm, others.map((solid) => [solid.z, solid.sz]));
+  let best: { x: number; y: number; z: number } | null = null;
+  for (const [x, z] of insideFirst(xs, zs)) {
+    const y = restingHeight(others, x, z, extent.sx, extent.sz);
+    if (!best || y < best.y - EPSILON) best = { x, y, z };
+  }
+  const placed = { x: round(best?.x ?? 0), y: round(best?.y ?? 0), z: round(best?.z ?? 0) };
   return { ...placed, spill: spillOf({ ...placed, ...extent }, deck) };
+}
+
+/**
+ * The places along one axis for a box aimed at `value` (its corner): the one inside the real floor, and where
+ * the deck has a spill and it differs, the one within the allowance. A box wider than the floor has only the
+ * second; one wider than the floor and its allowance stays centred.
+ */
+function aimed(value: number, size: number, floor: number, spill: number, edges: readonly (readonly [number, number])[]): number[] {
+  if (size > floor + 2 * spill + EPSILON) return [(floor - size) / 2];
+  const inside = size > floor + EPSILON ? null : snap(clamp(value, 0, floor - size), size, floor, 0, edges);
+  if (!(spill > 0) && inside !== null) return [inside];
+  const allowed = snap(clamp(value, -spill, floor + spill - size), size, floor, spill, edges);
+  return inside === null || Math.abs(allowed - inside) <= EPSILON ? [allowed] : [inside, allowed];
+}
+
+/** The places of both axes together, the first of each (inside the real floor) first: both inside, x within the allowance, z, both. */
+export function insideFirst(xs: readonly number[], zs: readonly number[]): [number, number][] {
+  const places: [number, number][] = [];
+  for (const z of zs) for (const x of xs) places.push([x, z]);
+  return places;
 }
 
 const SNAP_CM = 4;
 
-function snap(value: number, size: number, floor: number, edges: readonly (readonly [number, number])[]): number {
+/** Pulled onto the nearest edge within SNAP_CM: the real floor's edges first, then (with a spill) the allowance's, then the boxes around. */
+function snap(value: number, size: number, floor: number, spill: number, edges: readonly (readonly [number, number])[]): number {
   const targets = [0, floor - size];
+  if (spill > 0) targets.push(-spill, floor + spill - size);
   for (const [start, length] of edges) targets.push(start, start + length, start - size, start + length - size);
   let best = value;
   let distance = SNAP_CM;
   for (const target of targets) {
-    if (target < -EPSILON || target + size > floor + EPSILON) continue;
+    if (target < -spill - EPSILON || target + size > floor + spill + EPSILON) continue;
     const gap = Math.abs(target - value);
     if (gap < distance) { distance = gap; best = target; }
   }
@@ -248,67 +282,190 @@ export function ridersOf(solids: readonly Solid[], id: number): Set<number> {
   return riders;
 }
 
+/** How far a place of this size passes the real floor along one axis; 0 inside it. */
+function over(at: number, size: number, floor: number): number {
+  return Math.max(0, -at, at + size - floor);
+}
+
+/** The place hangs over an edge of the real floor (within the allowance: no search here gives a place past it). */
+function hangs(x: number, z: number, extent: Pick<Extent, 'sx' | 'sz'>, deck: Deck): boolean {
+  return over(x, extent.sx, deck.lengthCm) > EPSILON || over(z, extent.sz, deck.widthCm) > EPSILON;
+}
+
+/**
+ * Turned or tipped where it stands: the places along one axis that keep the box's middle (its corner at
+ * `value`), the one inside the real floor first, then, where the deck has a spill and it differs, the one within
+ * the allowance. A box wider than the floor and its allowance stays centred and sticks out.
+ */
+export function placesNear(value: number, size: number, floor: number, spill: number): number[] {
+  if (size > floor + 2 * spill + EPSILON) return [(floor - size) / 2];
+  const allowed = clamp(value, -spill, floor + spill - size);
+  if (size > floor + EPSILON) return [allowed];
+  const inside = clamp(value, 0, floor - size);
+  return Math.abs(allowed - inside) <= EPSILON ? [inside] : [inside, allowed];
+}
+
 /**
  * The free place for a box of this size nearest to where it stood: at its
- * own level first, then the nearest one, against the floor's edges or the
+ * own level first, then inside the real floor before a place that hangs over
+ * (within the spill), then the nearest one, against the floor's edges or the
  * boxes around, on what is under it, under the height. Null when none.
  */
 export function nearestSpot(solids: readonly Solid[], extent: Extent, centreX: number, centreZ: number, level: number, deck: Deck):
   { x: number; y: number; z: number } | null {
-  if (extent.sx > deck.lengthCm + EPSILON || extent.sz > deck.widthCm + EPSILON) return null;
+  const spillX = deck.spillXCm; const spillZ = deck.spillZCm;
+  if (extent.sx > deck.lengthCm + 2 * spillX + EPSILON || extent.sz > deck.widthCm + 2 * spillZ + EPSILON) return null;
   const xs = new Set([0, round(deck.lengthCm - extent.sx), round(clamp(centreX - extent.sx / 2, 0, deck.lengthCm - extent.sx))]);
   const zs = new Set([0, round(deck.widthCm - extent.sz), round(clamp(centreZ - extent.sz / 2, 0, deck.widthCm - extent.sz))]);
+  if (spillX > 0) {
+    xs.add(round(-spillX)); xs.add(round(deck.lengthCm + spillX - extent.sx));
+    xs.add(round(clamp(centreX - extent.sx / 2, -spillX, deck.lengthCm + spillX - extent.sx)));
+  }
+  if (spillZ > 0) {
+    zs.add(round(-spillZ)); zs.add(round(deck.widthCm + spillZ - extent.sz));
+    zs.add(round(clamp(centreZ - extent.sz / 2, -spillZ, deck.widthCm + spillZ - extent.sz)));
+  }
   for (const solid of solids) {
     xs.add(round(solid.x + solid.sx)); xs.add(round(solid.x - extent.sx));
     zs.add(round(solid.z + solid.sz)); zs.add(round(solid.z - extent.sz));
   }
   let best: { x: number; y: number; z: number; score: number } | null = null;
   for (const x of xs) {
-    if (x < -EPSILON || x + extent.sx > deck.lengthCm + EPSILON) continue;
+    if (x < -spillX - EPSILON || x + extent.sx > deck.lengthCm + spillX + EPSILON) continue;
     for (const z of zs) {
-      if (z < -EPSILON || z + extent.sz > deck.widthCm + EPSILON) continue;
+      if (z < -spillZ - EPSILON || z + extent.sz > deck.widthCm + spillZ + EPSILON) continue;
       const y = restingHeight(solids, x, z, extent.sx, extent.sz);
       if (y + extent.sy > deck.usableCm + EPSILON) continue;
       const placed = { x, y, z, ...extent };
       if (solids.some((solid) => collides(solid, placed))) continue;
-      const score = Math.abs(y - level) * 1000 + Math.hypot(x + extent.sx / 2 - centreX, z + extent.sz / 2 - centreZ);
+      /* A cm of level outweighs everything; hanging over outweighs any distance on the floor (never more than a few hundred cm). */
+      const score = Math.abs(y - level) * 1000 + (hangs(x, z, extent, deck) ? HANG_COST : 0)
+        + Math.hypot(x + extent.sx / 2 - centreX, z + extent.sz / 2 - centreZ);
       if (!best || score < best.score - EPSILON) best = { x: round(x), y: round(y), z: round(z), score };
     }
   }
   return best ? { x: best.x, y: best.y, z: best.z } : null;
 }
 
+/** What a place that hangs over costs in nearestSpot's score: more than any distance across a floor, less than 1 cm of level. */
+const HANG_COST = 500;
+
+export interface Spot { x: number; y: number; z: number; up: CartonUp; turned: boolean }
+
 /**
- * The next place for one more omdoos: the lowest spot, then the back, then
- * the left, against the floor's edges or the boxes already there, on the
+ * The next place for one more omdoos: the lowest spot, then one inside the
+ * real floor before one that hangs over (within the spill), then the back,
+ * then the left, against the floor's edges or the boxes already there, on the
  * sides given (each also turned). Null when it goes nowhere under the height.
  */
 export function nextSpot(
   solids: readonly Solid[], item: Pick<BuilderItem, 'lengthCm' | 'widthCm' | 'heightCm'>, sides: readonly CartonUp[], deck: Deck,
-): { x: number; y: number; z: number; up: CartonUp; turned: boolean } | null {
-  let best: { x: number; y: number; z: number; up: CartonUp; turned: boolean } | null = null;
+): Spot | null {
+  const spillX = deck.spillXCm; const spillZ = deck.spillZCm;
+  let best: (Spot & { hangs: boolean }) | null = null;
   for (const up of sides) {
     for (const turned of [false, true]) {
       const extent = extentOf(item, up, turned);
-      if (extent.sx > deck.lengthCm + EPSILON || extent.sz > deck.widthCm + EPSILON) continue;
+      if (extent.sx > deck.lengthCm + 2 * spillX + EPSILON || extent.sz > deck.widthCm + 2 * spillZ + EPSILON) continue;
       /* Against the floor's edges or the far side of a box: rounded, so boxes in rows give few places to try. */
       const xs = new Set([0, round(deck.lengthCm - extent.sx)]);
       const zs = new Set([0, round(deck.widthCm - extent.sz)]);
+      if (spillX > 0) { xs.add(round(-spillX)); xs.add(round(deck.lengthCm + spillX - extent.sx)); }
+      if (spillZ > 0) { zs.add(round(-spillZ)); zs.add(round(deck.widthCm + spillZ - extent.sz)); }
       for (const solid of solids) { xs.add(round(solid.x + solid.sx)); zs.add(round(solid.z + solid.sz)); }
       for (const x of xs) {
-        if (x < -EPSILON || x + extent.sx > deck.lengthCm + EPSILON) continue;
+        if (x < -spillX - EPSILON || x + extent.sx > deck.lengthCm + spillX + EPSILON) continue;
         for (const z of zs) {
-          if (z < -EPSILON || z + extent.sz > deck.widthCm + EPSILON) continue;
+          if (z < -spillZ - EPSILON || z + extent.sz > deck.widthCm + spillZ + EPSILON) continue;
           const y = restingHeight(solids, x, z, extent.sx, extent.sz);
           if (y + extent.sy > deck.usableCm + EPSILON) continue;
-          const better = !best || y < best.y - EPSILON
-            || (Math.abs(y - best.y) <= EPSILON && (z < best.z - EPSILON || (Math.abs(z - best.z) <= EPSILON && x < best.x - EPSILON)));
-          if (better) best = { x: round(x), y: round(y), z: round(z), up, turned };
+          const out = hangs(x, z, extent, deck);
+          const level = !best ? -1 : y < best.y - EPSILON ? -1 : y > best.y + EPSILON ? 1 : 0;
+          const better = level < 0 || (level === 0 && (out !== best!.hangs ? !out
+            : z < best!.z - EPSILON || (Math.abs(z - best!.z) <= EPSILON && x < best!.x - EPSILON)));
+          if (better) best = { x: round(x), y: round(y), z: round(z), up, turned, hangs: out };
         }
       }
     }
   }
+  return best ? { x: best.x, y: best.y, z: best.z, up: best.up, turned: best.turned } : null;
+}
+
+/** A carrier's floor and allowance as layerSlots reads them. */
+function floorOf(deck: Deck): Pick<PalletSpec, 'lengthCm' | 'widthCm' | 'spillLengthCm' | 'spillWidthCm'> {
+  return { lengthCm: deck.lengthCm, widthCm: deck.widthCm, spillLengthCm: deck.spillXCm, spillWidthCm: deck.spillZCm };
+}
+
+/**
+ * The next place of the count's own layer for one more omdoos on this side
+ * (2026-11-26, Emre: "bij calculatie ... dat past en als ik op 3d druk dan
+ * heeft die geen ruimte"): the places of layerSlots, the very rows the card's
+ * "per laag" counts, each where it rests on the floor or on what stands under
+ * it; the lowest one first, so a layer fills before the next starts, in the
+ * layer's own order on a tie. From an empty carrier that reaches the card's
+ * count; a search by corners (nextSpot) stopped below it wherever the layer
+ * needs both turns (two bears a quarter turned, where the first one straight
+ * left no room for a second). Null when no place of the layer is free under
+ * the height.
+ */
+export function patternSpot(
+  solids: readonly Solid[], item: Pick<BuilderItem, 'lengthCm' | 'widthCm' | 'heightCm'>, up: CartonUp, deck: Deck,
+): Spot | null {
+  const standing = cartonStanding(item, up);
+  if (!(standing.lengthCm > 0 && standing.widthCm > 0 && standing.heightCm > 0)) return null;
+  let best: Spot | null = null;
+  for (const slot of layerSlots({ lengthCm: standing.lengthCm, widthCm: standing.widthCm }, floorOf(deck))) {
+    const x = round(slot.x); const z = round(slot.z);
+    const y = restingHeight(solids, x, z, slot.lengthCm, slot.widthCm);
+    if (y + standing.heightCm > deck.usableCm + EPSILON) continue;
+    if (!best || y < best.y - EPSILON) best = { x, y: round(y), z, up, turned: Math.abs(slot.lengthCm - standing.lengthCm) > EPSILON };
+  }
   return best;
+}
+
+/** One product's omdozen for a stack of whole layers: its omdoos and the side the count stands it on. */
+export interface LayerStock { key: number; cartons: number; lengthCm: number; widthCm: number; heightCm: number; up: CartonUp }
+
+/**
+ * Omdozen in whole layers of their own pattern (layerSlots), each product on
+ * the side the count stands it, bottom to top in the order given, the first
+ * layer at `fromY` above the floor: a carrier as the layer count estimates
+ * it (planPallets, the server's mixedPallets). The order's 3D lays a pallet
+ * so when no fuller load takes it, and Palletberekening's 3D a carrier its
+ * plan counted in layers. Nothing here checks that a layer is carried by the
+ * one under it, as the count does not: settle the boxes after, and what has
+ * nothing under it comes down. Returns how many omdozen of each key it laid.
+ */
+export function stackAbove(rest: readonly LayerStock[], boxes: BuilderBox[], fromY: number,
+  spec: Pick<PalletSpec, 'lengthCm' | 'widthCm' | 'spillLengthCm' | 'spillWidthCm'>): Map<number, number> {
+  const laid = new Map<number, number>();
+  let y = fromY;
+  for (const entry of rest) {
+    if (!sized(entry) || entry.cartons <= 0) continue;
+    const standing = cartonStanding(entry, entry.up);
+    const slots = layerSlots({ lengthCm: standing.lengthCm, widthCm: standing.widthCm }, spec);
+    if (!slots.length) continue;
+    for (let left = entry.cartons; left > 0; left -= slots.length) {
+      for (const slot of slots.slice(0, Math.min(left, slots.length))) {
+        boxes.push({
+          id: boxes.length + 1, key: entry.key, x: round(slot.x), y: round(y), z: round(slot.z), up: entry.up,
+          turned: Math.abs(slot.lengthCm - standing.lengthCm) > 1e-6,
+        });
+        laid.set(entry.key, (laid.get(entry.key) ?? 0) + 1);
+      }
+      y += standing.heightCm;
+    }
+  }
+  return laid;
+}
+
+/** The same boxes at the same places, whatever their ids and order: a build as it was laid, nothing moved, turned, added or gone. */
+export function sameBuild(left: readonly BuilderBox[], right: readonly BuilderBox[]): boolean {
+  if (left.length !== right.length) return false;
+  const sign = (box: BuilderBox) => `${box.key}|${box.up}|${box.turned ? 1 : 0}|${Math.round(box.x * 100)}|${Math.round(box.y * 100)}|${Math.round(box.z * 100)}`;
+  const a = left.map(sign).sort();
+  const b = right.map(sign).sort();
+  return a.every((value, index) => value === b[index]);
 }
 
 /**
@@ -360,6 +517,9 @@ export function packedFill(items: ReadonlyMap<number, BuilderItem>, parts: reado
 
 const STORAGE_KEY = 'enrosed.palletBuilder';
 const MAX_BOXES = 600;
+/** How many builds a device keeps, the newest first, and how many boxes in all. */
+const MAX_KEPT = 8;
+const MAX_KEPT_BOXES = 2400;
 
 function storedBox(value: unknown): value is BuilderBox {
   const box = value as Partial<BuilderBox> | null;
@@ -368,13 +528,50 @@ function storedBox(value: unknown): value is BuilderBox {
     && (box.up === 'h' || box.up === 'w' || box.up === 'l') && typeof box.turned === 'boolean';
 }
 
-/** The boxes last built on this carrier on this device; boxes of products no longer on the tray drop out. */
-export function loadBuild(carrierKey: string, items: ReadonlyMap<number, BuilderItem>): BuilderBox[] {
+interface KeptBuild { key: string; boxes: BuilderBox[] }
+
+/**
+ * The builds kept on this device, the newest first: `{ v: 2, builds: [{ key, boxes }] }`. Before 2026-11-26
+ * the value was a build per carrier (`{ kar: [...], EURO_120X80: [...] }`), whatever the height, the switch
+ * and the cards it was made for, so 3D laden opened on an older load that no longer fitted what the cards
+ * said; anything of that shape reads as nothing kept and is removed.
+ */
+function readKept(): KeptBuild[] {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw === null) return [];
+  let stored: { v?: unknown; builds?: unknown } | null = null;
+  try { stored = JSON.parse(raw) as { v?: unknown; builds?: unknown } | null; } catch { /* unreadable: nothing kept */ }
+  if (!stored || typeof stored !== 'object' || stored.v !== 2 || !Array.isArray(stored.builds)) {
+    localStorage.removeItem(STORAGE_KEY);
+    return [];
+  }
+  return (stored.builds as Partial<KeptBuild>[])
+    .filter((build): build is KeptBuild => !!build && typeof build.key === 'string' && Array.isArray(build.boxes))
+    .map((build) => ({ key: build.key, boxes: build.boxes.filter(storedBox) }));
+}
+
+function writeKept(builds: readonly KeptBuild[]): void {
+  const kept: KeptBuild[] = [];
+  let boxes = 0;
+  for (const build of builds) {
+    if (kept.length >= MAX_KEPT || boxes + build.boxes.length > MAX_KEPT_BOXES) break;
+    kept.push(build);
+    boxes += build.boxes.length;
+  }
+  if (kept.length) localStorage.setItem(STORAGE_KEY, JSON.stringify({ v: 2, builds: kept }));
+  else localStorage.removeItem(STORAGE_KEY);
+}
+
+/**
+ * The boxes kept on this device under this key; none when nothing was kept under it. The key names
+ * everything the count depends on (the host's: the carrier and its type, the height, the spill, the switch,
+ * the cards' omdozen and the page), so a build only comes back for the very plan it was made on. Boxes of
+ * products no longer on the tray drop out.
+ */
+export function loadBuild(buildKey: string, items: ReadonlyMap<number, BuilderItem>): BuilderBox[] {
   try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>;
-    const boxes = all?.[carrierKey];
-    if (!Array.isArray(boxes)) return [];
-    return boxes.filter(storedBox).filter((box) => {
+    const boxes = readKept().find((build) => build.key === buildKey)?.boxes ?? [];
+    return boxes.filter((box) => {
       const item = items.get(box.key);
       return !!item && sized(item);
     }).slice(0, MAX_BOXES);
@@ -383,13 +580,19 @@ export function loadBuild(carrierKey: string, items: ReadonlyMap<number, Builder
   }
 }
 
-export function saveBuild(carrierKey: string, boxes: readonly BuilderBox[]): void {
+/** Keeps a build under its key as the newest; the oldest go beyond MAX_KEPT builds or MAX_KEPT_BOXES boxes. */
+export function saveBuild(buildKey: string, boxes: readonly BuilderBox[]): void {
   try {
-    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Record<string, unknown>;
-    const next = all && typeof all === 'object' && !Array.isArray(all) ? all : {};
-    next[carrierKey] = boxes.slice(0, MAX_BOXES);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    writeKept([{ key: buildKey, boxes: boxes.slice(0, MAX_BOXES) }, ...readKept().filter((build) => build.key !== buildKey)]);
   } catch { /* private mode: the build lives as long as the screen */ }
+}
+
+/** Nothing is kept under this key any more: the view opens on what the host gives again. */
+export function dropBuild(buildKey: string): void {
+  try {
+    const kept = readKept();
+    if (kept.some((build) => build.key === buildKey)) writeKept(kept.filter((build) => build.key !== buildKey));
+  } catch { /* private mode */ }
 }
 
 export const MAX_BUILDER_BOXES = MAX_BOXES;
