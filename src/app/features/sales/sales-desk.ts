@@ -237,7 +237,7 @@ interface JourneyStep {
                 <strong>{{ data.priced.totals.cbm | cbm }}</strong>
                 <span>losse dozen</span>
               } @else {
-                <strong>{{ palletFigure(data) }} {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}</strong>
+                <strong>{{ palletFigure(data) }} {{ loadNoun(data, palletTotal(data)) }}</strong>
                 <span>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatisch' }} · {{ data.priced.totals.cbm | cbm }}</span>
               }
             </button>
@@ -906,10 +906,11 @@ interface JourneyStep {
                     <dl class="desk-facts">
                       <div><dt>Lading</dt><dd>
                         @if (isLooseCartons(data)) { {{ data.priced.totals.cartons | num }} losse dozen · {{ data.priced.totals.cbm | cbm }} }
-                        @else { {{ palletFigure(data) }} {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
+                        @else { {{ palletFigure(data) }} {{ loadNoun(data, palletTotal(data)) }}<small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.weightKg | num: 0 }} kg</small> }
                       </dd></div>
                       <div><dt>Vracht</dt><dd>
                         @if (data.order.freight === 'TE_BEPALEN') { <span class="danger-text">nog te bepalen</span><small>de klant ziet geen bedrag</small> }
+                        @else if (karFreightOpen(data)) { <span class="danger-text">nog in te vullen</span><small>{{ freightStrategyLabel(data) }}</small> }
                         @else { {{ data.priced.totals.freight | eur }}<small>{{ freightStrategyLabel(data) }} · {{ freightBasisLabel(data) }}</small> }
                       </dd></div>
                       @if (transitDays(); as days) {
@@ -918,7 +919,7 @@ interface JourneyStep {
                       <div><dt>Levering</dt><dd>{{ deliverySummary(data) }}</dd></div>
                     </dl>
                     @if (can3dOrder()) {
-                      <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+                      <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">{{ loadWords(data).list }} in 3D bekijken</button>
                     }
                     @if (!isLooseCartons(data) && data.order.pallets.length && (layoutCheck()?.loose ?? 0) > 0) {
                       <div class="row wrap"><b class="hint hint--warn grow">{{ layoutCheck()!.loose | num }} los</b>
@@ -1081,7 +1082,7 @@ interface JourneyStep {
                           }
                         </div>
                       } @else {
-                        <p class="desk-ok"><span aria-hidden="true">✓</span> {{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, pallets en minimumorder zijn in orde.' }}</p>
+                        <p class="desk-ok"><span aria-hidden="true">✓</span> {{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, ' + loadWords(data).other + ' en minimumorder zijn in orde.' }}</p>
                       }
                     }
 

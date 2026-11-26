@@ -76,11 +76,11 @@ import { STATUS_LABEL, customerMessageIsReadOnly, originalCustomerMessage, inter
 import {
   normalizeManualPalletType, ShippingOrderPatch, ShippingPalletAction, ShippingPlanner,
 } from './shipping-planner';
-import { checkLayout, freightGap, layoutComplete, plannerSpec } from './shipping-planner-model';
+import { checkLayout, freightGap, isKarOrder, layoutComplete, plannerSpec } from './shipping-planner-model';
 import { copySources } from './pallet-hand-load';
 import { OrderPallets3d } from './order-pallets-3d';
 import { orderPallets3d } from './order-pallets-3d-model';
-import { PALLET_LEGACY_MAX_HEIGHT_CM } from './pallet-calculator-model';
+import { PALLET_LEGACY_MAX_HEIGHT_CM, carrierNoun, carrierWords, type CarrierWords } from './pallet-calculator-model';
 import {
   automaticLinePallets, automaticPallets, nextPalletLabel, palletTypeLabel, relabelPallets, shippedPallets, trimPallets,
 } from './pallet-stack';
@@ -255,7 +255,7 @@ function layoutKey(order: SalesOrder): string {
               } @else {
                 <strong>{{ palletFigure(data) }}</strong>
                 <span>
-                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
+                  {{ loadNoun(data, palletTotal(data)) }}
                 </span>
               }
             </div>
@@ -768,7 +768,7 @@ function layoutKey(order: SalesOrder): string {
                     @if (!lineUnavailable(line.productId)) { <span>
                       {{ line.cartons | num }} {{ line.cartons === 1 ? 'doos' : 'dozen' }}@if (linePartCarton(line); as part) {, {{ part }}} ·
                       @if (!isLooseCartons(data) && !data.order.pallets.length) {
-                        {{ linePallets(data, line) }} {{ linePallets(data, line) === 1 ? 'pallet' : 'pallets' }} ·
+                        {{ linePallets(data, line) }} {{ loadNoun(data, linePallets(data, line)) }} ·
                       }
                       {{ line.cbm | cbm }}
                     </span> }
@@ -1090,13 +1090,15 @@ function layoutKey(order: SalesOrder): string {
                   <small>{{ data.priced.totals.cbm | cbm }} · {{ data.priced.totals.weightKg | num: 0 }} kg</small>
                 } @else {
                   {{ palletFigure(data) }}
-                  {{ palletTotal(data) === 1 ? 'pallet' : 'pallets' }}
+                  {{ loadNoun(data, palletTotal(data)) }}
                   <small>{{ data.order.pallets.length ? 'zelf ingedeeld' : 'automatische indeling' }} · {{ data.priced.totals.cartons | num }} dozen · {{ data.priced.totals.cbm | cbm }}</small>
                 }
               </dd></div>
               <div><dt>Vracht</dt><dd>
                 @if (data.order.freight === 'TE_BEPALEN') {
                   <span class="danger-text">nog te bepalen</span><small>de klant ziet nog geen bedrag</small>
+                } @else if (karFreightOpen(data)) {
+                  <span class="danger-text">nog in te vullen</span><small>{{ freightStrategyLabel(data) }}</small>
                 } @else {
                   {{ data.priced.totals.freight | eur }}<small>{{ freightStrategyLabel(data) }} · {{ freightBasisLabel(data) }}</small>
                 }
@@ -1106,9 +1108,9 @@ function layoutKey(order: SalesOrder): string {
               }
               <div><dt>Levering</dt><dd>{{ deliverySummary(data) }}</dd></div>
               @if (!isLooseCartons(data) && data.order.pallets.length) {
-                <div><dt>Pallets</dt><dd>
+                <div><dt>{{ loadWords(data).list }}</dt><dd>
                   @for (pallet of data.order.pallets; track $index) {
-                    <span class="logistics-pallet">{{ pallet.label || 'Pallet ' + ($index + 1) }} · {{ palletCartonCount(pallet) | num }} {{ palletCartonCount(pallet) === 1 ? 'doos' : 'dozen' }}@if (pallet.heightCm) { · {{ pallet.heightCm | num: 0 }} cm }</span>
+                    <span class="logistics-pallet">{{ pallet.label || loadWords(data).label + ' ' + ($index + 1) }} · {{ palletCartonCount(pallet) | num }} {{ palletCartonCount(pallet) === 1 ? 'doos' : 'dozen' }}@if (pallet.heightCm) { · {{ pallet.heightCm | num: 0 }} cm }</span>
                   }
                 </dd></div>
               }
@@ -1122,7 +1124,7 @@ function layoutKey(order: SalesOrder): string {
               </div>
             }
             @if (can3dOrder()) {
-              <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+              <button class="btn btn--block" type="button" aria-haspopup="dialog" [disabled]="pricingStale()" (click)="pallets3d.set(0)">{{ loadWords(data).list }} in 3D bekijken</button>
             }
             <button class="btn btn--primary btn--block logistics-open" type="button" [disabled]="!canEditShipping()"
                     (click)="palletSheet.set(true)" aria-haspopup="dialog">
@@ -1408,7 +1410,7 @@ function layoutKey(order: SalesOrder): string {
             } @else {
               <ul class="send-checklist">
                 <li class="send-checklist__ok"><i aria-hidden="true">✓</i>
-                  <span>{{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, pallets en minimumorder zijn in orde.' }}</span></li>
+                  <span>{{ isAdvanceInvoice(data) ? 'Klant en voorschotbedrag zijn gecontroleerd. De containerinhoud staat bij Producten.' : 'Klant, producten, ' + loadWords(data).other + ' en minimumorder zijn in orde.' }}</span></li>
               </ul>
             }
             <!-- One quiet row: the destructive act far left, the way
@@ -3248,8 +3250,9 @@ export class SalesEditor {
    */
   fixIssue(issue: string): void {
     const text = issue.toLowerCase();
+    /* "kar" as a word ("Een kar weegt…", "karren", "karindeling"), never the "kar" in "karton". */
     if (text.includes('vracht') || text.includes('pallet') || text.includes('omdo')
-        || text.includes('transport')) {
+        || text.includes('transport') || /\bkar(ren|indeling)?\b/.test(text)) {
       /* A document from Veilingverkopen ships nothing: its Controle is the place, never the transport sheet. */
       if (this.reportLocked()) { this.scrollToSection('quote-check'); return; }
       this.palletSheet.set(true);
@@ -3540,42 +3543,45 @@ export class SalesEditor {
         && data.priced.validation.productsWithoutCartonDimensions?.length) {
       issues.push('Vul de buitenmaten van alle omdozen in');
     }
+    /* On the Deense kar every check speaks of karren (and its 450 kg). */
+    const kar = isKarOrder(data.order);
+    const words = carrierWords(data.order.palletProfile);
     if (data.order.loadMode !== 'LOOSE_CARTONS'
         && data.priced.validation.productsWithoutPalletFit?.length) {
-      issues.push('Controleer de omdoosmaten: niet elk product past op de gekozen pallet');
+      issues.push(`Controleer de omdoosmaten: niet elk product past op de ${kar ? 'Deense kar' : 'gekozen pallet'}`);
     }
     if (data.order.loadMode !== 'LOOSE_CARTONS' && data.order.pallets.length) {
       if (data.priced.totals.unassignedCartons > 0) {
-        issues.push('Wijs alle dozen toe aan de handmatige pallets');
+        issues.push(`Wijs alle dozen toe aan de handmatige ${words.other}`);
       }
-      if (this.overassigned()) issues.push('Er zijn meer dozen op pallets gezet dan besteld');
+      if (this.overassigned()) issues.push(`Er zijn meer dozen op ${words.other} gezet dan besteld`);
       if (data.order.pallets.some((pallet) => pallet.items.length === 0)) {
-        issues.push('Verwijder lege pallets of zet er producten op');
+        issues.push(`Verwijder lege ${words.other} of zet er producten op`);
       }
       if (data.order.pallets.some((pallet) =>
           pallet.items.some((item) => item.cartons <= 0))) {
-        issues.push('Vul op elke pallet een geldig aantal dozen in');
+        issues.push(`Vul op elke ${words.one} een geldig aantal dozen in`);
       }
       const lineIds = new Set(data.priced.lines.map((line) => line.productId));
       if (data.order.pallets.some((pallet) =>
           pallet.items.some((item) => !lineIds.has(item.productId)))) {
-        issues.push('Vernieuw de palletindeling: er staat een verwijderd product op');
+        issues.push(`Vernieuw de ${kar ? 'karindeling' : 'palletindeling'}: er staat een verwijderd product op`);
       }
-      const palletBase = data.priced.totals.palletBaseHeightCm ?? 14.4;
-      const palletMax = data.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM;
+      /* The bounds the server counted with: the wood or the kar's base, and the document's height. */
+      const spec = plannerSpec(data);
       if (data.order.pallets.some((pallet) => pallet.heightCm != null
-          && (pallet.heightCm < palletBase || pallet.heightCm > palletMax))) {
-        issues.push('Controleer de gemeten hoogte van de handmatige pallets');
+          && (pallet.heightCm < spec.baseHeightCm || pallet.heightCm > spec.maxHeightCm))) {
+        issues.push(`Controleer de gemeten hoogte van de handmatige ${words.other}`);
       }
       const check = this.layoutCheck();
-      if (check?.tooHigh) issues.push('Een pallet is hoger dan de maximale laadhoogte');
-      if (check?.tooHeavy) issues.push('Een pallet weegt meer dan 700 kg');
+      if (check?.tooHigh) issues.push(`Een ${words.one} is hoger dan de maximale laadhoogte`);
+      if (check?.tooHeavy) issues.push(`Een ${words.one} weegt meer dan ${spec.maxWeightKg} kg`);
     }
     if (data.priced.validation.freightPricingIssue) {
       issues.push(data.priced.validation.freightPricingIssue);
     } else if (data.order.freight !== 'TE_BEPALEN') {
       const strategy = data.order.freightPricingStrategy
-        ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+        ?? (data.order.manualFreightEur != null || kar ? 'FIXED' : 'COUNTRY_PALLET');
       if (strategy === 'PER_CBM' && !(data.order.freightRatePerCbmEur! > 0)) {
         issues.push('Vul een vrachttarief per m³ in');
       }
@@ -3584,6 +3590,10 @@ export class SalesEditor {
       }
       if (strategy === 'COUNTRY_PALLET' && data.order.loadMode === 'LOOSE_CARTONS') {
         issues.push('Kies voor losse dozen een m³-tarief of vast vrachtbedrag');
+      }
+      /* Landentarief and the staffels price pallets: a kar's freight is a fixed amount by hand. */
+      if (kar && data.order.loadMode !== 'LOOSE_CARTONS' && (strategy === 'COUNTRY_PALLET' || strategy === 'CARRIER')) {
+        issues.push('Kies voor karren een vast vrachtbedrag');
       }
     }
     if (data.order.orderDate && data.order.validUntil
@@ -4858,7 +4868,7 @@ export class SalesEditor {
 
   effectiveFreightStrategy(data: SalesOrderView): FreightPricingStrategy {
     return data.order.freightPricingStrategy
-      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+      ?? (data.order.manualFreightEur != null || isKarOrder(data.order) ? 'FIXED' : 'COUNTRY_PALLET');
   }
 
   /** The most recent step, shown next to the status badge. */
@@ -5114,12 +5124,13 @@ export class SalesEditor {
       return `${this.countLabel(totals.cartons, 'doos', 'dozen')} · `
         + `${new CbmPipe().transform(totals.cbm)} · los geladen`;
     }
+    const words = carrierWords(data.order.palletProfile);
     if (!totals.palletsManual) {
-      return `automatisch · ${this.countLabel(automaticPallets(totals), 'pallet', 'pallets')}`;
+      return `automatisch · ${this.countLabel(automaticPallets(totals), words.one, words.other)}`;
     }
     const rest = totals.unassignedCartons > 0
         ? ` · ${this.countLabel(totals.unassignedCartons, 'doos', 'dozen')} los` : '';
-    return `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig${rest}`;
+    return `${this.countLabel(totals.palletsManual, words.one, words.other)} · handmatig${rest}`;
   }
 
   /* ---------------------------------------------------------- pallets */
@@ -5220,7 +5231,7 @@ export class SalesEditor {
 
   freightStrategyLabel(data: SalesOrderView): string {
     const strategy = data.order.freightPricingStrategy
-      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+      ?? (data.order.manualFreightEur != null || isKarOrder(data.order) ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'PER_CBM') return 'Tarief per m³';
     if (strategy === 'FIXED') return 'Vast bedrag';
     if (strategy === 'PICKUP') return 'Afhalen';
@@ -5233,15 +5244,31 @@ export class SalesEditor {
 
   freightBasisLabel(data: SalesOrderView): string {
     const strategy = data.order.freightPricingStrategy
-      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+      ?? (data.order.manualFreightEur != null || isKarOrder(data.order) ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'FIXED') return 'vast bedrag';
     if (strategy === 'PER_CBM') {
       return `${new CbmPipe().transform(data.priced.totals.cbm)} · per m³`;
     }
     const totals = data.priced.totals;
+    const words = carrierWords(data.order.palletProfile);
     return totals.palletsManual > 0
-      ? `${this.countLabel(totals.palletsManual, 'pallet', 'pallets')} · handmatig`
-      : this.countLabel(automaticPallets(totals), 'pallet', 'pallets');
+      ? `${this.countLabel(totals.palletsManual, words.one, words.other)} · handmatig`
+      : this.countLabel(automaticPallets(totals), words.one, words.other);
+  }
+
+  /** The words of the order's carrier: pallet / pallets, or kar / karren on the Deense kar. */
+  loadWords(data: SalesOrderView): CarrierWords {
+    return carrierWords(data.order.palletProfile);
+  }
+
+  /** "pallet" or "pallets" ("kar" or "karren") for a count of the order's carriers. */
+  loadNoun(data: SalesOrderView, count: number): string {
+    return carrierNoun(count, this.loadWords(data));
+  }
+
+  /** A kar order's freight that cannot price yet, Vast bedrag without its amount as the switch to the kar leaves it: no "€ 0". */
+  karFreightOpen(data: SalesOrderView): boolean {
+    return isKarOrder(data.order) && freightGap(data.order) !== null;
   }
 
   private countLabel(count: number, singular: string, plural: string): string {
@@ -5303,8 +5330,11 @@ export class SalesEditor {
 
   setPalletHeight(index: number, raw: string | number | null): void {
     const rounded = Math.round(Number(raw));
-    const minimum = Math.ceil(this.view()?.priced.totals.palletBaseHeightCm ?? 14.4);
-    const maximum = Math.floor(this.view()?.priced.totals.palletMaxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM);
+    /* The bounds the server counted with: the wood or the kar's base, and the document's height. */
+    const data = this.view();
+    const spec = data ? plannerSpec(data) : null;
+    const minimum = Math.ceil(spec?.baseHeightCm ?? 14.4);
+    const maximum = Math.floor(spec?.maxHeightCm ?? PALLET_LEGACY_MAX_HEIGHT_CM);
     const value = raw === '' || raw === null || !Number.isFinite(rounded) || rounded <= 0
       ? null
       : Math.max(minimum, Math.min(maximum, rounded));
@@ -5359,11 +5389,12 @@ export class SalesEditor {
     if (!this.canEditShipping() || !(await this.pricingSettled())) return;
     this.enqueueShipping((order) => {
       const type = palletTypeLabel(order.palletProfile);
+      const word = carrierWords(order.palletProfile).label;
       const data = this.view();
       const priced = data?.priced;
       const pallets: OrderPallet[] = [];
       const add = (items: OrderPallet['items'], source: string | null = null) =>
-        pallets.push({ id: null, label: `Pallet ${pallets.length + 1}`, type, heightCm: null, items, source });
+        pallets.push({ id: null, label: `${word} ${pallets.length + 1}`, type, heightCm: null, items, source });
       const automatic = priced?.totals.autoPallets;
       if (data && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
         const spec = plannerSpec(data);
@@ -5436,13 +5467,13 @@ export class SalesEditor {
 
   addPallet(): void {
     this.mutatePallets((pallets) => {
-      pallets.push({ id: null, label: nextPalletLabel(pallets), type: palletTypeLabel(this.view()?.order.palletProfile),
+      pallets.push({ id: null, label: nextPalletLabel(pallets, carrierWords(this.view()?.order.palletProfile).label), type: palletTypeLabel(this.view()?.order.palletProfile),
         heightCm: null, items: [] });
       return pallets;
     });
   }
 
-  /* Removing or moving renumbers the pallets still called "Pallet n", so the pakbon never lists a number twice. */
+  /* Removing or moving renumbers the pallets still called "Pallet n" (or "Kar n"), so the pakbon never lists a number twice. */
   removePallet(index: number): void {
     this.mutatePallets((pallets) => {
       pallets.splice(index, 1);

@@ -9,6 +9,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { groupSalesInvoices, type SalesContainerGroup, type SalesSplitGroup } from './sales-list-groups';
 import { SalesContainerMenu } from './sales-container-menu';
 import { shippedPallets } from './pallet-stack';
+import { carrierNoun, carrierWords } from './pallet-calculator-model';
 import { SalesMenuTrigger } from './sales-menu-trigger';
 import { isSalesMenuInteractiveChild } from './sales-menu-gesture';
 import type { PartnerContainerDeletionResult } from '../../core/api/partner-container-deletion-api';
@@ -637,7 +638,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
       } @else {
         @let loose = row.order.loadMode === 'LOOSE_CARTONS';
         @let pallets = shippedPallets(row.priced.totals);
-        <span class="sl-main"><span class="sl-nw">{{ row.priced.totals.pieces | num }} st</span> · <span class="sl-nw">@if (loose) { {{ row.priced.totals.cartons | num }} {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} } @else { {{ pallets }} {{ pallets === 1 ? 'pallet' : 'pallets' }} }</span></span>
+        <span class="sl-main"><span class="sl-nw">{{ row.priced.totals.pieces | num }} st</span> · <span class="sl-nw">@if (loose) { {{ row.priced.totals.cartons | num }} {{ row.priced.totals.cartons === 1 ? 'doos' : 'dozen' }} } @else { {{ pallets }} {{ loadNoun(row, pallets) }} }</span></span>
         @if (loose || row.priced.totals.marginPct) {
           <span class="sl-sub"><span class="sl-isep"> · </span>@if (loose) { <span class="sl-nw">{{ row.priced.totals.cbm | cbm }}</span> }@if (loose && row.priced.totals.marginPct) { · }@if (row.priced.totals.marginPct) { <span class="sl-nw">marge {{ row.priced.totals.marginPct | pct: 0 }}</span> }</span>
         }
@@ -932,6 +933,11 @@ export class SalesList {
   readonly partner = isPartnerDocument;
   /** The pallets a row ships on: its hand layout's, else the automatic count. */
   readonly shippedPallets = shippedPallets;
+
+  /** "pallet" or "pallets"; "kar" or "karren" for a row on the Deense kar. */
+  loadNoun(row: SalesOrderView, count: number): string {
+    return carrierNoun(count, carrierWords(row.order.palletProfile));
+  }
   readonly creditNoteRow = (row: SalesOrderView): boolean => isCreditNote(row.order);
   readonly creditReason = (row: SalesOrderView): string => creditReasonLabel(row.order.creditReason);
   /** '€ 120,20 verrekend · € 100,00 tegoed' — zero parts left out, 'afgehandeld' when nothing is open. */
@@ -2017,7 +2023,7 @@ export class SalesList {
     if (this.partner(row.order)) return full ? row.order.extraLines?.[0]?.description || 'Gekoppeld aan de partnercontainer' : '';
     const loose = row.order.loadMode === 'LOOSE_CARTONS';
     const pallets = shippedPallets(totals);
-    const parts = [`${num(totals.pieces)} st`, loose ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${pallets === 1 ? 'pallet' : 'pallets'}`];
+    const parts = [`${num(totals.pieces)} st`, loose ? `${num(totals.cartons)} ${totals.cartons === 1 ? 'doos' : 'dozen'}` : `${pallets} ${this.loadNoun(row, pallets)}`];
     if (full && loose) parts.push(new CbmPipe().transform(totals.cbm));
     if (full && totals.marginPct) parts.push(`marge ${new PctPipe().transform(totals.marginPct, 0)}`);
     return parts.join(' · ');

@@ -75,6 +75,8 @@ import { salesLineSections } from './sales-product-line-groups';
 import { toggleProductGroup as nextProductGroupDisclosure } from '../../shared/product-group-disclosure';
 import { SalesPdfChoice, SalesPdfSheet } from './sales-pdf-sheet';
 import { shippedPallets } from './pallet-stack';
+import { carrierNoun, carrierWords, type CarrierWords } from './pallet-calculator-model';
+import { isKarOrder } from './shipping-planner-model';
 
 type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control' | 'sales-status';
 
@@ -320,7 +322,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 </small>
               } @else {
                 <strong>{{ palletCount(data) | num }}</strong>
-                <small>{{ palletCount(data) === 1 ? 'pallet' : 'pallets' }}</small>
+                <small>{{ loadNoun(data, palletCount(data)) }}</small>
               }
             </div>
             }
@@ -776,9 +778,9 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <div class="details-grid">
                 <div class="detail-item"><span>Leverland</span><strong>{{ countryName() }}</strong></div>
                 <div class="detail-item"><span>Incoterm</span><strong>{{ data.order.incoterm || '—' }}</strong></div>
-                <div class="detail-item"><span>Verzendwijze</span><strong>{{ isLooseCartons(data) ? 'Losse dozen' : 'Pallets' }}</strong></div>
+                <div class="detail-item"><span>Verzendwijze</span><strong>{{ isLooseCartons(data) ? 'Losse dozen' : loadWords(data).list }}</strong></div>
                 @if (!isLooseCartons(data)) {
-                  <div class="detail-item"><span>Pallets</span><strong>{{ palletCount(data) | num }}</strong></div>
+                  <div class="detail-item"><span>{{ loadWords(data).list }}</span><strong>{{ palletCount(data) | num }}</strong></div>
                 }
                 <div class="detail-item"><span>Dozen</span><strong>{{ data.priced.totals.cartons | num }}</strong></div>
                 <div class="detail-item"><span>Volume</span><strong>{{ data.priced.totals.cbm | cbm }}</strong></div>
@@ -787,7 +789,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div class="detail-item"><span>Levertermijn</span><strong>{{ deliveryState(data) }}</strong></div>
               </div>
               @if (can3dOrder()) {
-                <button class="btn btn--block delivery-3d" type="button" aria-haspopup="dialog" (click)="pallets3d.set(0)">Pallets in 3D bekijken</button>
+                <button class="btn btn--block delivery-3d" type="button" aria-haspopup="dialog" (click)="pallets3d.set(0)">{{ loadWords(data).list }} in 3D bekijken</button>
               }
             </section>
             }
@@ -2333,6 +2335,16 @@ export class SalesView {
     return shippedPallets(data.priced.totals);
   }
 
+  /** The words of the order's carrier: pallet / pallets, or kar / karren on the Deense kar. */
+  loadWords(data: SalesOrderView): CarrierWords {
+    return carrierWords(data.order.palletProfile);
+  }
+
+  /** "pallet" or "pallets" ("kar" or "karren") for a count of the order's carriers. */
+  loadNoun(data: SalesOrderView, count: number): string {
+    return carrierNoun(count, this.loadWords(data));
+  }
+
   isLooseCartons(data: SalesOrderView): boolean {
     return data.order.loadMode === 'LOOSE_CARTONS';
   }
@@ -2340,7 +2352,7 @@ export class SalesView {
   freightStrategyLabel(data: SalesOrderView): string {
     if (data.order.freight === 'TE_BEPALEN') return 'later bepalen';
     const strategy = data.order.freightPricingStrategy
-      ?? (data.order.manualFreightEur != null ? 'FIXED' : 'COUNTRY_PALLET');
+      ?? (data.order.manualFreightEur != null || isKarOrder(data.order) ? 'FIXED' : 'COUNTRY_PALLET');
     if (strategy === 'PER_CBM') return 'per m³';
     if (strategy === 'FIXED') return 'vast bedrag';
     if (strategy === 'CARRIER') return 'staffel verzendorganisatie';

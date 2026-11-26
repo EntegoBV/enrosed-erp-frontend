@@ -311,7 +311,7 @@ const PORTAL_FALLBACKS: Record<LanguageCode, Record<PortalFallback, string>> = {
                         @if (data.loadMode === 'LOOSE_CARTONS') {
                           · {{ (line.cbm ?? 0) | cbm: 3: locale() }}
                         } @else {
-                          · {{ line.pallets }} {{ t('portalPalletsShort') }}
+                          · {{ line.pallets }} {{ loadShort() }}
                         }
                       </div>
                       @if (!data.advanceAgreement) {
@@ -953,13 +953,23 @@ export class PortalPage implements OnDestroy {
       case 'CARRIER':
         /* The staffel is our internal kitchen; the customer just reads
            how many pallets travel. */
-        return `${quote.totals.pallets} ${this.t('portalPalletsShort')}`;
+        return `${quote.totals.pallets} ${this.loadShort()}`;
       default:
         if (quote.loadMode === 'LOOSE_CARTONS') {
           return `${new CbmPipe().transform(quote.totals.cbm ?? 0, 3, this.locale())} · ${this.t('freightPerCbm')}`;
         }
-        return `${quote.totals.pallets} ${this.t('portalPalletsShort')} · ${this.t('freightPerPallet')}`;
+        return `${quote.totals.pallets} ${this.loadShort()} · ${this.t('freightPerPallet')}`;
     }
+  }
+
+  /**
+   * The short word next to a load count: "pallets", or on an order on the Deense kar the server's word for
+   * karren in the customer's language (portalKarrenShort); a server without that word keeps "pallets".
+   */
+  loadShort(): string {
+    const quote = this.quote();
+    return quote?.palletProfile === 'DEENSE_KAR' && quote.text?.['portalKarrenShort']
+      ? this.t('portalKarrenShort') : this.t('portalPalletsShort');
   }
 
   /** Did we fill in the freight the customer was missing? */
