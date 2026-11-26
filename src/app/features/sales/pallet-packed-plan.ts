@@ -1,7 +1,7 @@
 import {
   MAX_PLANNED_PALLETS, planPallets, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
 } from './pallet-calculator-model';
-import { packDeck, packPallets, packUnits, type PackKind } from './pallet-pack';
+import { packDeck, packPallets, packUnits, type PackKind, type PackResult, type PackedBox } from './pallet-pack';
 
 /**
  * The pallet count of a PACKED document (2026-11-25) for the screens that
@@ -16,14 +16,22 @@ import { packDeck, packPallets, packUnits, type PackKind } from './pallet-pack';
 /** One product as the packer counts it: its omdozen and the omdoos's own sizes and weight in cm and kg. */
 export interface PackLine { key: number; cartons: number; lengthCm: number; widthCm: number; heightCm: number; weightKg: number }
 
+/** The omdozen as the packer takes them, and which product each of its boxes stands for. */
+interface PackedRun {
+  /** A product once, its omdozen added up, in line order. */
+  byKey: Map<number, PackLine>;
+  plan: PackResult;
+  /** Per kind, its products and how many of each still go to a box, in line order: the boxes of a kind go to its products in turn. */
+  members: Map<number, { key: number; left: number }[]>;
+  /** The loading height above the floor, in pack units. */
+  usable: number;
+}
+
 /**
- * The pallets these omdozen are loaded on, as full as each goes; null when an
- * omdoos has no sizes or fits no pallet, or when more than `limit` pallets
- * would be needed. A pallet's parts come in the order their first omdoos was
- * laid; a part's layers are the heights its omdozen start at.
+ * These omdozen loaded pallet by pallet (pallet-pack.ts on packDeck): one kind per omdoos size, the heaviest
+ * colour's weight for all. Null when an omdoos has no sizes; an empty plan when nothing is to load.
  */
-export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides: readonly CartonUp[],
-  fullAt: (key: number) => number, limit = MAX_PLANNED_PALLETS): PlannedPallet[] | null {
+function packedRun(lines: readonly PackLine[], pallet: PalletSpec, sides: readonly CartonUp[], limit: number): PackedRun | null {
   const byKey = new Map<number, PackLine>();
   for (const line of lines) {
     if (!(line.cartons > 0)) continue;
@@ -31,7 +39,6 @@ export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides
     const known = byKey.get(line.key);
     byKey.set(line.key, known ? { ...known, cartons: known.cartons + line.cartons } : line);
   }
-  if (!byKey.size) return [];
   const bySize = new Map<string, PackKind>();
   const members = new Map<number, { key: number; left: number }[]>();
   for (const line of byKey.values()) {
@@ -49,21 +56,42 @@ export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides
     members.get(kind.key)?.push({ key: line.key, left: line.cartons });
   }
   const deck = packDeck(pallet);
-  const plan = packPallets([...bySize.values()], deck, limit);
+  const plan = byKey.size ? packPallets([...bySize.values()], deck, limit) : { pallets: [], left: new Map<number, number>() };
+  return { byKey, plan, members, usable: deck.height };
+}
+
+/** The product the next box of a kind stands for: the kind's products in turn, so the plan's parts and the 3D's boxes agree. */
+function memberOf(run: PackedRun, kind: number): number | null {
+  const member = run.members.get(kind)?.find((candidate) => candidate.left > 0);
+  if (!member) return null;
+  member.left -= 1;
+  return member.key;
+}
+
+/**
+ * The pallets these omdozen are loaded on, as full as each goes; null when an
+ * omdoos has no sizes or fits no pallet, or when more than `limit` pallets
+ * would be needed. A pallet's parts come in the order their first omdoos was
+ * laid; a part's layers are the heights its omdozen start at.
+ */
+export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides: readonly CartonUp[],
+  fullAt: (key: number) => number, limit = MAX_PLANNED_PALLETS): PlannedPallet[] | null {
+  const run = packedRun(lines, pallet, sides, limit);
+  if (!run) return null;
+  if (!run.byKey.size) return [];
+  const { byKey, plan, usable } = run;
   if (plan.left.size) return null;
-  const usable = deck.height;
   return plan.pallets.map((packed) => {
     const parts = new Map<number, PalletPart>();
     const starts = new Map<number, Set<number>>();
     for (const box of packed.boxes) {
-      const member = members.get(box.key)?.find((candidate) => candidate.left > 0);
-      if (!member) continue;
-      member.left -= 1;
-      const part = parts.get(member.key);
-      if (part) part.cartons += 1; else parts.set(member.key, { key: member.key, cartons: 1, layers: 0 });
-      const at = starts.get(member.key) ?? new Set<number>();
+      const key = memberOf(run, box.key);
+      if (key === null) continue;
+      const part = parts.get(key);
+      if (part) part.cartons += 1; else parts.set(key, { key, cartons: 1, layers: 0 });
+      const at = starts.get(key) ?? new Set<number>();
       at.add(box.y);
-      starts.set(member.key, at);
+      starts.set(key, at);
     }
     let weightKg = 0;
     for (const part of parts.values()) {
@@ -75,6 +103,24 @@ export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides
     const full = (list.length === 1 && list[0].cartons >= fullAt(list[0].key)) || fill >= 0.995;
     return { parts: list, heightCm: pallet.baseHeightCm + packed.top / 100, weightKg, fill: full ? 1 : fill, full, packed: true };
   });
+}
+
+/** A packed box with the product it stands for; its place is the packer's, in pack units from the load floor's corner. */
+export interface LoadedBox extends Omit<PackedBox, 'key'> { key: number }
+
+/**
+ * The boxes of packedPlan's pallets, pallet by pallet (2026-11-26: Palletberekening's 3D draws the very carriers
+ * its plan counts): the same run of the packer on the same deck, every box given to the same product as the
+ * plan's parts count it. Null where packedPlan gives no plan.
+ */
+export function packedLoads(lines: readonly PackLine[], pallet: PalletSpec, sides: readonly CartonUp[],
+  limit = MAX_PLANNED_PALLETS): LoadedBox[][] | null {
+  const run = packedRun(lines, pallet, sides, limit);
+  if (!run || run.plan.left.size) return null;
+  return run.plan.pallets.map((packed) => packed.boxes.flatMap((box) => {
+    const key = memberOf(run, box.key);
+    return key === null ? [] : [{ ...box, key }];
+  }));
 }
 
 /** As the server counts a PACKED document: loaded as full as it goes, unless whole layers need fewer pallets. */
