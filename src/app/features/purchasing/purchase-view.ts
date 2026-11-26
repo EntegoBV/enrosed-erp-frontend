@@ -404,7 +404,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                               [attr.aria-expanded]="group.standalone ? null : productGroupOpen(group.key)"
                               [attr.aria-controls]="group.standalone ? null : productGroupPanelId(group.key)"
                               (click)="group.standalone ? lineSheet.set(group.entries[0].line.productId) : toggleProductGroup(group.key)">
-                        <span class="ios-cell__lead">
+                        <span class="ios-cell__lead" role="link" [attr.aria-label]="group.name + ' openen'" (click)="openProduct($event, group.entries[0].line.productId)">
                           @if (group.photoUrl; as photo) { <img class="ios-thumb" [appAuthSrc]="photo" alt="" /> }
                           @else { <span class="ios-thumb mpo-thumb--empty" aria-hidden="true">◈</span> }
                         </span>
@@ -434,7 +434,7 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
                           @for (entry of group.entries; track entry.line.productId) {
                             @let display = setPiecesOf(entry.line.productId);
                             <button class="ios-cell mpo-variant" type="button" (click)="lineSheet.set(entry.line.productId)">
-                              <span class="ios-cell__lead">
+                              <span class="ios-cell__lead" role="link" [attr.aria-label]="entry.line.productName + ' openen'" (click)="openProduct($event, entry.line.productId)">
                                 @if (photoOf(entry.line.productId); as url) { <img class="ios-thumb ios-thumb--sm" [appAuthSrc]="url" alt="" /> }
                                 @else { <span class="ios-thumb ios-thumb--sm mpo-thumb--empty" aria-hidden="true">◈</span> }
                               </span>
@@ -701,10 +701,10 @@ import { keepPhoneTabFocusInPlace, keepPhoneTabsStuck, phoneStickPoint, phoneTab
           <div body class="mpo-sheet">
             <div class="ios-group ios-group--thumbs">
               <div class="ios-cell ios-cell--tall">
-                <span class="ios-cell__lead">
+                <a class="ios-cell__lead" style="text-decoration:none" [routerLink]="['/products', entry.line.productId]" [attr.aria-label]="entry.line.productName + ' openen'">
                   @if (photoOf(entry.line.productId); as url) { <img class="ios-thumb" [appAuthSrc]="url" alt="" /> }
                   @else { <span class="ios-thumb mpo-thumb--empty" aria-hidden="true">◈</span> }
-                </span>
+                </a>
                 <span class="ios-cell__body">
                   <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ sheet.group.standalone ? entry.line.productName : variantTitle(entry.product, entry.line.productName) }}</span>
                   <span class="ios-cell__sub mpo-wrap">@if (sheet.group.standalone) { Regel {{ entry.displayIndex }} · {{ sheet.section.name }} } @else { Variant {{ sheet.index + 1 }} van {{ sheet.group.entries.length }} }@if (entry.product?.sku; as sku) { · <span class="mono">{{ sku }}</span> }</span>
@@ -1602,6 +1602,12 @@ export class PurchaseView {
 
   usdToEurRate(): number {
     return effectiveUsdToEur(this.view()?.order);
+  }
+
+  /** A photo inside a pressable row: the press goes to the product, not to the row. */
+  openProduct(event: Event, productId: number): void {
+    event.stopPropagation();
+    void this.routerNav.navigate(['/products', productId]);
   }
 
   photoOf(productId: number): string | null {

@@ -471,10 +471,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
                             </div>
                             <div class="ios-swipe__row">
                               <div class="ios-cell mpo-line">
-                                <span class="ios-cell__lead">
+                                <a class="ios-cell__lead" style="text-decoration:none" [routerLink]="['/products', line.productId]" [attr.aria-label]="line.productName + ' openen'" draggable="false">
                                   @if (photoOf(line.productId); as photo) { <img class="ios-thumb" [appAuthSrc]="photo" alt="" draggable="false" /> }
                                   @else { <span class="ios-tile tone-grey mpo-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span> }
-                                </span>
+                                </a>
                                 <span class="ios-cell__body mpo-line__body" role="button" tabindex="0" [attr.aria-label]="'Regel ' + line.productName + ' bewerken'"
                                       (click)="lineSheet.set(line.productId)" (keydown.enter)="lineSheet.set(line.productId)"
                                       (keydown.space)="$event.preventDefault(); lineSheet.set(line.productId)">
@@ -887,10 +887,10 @@ function basisOf(order: PurchaseOrder): 'EXW' | 'DDP' {
           <div body class="mpo-sheet">
             <div class="ios-group ios-group--thumbs">
               <div class="ios-cell ios-cell--tall">
-                <span class="ios-cell__lead">
+                <a class="ios-cell__lead" style="text-decoration:none" [routerLink]="['/products', line.productId]" [attr.aria-label]="line.productName + ' openen'">
                   @if (photoOf(line.productId); as photo) { <img class="ios-thumb" [appAuthSrc]="photo" alt="" draggable="false" /> }
                   @else { <span class="ios-tile tone-grey mpo-line__index" aria-hidden="true">{{ purchaseLineNumber(line.productId) }}</span> }
-                </span>
+                </a>
                 <span class="ios-cell__body">
                   <span class="ios-cell__title ios-cell__title--strong ios-cell__title--2">{{ line.productName }}</span>
                   <span class="ios-cell__sub mpo-wrap">Regel {{ purchaseLineNumber(line.productId) }}@if (productSku(line.productId); as sku) { · <span class="mono">{{ sku }}</span> } · {{ piecesPerCarton(line.productId) }}/doos</span>
@@ -1798,6 +1798,12 @@ export class PurchaseEditor {
   }
 
 
+
+  /** A photo inside a pressable row: the press goes to the product, not to the row. */
+  openProduct(event: Event, productId: number): void {
+    event.stopPropagation();
+    void this.router.navigate(['/products', productId]);
+  }
 
   photoOf(productId: number): string | null {
     const product = this.productById().get(productId);

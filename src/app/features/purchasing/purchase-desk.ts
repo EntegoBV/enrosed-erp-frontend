@@ -351,11 +351,15 @@ export class PurchaseDeskStyles {}
                           <button class="desk-group__toggle" type="button" (click)="toggleFamily(row.groupKey)"
                                   [attr.aria-expanded]="!familyFolded(row.groupKey)">
                             <i class="desk-group__chev" aria-hidden="true">›</i>
-                            @if (photoOf(row.leadProductId); as photo) {
-                              <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
-                            } @else {
-                              <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">◈</span>
-                            }
+                            <!-- The photo goes to the product; the rest of the row folds the series. -->
+                            <span class="desk-product__photo-link desk-product__photo-link--go" role="link" [title]="row.label + ' openen'"
+                                  (click)="openProduct($event, row.leadProductId)">
+                              @if (photoOf(row.leadProductId); as photo) {
+                                <img class="desk-product__photo" [appAuthSrc]="photo" alt="" draggable="false" />
+                              } @else {
+                                <span class="desk-product__photo desk-product__photo--empty" aria-hidden="true">◈</span>
+                              }
+                            </span>
                             <span class="desk-product__copy">
                               <strong>{{ row.label }}</strong>
                               <small>Reeks · {{ row.lines.length }} varianten · {{ row.cbm | cbm }}</small>
@@ -1432,7 +1436,7 @@ export class PurchaseDeskStyles {}
     .line-colour-dot{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid rgb(0 0 0/.15);border-radius:50%;vertical-align:-1px}.line-colour-dot--empty{background:var(--surface)!important}
     .desk-row:hover td{background:color-mix(in srgb,var(--rose-soft) 45%,var(--surface))}
     .desk-row--open td{border-bottom:0;background:var(--surface-2)}
-    .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__copy{display:grid;min-width:0}
+    .desk-product{display:flex;align-items:center;gap:11px}.desk-product__photo-link{flex:none;line-height:0}.desk-product__photo-link--go{cursor:pointer}.desk-product__photo-link:hover .desk-product__photo{border-color:var(--rose)}.desk-product__copy{display:grid;min-width:0}
     .desk-product__name{color:inherit;text-decoration:none}.desk-product__name:hover strong{text-decoration:underline}
     .desk-product__photo{width:44px;height:44px;flex:none;border:1px solid var(--line);border-radius:11px;object-fit:cover;background:#fff}
     .desk-product__photo--empty{display:grid;place-items:center;background:var(--surface-2);color:var(--muted);font-size:11px;font-weight:700}
