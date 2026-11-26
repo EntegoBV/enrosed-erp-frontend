@@ -42,9 +42,30 @@ export function plannerSpec(view: SalesOrderView): PlannerSpec {
   /* The server's effective height; an older server without it priced a document without a height on 260 (a kar has no
      such past: it reads its own standard, 230). */
   const max = view.priced.totals.palletMaxHeightCm ?? view.order.maxPalletHeightCm ?? (kar ? KAR_MAX_HEIGHT_CM : PALLET_LEGACY_MAX_HEIGHT_CM);
-  /* The spill the server counted with (2026-11-26): 0 for a document that stores none. A server that does not say counted
-     without one, whatever the draft holds: what this screen works out itself must stand on the floor the figures came from. */
+  /* The spill the server counted with (2026-11-26): 0 for a document that stores none, and for one it priced without its
+     stored spill (with it the automatic count would need a carrier more). A server that does not say counted without one.
+     Never the draft's pick (order.palletSpillCm): what this screen works out itself must stand on the floor the figures
+     came from. */
   return specFor(profile, base, max, view.priced.totals.palletSpillCm ?? 0);
+}
+
+/**
+ * The spill picked for the document, in cm per side: what it stores (order.palletSpillCm), 0 for a document that
+ * stores none, and 0 on a server that does not know spill. The Spill stepper shows this and "Standaard" compares it;
+ * it is the only spill a write carries. Never the spill the figures were counted with (plannerSpec), which can be 0
+ * under a pick of 2 (spillSetAside): shown as the pick, that 0 would be stored with the next step.
+ */
+export function pickedSpillCm(view: SalesOrderView): number {
+  return view.priced.totals.palletSpillCm != null ? view.order.palletSpillCm ?? 0 : 0;
+}
+
+/**
+ * The server priced this document WITHOUT the spill it stores (2026-11-26): with it the automatic count would need a
+ * carrier more than without, so the figures stand on the floor itself (totals.palletSpillCm 0) while the pick stays
+ * stored. The planner says so in one line by the Spill row.
+ */
+export function spillSetAside(view: SalesOrderView): boolean {
+  return (view.order.loadMode ?? 'PALLETS') === 'PALLETS' && pickedSpillCm(view) > 0 && !((view.priced.totals.palletSpillCm ?? 0) > 0);
 }
 
 /**
@@ -322,7 +343,8 @@ export function handCarton(productId: number, products: ReadonlyMap<number, Prod
  * load it (handLoader: with the pallets after it, alone, or with omdozen a lowered quantity took off). Otherwise, on any
  * other document or pallet type, or without the catalogue, every product stands in whole layers of its own, added up:
  * the way MIXED and STRICT count. Every load here stands on the document's load floor (packDeck(spec): the floor plus
- * the document's spill), as the server's count does.
+ * the spill the server counted with), as the server's count does; a pallet copied while the document counted with a
+ * smaller spill is loaded on the floor of that copy, which lies inside today's (copiedLoader).
  */
 export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
   products?: ReadonlyMap<number, Product>): PalletVm[] {

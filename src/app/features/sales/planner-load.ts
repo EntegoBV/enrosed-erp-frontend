@@ -57,6 +57,7 @@ const PROFILES_SHORT: SegmentOption[] = ORDER_LOAD_CHOICES.map((choice) =>
             @if (spillOverridden() && canEdit()) { <button class="ld-reset" type="button" (click)="spillChange.emit(null)">Standaard</button> }
           </div>
           @if (kar()) { <p class="ld-note">op de kar alleen aan de lange zijden</p> }
+          @if (spillNote(); as note) { <p class="ld-note">{{ note }}</p> }
         }
       } @else if (layoutNote(); as note) {
         <p class="ld-note">{{ note }}</p>
@@ -97,11 +98,14 @@ export class PlannerLoad {
   /**
    * The Spill row (2026-11-26): how far an omdoos may stick out past the floor, cm per side, under the height. Shown
    * only when the server counts with a spill and says so (the planner decides); "Standaard" while spillOverridden.
+   * spillCm is the document's stored pick, not the spill the figures were counted with (see spillNote).
    */
   readonly spillShown = input(false);
   readonly spillCm = input(0);
   readonly spillMaxCm = input(5);
   readonly spillOverridden = input(false);
+  /** Why the picked spill does not count on this document ("Telt hier zonder spill: dat scheelt een pallet."); null: it counts. */
+  readonly spillNote = input<string | null>(null);
   readonly baseCm = input(14.4);
   readonly canEdit = input(true);
   readonly desk = input(false);

@@ -104,7 +104,11 @@ import type { SalesStockCost } from '../../core/api/stock-batch-models';
 import { batchFormat } from '../../core/api/stock-batch-units';
 import { ProductCostHistorySheet } from '../products/product-cost-history-sheet';
 
-/** What the pallet fits of a draft depend on (the spill too, 2026-11-26): the figures on screen belong to the draft when this matches. */
+/**
+ * What the pallet fits of a draft depend on: the figures on screen belong to the draft when this matches. The spill in
+ * it (2026-11-26) is the draft's PICK (order.palletSpillCm), as every other part is the draft's own; the spill the server
+ * then counted with (totals.palletSpillCm, 0 when it priced the document without its spill) is an answer, not part of the key.
+ */
 function layoutKey(order: SalesOrder): string {
   return JSON.stringify([order.loadMode ?? 'PALLETS', order.palletProfile ?? 'EURO_120X80', order.maxPalletHeightCm ?? null,
     order.palletSpillCm ?? null,
@@ -4123,7 +4127,9 @@ export class SalesEditor {
        back with any other save; the answer brings the server's height onto the screen
        (mergeOrderAfterSave compares with data.order). The spill (2026-11-26) goes the same way: only when it was
        changed here, a number then (0 too); without one the server keeps the document's own, so a screen that
-       still holds an older spill never writes it back. */
+       still holds an older spill never writes it back. What travels is the draft's pick (order.palletSpillCm),
+       which only the Spill stepper changes: never the spill the figures were counted with (totals.palletSpillCm),
+       so a document the server priced without its spill keeps the pick it stores through every save. */
     const stored = this.savedDocument();
     let sent: SalesOrder = data.order;
     if ((sent.maxPalletHeightCm ?? null) === (stored?.maxPalletHeightCm ?? null)) sent = { ...sent, maxPalletHeightCm: null };
@@ -5464,7 +5470,9 @@ export class SalesEditor {
       const automatic = priced?.totals.autoPallets;
       if (data && priced && automatic && automatic.length === automaticPallets(priced.totals)) {
         const spec = plannerSpec(data);
-        /* The run's spill goes into the source with its profile and height: the copy is loaded again on that floor. */
+        /* The spill the run was counted with (the server's, in the spec: 0 when it priced the document without its pick) goes
+           into the source with the profile and the height: the copy is loaded again on that floor. Only into the source:
+           the document's own pick is not touched here. */
         const sources = priced.totals.palletRule === 'PACKED'
           ? copySources(spec.profile, spec.maxHeightCm, priced.lines.map((line) => line.productId), automatic.map((pallet) => pallet.items),
             specSpillCm(spec))

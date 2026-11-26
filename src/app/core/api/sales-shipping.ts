@@ -10,7 +10,8 @@ export const shippingFields = [
  * Complete snapshot for the narrow shipping endpoint; null explicitly resets a value. A kar's freight defaults to FIXED,
  * never per pallet. The height and the spill are the exceptions: without one the server keeps the document's own (for
  * the spill a number, 0 included, sets it). The spill belongs here so a change of it is a transport change: a sent
- * document can save it and "Wijzigingen weggooien" puts it back.
+ * document can save it and "Wijzigingen weggooien" puts it back. It is the order's own pick (order.palletSpillCm);
+ * the spill the figures were counted with (priced.totals.palletSpillCm) never goes into a write.
  */
 export function shippingSnapshot(order: SalesOrder) {
   return {

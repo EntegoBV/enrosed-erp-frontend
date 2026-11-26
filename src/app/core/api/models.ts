@@ -2188,9 +2188,10 @@ export interface SalesOrder {
   maxPalletHeightCm?: number | null;
   /**
    * Spill (2026-11-26): how far an omdoos may stick out past an edge of the floor, whole cm per side, 0 to 5; on the
-   * Deense kar across its width only. The stored value: null on every document from before (null counts as 0, never
-   * as the standard), 2 on a document made since. In a write an absent or null value keeps what is stored, a number
-   * (0 included) sets it. Absent from older servers.
+   * Deense kar across its width only. The stored value, the owner's pick: null on every document from before (null
+   * counts as 0, never as the standard), 2 on a document made since. In a write an absent or null value keeps what is
+   * stored, a number (0 included) sets it. Absent from older servers. What the figures were counted with is
+   * totals.palletSpillCm, which can be 0 under a pick above 0; only this field is ever written back.
    */
   palletSpillCm?: number | null;
   /** Mutually exclusive source of the freight amount. */
@@ -2317,8 +2318,11 @@ export interface PricedOrder {
     /** Effective server settings used for this calculation (a kar: its 16,5 cm base and the document's height). */
     palletBaseHeightCm?: number; palletMaxHeightCm?: number;
     /**
-     * The spill this calculation counted with, cm per side: 0 for a document that stores none. Its presence says the
-     * server knows spill (the planner then shows its Spill row); absent from older servers, which count without one.
+     * The spill this calculation counted with, cm per side: 0 for a document that stores none, and 0 too for a document
+     * the server priced WITHOUT its stored spill because with it the automatic count would need a carrier more (then
+     * order.palletSpillCm still holds the pick). Everything the planner and the 3D work out stands on this value. Its
+     * presence says the server knows spill (the planner then shows its Spill row); absent from older servers, which
+     * count without one.
      */
     palletSpillCm?: number;
     cbm: number; weightKg: number;

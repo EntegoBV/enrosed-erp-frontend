@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import type {
@@ -16,7 +16,7 @@ import { Sheet, Ui } from '../../shared/ui';
 import { OrderPallets3d } from './order-pallets-3d';
 import {
   PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM, carrierNoun, carrierOf, carrierWords, clampPalletHeight,
-  clampSpill, minHeightCm, palletHeightLimit, standardHeightCm,
+  clampSpill, minHeightCm, palletHeightLimit, specSpillCm, standardHeightCm,
 } from './pallet-calculator-model';
 import { PalletGlyph } from './pallet-glyph';
 import { PalletSheet } from './pallet-sheet';
@@ -26,7 +26,7 @@ import { PlannerLoad } from './planner-load';
 import { PlannerPallet, omdozen } from './planner-pallet';
 import {
   autoPallets, checkLayout, fillWords, freightStrategy, handPallets, isKarOrder, layoutPill, mixedLayout, mixedRoom, palletCount,
-  placements, plannerLines, plannerSpec, serverPallets, strategyLabel, type MixedLayout, type PlannerLine,
+  pickedSpillCm, placements, plannerLines, plannerSpec, serverPallets, spillSetAside, strategyLabel, type MixedLayout, type PlannerLine,
 } from './shipping-planner-model';
 
 export { normalizeManualPalletType } from './pallet-stack';
@@ -40,7 +40,7 @@ export interface ShippingOrderPatch {
   loadMode?: LoadMode;
   palletProfile?: PalletProfile;
   maxPalletHeightCm?: number | null;
-  /** The document's spill, whole cm per side (0 to 5); the editor sends it only when it changed. */
+  /** The spill picked for the document, whole cm per side (0 to 5): the stored pick, never the spill the figures were counted with. The editor sends it only when it changed. */
   palletSpillCm?: number | null;
   freightPricingStrategy?: FreightPricingStrategy;
   freightRatePerCbmEur?: number | null;
@@ -99,6 +99,15 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
  * under "Max. hoogte". The server counts with it and says which it used
  * (totals.palletSpillCm); the row shows only then. A document from before has
  * none stored and counts with 0 until he sets one here himself.
+ * Two values, never mixed up: the PICK is what he set and the document stores
+ * (order.palletSpillCm): the Spill stepper shows it, "Standaard" compares it,
+ * and it is the only spill this screen ever sends. The spill USED is what the
+ * figures were counted with (totals.palletSpillCm, through plannerSpec):
+ * everything worked out or drawn here stands on it (the rows, the hand
+ * pallets, the 3D, the basis line's "· spill 2 cm"). They differ when the
+ * server prices a document without its spill because with it the automatic
+ * count would need a carrier more: the pick stays 2, the figures say 0, and
+ * one line by the Spill row says why (spillNote).
  */
 @Component({
   selector: 'app-shipping-planner',
@@ -301,6 +310,7 @@ const CBM = new Intl.NumberFormat('nl-BE', { minimumFractionDigits: 3, maximumFr
       <app-planner-load [mode]="loadMode()" [profile]="spec().profile" [heightCm]="heightCm()" [minCm]="minHeight()" [maxCm]="heightLimit()" [kar]="kar()"
                         [overridden]="heightOverridden()" [fieldKey]="heightField()"
                         [spillShown]="spillKnown()" [spillCm]="spillCm()" [spillMaxCm]="spillLimit" [spillOverridden]="spillOverridden()"
+                        [spillNote]="spillNote()"
                         [baseCm]="spec().baseHeightCm" [canEdit]="canEdit()" [desk]="desk()" [layoutNote]="layoutNote()"
                         (modeChange)="chooseLoadMode($event)" (profileChange)="setPalletProfile($event)" (heightChange)="setMaxHeight($event)"
                         (spillChange)="setSpill($event)" />
@@ -503,8 +513,14 @@ export class ShippingPlanner {
   readonly heightField = signal(0);
   /** The server counts with a spill and says which (totals.palletSpillCm): only then the Spill row shows. An older server counts without. */
   readonly spillKnown = computed(() => this.view().priced.totals.palletSpillCm != null);
-  /** The document's spill in cm per side: the draft's own, else what the server counted with (0 for a document that stores none). */
-  readonly spillCm = computed(() => (this.spillKnown() ? this.order().palletSpillCm ?? this.view().priced.totals.palletSpillCm ?? 0 : 0));
+  /**
+   * The spill picked for this document, in cm per side: what the draft stores (order.palletSpillCm), 0 for a document
+   * that stores none. The stepper shows this and nothing else; never the spill the figures were counted with, which
+   * can be 0 under a pick of 2 (spillNote) and would otherwise come back as the pick with the next step or save.
+   */
+  readonly spillCm = computed(() => pickedSpillCm(this.view()));
+  /** The spill the figures on screen were counted with (the server's, through plannerSpec): what the basis line names. */
+  readonly spillUsed = computed(() => specSpillCm(this.spec()));
   readonly spillLimit = SPILL_LIMIT_CM;
   /**
    * "Standaard" (and an emptied field meaning it) only on a document that carries its own spill and it is not the
@@ -514,6 +530,25 @@ export class ShippingPlanner {
   readonly spillOverridden = computed(() => {
     const own = this.order().palletSpillCm;
     return this.spillKnown() && own != null && own !== STANDARD_SPILL_CM;
+  });
+  /**
+   * The pick the figures on screen were counted for: it follows the pick, except while new figures are awaited
+   * (pricing), when it stays what it was. So a spill just stepped is never compared with the figures of the one before.
+   */
+  private readonly pricedPick = linkedSignal<{ pick: number; pricing: boolean }, number>({
+    source: () => ({ pick: this.spillCm(), pricing: this.pricing() }),
+    computation: (now, previous) => (now.pricing && previous ? previous.value : now.pick),
+  });
+  /**
+   * Why a picked spill does not count: with it the automatic count would need a carrier more than without, so the
+   * server priced the document without (2026-11-26; the pick itself stays stored). One calm line by the Spill row,
+   * only while the figures belong to the pick on screen; null otherwise.
+   */
+  readonly spillNote = computed(() => {
+    /* Read on every pass, also while nothing is set aside: pricedPick has to have seen the pick of the settled figures
+       before the next step, or its first look (while new figures are awaited) would take the stepped pick for theirs. */
+    const settled = this.pricedPick() === this.spillCm();
+    return settled && spillSetAside(this.view()) ? `Telt hier zonder spill: dat scheelt een ${this.words().one}.` : null;
   });
   readonly showSwitch = computed(() => this.canEdit() && this.palletsMode() && this.lines().length > 0);
   readonly modeOptions = computed<SegmentOption[]>(() => [
@@ -527,8 +562,8 @@ export class ShippingPlanner {
 
   readonly specText = computed(() => {
     if (!this.palletsMode()) return 'Losse dozen';
-    /* The load basis in one line; a spill is named only when the document has one ("… · max 260 cm · spill 2 cm"). */
-    const spill = this.spillCm();
+    /* The load basis in one line; a spill is named only when the figures were counted with one ("… · max 260 cm · spill 2 cm"). */
+    const spill = this.spillUsed();
     const text = `${this.spec().name} · max ${this.heightCm()} cm${spill > 0 ? ` · spill ${spill.toLocaleString('nl-BE')} cm` : ''}`;
     if (this.canEdit() || !this.lines().length) return text;
     return `${text} · ${this.manual() ? 'zelf ingedeeld' : 'automatisch'}`;
@@ -914,8 +949,9 @@ export class ShippingPlanner {
   /**
    * The spill, ±1 cm or typed, 0 to 5 cm; "Standaard" or an emptied field (only offered while spillOverridden)
    * sends the standard's number, 2: the server keeps a document's own spill when none is sent. The same lock as
-   * the height (canEdit). A number that is the document's spill already changes nothing: a document without a
-   * stored spill is not given one by a typed 0.
+   * the height (canEdit). A number that is the document's pick already changes nothing: a document without a
+   * stored spill is not given one by a typed 0, and a pick of 2 that the server counted without stays 2 (the step
+   * down from it sends 1, never the 0 the figures were counted with).
    */
   setSpill(value: number | null): void {
     if (!this.canEdit() || !this.spillKnown()) return;
