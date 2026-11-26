@@ -16,7 +16,9 @@ export function isAdvanceDocument(order: Pick<SalesOrder, 'purpose' | 'partnerPu
  * step and no packing slip.
  */
 export function skipsShipping(view: Pick<SalesOrderView, 'order' | 'advanceBilling'>): boolean {
-  return isAdvanceDocument(view.order) || (view.advanceBilling?.stage === 'ADVANCE' && view.order.docType === 'FACTUUR');
+  return isAdvanceDocument(view.order) || (view.advanceBilling?.stage === 'ADVANCE' && view.order.docType === 'FACTUUR')
+    /* A service, or a plain invoice of free lines: nothing to ship either (the same server refusal). */
+    || (view.order.docType === 'FACTUUR' && !(view.order.lines ?? []).length);
 }
 
 export function isPartnerDocument(order: Pick<SalesOrder, 'purpose' | 'partnerPurchaseOrderId' | 'partnerSettlement'>): boolean {

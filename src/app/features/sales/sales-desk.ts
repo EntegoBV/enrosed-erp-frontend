@@ -8,6 +8,7 @@ import { customerMessageIsReadOnly, originalCustomerMessage } from './quote-stat
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { SalesVatChoice } from './sales-vat-choice';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
 import { advanceInvoiceJourney, invoiceJourney } from './sales-invoice-journey';
@@ -84,7 +85,7 @@ interface JourneyStep {
 @Component({
   selector: 'app-sales-desk',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesVatChoice, SalesLineRestoreSheet, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesCreditNoteSheet, SalesOffsetSheet, AuctionSettlementSheet, PartnerLinkSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, ProductCostHistorySheet, ReportBackedCostSheet, FormsModule, RouterLink, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, OrderPallets3d, SalesPdfSheet, LinePriceSource, IncomingPill, SalesCustomerPriceSave, CustomerPriceSaveTrigger,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe],
   template: `
@@ -165,7 +166,7 @@ interface JourneyStep {
                 <!-- The name opens the customer sheet (Klant bewerken, as in Klanten) over the document. -->
                 <button class="hero-customer" type="button" aria-haspopup="dialog" title="Klant bekijken of wijzigen" (click)="openCustomer()"><span class="hero-customer__name">{{ customerName() }}</span><span class="hero-customer__chev" aria-hidden="true">›</span></button>
               } @else { {{ customerName() }} }</h1>
-              <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ data.order.incoterm || 'geen incoterm' }}
+              <p>{{ orderCountryName() || 'Nog geen leverland' }} · {{ isServiceDoc() ? 'dienst' : data.order.incoterm || 'geen incoterm' }}
                 · {{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</p>
               <p class="desk-hero__meta">{{ data.order.orderDate | dateNl }}
                 @if (isCreditNoteDoc()) { · {{ creditReason() }}@if (data.creditedInvoiceNumber) { · Op factuur <a class="desk-hero__link" [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a> } }
@@ -214,6 +215,13 @@ interface JourneyStep {
                 <small>Volgende stap</small><strong>{{ step.title }} ›</strong><span>{{ step.label && step.label !== step.title ? step.label : step.help }}</span>
               </button>
             }
+            } @else {
+            @if (isServiceDoc()) {
+            <!-- A service (Btw-regeling › Dienst): nothing is packed or shipped, so the goods tiles make way for what the document is. -->
+            <div class="desk-kpi"><small>Regels</small><strong>{{ (data.order.extraLines ?? []).length | num }}</strong><span>zonder producten</span></div>
+            <div class="desk-kpi"><small>Soort</small><strong>Dienst</strong><span>geen levering of vracht</span></div>
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('order')"><small>Btw</small><strong>{{ data.priced.totals.vatLegalMention ? '0 % · verlegd' : (data.priced.totals.vatRatePct | pct: 0) }}</strong><span>{{ vatLabel(data.priced.totals.vatTreatment) }}</span></button>
+            <button class="desk-kpi desk-kpi--button" type="button" (click)="showRail('order')"><small>{{ isInvoiceDoc() ? 'Vervalt' : 'Geldig tot' }}</small><strong>{{ ((isInvoiceDoc() ? data.order.invoiceDueDate : data.order.validUntil) | dateNl) || '—' }}</strong><span>{{ paymentLabel(data.order, 'betaalvoorwaarden van de klant') }}</span></button>
             } @else {
             @if (isAdvanceInvoice(data)) {
             <div class="desk-kpi"><small>Producten</small><strong>{{ advanceSummary(data).pieces }}</strong><span>{{ advanceSummary(data).lines ?? '—' }} productregels van de container</span></div>
@@ -271,6 +279,7 @@ interface JourneyStep {
               <strong>{{ displayedProfit(data) | eur: 0 }}</strong>
               <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Bij uitgegeven afrekening' : (data.priced.totals.marginPct | pct: 0) + ' van de goederen' }}</span>
             </button>
+            }
             <button class="desk-kpi desk-kpi--total desk-kpi--button" type="button" (click)="showRail('check')">
               @if (advanceAgreement()) {
                 <small>Betaalplan</small><strong>{{ advanceAgreement()!.rows.length }} termijnen</strong><span>Slotfactuur na verkoop</span>
@@ -294,7 +303,7 @@ interface JourneyStep {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="invoiceBusy()" (click)="showRail('status')">
                 <small>Volgende stap</small>
                 <strong>{{ invoiceNextStep(data) }} ›</strong>
-                <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : skipsShipping(data) ? 'voorschot · geen levering' : reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data)) ? 'voorraad afgeboekt via veilingverkopen' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
+                <span>{{ isAdvance(data.order) ? 'Ontvangsten volgens het betaalplan' : skipsShipping(data) ? (data.advanceBilling ? 'voorschot · geen levering' : 'geen levering') : reportBacked(data) && (data.order.goodsShippedAt || shipsViaReports(data)) ? 'voorraad afgeboekt via veilingverkopen' : data.order.goodsShippedAt ? 'bestelling verzonden ' + (data.order.goodsShippedAt | dateNl) : 'voorraad nog niet afgepunt' }}</span>
               </button>
             } @else if (data.order.status === 'GEACCEPTEERD' && invoiceBlockedByOrder(data)) {
               <button class="desk-kpi desk-kpi--go" type="button" [disabled]="busy()" (click)="duplicate()">
@@ -788,7 +797,7 @@ interface JourneyStep {
           <aside class="desk-rail" aria-label="Documentgegevens">
             <div class="desk-tabs" role="tablist">
               <button type="button" role="tab" [class.on]="railTab() === 'order'" [attr.aria-selected]="railTab() === 'order'" (click)="railTab.set('order')">Klant</button>
-              @if (!isCreditNoteDoc() && !reportBacked(data)) {
+              @if (!isCreditNoteDoc() && !reportBacked(data) && !isServiceDoc()) {
               <button type="button" role="tab" [class.on]="railTab() === 'delivery'" [attr.aria-selected]="railTab() === 'delivery'" (click)="railTab.set('delivery')">
                 Levering @if (data.order.freight === 'TE_BEPALEN' || data.priced.validation.freightPricingIssue || layoutAttention(data)) { <i class="desk-tabs__dot" aria-hidden="true"></i> }
               </button>
@@ -819,6 +828,7 @@ interface JourneyStep {
                       @if (customerVatNumber()) { <span class="hint">BTW {{ customerVatNumber() }} · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                       @else { <span class="hint">Geen BTW-nummer bij de klant · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
                     </div>
+                    <app-sales-vat-choice [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="vatChoiceSaved($event)" />
                     <div class="desk-form__duo">
                       <div class="field">
                         <label class="req" for="sd-country">Land van levering</label>
@@ -828,12 +838,14 @@ interface JourneyStep {
                           }
                         </select>
                       </div>
+                      @if (!isServiceDoc()) {
                       <div class="field">
                         <label for="sd-incoterm">Incoterm</label>
                         <select class="select" id="sd-incoterm" [ngModel]="data.order.incoterm" (ngModelChange)="patch({ incoterm: $event })">
                           @for (term of incoterms; track term) { <option [ngValue]="term">{{ term }}</option> }
                         </select>
                       </div>
+                      }
                     </div>
                     <div class="field">
                       <label for="sd-pay">Betaalvoorwaarden <span class="opt"></span></label>
@@ -1684,7 +1696,7 @@ export class SalesDesk extends SalesEditor {
       if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
         return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
       }
-      return invoiceJourney(order, this.view()?.paymentSummary?.status, this.reportLocked());
+      return invoiceJourney(order, this.view()?.paymentSummary?.status, this.reportLocked(), !(order.lines ?? []).length);
     }
     if (order.status === 'CONCEPT') return ['Concept', 'Verzonden', 'Bekeken', 'Geaccepteerd'].map((label, index) => ({ label, state: index === 0 ? 'now' : 'todo' }));
     const sent = !!order.sentAt || order.status === 'VERZONDEN' || order.status === 'BEKEKEN'

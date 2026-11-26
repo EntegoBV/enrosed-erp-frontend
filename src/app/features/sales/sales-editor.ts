@@ -28,6 +28,8 @@ import { leaveInvoice } from './sales-invoice-minimum';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesWebOrderSendChoice } from './sales-web-order-send-choice';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { SalesVatChoice } from './sales-vat-choice';
+import { isServiceTreatment, vatTreatmentLabel } from './sales-vat-choice-state';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { advanceAgreementFor, SalesAdvanceAgreement } from './sales-advance-agreement';
 import { displayedPaymentTerms, displayedSalesProfit, isAdvanceDocument, isPartnerDocument, skipsShipping, withPaymentState } from './sales-payment-state';
@@ -117,7 +119,7 @@ function layoutKey(order: SalesOrder): string {
 @Component({
   selector: 'app-sales-editor',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [SalesLineRestoreSheet, SalesCustomerPriceSave, CustomerPriceSaveTrigger, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
+  imports: [SalesVatChoice, SalesLineRestoreSheet, SalesCustomerPriceSave, CustomerPriceSaveTrigger, SalesSplitSheet, SalesFulfillmentCard, SalesInvoiceDeclaration, SalesAdvanceContents, SalesAdvanceInvoices, SalesDocumentNote, SalesAdvanceAgreement, SalesReceipts, SalesOffsetSheet, SalesAdvanceBillingCard, SalesAdvanceDeductions, SalesAdvanceInvoiceSheet, SalesWebOrderNote, SalesWebOrderSendChoice, SalesCustomerAddressNotice, CustomerSheet, FormsModule, AuthImage, PageHeader, Sheet, ProductPicker, Segmented, DateField, WeekField,
             ShippingPlanner, OrderPallets3d, SalesPdfSheet, AuctionSettlementSheet, PartnerLinkSheet, ProductCostHistorySheet, ReportBackedCostSheet,
             EurPipe, NumPipe, PctPipe, CbmPipe, DateNlPipe, DateTimeNlPipe, WeekNlPipe, RouterLink, HostStickyBand, LinePriceSource, IncomingPill],
   template: `
@@ -580,7 +582,9 @@ function layoutKey(order: SalesOrder): string {
                   }
                 </select>
                 @if (isCreditNoteDoc() && data.creditedInvoiceNumber) { <span class="hint">Klant en land volgen factuur <a [routerLink]="['/sales', data.creditedInvoiceId]">{{ data.creditedInvoiceNumber }} ›</a></span> }
+                @else if (customerVatNumber()) { <span class="hint">BTW {{ customerVatNumber() }} · {{ vatLabel(data.priced.totals.vatTreatment) }}</span> }
               </div>
+              <div class="span-2"><app-sales-vat-choice variant="ios" [view]="data" [blocked]="dirty() || saving() || sending() || documentMutationBusy()" (changed)="vatChoiceSaved($event)" /></div>
               <div class="field-duo">
                 <div class="field">
                   <label class="req" for="so-country">Land van levering</label>
@@ -591,6 +595,7 @@ function layoutKey(order: SalesOrder): string {
                     }
                   </select>
                 </div>
+                @if (!isServiceDoc()) {
                 <div class="field">
                   <label for="so-incoterm">Incoterm</label>
                   <select class="select" id="so-incoterm" [ngModel]="data.order.incoterm"
@@ -600,6 +605,7 @@ function layoutKey(order: SalesOrder): string {
                     }
                   </select>
                 </div>
+                }
               </div>
               <div class="field">
                 <label for="so-pay">Betaalvoorwaarden <span class="opt"></span></label>
@@ -1070,6 +1076,7 @@ function layoutKey(order: SalesOrder): string {
         @if ((desktop.active() || phoneStep() === 2) && !reportLocked()) {
         @if (isAdvanceInvoice(data)) { <section id="quote-logistics" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
         @else if (isCreditNoteDoc()) { <section id="quote-logistics" class="card erp-workspace__section" aria-label="Levering"><p class="credit-card-note"><b>Geen levering · creditnota.</b> Niet van toepassing op een creditnota. Vracht crediteer je als aparte regel bij Controle.</p></section> }
+        @else if (isServiceDoc()) { <!-- A service: nothing to deliver, no Levering step. --> }
         @else {<section class="card logistics-card erp-workspace__section" id="quote-logistics" aria-labelledby="logistics-title">
           <div class="section-card-head">
             <div class="section-heading">
@@ -2873,6 +2880,7 @@ export class SalesEditor {
         const lines = advanceContentsFor(data)?.lines ?? [];
         return lines.length > 0 && lines.every(line => line.quantity > 0);
       }
+      if (this.isServiceDoc()) return this.serviceLines(data) > 0;
       const active = data.priced.lines.filter(line => !this.lineUnavailable(line.productId));
       return active.length > 0 && active.every((line) => line.quantity > 0 && line.unitPrice > 0);
     }
@@ -2908,6 +2916,7 @@ export class SalesEditor {
     }
     if (id === 'order-lines') {
       if (isAdvanceInvoice(data)) return advanceContentsSummary(data).productLines;
+      if (this.isServiceDoc()) { const own = this.serviceLines(data); return own ? `${own} ${own === 1 ? 'regel' : 'regels'}` : 'Regel toevoegen'; }
       if (!data.priced.lines.length) return 'Product toevoegen';
       if (this.allProductsUnavailable()) return 'Alles tijdelijk niet beschikbaar';
       const excluded = data.order.lines.filter(salesLineUnavailable).length;
@@ -2940,7 +2949,7 @@ export class SalesEditor {
   /** Where phoneStep stands in that list (0 when it is not in it). */
   readonly phoneStepAt = computed(() => Math.max(0, this.phoneSteps().indexOf(this.phoneStep())));
   /** The rail's stops: Levering only on a document that delivers. */
-  readonly workflowNav = computed(() => this.workflowSections.filter((item) => item.id !== 'quote-logistics' || !this.reportLocked()));
+  readonly workflowNav = computed(() => this.workflowSections.filter((item) => item.id !== 'quote-logistics' || !this.noDelivery()));
 
   /**
    * The native host's chrome: Opslaan while something is unsaved, else the dock's step primary (the same chain as
@@ -3009,7 +3018,7 @@ export class SalesEditor {
 
   private stepOf(id: (typeof this.workflowSections)[number]['id']): number {
     return id === 'quote-setup' ? 0 : id === 'order-lines' ? 1
-      : id === 'quote-logistics' && !this.reportLocked() ? 2 : 3;
+      : id === 'quote-logistics' && !this.noDelivery() ? 2 : 3;
   }
 
   nextPhoneStep(): void {
@@ -3532,7 +3541,9 @@ export class SalesEditor {
     if (data.order.status === 'CONCEPT' && salesAllProductsUnavailable(data)) issues.push('Alle producten staan tijdelijk op 0. Herstel minstens één product voordat je verstuurt of uitgeeft.');
     if (invoice) return issues;
     if (!data.order.countryCode) issues.push('Kies een land van levering');
-    if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
+    /* A service has no products by design: one line of its own with a description is what it sells. */
+    if (this.isServiceDoc()) { if (!this.serviceLines(data)) issues.push('Voeg minstens één regel met omschrijving toe'); }
+    else if (!data.priced.validation.hasLines) issues.push('Voeg minstens één product toe');
     if (data.priced.lines.some((line) => !this.lineUnavailable(line.productId) && line.quantity <= 0)) {
       issues.push(websiteCartonRequests(data.order).length
         ? 'Bepaal de doosinhoud en vul voor elk aangevraagd product een positief aantal in'
@@ -4665,14 +4676,22 @@ export class SalesEditor {
     }, () => undefined);
   }
 
-  vatLabel(treatment: string): string {
-    switch (treatment) {
-      case 'INTRACOMMUNAUTAIR': return 'intracommunautaire levering';
-      case 'VERLEGD_FISCAAL_VERTEGENWOORDIGER': return 'btw verlegd via fiscaal vertegenwoordiger (NL)';
-      case 'UITVOER': return 'uitvoer';
-      case 'EU_ZONDER_BTW_NUMMER': return 'EU zonder BTW-nummer';
-      default: return 'binnenland';
-    }
+  vatLabel(treatment: string): string { return vatTreatmentLabel(treatment); }
+
+  /** A service by choice (Btw-regeling › Dienst): nothing is shipped, so no delivery, freight or incoterm. */
+  readonly isServiceDoc = computed(() => isServiceTreatment(this.view()?.priced.totals.vatTreatment));
+  /** The lines a service sells: its own lines that say what they are. */
+  private serviceLines(data: SalesOrderView): number {
+    return (data.order.extraLines ?? []).filter((line) => !!line.description?.trim()).length;
+  }
+  /** No Levering step: a document from Veilingverkopen (the meldingen shipped it) or a service. */
+  readonly noDelivery = computed(() => this.reportLocked() || this.isServiceDoc());
+
+  /** The Btw-regeling control saved a route: the server's repriced document replaces the one on screen. */
+  vatChoiceSaved(updated: SalesOrderView): void {
+    const current = this.view();
+    if (!current || current.order.id !== updated.order.id || this.dirty() || this.saving()) return;
+    this.adopt(updated);
   }
 
   addLine(choice: { product: Product; quantity: number }): void {
@@ -5059,7 +5078,7 @@ export class SalesEditor {
 
   scrollToSection(id: string): void {
     /* A document from Veilingverkopen has no Levering: a jump there lands on Controle. */
-    if (id === 'quote-logistics' && this.reportLocked()) id = 'quote-check';
+    if (id === 'quote-logistics' && this.noDelivery()) id = 'quote-check';
     if (!this.desktop.active()) {
       this.phoneStep.set(this.stepOf(id as (typeof this.workflowSections)[number]['id']));
       window.scrollTo({ top: 0, behavior: 'smooth' });

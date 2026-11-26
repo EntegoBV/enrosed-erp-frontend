@@ -12,13 +12,21 @@ export interface InvoiceJourneyStep {
  * partner's meldingen (viaReports) ships nothing: its third step reads "Voorraad afgeboekt" (the meldingen did it).
  */
 export function invoiceJourney(order: Pick<SalesOrder, 'status' | 'sentAt' | 'goodsShippedAt'>, paymentStatus?: SalesPaymentSummary['status'] | null,
-    viaReports = false): InvoiceJourneyStep[] {
+    viaReports = false, noGoods = false): InvoiceJourneyStep[] {
   if (!['CONCEPT', 'UITGEREIKT', 'VERZONDEN', 'BEKEKEN', 'BETAALD'].includes(order.status)) {
     return advanceInvoiceJourney(order, paymentStatus);
   }
   const issued = order.status !== 'CONCEPT';
   const partial = issued && paymentStatus === 'PARTIAL';
   const paid = issued && (order.status === 'BETAALD' || paymentStatus === 'PAID' || paymentStatus === 'OVERPAID');
+  /* A service, or a plain invoice of free lines (noGoods): nothing is shipped, so the road is concept, issued, paid. */
+  if (noGoods) {
+    const at = partial || paid ? 2 : issued ? 1 : 0;
+    const label = order.status === 'VERZONDEN' || order.status === 'BEKEKEN' ? 'Uitgereikt · verstuurd' : 'Uitgereikt';
+    return ['Concept', label, partial ? 'Deels ontvangen' : 'Betaald'].map<InvoiceJourneyStep>((text, index) => ({
+      label: text, mark: index < at ? '✓' : `${index + 1}`, state: index < at ? 'done' : index === at ? 'now' : 'todo', kind: undefined,
+    }));
+  }
   const shipped = issued && !!order.goodsShippedAt;
   const current = partial || paid ? 3 : shipped ? 2 : issued ? 1 : 0;
   const completed = [true, issued, shipped, paid];

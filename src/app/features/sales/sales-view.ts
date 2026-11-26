@@ -11,6 +11,7 @@ import type { SalesSplitResult } from '../../core/api/models';
 import { cancelledByCustomer, customerCanStillChange, customerMessageIsReadOnly, documentDeletable, isWebOrder, isWebOrderConflict, originalCustomerMessage, webOrderInvoiceable, webOrderRevision } from './quote-status';
 import { SalesWebOrderNote } from './sales-web-order-note';
 import { SalesCustomerAddressNotice } from './sales-customer-address-notice';
+import { isServiceTreatment, vatTreatmentLabel } from './sales-vat-choice-state';
 import { CustomerSheet } from '../customers/customer-sheet';
 import { TEMPORARY_DELETION_NOTICE } from '../../shared/deleted-item-notice';
 import { SalesInvoiceDeclaration } from './sales-invoice-declaration';
@@ -293,6 +294,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             @if (isAdvanceInvoice(data)) {
             <div><span>Producten</span><strong>{{ advanceSummary(data).lines ?? '—' }}</strong><small>{{ advanceSummary(data).pieces }}</small></div>
             <div><span>Lading container</span><strong>{{ advanceSummary(data).load }}</strong><small>{{ advanceSummary(data).volume }}</small></div>
+            } @else if (isServiceDoc()) {
+            <!-- A service (Btw-regeling › Dienst): what it is, in place of pieces and pallets. -->
+            <div><span>Regels</span><strong>{{ (data.order.extraLines ?? []).length }}</strong><small>zonder producten</small></div>
+            <div><span>Soort</span><strong>Dienst</strong><small>geen levering</small></div>
             } @else {<div>
               <span>Producten</span>
               <strong>{{ data.priced.lines.length }}</strong>
@@ -398,7 +403,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <span>{{ data.order.status === 'CONCEPT' ? 'Tegoed na uitreiken' : creditDead() ? 'Geannuleerd' : creditSettlement().openEur > 0 ? 'Tegoed' : 'Afgehandeld' }}</span>
               <strong>{{ creditDead() ? (creditSettlement().tegoedEur | eur) + ' vervallen' : data.order.status !== 'CONCEPT' && creditSettlement().openEur <= 0 ? ('✓ ' + (creditSettlement().tegoedEur | eur)) : '− ' + ((data.order.status === 'CONCEPT' ? data.priced.totals.totalInclVat : creditSettlement().openEur) | eur) }}</strong>
             </div>
-          } @else {
+          } @else if (!isServiceDoc()) {
           <div class="profit-strip">
             <span>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</span>
             <strong [class.profit-strip__negative]="displayedProfit(data) < 0">
@@ -450,10 +455,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [attr.aria-current]="activeDetailSection() === 'sales-products' ? 'true' : null"
                   (click)="scrollToSection('sales-products')">
             <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">1</span>
-            <span class="workflow-nav__copy erp-workspace__section-copy"><b>Producten</b>
-              <small>{{ isAdvanceInvoice(data) ? advanceSummary(data).productLines : data.priced.lines.length + (data.priced.lines.length === 1 ? ' regel' : ' regels') }}</small></span>
+            <span class="workflow-nav__copy erp-workspace__section-copy"><b>{{ isServiceDoc() ? 'Regels' : 'Producten' }}</b>
+              <small>{{ isAdvanceInvoice(data) ? advanceSummary(data).productLines : isServiceDoc() ? (data.order.extraLines ?? []).length + ((data.order.extraLines ?? []).length === 1 ? ' regel' : ' regels') : data.priced.lines.length + (data.priced.lines.length === 1 ? ' regel' : ' regels') }}</small></span>
           </button>
-          @if (!reportBacked(data)) {
+          @if (!reportBacked(data) && !isServiceDoc()) {
           <button class="erp-workspace__section-link" type="button"
                   [class.erp-workspace__section-link--active]="activeDetailSection() === 'sales-delivery'"
                   [class.workflow-nav__active]="activeDetailSection() === 'sales-delivery'"
@@ -470,7 +475,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [class.active]="activeDetailSection() === 'sales-control'"
                   [attr.aria-current]="activeDetailSection() === 'sales-control' ? 'true' : null"
                   (click)="scrollToSection('sales-control')">
-            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) ? 2 : 3 }}</span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) || isServiceDoc() ? 2 : 3 }}</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Controle</b><small>{{ data.priced.totals.total | eur: (isPartnerDocument(data.order) ? 2 : 0) }}</small></span>
           </button>
           <button class="erp-workspace__section-link" type="button"
@@ -479,7 +484,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   [class.active]="activeDetailSection() === 'sales-status'"
                   [attr.aria-current]="activeDetailSection() === 'sales-status' ? 'true' : null"
                   (click)="scrollToSection('sales-status')">
-            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) ? 3 : 4 }}</span>
+            <span class="workflow-nav__mark erp-workspace__section-mark" aria-hidden="true">{{ reportBacked(data) || isServiceDoc() ? 3 : 4 }}</span>
             <span class="workflow-nav__copy erp-workspace__section-copy"><b>Status</b><small>{{ statusOf(data).label }}</small></span>
           </button>
         </nav>
@@ -508,10 +513,10 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               <header class="section-card__head">
                 <div>
                   <span class="section-kicker">Orderinhoud</span>
-                  <h2 id="sales-lines-title">Producten</h2>
+                  <h2 id="sales-lines-title">{{ isServiceDoc() ? 'Regels' : 'Producten' }}</h2>
                 </div>
                 <div class="line-head-tools">
-                  @if (showsMargin()) {
+                  @if (showsMargin() && !isServiceDoc()) {
                   <div class="profit-mode" role="group" aria-label="Winstbedrag tonen per verkoopeenheid of per regel">
                     <button type="button" [class.profit-mode__active]="profitMode() === 'UNIT'"
                             (click)="profitMode.set('UNIT')">Per eenheid</button>
@@ -520,8 +525,8 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                   </div>
                   }
                   <span class="section-count">
-                    {{ data.priced.lines.length }}
-                    {{ data.priced.lines.length === 1 ? 'regel' : 'regels' }}
+                    {{ isServiceDoc() ? (data.order.extraLines ?? []).length : data.priced.lines.length }}
+                    {{ (isServiceDoc() ? (data.order.extraLines ?? []).length : data.priced.lines.length) === 1 ? 'regel' : 'regels' }}
                   </span>
                 </div>
               </header>
@@ -605,11 +610,14 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                     </div>
                   </section>
                 } @empty {
+                  <!-- A service has no products by design: no empty state asking for one. -->
+                  @if (!isServiceDoc()) {
                   <div class="products-empty">
                     <span aria-hidden="true">◇</span>
                     <strong>Nog geen producten</strong>
                     <p>Open Bewerken om de eerste productregel toe te voegen.</p>
                   </div>
+                  }
                 }
                 <!-- Typed prices that are not the customer's own: one press makes them the customer's (klantprijzen). -->
                 @if (customerPriceCandidates().length; as count) {
@@ -768,6 +776,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
             @if (isAdvanceInvoice(data)) { <section id="sales-delivery" class="erp-workspace__section"><app-sales-advance-contents [view]="data" mode="delivery" /></section> }
             @else if (isCreditNote()) { <section class="section-card erp-workspace__section" id="sales-delivery" aria-label="Levering"><div class="credit-none-cell"><span aria-hidden="true">—</span>Geen levering · creditnota</div></section> }
             @else if (reportBacked(data)) { <!-- From Veilingverkopen: the stock left with the meldingen; nothing to deliver. --> }
+            @else if (isServiceDoc()) { <!-- A service: nothing to deliver. --> }
             @else {<section class="section-card erp-workspace__section" id="sales-delivery" aria-labelledby="delivery-details-title">
               <header class="section-card__head">
                 <div><span class="section-kicker">Logistiek</span><h2 id="delivery-details-title">Levering</h2></div>
@@ -805,7 +814,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
               } @else {
               <header><span class="section-kicker">Controle</span><h2>Totalen</h2></header>
               <dl class="totals-list">
-                <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div>
+                @if (!isServiceDoc()) { <div><dt>Goederen</dt><dd>{{ data.priced.totals.goodsTotal | eur: 2 }}</dd></div> }
                 <!-- The same rows as the editor's Prijsopbouw: how the goods figure came about. -->
                 @if (data.priced.totals.lineDiscountTotal || data.priced.totals.orderDiscountAmount) {
                   <div><dt>Bruto</dt><dd>{{ data.priced.totals.gross | eur: 2 }}</dd></div>
@@ -822,7 +831,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 @if ((data.priced.extraLines ?? []).length) {
                   <div><dt>Andere regels</dt><dd>{{ data.priced.totals.extraLinesTotal | eur: 2 }}</dd></div>
                 }
-                @if (!isCreditNote() && (!reportBacked(data) || data.priced.totals.freight + data.priced.totals.handling)) {
+                @if (!isCreditNote() && !isServiceDoc() && (!reportBacked(data) || data.priced.totals.freight + data.priced.totals.handling)) {
                 <div><dt>Vracht <small>{{ freightStrategyLabel(data) }}</small></dt><dd>{{ freightAmount(data) }}</dd></div>
                 <div><dt>Handling</dt><dd>{{ data.priced.totals.handling | eur: 2 }}</dd></div>
                 }
@@ -830,7 +839,7 @@ type SalesDetailSectionId = 'sales-products' | 'sales-delivery' | 'sales-control
                 <div><dt>BTW {{ data.priced.totals.vatRatePct | pct: 0 }}</dt><dd>{{ data.priced.totals.vatAmount | eur: 2 }}</dd></div>
                 <div class="totals-list__incl"><dt>Inclusief BTW</dt><dd>{{ data.priced.totals.totalInclVat | eur: 2 }}</dd></div>
               </dl>
-              @if (!isCreditNote()) {
+              @if (!isCreditNote() && !isServiceDoc()) {
               <div class="totals-profit">
                 <div><b>{{ isPartnerDocument(data.order) ? 'Gerealiseerd resultaat' : 'Winst' }}</b><strong [class.negative]="displayedProfit(data) < 0">{{ displayedProfit(data) | eur: 2 }}</strong></div>
                 <small>{{ isAdvance(data.order) ? 'Voorschot = financiering' : isPartnerDocument(data.order) ? 'Resultaat bij uitgegeven afrekening' : 'Goederenwinst vóór vrachtkosten' }}</small>
@@ -1420,6 +1429,8 @@ export class SalesView {
 
   /* ---- credit notes ---------------------------------------------------- */
   readonly isCreditNote = computed(() => isCreditNote(this.view()?.order));
+  /** A service by choice (Btw-regeling › Dienst): nothing is shipped, so no Levering, freight or goods profit. */
+  readonly isServiceDoc = computed(() => isServiceTreatment(this.view()?.priced.totals.vatTreatment));
   /** A credit note corrects an invoice; it tells no margin or profit story anywhere. Quotes and invoices keep theirs. */
   readonly showsMargin = computed(() => !this.isCreditNote());
   readonly canCreateCredit = computed(() => canCreateCreditNote(this.view()));
@@ -1968,7 +1979,7 @@ export class SalesView {
     if (isAdvanceDocument(order) || isAdvanceBillingInvoice(this.view())) {
       return advanceInvoiceJourney(order, this.view()?.paymentSummary?.status);
     }
-    return invoiceJourney(order, this.view()?.paymentSummary?.status, isReportBacked(this.view()));
+    return invoiceJourney(order, this.view()?.paymentSummary?.status, isReportBacked(this.view()), !(order.lines ?? []).length);
   }
 
   makeInvoice(data: SalesOrderView): void {
@@ -2418,7 +2429,8 @@ export class SalesView {
 
   vatLabel(data: SalesOrderView): string {
     return data.priced.totals.vatLegalMention
-      || `${new PctPipe().transform(data.priced.totals.vatRatePct, 0)} · ${data.priced.totals.vatTreatment.toLowerCase()}`;
+      || `${new PctPipe().transform(data.priced.totals.vatRatePct, 0)} · ${isServiceTreatment(data.priced.totals.vatTreatment)
+        ? vatTreatmentLabel(data.priced.totals.vatTreatment) : data.priced.totals.vatTreatment.toLowerCase()}`;
   }
 
   signedMoney(value: number): string {

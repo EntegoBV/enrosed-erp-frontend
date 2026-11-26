@@ -2796,6 +2796,36 @@ The ERP never calls `/api/v1/public/account` and never sees a password.
 - A visit without a length (from before the measuring started) shows "—"; one moment
   of measured use reads "< 1 min". Phone rows leave the device out (the popup has it).
 
+### Btw-regeling per document and service documents (2026-11-26)
+Emre: a customer on the fiscal representative sometimes gets a plain
+Belgium-to-Netherlands document, a "custom factuur" (free lines only) can be a
+service that has nothing to do with goods, and a sent invoice must keep its
+regime whatever setting changes afterwards.
+- `core/api/sales-vat-choice-api.ts` (`SalesVatChoiceApi`): `get(id)` answers
+  `{ route, customerRoute, chosen, options, editable, lockedReason, pinned,
+  needsConfirm }`, `save(id, route, confirmed)` answers the repriced
+  `SalesOrderView`. Routes FISCAL_REPRESENTATIVE / BELGIUM / SERVICE; the
+  server decides the options (fiscal toggle only for a customer on the
+  representative, SERVICE only without product lines).
+- `app-sales-vat-choice` (`sales-vat-choice.ts`, wording in the pure
+  `sales-vat-choice-state.ts`): the "Btw-regeling" segmented control under
+  the Klant field on the desk rail and in the phone editor. Shown only when
+  there is something to choose (or an issued invoice holds a regime, then
+  read-only inside the locked form). Saves at once and hands the view to
+  `vatChoiceSaved`; waits while the document is dirty. A reopened invoice
+  (`needsConfirm`) asks "Toch wijzigen" first.
+- Service documents (`isServiceTreatment`: `vatTreatment` starts with
+  `DIENST_`; `isServiceDoc` on SalesEditor and SalesView, `noDelivery` =
+  report-backed or service): no Levering tab/step/section, no incoterm, own
+  hero tiles (Regels, Soort, Btw, Vervalt), no profit strip, totals without
+  goods/freight/handling, "Regels" instead of "Producten", and the editor's
+  open points count own lines instead of products.
+- `skipsShipping` is also true for any invoice without product lines, and
+  `invoiceJourney(..., noGoods)` then reads concept → uitgereikt → betaald.
+- `finance/vat-return.ts`: DIENST_VERLEGD goes to grid 44 (credit notes 48),
+  DIENST_BUITEN_EU to 47; DIENST_BINNENLAND follows its rate like any
+  domestic sale.
+
 ### Klantprijzen on the customer (round 3, 2026-11-06)
 One agreed price per customer and product: EUR excl. VAT on the product's
 own sales unit (per display when sold per display), like the catalogue

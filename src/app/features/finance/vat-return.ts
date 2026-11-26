@@ -222,12 +222,16 @@ export function vatReturn(year: number, quarter: number, lines: readonly ReturnL
     if (!inQuarter(doc.date)) continue;
     const row = (badges: string[] = []): GridRow => ({ kind: 'sales', id: doc.id, date: doc.date, title: doc.number, sub: doc.customer, baseEur: doc.baseEur, vatEur: doc.vatEur, badges });
     const intraEu = doc.treatment === 'INTRACOMMUNAUTAIR';
-    const exempt = doc.treatment === 'UITVOER' || doc.treatment === 'VERLEGD_FISCAAL_VERTEGENWOORDIGER';
+    /* A service for a VAT-registered EU customer (Btw-regeling › Dienst): grid 44, its credit notes 48 as for 46. */
+    const euService = doc.treatment === 'DIENST_VERLEGD';
+    const exempt = doc.treatment === 'UITVOER' || doc.treatment === 'VERLEGD_FISCAAL_VERTEGENWOORDIGER'
+      || doc.treatment === 'DIENST_BUITEN_EU';
     if (doc.docType === 'CREDITNOTA') {
-      put(intraEu ? '48' : '49', row());
+      put(intraEu || euService ? '48' : '49', row());
       put('64', row());
       continue;
     }
+    if (euService) { put('44', row()); continue; }
     if (intraEu) { put('46', row()); continue; }
     if (exempt) { put('47', row()); continue; }
     const standard = doc.ratePct === 6 || doc.ratePct === 12 || doc.ratePct === 21;
