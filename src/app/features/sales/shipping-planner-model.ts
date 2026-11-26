@@ -1,12 +1,12 @@
 import type {
   Carrier, FreightPricingStrategy, OrderPallet, PalletProfile, Product, SalesOrder, SalesOrderView,
 } from '../../core/api/models';
-import { copiedLoader, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
+import { copiedLoader, copiedOnSmallerFloor, handLoader, partOf, sameItems, within, type HandCarton } from './pallet-hand-load';
 import { ALL_SIDES, packDeck } from './pallet-pack';
 import {
   CARRIER_WORDS, KAR_BASE_HEIGHT_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, MAX_PLANNED_PALLETS, PALLET_BASE_HEIGHT_CM,
   PALLET_LEGACY_MAX_HEIGHT_CM, PALLET_MAX_WEIGHT_KG, carrierWords, loadChoice, palletSpec, planPallets, roomWithoutExtraPallet,
-  separatePallets, spillAxes, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
+  separatePallets, specSpillCm, spillAxes, standardHeightCm, type CarrierKind, type CarrierWords, type PalletSpec, type PlanLine,
 } from './pallet-calculator-model';
 import {
   PALLET_PRODUCT_COLOURS, carrierTypes, estimatePalletHeightCm, normalizeManualPalletType, palletTypeLabel,
@@ -344,7 +344,8 @@ export function handCarton(productId: number, products: ReadonlyMap<number, Prod
  * other document or pallet type, or without the catalogue, every product stands in whole layers of its own, added up:
  * the way MIXED and STRICT count. Every load here stands on the document's load floor (packDeck(spec): the floor plus
  * the spill the server counted with), as the server's count does; a pallet copied while the document counted with a
- * smaller spill is loaded on the floor of that copy, which lies inside today's (copiedLoader).
+ * smaller spill is loaded on the floor of that copy, which lies inside today's (copiedLoader), and while it still
+ * carries exactly what was copied it stands as it was copied, before any try on today's deck (copiedOnSmallerFloor).
  */
 export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[], spec: PlannerSpec,
   products?: ReadonlyMap<number, Product>): PalletVm[] {
@@ -379,12 +380,15 @@ export function handPallets(view: SalesOrderView, lines: readonly PlannerLine[],
     if (packedDoc && !layered.measured && own(index) && pallet.items.length) {
       const same = server[index] && sameItems(server[index].items, pallet.items) ? server[index]
         : server.find((candidate) => sameItems(candidate.items, pallet.items));
-      const load = same || !loadOf ? null : loadOf(index);
+      /* Copied on a smaller floor than the document counts on now and still carrying exactly that: as it was copied. */
+      const kept = !same && copiedOf && copiedOnSmallerFloor(pallet.source, pallet.items, specSpillCm(spec)) ? copiedOf(pallet.source) : null;
+      const load = same || kept || !loadOf ? null : loadOf(index);
       /* Copied by Zelf indelen and holding no more of any product than then: that part of the copied pallet, at most as
          high (after the tries above, which load it fully carried where they can). */
-      const copied = same || load || !copiedOf ? null : copiedOf(pallet.source);
+      const copied = same || kept || load || !copiedOf ? null : copiedOf(pallet.source);
       const part = copied ? partOf(copied, pallet.items, cartonOf) : null;
-      packedCm = same ? same.heightCm : load ? spec.baseHeightCm + load.top / 100 : part ? spec.baseHeightCm + part.top / 100 : null;
+      packedCm = same ? same.heightCm : kept ? spec.baseHeightCm + kept.top / 100 : load ? spec.baseHeightCm + load.top / 100
+        : part ? spec.baseHeightCm + part.top / 100 : null;
       /* No more of any product than a server pallet carries: it fits as that part of the server's pallet, at most as high. */
       if (packedCm === null) {
         const holder = server.findIndex((candidate) => within(pallet.items, candidate.items));

@@ -4,7 +4,7 @@ import { deckOf, packedPlace, settle, stackAbove, type BuilderBox, type BuilderI
 import {
   MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, palletFit, productUnits, specSpillCm, type CarrierWords,
 } from './pallet-calculator-model';
-import { copiedLoader, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
+import { copiedLoader, copiedOnSmallerFloor, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
 import { ALL_SIDES, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, type PlannerSpec } from './shipping-planner-model';
@@ -414,10 +414,16 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     const boxes: BuilderBox[] = [];
     const counts = new Map<number, number>();
     let load = null;
+    let twin = -1;
     if (packedDoc && !pallet.ownType) {
-      const twin = server[index] && sameItems(server[index].items, pallet.items) ? index
+      twin = server[index] && sameItems(server[index].items, pallet.items) ? index
         : server.findIndex((candidate) => sameItems(candidate.items, pallet.items));
       load = twin >= 0 && serverLoad ? serverLoad(twin) : null;
+    }
+    /* Copied on a smaller floor than the document counts on now and still carrying exactly that: drawn as it was copied
+       (the planner reads its height the same way; a pallet the server's own list names keeps the server's). */
+    if (!load && twin < 0 && packedDoc && !pallet.ownType && copiedOf && copiedOnSmallerFloor(pallet.source, pallet.items, specSpillCm(spec))) {
+      load = copiedOf(pallet.source);
     }
     if (!load) load = listLoad(index);
     /* Holding no more of any product than the pallet Zelf indelen copied it from: drawn as that part of it. */

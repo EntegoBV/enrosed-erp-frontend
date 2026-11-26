@@ -312,6 +312,10 @@ export function handLoader(pallets: readonly Items[], order: readonly number[], 
  * at least the copy's: the floor only got larger, so the load still stands on it (a copy made without spill on a
  * document that later counts with 2 cm stays good, and so does one made at 2 when he sets 5). Below the copy's spill the
  * load would pass the edge by more than the document allows: the copy is not used, as for another profile or height.
+ * Where the copy comes among the judges (shipping-planner-model.ts handPallets, order-pallets-3d-model.ts): a pallet the
+ * server's own list names keeps the server's height; one copied on a smaller floor that still carries exactly what was
+ * copied stands as it was copied (copiedOnSmallerFloor); any other is tried on today's deck first (handLoader) and only
+ * then as a part of its copy.
  */
 
 /** The longest source the backend keeps (sales_pallet.copy_source); a longer one is not written. */
@@ -391,6 +395,19 @@ export function readCopySource(text: string | null | undefined): CopySource | nu
   const spillCm = parts.length === 7 ? Number(parts[6]) : 0;
   if (parts.length === 7 && !(spillCm > 0)) return null;
   return totals && items && maxHeightCm > 0 ? { profile: parts[1], maxHeightCm, spillCm, totals, index: Number(parts[4]), items } : null;
+}
+
+/**
+ * A hand pallet that still carries exactly what Zelf indelen copied, from a run counted with a SMALLER spill than the
+ * document counts with now (2026-11-26). The clearest case: the server priced a quote without its spill (with it the
+ * automatic count needed a pallet more), Zelf indelen copied those pallets, and with a hand layout the server counts on
+ * the stored spill again. Such a pallet stands as it was copied (copiedLoader gives it, on the floor of that day): the
+ * rows he copied keep their heights and the 3D draws them where they stood, instead of each being packed again on
+ * today's larger deck. With the same spill this never holds: there the server's own list still names the pallet.
+ */
+export function copiedOnSmallerFloor(source: string | null | undefined, items: Items, spillCm: number): boolean {
+  const copy = readCopySource(source);
+  return !!copy && copy.spillCm < spillCm - 1e-6 && sameItems(copy.items, items);
 }
 
 /** Runs loaded again, by everything the run reads: every hand pallet of one copy shares one. */
