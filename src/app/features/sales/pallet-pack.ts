@@ -1,4 +1,4 @@
-import { cartonStanding, type CartonUp } from './pallet-calculator-model';
+import { cartonStanding, loadFloor, type CartonUp } from './pallet-calculator-model';
 
 /**
  * Zo vol mogelijk laden (Emre, 2026-11-25: "bij een order van 3 pallets
@@ -21,7 +21,10 @@ import { cartonStanding, type CartonUp } from './pallet-calculator-model';
  * wide instead of as a tower. A pallet that could take all that is left (by
  * volume and weight) but leaves omdozen over is tried again from every first
  * block, the first that takes everything standing. An omdoos lies down only where that fills
- * clearly more (TIP_COST). Nothing hangs over an edge and nothing floats.
+ * clearly more (TIP_COST). Nothing hangs over an edge of the deck it is given
+ * and nothing floats. The deck is the caller's: packDeck gives the floor plus
+ * the spill a document allows (2026-11-26), so there an omdoos may pass the
+ * real floor's edge by at most that spill.
  *
  * FROZEN since 2026-11-25: the server's PalletPacker counts PACKED documents
  * with these exact steps, and documents are priced live, so a change here
@@ -436,10 +439,19 @@ export function packPallets(input: readonly PackKind[], deck: PackDeck, maxPalle
   return { pallets, left };
 }
 
-/** The deck of a pallet or kar spec in pack units: its floor, the height above the wood, the weight limit. */
-export function packDeck(spec: { lengthCm: number; widthCm: number; baseHeightCm: number; maxHeightCm: number; maxWeightKg: number }): PackDeck {
+/**
+ * The deck of a pallet or kar spec in pack units: its load floor, the height above the wood, the weight limit.
+ * The load floor is the floor plus the spec's spill on both sides (loadFloor; 2026-11-26), as the server's
+ * PalletPacker.deck takes it: the spill is an input of the frozen steps, as the profile and the height are,
+ * and without spill the deck is the floor itself. A box's place is measured from the load floor's corner:
+ * where it is drawn, the spill of that axis comes off (pallet-builder-model.ts packedPlace).
+ */
+export function packDeck(spec: {
+  lengthCm: number; widthCm: number; baseHeightCm: number; maxHeightCm: number; maxWeightKg: number; spillLengthCm?: number; spillWidthCm?: number;
+}): PackDeck {
+  const floor = loadFloor(spec);
   return {
-    length: packUnits(spec.lengthCm), width: packUnits(spec.widthCm),
+    length: packUnits(floor.lengthCm), width: packUnits(floor.widthCm),
     height: Math.max(0, packUnits(spec.maxHeightCm) - packUnits(spec.baseHeightCm)), maxWeight: Math.max(0, packUnits(spec.maxWeightKg)),
   };
 }

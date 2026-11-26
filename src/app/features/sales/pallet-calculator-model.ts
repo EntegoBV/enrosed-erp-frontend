@@ -17,6 +17,11 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   needs more pallets than every product on pallets of its own.
  * - A Deense kar (karSpec) is counted as a pallet with its own floor, height
  *   and weight, so every pallet rule below holds for it too.
+ * - Spill (2026-11-26): an omdoos may stick out a few cm past the floor. A
+ *   layer is therefore counted on the load floor (loadFloor: the floor plus
+ *   the spill on both sides; the kar across its width only) and laid centred
+ *   on the real one. Nothing else in the counting changes, and without spill
+ *   every figure is what it was.
  * - Palletberekening may also lay an omdoos on its side (palletFitTurnable):
  *   the best of the three standing sides, upright on a tie. The backend and
  *   a quote count upright and lay an omdoos down only when it fits no pallet
@@ -48,6 +53,23 @@ export const PALLET_HEIGHT_LIMIT_CM = 300;
 /** A europallet is loaded at most 2,60 m high, the pallet included (Emre, 2026-11-10); the backend refuses a new pick above it. */
 export const EURO_PALLET_HEIGHT_LIMIT_CM = 260;
 
+/**
+ * Spill (Emre, 2026-11-26: "Je mag ook standaard maximaal 2cm spill doen. De spill willen wij ook kunnen
+ * aanpassen"): how far an omdoos may stick out past an edge of the floor, in whole cm per side. The standard
+ * is 2 cm, as the backend's: Palletberekening, the catalogue and a NEW sales document count with it. A document
+ * keeps the spill it stores; one from before 2026-11-26 stores none, which is 0, never the standard. It never
+ * applies to the height.
+ */
+export const STANDARD_SPILL_CM = 2;
+/** The most spill that can be picked (the backend refuses more). */
+export const SPILL_LIMIT_CM = 5;
+
+/** A picked spill within the bounds: whole centimetres, 0 to SPILL_LIMIT_CM; anything else reads 0. */
+export function clampSpill(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return 0;
+  return Math.min(SPILL_LIMIT_CM, Math.max(0, Math.round(value)));
+}
+
 /** The highest height that can be picked for a pallet type, or the Deense kar (KAR_HEIGHT_LIMIT_CM). */
 export function palletHeightLimit(profile: PalletProfile): number {
   if (profile === 'DEENSE_KAR') return KAR_HEIGHT_LIMIT_CM;
@@ -73,21 +95,70 @@ export const PALLET_CHOICES: readonly PalletChoice[] = [
 ];
 
 export interface PalletSpec {
+  /** The floor as it is, what screens and documents name ("120 × 80"); the count reads loadFloor(spec). */
   lengthCm: number;
   widthCm: number;
   baseHeightCm: number;
   /** The loaded height, the wood included. */
   maxHeightCm: number;
   maxWeightKg: number;
+  /** Spill along the length: how far an omdoos may pass each short end of the floor, in cm. Absent: 0. Always 0 on the Deense kar. */
+  spillLengthCm?: number;
+  /** Spill across the width: how far an omdoos may pass each long side of the floor, in cm. Absent: 0. */
+  spillWidthCm?: number;
 }
 
-/** A pallet type's spec at this height; the Deense kar (an order's DEENSE_KAR) is karSpec. */
-export function palletSpec(profile: PalletProfile, maxHeightCm: number): PalletSpec {
-  if (profile === 'DEENSE_KAR') return karSpec(maxHeightCm);
+type SpillAxes = Pick<PalletSpec, 'spillLengthCm' | 'spillWidthCm'>;
+
+function spillOn(value: number | null | undefined): number {
+  return value != null && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * A carrier's spill per axis: past every edge on a pallet, on the Deense kar only across its width (Emre,
+ * 2026-11-26: "alleen lange zijden"; its posts stand at the short ends). Nothing at 0, so a spec without
+ * spill is what it was before there was one.
+ */
+export function spillAxes(profile: PalletProfile | null | undefined, spillCm: number | null | undefined): SpillAxes {
+  const spill = spillOn(spillCm);
+  if (!spill) return {};
+  return profile === 'DEENSE_KAR' ? { spillLengthCm: 0, spillWidthCm: spill } : { spillLengthCm: spill, spillWidthCm: spill };
+}
+
+/** The spill a spec was made with, as it is set and named ("spill 2 cm"): cm per side, 0 without. */
+export function specSpillCm(spec: SpillAxes): number {
+  return Math.max(spillOn(spec.spillLengthCm), spillOn(spec.spillWidthCm));
+}
+
+/** The floor the count reads, and where the real floor lies in it. */
+export interface LoadFloor {
+  lengthCm: number;
+  widthCm: number;
+  /** The real floor's corner seen from the load floor's: a place counted on the load floor, minus this, is the place on the real floor. */
+  offsetXCm: number;
+  offsetZCm: number;
+}
+
+/**
+ * The load floor: the real floor with the spill added on both sides of an axis (europallet at 2 cm: 124 × 84,
+ * the kar: 127 × 58,5). Every count that reads the floor reads this one (palletFitUpright, layerSlots, the
+ * packer's deck: packDeck), exactly as the backend's PalletSpec does, so both give one number. Without spill it
+ * is the floor itself. What is counted on it is laid centred on the real floor, so nothing passes an edge by
+ * more than the spill.
+ */
+export function loadFloor(spec: Pick<PalletSpec, 'lengthCm' | 'widthCm' | 'spillLengthCm' | 'spillWidthCm'>): LoadFloor {
+  const x = spillOn(spec.spillLengthCm);
+  const z = spillOn(spec.spillWidthCm);
+  return { lengthCm: spec.lengthCm + 2 * x, widthCm: spec.widthCm + 2 * z, offsetXCm: x, offsetZCm: z };
+}
+
+/** A pallet type's spec at this height and spill (cm per side, 0 without); the Deense kar (an order's DEENSE_KAR) is karSpec. */
+export function palletSpec(profile: PalletProfile, maxHeightCm: number, spillCm = 0): PalletSpec {
+  if (profile === 'DEENSE_KAR') return karSpec(maxHeightCm, spillCm);
   const choice = PALLET_CHOICES.find((candidate) => candidate.id === profile) ?? PALLET_CHOICES[0];
   return {
     lengthCm: choice.lengthCm, widthCm: choice.widthCm, baseHeightCm: PALLET_BASE_HEIGHT_CM,
-    maxHeightCm, maxWeightKg: PALLET_MAX_WEIGHT_KG,
+    maxHeightCm, maxWeightKg: PALLET_MAX_WEIGHT_KG, ...spillAxes(choice.id, spillCm),
   };
 }
 
@@ -128,10 +199,11 @@ export const KAR_FORMER_STANDARD_CM = 190;
 export const KAR_HEIGHT_LIMIT_CM = 300;
 export const KAR_MAX_WEIGHT_KG = 450;
 
-export function karSpec(maxHeightCm: number): PalletSpec {
+/** The kar at this height; a spill (cm per side, 0 without) counts across its width only (spillAxes). */
+export function karSpec(maxHeightCm: number, spillCm = 0): PalletSpec {
   return {
     lengthCm: KAR_LENGTH_CM, widthCm: KAR_WIDTH_CM, baseHeightCm: KAR_BASE_HEIGHT_CM,
-    maxHeightCm, maxWeightKg: KAR_MAX_WEIGHT_KG,
+    maxHeightCm, maxWeightKg: KAR_MAX_WEIGHT_KG, ...spillAxes('DEENSE_KAR', spillCm),
   };
 }
 
@@ -275,13 +347,17 @@ function bestRows(primary: number, secondary: number, boxLength: number, boxWidt
   return best;
 }
 
-/** How many cartons of one size go on one pallet standing upright: PalletCalculator's upright fit. */
+/**
+ * How many cartons of one size go on one pallet standing upright: PalletCalculator's upright fit. A layer is
+ * counted on the load floor (the floor plus the pallet's spill, loadFloor); the height and the weight are not.
+ */
 export function palletFitUpright(carton: CartonSize, pallet: PalletSpec): PalletFit {
   const { lengthCm, widthCm, heightCm } = carton;
   if (!positive(lengthCm) || !positive(widthCm) || !positive(heightCm)) return none('afmetingen ontbreken');
+  const floor = loadFloor(pallet);
   const perLayer = Math.max(
-    bestRows(pallet.lengthCm, pallet.widthCm, lengthCm, widthCm),
-    bestRows(pallet.widthCm, pallet.lengthCm, lengthCm, widthCm));
+    bestRows(floor.lengthCm, floor.widthCm, lengthCm, widthCm),
+    bestRows(floor.widthCm, floor.lengthCm, lengthCm, widthCm));
   if (perLayer <= 0) return none('doos past niet op de pallet');
 
   const layersByHeight = Math.max(0, floorDiv(pallet.maxHeightCm - pallet.baseHeightCm, heightCm));
@@ -354,10 +430,13 @@ export interface LayerSlot { x: number; z: number; lengthCm: number; widthCm: nu
 
 /**
  * Where the perLayer omdozen of palletFitUpright lie: the rows of bestRows in the
- * direction that gave the most, centred on the floor. The 3D view lays a
- * computed layer with it.
+ * direction that gave the most, counted on the load floor (loadFloor) and centred on
+ * the real one. A layer wider than the real floor hangs over evenly on both sides, at
+ * most the spill of that axis (a place can then be below 0, down to minus the spill).
+ * The 3D view lays a computed layer with it.
  */
-export function layerSlots(footprint: { lengthCm: number; widthCm: number }, pallet: Pick<PalletSpec, 'lengthCm' | 'widthCm'>): LayerSlot[] {
+export function layerSlots(footprint: { lengthCm: number; widthCm: number },
+  pallet: Pick<PalletSpec, 'lengthCm' | 'widthCm' | 'spillLengthCm' | 'spillWidthCm'>): LayerSlot[] {
   const build = (primary: number, secondary: number, along: boolean): LayerSlot[] => {
     const box = footprint.lengthCm; const side = footprint.widthCm;
     let best = -1; let bestStraight = 0;
@@ -380,16 +459,20 @@ export function layerSlots(footprint: { lengthCm: number; widthCm: number }, pal
     }
     return slots;
   };
-  const alongLength = build(pallet.lengthCm, pallet.widthCm, true);
-  const alongWidth = build(pallet.widthCm, pallet.lengthCm, false);
+  const floor = loadFloor(pallet);
+  const alongLength = build(floor.lengthCm, floor.widthCm, true);
+  const alongWidth = build(floor.widthCm, floor.lengthCm, false);
   const slots = alongWidth.length > alongLength.length ? alongWidth : alongLength;
   if (!slots.length) return slots;
   const usedX = Math.max(...slots.map((slot) => slot.x + slot.lengthCm));
   const usedZ = Math.max(...slots.map((slot) => slot.z + slot.widthCm));
   /* The centring rounded once, to 0.01 cm: rounded place by place (the 3D view keeps 0.01 cm), two
-     neighbours of 33,33 cm could overlap by 0.01 cm and one then stood on the other. */
-  const offsetX = round(Math.max(0, (pallet.lengthCm - usedX) / 2), 2);
-  const offsetZ = round(Math.max(0, (pallet.widthCm - usedZ) / 2), 2);
+     neighbours of 33,33 cm could overlap by 0.01 cm and one then stood on the other. Centred on the real
+     floor: never below 0 without spill, never further out than the spill with it. */
+  const lowX = floor.offsetXCm > 0 ? -floor.offsetXCm : 0;
+  const lowZ = floor.offsetZCm > 0 ? -floor.offsetZCm : 0;
+  const offsetX = round(Math.max(lowX, (pallet.lengthCm - usedX) / 2), 2);
+  const offsetZ = round(Math.max(lowZ, (pallet.widthCm - usedZ) / 2), 2);
   return slots.map((slot) => ({ ...slot, x: slot.x + offsetX, z: slot.z + offsetZ }));
 }
 
