@@ -878,7 +878,8 @@ export class PalletCalculatorPage {
       const loaded = Math.min(100, Math.max(0, ((planned.heightCm - pallet.baseHeightCm) / usable) * 100));
       groups.push({
         from: index + 1, to: index + 1, full: planned.full, fill: planned.fill,
-        heightCm: planned.heightCm, weightKg: planned.weightKg,
+        /* To hundredths (an omdoos weighs in two decimals): 5 × 14,5 + 15 × 9,6 kg must read 217 here and in the 3D alike, never 216,4999… */
+        heightCm: planned.heightCm, weightKg: Math.round(planned.weightKg * 100) / 100,
         blocks: planned.parts.map((part) => ({
           colour: lines.get(part.key)?.colour ?? 'var(--muted)',
           pct: planned.packed ? (total > 0 ? loaded * (volume(part) / total) : 0)

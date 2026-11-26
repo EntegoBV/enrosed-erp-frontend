@@ -638,7 +638,8 @@ export class PalletBuilder {
     for (const box of this.boxes()) weightKg += items.get(box.key)?.weightKg ?? 0;
     const topCm = Math.round(spec.baseHeightCm + top);
     return {
-      count: this.boxes().length, topCm, weightKg: Math.round(weightKg),
+      /* The weight to hundredths before whole kilograms: added box by box 216,5 kg comes out as 216,4999…, and the plan's row says 217. */
+      count: this.boxes().length, topCm, weightKg: Math.round(Math.round(weightKg * 100) / 100),
       tooHigh: topCm > spec.maxHeightCm + 0.5, tooHeavy: weightKg > spec.maxWeightKg + 1e-6,
     };
   });
