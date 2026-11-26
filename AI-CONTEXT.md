@@ -6309,7 +6309,10 @@ PDF: Laadhoogte en spill" after that.
   WITHOUT its stored spill when with it the automatic count would need a carrier more than without (the packer is a
   search and the layers are first-fit: on a slightly larger floor either can need one more; proof round, finding F1).
   Then `order.palletSpillCm` is still the owner's pick (2) and `totals.palletSpillCm` is 0, and every figure of that
-  answer was counted on the floor itself.
+  answer was counted on the floor itself. The server does this only for a document WITHOUT hand pallets, and only when
+  the bare floor takes every product the floor with the spill takes; with a hand layout it counts on the stored spill
+  again (backend `SalesPricingCalculator.floorFor`). So the spill used can move between the pick and 0 whenever the
+  lines change, and when a hand layout is made or cleared.
   - **Reads the spill USED** (`totals.palletSpillCm ?? 0`, only through `plannerSpec`): everything computed or drawn.
     The planner's spec, lines and rows, `handPallets` and `checkLayout`, the room hints and Gemengd indelen, the
     order's 3D (`orderLoad3d`, `sizesChanged`, the deck's allowance, the view-only other carrier), the basis line's
@@ -6322,6 +6325,12 @@ PDF: Laadhoogte en spill" after that.
     the preview's body, the full save's "changed since the last saved document" test, "Wijzigingen weggooien",
     `layoutKey`. Nothing copies `totals.palletSpillCm` onto the order: shown as the pick, that 0 would be stored by the
     next step ("−" from a pick of 2 must send 1), and a save that did not touch the spill would change it.
+  - **`layoutKey`** (sales-editor.ts: "the figures on screen belong to this draft") holds the draft's inputs, so the
+    pick, and on a document that stores a spill also whether it has a hand layout (that decides the floor too). Right
+    after Automatisch the figures on screen are still the hand layout's (the automatic pallets beneath it, counted with
+    the spill: 4 where the document without hand pallets counts 3); the key makes them stale until the preview answers,
+    so Zelf indelen (blocked while `pricing`, and `pricingSettled` waits) never copies them. A document that stores no
+    spill has the key it always had.
   - **The line**: `spillSetAside(view)` (pick above 0, counted with 0, on pallets or karren) gives one muted line under
     the Spill row, "Telt hier zonder spill: dat scheelt een pallet." (on the kar "een kar"; `ShippingPlanner.spillNote`
     → `PlannerLoad.spillNote`). It shows only while the figures on screen were counted for the pick on screen:
@@ -6370,10 +6379,19 @@ PDF: Laadhoogte en spill" after that.
   spill. So a copy made while the server counted without spill stays good when the document later counts with 2, and
   one made at 2 when he sets 5. BELOW the copy's spill the copy is not used (the load would pass the edge by more than
   the document allows): the pallet is judged by the other tries and may read "te hoog", as for another profile or
-  height; "Indeling opnieuw maken" copies again. The order of the judges did not change (the server's twin pallet,
-  `handLoader` on today's deck, then the copy, then the holder), so only pallets none of the earlier judges takes
-  read their copy. Mind: if the server ever sets a pick aside on a document that HAS hand pallets copied with that
-  pick, those copies drop out (below their spill) until the pick counts again.
+  height; "Indeling opnieuw maken" copies again. (Only his own step down brings a hand layout below its copies' spill:
+  the server never sets a pick aside under a hand layout.)
+- **The judges of a hand pallet, in order** (`handPallets` in the planner, the listed builds of `orderLoad3d`; keep the
+  two alike): (1) a pallet the server's own list names (same omdozen) has the server's height; (2) NEW: a pallet copied
+  on a SMALLER floor than the document counts on now that still carries exactly what was copied
+  (`copiedOnSmallerFloor`) stands as it was copied, its run loaded on the floor of that day; (3) `handLoader` on
+  today's deck; (4) a part of its copy (`partOf`); (5) a part of a server pallet that holds it; (6) whole layers.
+  Step 2 is what makes "Zelf indelen starts from the automatic pallets, a copied pallet as high as the server counted
+  it" hold across the server's guard: the F1 quote (80 omdozen Rose In Dome 7*23 + 17 omdozen Flowerbox 16, pick 2,
+  priced without) shows 256,9 / 256,9 / 202,4 cm; after Zelf indelen the server counts on 2 cm again and without step
+  2 the third pallet was packed again on the larger deck and read 184,4 cm with 13 omdozen over the edge, the moment
+  the layout was made. With the same spill step 2 never applies (the server's list still names the copied pallets), so
+  nothing moved there.
 - **Known, by rule, not by this change**: (1) `palletFit` (the quote's rule: upright, lying down only when it fits no
   pallet upright) can count FEWER with more spill: an omdoos that lay down starts to fit upright and then stands. None of
   today's 42 omdoos sizes does on any carrier (at the standards 0 → 2 cm: 8 sizes take more per europallet, 7 per kar,
@@ -6385,6 +6403,12 @@ PDF: Laadhoogte en spill" after that.
   of mixed PACKED loads, e.g. 80 × DOM-7X23 + 17 × BOX16 on a europallet at 260: 3 at 0 cm, 4 at 2 cm). No screen shows
   that: the server prices such a document without its spill (the pick and the spill used, above), and Palletberekening's
   plan does the same on its own (`countedPlan`, next section).
+  (4) OPEN: a hand layout made AGAIN from under a hand layout ("Indeling opnieuw maken" after a type change, "Indeling
+  bijwerken" on the Levering card) copies the automatic pallets the server sends beneath the hand layout, and those are
+  counted on the stored spill (the server sets a pick aside only without hand pallets). On a document whose pick would
+  be set aside that is the spill's own count: one carrier more than Automatisch followed by Zelf indelen gives (the F1
+  quote: 4 against 3). Not changed in this round. A fix would let `autoLayout` first take the figures of the draft
+  WITHOUT its hand layout (clear, wait for `pricingSettled`, then copy: the layout key already makes that wait).
 - **Release order**: the frontend first, the backend 20-30 minutes later, never the other way: an older frontend
   would judge a document that stores a spill on the bare floor (false "te hoog", "Omdoosmaten gewijzigd"). This
   frontend reads both shapes: no field = 0, the row hidden until the server echoes the spill; an older backend ignores
@@ -6414,18 +6438,24 @@ PDF: Laadhoogte en spill" after that.
     gewijzigd", no label names a spill, all 1,258 sources written in that state have six parts, `pickedSpillCm` 2,
     `spillSetAside` true, the transport snapshot carries 2;
   - a copy made at 0, 1, 2, 3 read at 0 to 5, untouched and after a lowered quantity (5,178 views, 27 sets of real
-    omdozen × 6 carriers): at the copy's spill or a larger one 0 rows "te hoog" (20 views before), 0 boxes past the
-    allowance or above the height, every copy that counts stands box for box where it stood on the day of the copy
-    (35,773 pallets compared), and only those 20 views changed at all; at a smaller spill the same text as before
-    (1,308 views; 309 of them read "te hoog", as before);
-  - BE-1's six real hand layouts copied at 2: read at 5 all "compleet" (ENR-2026-0053 read "te hoog" on 4 of 15
-    before: 215 cm, now 189,4 cm as copied), read at 2 and at 0 the same text as before;
+    omdozen × 6 carriers): at the copy's spill (863 views) and at a smaller one (1,308 views; 309 of them read "te
+    hoog", as before) the same text as before; at a larger one (3,007 views) 0 rows "te hoog" (20 views before), 0
+    boxes past the allowance or above the height, every copy that counts stands box for box where it stood on the day
+    of the copy (35,773 pallets compared), the 7,015 untouched pallets the server's list does not name read the height
+    they were copied at and are drawn as those very boxes (19,675 it does name read its height); 805 of those views
+    changed against before, by rows standing as copied instead of packed again;
+  - BE-1's six real hand layouts copied at 2: read at 5 all "compleet", every row as copied (ENR-2026-0053 read "te
+    hoog" on 4 of 15 before: 215 cm, now 189,4 cm), read at 2 and at 0 the same text as before;
+  - the guarded backend's own answers (BE-FIX's jar, its saved views): the F1 quote storing 2 and priced without:
+    stepper 2, the line shown, no spill in the label, the same text as that quote storing 0; the same quote hand-laid
+    (six-part sources, the server back on 2 cm): "compleet", rows 256,9 / 256,9 / 202,4 as copied and no box over the
+    edge (184,4 and 13 over the edge before); its 48 existing documents: the text of the base backend's views;
   - `pricedPick` walked with Angular's own signals through 19 steps (step, await, answer, type under a set-aside pick,
     a failed preview): the line never shows against the figures of another pick. Mind its comment: it is read on every
     pass on purpose; short-circuited behind `spillSetAside` its first look came too late and the line flashed on the
     very first step of an old document.
   Not run in a browser: the stepper showing the pick, the line and the basis line are component code, type-checked by
-  the build only.
+  the build only; so is the layout key's wait (Automatisch, then Zelf indelen at once on a document that stores a spill).
 
 ## Palletberekening: Spill, and 3D laden draws what the plan counts (2026-11-26)
 
