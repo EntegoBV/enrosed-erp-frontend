@@ -34,7 +34,7 @@ import { DateField } from '../../shared/date-field';
 import { PageHeader } from '../../shared/page-header';
 import { Ui } from '../../shared/ui';
 import {
-  CATALOG_LOAD_STANDARD, catalogCarriers, catalogLoadFields, catalogLoadProblem, catalogueUnits, restoreCatalogLoad, storeCatalogLoad,
+  CATALOG_LOAD_STANDARD, catalogCarriers, catalogLoadDeviation, catalogLoadFields, catalogLoadProblem, catalogueUnits, restoreCatalogLoad, storeCatalogLoad,
   type CatalogLoad,
 } from './catalog-load';
 import { CatalogLoadSettings, type CatalogLoadExample } from './catalog-load-settings';
@@ -519,6 +519,8 @@ const COMPACT_PREVIEW_COPY: Record<LanguageCode, {
           <span [class.catalog-action__lang]="!!recipientLabel()">{{ languageLabel() }} · </span>{{ includePrices() ? 'Met prijzen' : 'Zonder prijzen' }}@if (recipientLabel()) { · voor {{ recipientLabel() }}}
         </div>
         <div class="action-bar__value">{{ selectedFamilyCount() }} groepen · {{ selected().size }} varianten</div>
+        <!-- A height or spill of this PDF's own, said where the download happens (it stays in the tab from the customer before). -->
+        @if (loadNote(); as note) { <div class="action-bar__value">{{ note }}</div> }
       </div>
       <div class="catalog-action__buttons">
         <button class="btn btn--primary" type="button"
@@ -773,6 +775,12 @@ export class CatalogExport {
   readonly loadChoice = signal<CatalogLoad>(restoreCatalogLoad());
   /** The server's two carriers for that pick: the preview counts on them as the PDF will. */
   readonly carriers = computed(() => catalogCarriers(this.loadChoice()));
+  /**
+   * "pallet 180 cm": what this PDF's load differs in from the standard, '' on the standard. A line of its own on
+   * the action bar and a part of the download's toast, so a height or spill still in the tab from the customer
+   * before is read at the button (the card's tinted line is some 2.300 px up a phone's page).
+   */
+  readonly loadNote = computed(() => catalogLoadDeviation(this.loadChoice()));
 
   /* Who the PDF is for and its one-off prices: they count only while "Prijzen tonen" is on (PRICE_STATE_KEY). */
   readonly customers = signal<Customer[]>([]);
@@ -1196,6 +1204,8 @@ export class CatalogExport {
     }
     const request = this.buildRequest();
     const key = JSON.stringify(request);
+    /* The load this request carries, as the bar words it: the toast after the download names the same. */
+    const loadNote = this.loadNote();
     this.renderError.set(null);
     this.renderTranslationError.set(false);
     this.missingTranslationPaths.set([]);
@@ -1226,8 +1236,9 @@ export class CatalogExport {
       saveBlob(blob, this.fileName(request, preflight));
       const notes = this.validPriceIssues(preflight.priceWarnings);
       this.priceNotes.set(notes);
-      this.ui.toast(notes.length
-        ? `Catalogus gedownload · ${notes.length} ${notes.length === 1 ? 'opmerking' : 'opmerkingen'}` : 'Catalogus gedownload');
+      /* A height or spill of this PDF's own is named with it, as on the bar: the PDF in hand was counted on it. */
+      this.ui.toast(['Catalogus gedownload', notes.length ? `${notes.length} ${notes.length === 1 ? 'opmerking' : 'opmerkingen'}` : null, loadNote]
+        .filter((part) => !!part).join(' · '));
     } catch (failure) {
       if (!this.destroyed) await this.handleRenderFailure(failure, 'Catalogus maken mislukt');
     } finally {

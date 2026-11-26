@@ -85,6 +85,21 @@ export function catalogLoadSummary(load: CatalogLoad): string {
   return `Pallet ${load.palletHeightCm} cm · Deense kar ${load.karHeightCm} cm · spill ${load.spillCm} cm`;
 }
 
+/**
+ * "pallet 180 cm · spill 0 cm": only what differs from the standard, for the place where the download happens
+ * (the studio's action bar and its "Catalogus gedownload" toast); '' on the standard. The pick stays in the tab
+ * (storeCatalogLoad), so a height set for one customer is still there for the next one: the collapsed card far up
+ * the page is then not enough, the deviation has to be read at the button (review of 2026-11-26).
+ */
+export function catalogLoadDeviation(load: CatalogLoad): string {
+  const fields = catalogLoadFields(load);
+  return [
+    fields.palletHeightCm == null ? null : `pallet ${fields.palletHeightCm} cm`,
+    fields.karHeightCm == null ? null : `kar ${fields.karHeightCm} cm`,
+    fields.spillCm == null ? null : `spill ${fields.spillCm} cm`,
+  ].filter((part): part is string => part !== null).join(' · ');
+}
+
 /** The europallet and the Deense kar a catalogue counts on, as the server builds them for the same three values. */
 export interface CatalogCarriers {
   pallet: PalletSpec;
