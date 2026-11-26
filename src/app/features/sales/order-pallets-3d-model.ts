@@ -1,11 +1,11 @@
 import type { Product, SalesOrderView } from '../../core/api/models';
 import { productSalesUnit } from '../products/product-sales-unit';
-import { settle, type BuilderBox, type BuilderItem } from './pallet-builder-model';
+import { deckOf, packedPlace, settle, type BuilderBox, type BuilderItem, type Deck } from './pallet-builder-model';
 import {
-  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, layerSlots, palletFit, productUnits, type CarrierWords, type CartonUp,
+  MAX_PLANNED_PALLETS, carrierNoun, carrierWords, cartonStanding, layerSlots, palletFit, productUnits, specSpillCm, type CarrierWords, type CartonUp,
 } from './pallet-calculator-model';
 import { copiedLoader, handLoader, partOf, readCopySource, sameItems, within } from './pallet-hand-load';
-import { ALL_SIDES, PACK_UNITS, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
+import { ALL_SIDES, packDeck, packPallets, packUnits, type PackKind, type PackedPallet } from './pallet-pack';
 import { automaticPallets, normalizeManualPalletType, palletTypeLabel } from './pallet-stack';
 import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, type PlannerSpec } from './shipping-planner-model';
 
@@ -25,8 +25,16 @@ import { autoPallets, palletCount, plannerLines, plannerSpec, type PlannerLine, 
  * pallet keeps what it carries and stands as the server would load the list
  * (pallet-hand-load.ts), else in whole layers per product, as the planner
  * estimates it. The count and the freight stay the server's. Nothing floats,
- * nothing hangs over an edge; what goes past the height shows in the
- * builder's orange and red, as the planner says "te hoog".
+ * nothing hangs over an edge by more than the document's spill; what goes
+ * past the height shows in the builder's orange and red, as the planner says
+ * "te hoog".
+ *
+ * Spill (2026-11-26): every load here is counted on the document's load
+ * floor (packDeck(spec) and layerSlots: the floor plus the spill the server
+ * counted with) and drawn on the real floor. A packed box's place is
+ * measured from the load floor's corner, so the spill comes off it
+ * (packedPlace); a layer of layerSlots is centred on the real floor already.
+ * A load wider than the floor hangs over evenly, never more than the spill.
  *
  * An order on the Deense kar shows its karren ("Kar 2"). The view-only
  * Pallet | Deense kar switch (2026-11-25) shows the other carrier too:
@@ -234,8 +242,8 @@ function take(members: Map<number, { productId: number; left: number }[]>, kind:
   return member.productId;
 }
 
-/** One pallet's boxes from what the packer laid on it, in cm, each with the product it stands for. */
-function buildOf(packed: PackedPallet | undefined, members: Map<number, { productId: number; left: number }[]>):
+/** One pallet's boxes from what the packer laid on it, in cm on the real floor (packedPlace), each with the product it stands for. */
+function buildOf(packed: PackedPallet | undefined, members: Map<number, { productId: number; left: number }[]>, floor: Deck):
   { boxes: BuilderBox[]; counts: Map<number, number> } {
   const boxes: BuilderBox[] = [];
   const counts = new Map<number, number>();
@@ -243,9 +251,7 @@ function buildOf(packed: PackedPallet | undefined, members: Map<number, { produc
     const productId = take(members, box.key);
     if (productId === null) continue;
     counts.set(productId, (counts.get(productId) ?? 0) + 1);
-    boxes.push({
-      id: boxes.length + 1, key: productId, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS, up: box.up, turned: box.turned,
-    });
+    boxes.push({ id: boxes.length + 1, key: productId, ...packedPlace(box, floor), up: box.up, turned: box.turned });
   }
   return { boxes, counts };
 }
@@ -322,7 +328,9 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
   products: ReadonlyMap<number, Product>): OrderLoad3d {
   const listed = orderPallets3d(view, spec, lines);
   if (!listed.length) return EMPTY_LOAD;
+  /* The packer's deck is the load floor; `floor` is the real one with its allowance, where the boxes are drawn. */
   const deck = packDeck(spec);
+  const floor = deckOf(spec);
   const lineOf = new Map(lines.map((line) => [line.productId, line]));
   const stocks = new Map<number, Stock>();
   for (const pallet of listed) {
@@ -354,7 +362,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
       const builds: PalletBuild[] = [];
       const word = carrierWords(spec.profile).label;
       plan.pallets.forEach((packed, index) => {
-        const { boxes, counts } = buildOf(packed, goods.members);
+        const { boxes, counts } = buildOf(packed, goods.members, floor);
         pallets.push({ label: `${word} ${index + 1}`, items: [...counts].map(([productId, cartons]) => ({ productId, cartons })), measuredCm: null, ownType: null });
         builds.push(finished(boxes, counts, stocks, goods.unmeasured, [], spec));
       });
@@ -425,8 +433,7 @@ export function orderLoad3d(view: SalesOrderView, spec: PlannerSpec, lines: read
     }
     if (load) {
       for (const box of load.boxes) {
-        boxes.push({ id: boxes.length + 1, key: box.productId, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS,
-          up: box.up, turned: box.turned });
+        boxes.push({ id: boxes.length + 1, key: box.productId, ...packedPlace(box, floor), up: box.up, turned: box.turned });
         counts.set(box.productId, (counts.get(box.productId) ?? 0) + 1);
       }
     } else stackAbove(drawn[index], boxes, stocks, spec, counts);
@@ -454,7 +461,8 @@ export interface OtherLoad3d extends OrderLoad3d {
  * All of the order's omdozen on the carrier of spec, as full as they go (pallet-pack.ts, every side allowed, as the
  * order's own 3D and PACKED): every line with omdozen, also one the order's own carrier cannot take (it may go on this
  * one on its side) and the loose omdozen of a hand layout. At most MAX_PLANNED_PALLETS carriers. No sizes-changed check:
- * the order's per-layer counts belong to its own carrier.
+ * the order's per-layer counts belong to its own carrier. The spec carries the document's own spill (standardSpec), so
+ * the look counts on the same allowance as the document.
  */
 export function orderLoadOn(lines: readonly PlannerLine[], products: ReadonlyMap<number, Product>, spec: PlannerSpec): OtherLoad3d {
   const lineOf = new Map(lines.map((line) => [line.productId, line]));
@@ -464,9 +472,10 @@ export function orderLoadOn(lines: readonly PlannerLine[], products: ReadonlyMap
   for (const productId of totals.keys()) stocks.set(productId, stockOf(productId, lineOf, products));
   const goods = loadable([...totals].map(([productId, cartons]) => ({ productId, cartons })), stocks);
   const deck = packDeck(spec);
+  const floor = deckOf(spec);
   const plan = packPallets(goods.kinds, deck, MAX_PLANNED_PALLETS);
   const word = carrierWords(spec.profile).label;
-  const placed = plan.pallets.map((packed) => buildOf(packed, goods.members));
+  const placed = plan.pallets.map((packed) => buildOf(packed, goods.members, floor));
   /* What the plan left: a kind that fits no side of this carrier (or weighs more than it carries) is too large; any
      other was left over the limit of carriers. */
   const tooLarge: { name: string; cartons: number }[] = [];
@@ -505,9 +514,10 @@ export function otherNotice3d(load: OtherLoad3d, shown: CarrierWords, own: Carri
   return notes.join(' · ');
 }
 
-/** "Europallet 120 × 80 · max 260 cm": what the 3D stands on. */
+/** "Europallet 120 × 80 · max 260 cm": what the 3D stands on; with a spill above 0 also that ("… · max 260 cm · spill 2 cm"). */
 export function palletLabel3d(spec: PlannerSpec): string {
-  return `${spec.name} · max ${Math.round(spec.maxHeightCm).toLocaleString('nl-BE')} cm`;
+  const spill = specSpillCm(spec);
+  return `${spec.name} · max ${Math.round(spec.maxHeightCm).toLocaleString('nl-BE')} cm${spill > 0 ? ` · spill ${spill.toLocaleString('nl-BE')} cm` : ''}`;
 }
 
 /** The line over the view: what it does not draw, and where it differs from the order. */

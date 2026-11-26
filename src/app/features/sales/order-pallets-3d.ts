@@ -4,7 +4,7 @@ import {
   EMPTY_BUILD, orderLoad3d, orderLoadOn, otherNotice3d, pageForListed, palletLabel3d, palletNotice3d, type OrderLoad3d, type OtherLoad3d,
 } from './order-pallets-3d-model';
 import { PalletBuilder } from './pallet-builder';
-import { CARRIER_WORDS, carrierOf, carrierWords, type CarrierKind } from './pallet-calculator-model';
+import { CARRIER_WORDS, carrierOf, carrierWords, specSpillCm, type CarrierKind } from './pallet-calculator-model';
 import { shippedPallets } from './pallet-stack';
 import { plannerLines, plannerSpec, standardSpec } from './shipping-planner-model';
 
@@ -23,6 +23,10 @@ import { plannerLines, plannerSpec, standardSpec } from './shipping-planner-mode
  * on it as full as they go (a kar at 230 cm, a europallet at 260 cm) with
  * "Alleen bekijken · de order telt 3 pallets". Nothing is stored and nothing
  * goes to the order: its count, freight and planner rows stay its own.
+ *
+ * Spill (2026-11-26): both carriers are loaded with the document's own spill
+ * (the other one at its standard height all the same); the subtitle names a
+ * spill above 0, and an omdoos within it is no warning.
  */
 @Component({
   selector: 'app-order-pallets-3d',
@@ -69,7 +73,8 @@ export class OrderPallets3d {
 
   /** The order's own carrier as the server priced it; the lines (colours, problems, counts) are always its own. */
   private readonly ownSpec = computed(() => plannerSpec(this.view()));
-  readonly spec = computed(() => (this.other() ? standardSpec(this.carrier()) : this.ownSpec()));
+  /** The other carrier stands at its standard height with the document's own spill (on a kar across the width only). */
+  readonly spec = computed(() => (this.other() ? standardSpec(this.carrier(), specSpillCm(this.ownSpec())) : this.ownSpec()));
   private readonly lines = computed(() => plannerLines(this.view(), this.ownSpec()));
   private readonly productMap = computed(() => new Map(this.products().flatMap((product) =>
     product.id == null ? [] : [[product.id, product] as const])));
@@ -120,9 +125,10 @@ export class OrderPallets3d {
     this.chosen.set(0);
   }
 
-  /** Another pallet, another carrier, or other omdozen on this one (the order changed under the view): the builder starts again from them. */
+  /** Another pallet, another carrier, another spill, or other omdozen on this one (the order changed under the view): the builder starts again from them. */
   readonly buildKey = computed(() => {
     const spec = this.spec();
-    return JSON.stringify([this.carrier(), this.page(), this.pallet()?.items ?? [], spec.lengthCm, spec.widthCm, spec.baseHeightCm, spec.maxHeightCm]);
+    return JSON.stringify([this.carrier(), this.page(), this.pallet()?.items ?? [], spec.lengthCm, spec.widthCm, spec.baseHeightCm, spec.maxHeightCm,
+      spec.spillLengthCm ?? 0, spec.spillWidthCm ?? 0]);
   });
 }

@@ -1,4 +1,4 @@
-import { cartonStanding, type CartonUp, type PalletSpec } from './pallet-calculator-model';
+import { cartonStanding, loadFloor, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import { PACK_UNITS, packPallets, packUnits, type PackKind } from './pallet-pack';
 
 /**
@@ -61,8 +61,12 @@ export interface Extent { sx: number; sy: number; sz: number }
 /** A box with its size: what stacking and drawing work with. */
 export interface Solid extends Extent { id: number; x: number; y: number; z: number }
 
-/** The floor and the room above it. */
-export interface Deck { lengthCm: number; widthCm: number; usableCm: number }
+/**
+ * The floor and the room above it. The floor is the real one, what is drawn (120 × 80); spillXCm and spillZCm
+ * are the allowance (2026-11-26): how far an omdoos may stick out past it along the length (x, both ends) and
+ * across the width (z, both sides). 0 without spill; on the Deense kar x is always 0.
+ */
+export interface Deck { lengthCm: number; widthCm: number; usableCm: number; spillXCm: number; spillZCm: number }
 
 /** One product's share of the computed carrier, bottom to top. */
 export interface BuilderPart { key: number; cartons: number }
@@ -70,7 +74,23 @@ export interface BuilderPart { key: number; cartons: number }
 const EPSILON = 1e-6;
 
 export function deckOf(spec: PalletSpec): Deck {
-  return { lengthCm: spec.lengthCm, widthCm: spec.widthCm, usableCm: Math.max(0, spec.maxHeightCm - spec.baseHeightCm) };
+  const floor = loadFloor(spec);
+  return {
+    lengthCm: spec.lengthCm, widthCm: spec.widthCm, usableCm: Math.max(0, spec.maxHeightCm - spec.baseHeightCm),
+    spillXCm: floor.offsetXCm, spillZCm: floor.offsetZCm,
+  };
+}
+
+/**
+ * A packed box's place on the real floor, in cm. The packer (pallet-pack.ts) measures from the corner of the
+ * deck it was given, the load floor (packDeck), which lies the spill before the real floor's corner on each
+ * axis; it centres a load on its deck, so a load wider than the real floor hangs over evenly, never more than
+ * the spill. Without spill the place is the packer's own.
+ */
+export function packedPlace(box: { x: number; y: number; z: number }, deck: Pick<Deck, 'spillXCm' | 'spillZCm'>): { x: number; y: number; z: number } {
+  return {
+    x: (box.x - packUnits(deck.spillXCm)) / PACK_UNITS, y: box.y / PACK_UNITS, z: (box.z - packUnits(deck.spillZCm)) / PACK_UNITS,
+  };
 }
 
 export function sized(item: Pick<BuilderItem, 'lengthCm' | 'widthCm' | 'heightCm'>): boolean {
@@ -133,18 +153,31 @@ export function settle(boxes: readonly BuilderBox[], items: ReadonlyMap<number, 
  * How far a box goes past the carrier: over the floor's edge (side) and above
  * the loading height (top), in cm. A little (up to SPILL_LITTLE_CM, Emre
  * 2026-11-15: "als het net spilt oranje, te veel in het rood") shows orange,
- * more shows red; the box stands either way.
+ * more shows red; the box stands either way. Over an edge only what is past
+ * the deck's allowance is judged (pastCm; 2026-11-26: a spill of 2 cm is
+ * allowed, so a box 2 cm over the edge is no warning, one 4 cm over is 2 cm
+ * past and orange, more than 7 cm over is red). The height keeps its own rule.
  */
-export interface Spill { sideCm: number; topCm: number; level: SpillLevel }
+export interface Spill {
+  /** Past the real floor's edge, the allowed part included. */
+  sideCm: number;
+  /** Of that, what is past the allowance: the same as sideCm on a deck without spill. */
+  pastCm: number;
+  topCm: number;
+  level: SpillLevel;
+}
 export type SpillLevel = 'none' | 'little' | 'much';
 export const SPILL_LITTLE_CM = 5;
 
 export function spillOf(solid: Pick<Solid, 'x' | 'y' | 'z' | 'sx' | 'sy' | 'sz'>, deck: Deck): Spill {
-  const side = Math.max(0, -solid.x, solid.x + solid.sx - deck.lengthCm, -solid.z, solid.z + solid.sz - deck.widthCm);
+  const overX = Math.max(0, -solid.x, solid.x + solid.sx - deck.lengthCm);
+  const overZ = Math.max(0, -solid.z, solid.z + solid.sz - deck.widthCm);
+  const side = Math.max(overX, overZ);
+  const past = Math.max(0, overX - deck.spillXCm, overZ - deck.spillZCm);
   const top = Math.max(0, solid.y + solid.sy - deck.usableCm);
-  const worst = Math.max(side, top);
+  const worst = Math.max(past, top);
   const level: SpillLevel = worst <= 0.05 ? 'none' : worst <= SPILL_LITTLE_CM + EPSILON ? 'little' : 'much';
-  return { sideCm: round(side), topCm: round(top), level };
+  return { sideCm: round(side), pastCm: round(past), topCm: round(top), level };
 }
 
 export interface Landing { x: number; y: number; z: number; spill: Spill }
@@ -307,8 +340,10 @@ export function packedFill(items: ReadonlyMap<number, BuilderItem>, parts: reado
     kind.count += cartons;
     members.get(kind.key)?.push({ key: item.key, left: cartons });
   }
+  /* The packer's deck is the load floor, as packDeck gives it: the real floor plus the allowance on both sides. */
   const pack = packPallets([...bySize.values()], {
-    length: packUnits(deck.lengthCm), width: packUnits(deck.widthCm), height: packUnits(deck.usableCm), maxWeight: Math.max(0, packUnits(maxWeightKg)),
+    length: packUnits(deck.lengthCm + 2 * deck.spillXCm), width: packUnits(deck.widthCm + 2 * deck.spillZCm),
+    height: packUnits(deck.usableCm), maxWeight: Math.max(0, packUnits(maxWeightKg)),
   }, 1);
   const boxes: BuilderBox[] = [];
   let id = firstId;
@@ -316,7 +351,7 @@ export function packedFill(items: ReadonlyMap<number, BuilderItem>, parts: reado
     const member = members.get(box.key)?.find((candidate) => candidate.left > 0);
     if (!member) continue;
     member.left -= 1;
-    boxes.push({ id: id++, key: member.key, x: box.x / PACK_UNITS, y: box.y / PACK_UNITS, z: box.z / PACK_UNITS, up: box.up, turned: box.turned });
+    boxes.push({ id: id++, key: member.key, ...packedPlace(box, deck), up: box.up, turned: box.turned });
   }
   return boxes;
 }

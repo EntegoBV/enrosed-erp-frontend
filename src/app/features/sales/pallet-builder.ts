@@ -38,9 +38,9 @@ export interface BoxCard {
   spill: { text: string; much: boolean } | null;
 }
 
-/** "Steekt 2 cm uit · 6 cm te hoog": how a box goes past the carrier. */
+/** "Steekt 2 cm uit · 6 cm te hoog": how a box goes past the carrier. Over an edge only once it passes the carrier's spill (pastCm); the figure is the whole overhang. */
 function spillText(spill: Spill): string | null {
-  const side = spill.sideCm > 0.05 ? `Steekt ${cm(Math.ceil(spill.sideCm * 2) / 2)} cm uit` : null;
+  const side = spill.pastCm > 0.05 ? `Steekt ${cm(Math.ceil(spill.sideCm * 2) / 2)} cm uit` : null;
   const top = spill.topCm > 0.05 ? `${cm(Math.ceil(spill.topCm * 2) / 2)} cm boven de max. hoogte` : null;
   return side && top ? `${side} · ${cm(Math.ceil(spill.topCm * 2) / 2)} cm te hoog` : side ?? top;
 }

@@ -98,7 +98,7 @@ export class BuilderScene {
   private moved = false;
   private markedKeys: ReadonlySet<number> | null = null;
   private hiddenId: number | null = null;
-  private deck: Deck = { lengthCm: 120, widthCm: 80, usableCm: 240 };
+  private deck: Deck = { lengthCm: 120, widthCm: 80, usableCm: 240, spillXCm: 0, spillZCm: 0 };
   private base = 14.4;
   private frame = 0;
   private dirty = true;
