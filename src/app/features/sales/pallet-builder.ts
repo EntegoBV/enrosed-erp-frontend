@@ -10,10 +10,11 @@ import { NumPipe } from '../../shared/pipes';
 import { Segmented, type SegmentOption } from '../../shared/segmented';
 import { CARRIERS, CARRIER_WORDS, type CarrierKind, type CartonUp, type PalletSpec } from './pallet-calculator-model';
 import {
-  MAX_BUILDER_BOXES, collides, deckOf, dropBuild, extentOf, insideFirst, landing, loadBuild, nearestSpot, placesNear, relaidWithOne, ridersOf, sameBuild,
+  MAX_BUILDER_BOXES, collides, deckOf, dropBuild, extentOf, insideFirst, landing, loadBuild, nearestSpot, packedWithOne, placesNear, relaidWithOne, ridersOf, sameBuild,
   saveBuild, settle, sidesOf, sized, solidsOf, spillOf, spotHangs, tapSpot, type BuilderBox, type BuilderItem, type Landing, type Solid, type Spill, type SpillLevel,
 } from './pallet-builder-model';
 import { BuilderScene } from './pallet-builder-scene';
+import { ALL_SIDES, UPRIGHT } from './pallet-pack';
 
 interface Target extends Landing { up: CartonUp; turned: boolean }
 
@@ -97,8 +98,10 @@ const TABLET_QUERY = '(hover: none) and (orientation: landscape) and (min-width:
  * the page shown as counted again; a tap or "+" follows the count's own
  * layer unless a corner rests lower (tapSpot), and when no place is left on
  * a carrier of one omdoos size its omdozen are laid again in the count's
- * layers with one more (relaidWithOne), so the card's count can always be
- * tapped, from an empty carrier and from a page as counted alike. A build changed by hand stays on
+ * layers with one more (relaidWithOne), and where the layers take no more,
+ * loaded again as full as they go with one more (packedWithOne, 2026-11-27),
+ * so the card's count (its full carrier) can always be tapped, from an empty
+ * carrier and from a page as counted alike. A build changed by hand stays on
  * this device under a key that names everything the count depends on
  * (storeKey), so another height, spill or quantity opens on the plan.
  * Spill: an omdoos may pass the floor's edge by the carrier's spill; within
@@ -1081,9 +1084,11 @@ export class PalletBuilder {
    * One more omdoos of this product, on this side: on the place tapSpot gives. When there is none, or that place
    * is partly in the air (spotHangs), and the carrier holds only omdozen of its size, they are laid again in the
    * count's own layers with the new one (relaidWithOne: one step for Ongedaan, the standing ones glide to their
-   * places), so a page as counted takes taps up to the card's count and nothing rests half on a box. Else the
-   * place stands, or there is none. It is chosen, and it is said when the load is now past the carrier's weight
-   * (it stands all the same).
+   * places), so a page as counted takes taps up to the card's count and nothing rests half on a box. When no place
+   * and no layers take one more, they are loaded again as full as they go with the new one (packedWithOne, as
+   * Automatisch lays them: the card's full carrier, 14 steelrozen where the layers stop at 12). Else the place
+   * stands, or there is none. It is chosen, and it is said when the load is now past the carrier's weight (it
+   * stands all the same).
    */
   private addBox(item: BuilderItem, up: CartonUp): void {
     if (this.boxes().length >= MAX_BUILDER_BOXES) { this.say('Dat zijn genoeg omdozen'); return; }
@@ -1091,14 +1096,18 @@ export class PalletBuilder {
     const solids = solidsOf(this.boxes(), this.itemMap());
     const spot = tapSpot(solids, item, up, this.deck());
     const relaid = spot && !spotHangs(solids, item, spot) ? null : relaidWithOne(this.boxes(), this.itemMap(), item, id, this.deck());
-    if (!spot && !relaid) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
+    const packed = !spot && !relaid
+      ? packedWithOne(this.boxes(), this.itemMap(), item, id, this.deck(), this.spec().maxWeightKg, this.turnable() ? ALL_SIDES : UPRIGHT) : null;
+    const moved = relaid ?? packed;
+    if (!spot && !moved) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }
     this.nextId = id + 1;
-    if (relaid) this.scene?.animateNext(new Set(this.boxes().map((box) => box.id)));
-    this.commit(relaid ?? [...this.boxes(), { id, key: item.key, ...spot! }]);
+    if (moved) this.scene?.animateNext(new Set(this.boxes().map((box) => box.id)));
+    this.commit(moved ?? [...this.boxes(), { id, key: item.key, ...spot! }]);
     this.selected.set(id);
     if (item.weightKg > 0 && this.stats().tooHeavy) {
       this.say(`Meer dan ${this.spec().maxWeightKg.toLocaleString('nl-BE')} kg op deze ${this.one()}`);
     } else if (relaid) this.say('Opnieuw gestapeld in hele lagen');
+    else if (packed) this.say('Opnieuw gestapeld, zo vol mogelijk');
     else this.hostBridge.haptic('selection');
   }
 

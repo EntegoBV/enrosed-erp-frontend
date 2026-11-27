@@ -8,19 +8,23 @@ import { packDeck, packPallets, packUnits, type PackDeck, type PackKind, type Pa
  * moeten kantelen, dit moet automatisch kunnen"). Whole layers on one side (palletFit and friends) give 10
  * upright and 12 on the side; stacks side by side, some on the side and some on the end, take 14 at 218 cm.
  * The packer (pallet-pack.ts, the very steps a PACKED document counts with) finds that load, so the figure a
- * card, a tile, the product page and the catalogue show is what a new quote puts on one pallet.
+ * card, a tile, the product page and the catalogue show is what a new quote puts on each pallet.
+ *
+ * The figure is a PER-CARRIER figure that holds for any number of carriers: the packer fills pallet after
+ * pallet from what is left, each from plenty, so k carriers' worth makes k carriers. A count one carrier
+ * takes only on its own (the first try of 2026-11-27 climbed to it: 21 bowls of 40 × 30 × 38 on a kar where
+ * the packer loads 20 per kar from plenty, so 42 counted 3 karren) is never shown.
  *
  * The search, free of Angular and identical to the server's PalletCalculator.fullLoad (keep the two alike):
- * 1. the most omdozen the floor and the weight could ever take (the deck's volume, the weight limit): the bound;
- * 2. the packer's first pallet from more than that, so it fills as full as it gets;
- * 3. that many alone must go on one pallet (the packer is a search: the count it reaches from plenty is checked
- *    as a load of its own), else one fewer, at most STEPS_DOWN times, never below the layers' count;
- * 4. then one more at a time while that still goes on one pallet alone, from that count or, without one above
- *    the layers, from the layers' count (the search can reach a pallet more from fewer omdozen: 41 and 42 bowls
- *    of 40 × 30 × 38 go where it stops at 40 from plenty);
- * 5. the layers (`layer`) where they take as many or more: the figure is never below what whole layers count.
- * An omdoos so small that more than MAX_SEARCHED could go on is left to the layers (the packer would lay
- * thousands of boxes, for a figure the layers give within a few omdozen).
+ * 1. nothing fits as whole layers (`layer` 0: too large or too heavy on every side): none fits, as the packer
+ *    has no side either (decided before any size is converted, so an absurd size never reaches the packer);
+ * 2. the most omdozen the floor and the weight could ever take (the deck's volume, the weight limit): the bound;
+ *    at most the layers' count, or more than MAX_SEARCHED (the packer would lay thousands of boxes for a figure
+ *    the layers give within a few omdozen): the layers stand;
+ * 3. the packer's first pallet from more than the bound, so it fills as full as it gets from plenty;
+ * 4. that many alone must go on one pallet too (the last pallet of a load is packed from what is left), else
+ *    one fewer, at most STEPS_DOWN times, never below the layers' count;
+ * 5. the layers where they take as many or more: the figure is never below what whole layers count.
  *
  * No step of the packer changes: it stays frozen for PACKED documents. This only asks it for one full pallet.
  */
@@ -72,7 +76,7 @@ function alone(kind: (count: number) => PackKind, deck: PackDeck, count: number)
 export function fullLoad(carton: CartonSize, pallet: PalletSpec, sides: readonly CartonUp[], layer: PalletFit): FullLoad {
   const length = packUnits(carton.lengthCm ?? 0); const width = packUnits(carton.widthCm ?? 0); const height = packUnits(carton.heightCm ?? 0);
   const weight = carton.weightKg && carton.weightKg > 0 ? packUnits(carton.weightKg) : 0;
-  if (!(length > 0 && width > 0 && height > 0) || !sides.length) return layerLoad(layer);
+  if (layer.cartonsPerPallet <= 0 || !(length > 0 && width > 0 && height > 0) || !sides.length) return layerLoad(layer);
   const deck = packDeck(pallet);
   const key = [length, width, height, weight, deck.length, deck.width, deck.height, deck.maxWeight, sides.join(''),
     layer.cartonsPerPallet, layer.heightCm, layer.up, pallet.baseHeightCm].join('|');
@@ -100,14 +104,6 @@ function search(length: number, width: number, height: number, weight: number, d
     load = alone(kind, deck, count);
     if (load) break;
     count -= 1;
-  }
-  /* Without a packed load above the layers, the layers stand and the next count is tried from there. */
-  if (!load) count = layer.cartonsPerPallet;
-  while (count < bound) {
-    const more = alone(kind, deck, count + 1);
-    if (!more) break;
-    count += 1;
-    load = more;
   }
   if (!load || count <= layer.cartonsPerPallet) return layers;
   return {

@@ -161,10 +161,11 @@ export type KeptCard = readonly [productId: number, lengthCm: number, widthCm: n
  * The key a build of 3D laden is kept under on this device: everything the plan depends on. Another carrier
  * or pallet type, height, spill, switch, card, omdoos size, quantity or page gives another key, so the view
  * opens on the plan again and never on a load made for another count (before 2026-11-26 the key was the
- * carrier alone: a pallet built at 260 cm came back, red above the frame, at 220).
+ * carrier alone: a pallet built at 260 cm came back, red above the frame, at 220). Tag 'pc2' since 2026-11-27:
+ * a build kept before the full carrier (Automatisch laid 12 steelrozen where 14 go) never comes back.
  */
 export function builderStoreKey(settings: {
   carrier: string; type: string; maxHeightCm: number; spillCm: number; turnable: boolean; cards: readonly KeptCard[]; page: number;
 }): string {
-  return JSON.stringify(['pc', settings.carrier, settings.type, settings.maxHeightCm, settings.spillCm, settings.turnable ? 1 : 0, settings.cards, settings.page]);
+  return JSON.stringify(['pc2', settings.carrier, settings.type, settings.maxHeightCm, settings.spillCm, settings.turnable ? 1 : 0, settings.cards, settings.page]);
 }

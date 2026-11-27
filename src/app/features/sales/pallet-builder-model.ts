@@ -493,6 +493,39 @@ export function relaidWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<n
   return solidsOf(relaid, items).every((solid) => solid.y + solid.sy <= deck.usableCm + EPSILON) ? relaid : null;
 }
 
+/**
+ * No place in the layers either (relaidWithOne gave none) on a carrier that holds only omdozen of this size: the
+ * same omdozen and one more loaded as the packer loads them (packedFill, what Automatisch lays), so taps reach the
+ * card's full carrier (2026-11-27: the card says 14 steelrozen at 230 cm, the count's layers stop at 12; review of
+ * that day: "+" said "Geen plaats meer" at 12). Each omdoos keeps its id and its product, per product the lowest
+ * standing one in the lowest place; the new one gets `newId`. One step for Ongedaan, as relaidWithOne. Null when
+ * another size stands on the carrier, or the packer does not take them all on this one carrier under the height.
+ */
+export function packedWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>, item: BuilderItem, newId: number,
+  deck: Deck, maxWeightKg: number, sides: readonly CartonUp[]): BuilderBox[] | null {
+  if (!boxes.length || !sized(item)) return null;
+  const sameSize = (other: BuilderItem | undefined) => !!other && Math.abs(other.lengthCm - item.lengthCm) <= EPSILON
+    && Math.abs(other.widthCm - item.widthCm) <= EPSILON && Math.abs(other.heightCm - item.heightCm) <= EPSILON;
+  if (!boxes.every((box) => sameSize(items.get(box.key)))) return null;
+  const counts = new Map<number, number>();
+  for (const box of boxes) counts.set(box.key, (counts.get(box.key) ?? 0) + 1);
+  counts.set(item.key, (counts.get(item.key) ?? 0) + 1);
+  const filled = packedFill(items, [...counts].map(([key, cartons]) => ({ key, cartons })), deck, maxWeightKg, sides, 1);
+  if (filled.length !== boxes.length + 1) return null;
+  const standing = new Map<number, BuilderBox[]>();
+  for (const box of [...boxes].sort((left, right) => left.y - right.y || left.id - right.id)) {
+    standing.set(box.key, [...(standing.get(box.key) ?? []), box]);
+  }
+  const placed = [...filled].sort((left, right) => left.y - right.y || left.z - right.z || left.x - right.x);
+  const relaid = placed.map((box) => {
+    const kept = standing.get(box.key)?.shift();
+    return kept ? { ...box, id: kept.id } : { ...box, id: newId };
+  });
+  if (relaid.filter((box) => box.id === newId).length !== 1) return null;
+  const settled = settle(relaid, items);
+  return solidsOf(settled, items).every((solid) => solid.y + solid.sy <= deck.usableCm + EPSILON) ? settled : null;
+}
+
 /** One product's omdozen for a stack of whole layers: its omdoos and the side the count stands it on. */
 export interface LayerStock { key: number; cartons: number; lengthCm: number; widthCm: number; heightCm: number; up: CartonUp }
 

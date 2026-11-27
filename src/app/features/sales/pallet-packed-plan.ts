@@ -1,5 +1,5 @@
 import {
-  MAX_PLANNED_PALLETS, planPallets, shareOnePallet, specSpillCm, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
+  MAX_PLANNED_PALLETS, loadFloor, planPallets, shareOnePallet, specSpillCm, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
 } from './pallet-calculator-model';
 import { packDeck, packPallets, packUnits, type PackKind, type PackResult, type PackedBox } from './pallet-pack';
 
@@ -99,7 +99,11 @@ export function packedPlan(lines: readonly PackLine[], pallet: PalletSpec, sides
       weightKg += part.cartons * (byKey.get(part.key)?.weightKg ?? 0);
     }
     const list = [...parts.values()];
-    const fill = Math.min(1, Math.max(usable > 0 ? packed.top / usable : 0, pallet.maxWeightKg > 0 ? weightKg / pallet.maxWeightKg : 0));
+    /* One product: its share of a full carrier of it (2026-11-27: the packer stands 13 steelrozen lower than 12,
+       so the height read 98 %, 81 %, 98 % for 12, 13, 14); several: the height or the weight, whichever is more. */
+    const alone = list.length === 1 ? fullAt(list[0].key) : Number.POSITIVE_INFINITY;
+    const fill = Number.isFinite(alone) && alone > 0 ? Math.min(1, list[0].cartons / alone)
+      : Math.min(1, Math.max(usable > 0 ? packed.top / usable : 0, pallet.maxWeightKg > 0 ? weightKg / pallet.maxWeightKg : 0));
     const full = (list.length === 1 && list[0].cartons >= fullAt(list[0].key)) || fill >= 0.995;
     return { parts: list, heightCm: pallet.baseHeightCm + packed.top / 100, weightKg, fill: full ? 1 : fill, full, packed: true };
   });
@@ -133,33 +137,64 @@ export function bestPlan(layers: readonly PlanLine[], packs: readonly PackLine[]
 }
 
 /**
+ * The top-up's work: packer runs times the omdoos sizes in the share, at most this much. A run loads the whole
+ * carrier, and one that refuses tries again from every first block, which costs more with every size: 1 to 4
+ * products get 24 runs, 12 products 8 (review of 2026-11-27: 12 cards on a blokpallet of 300 cm took 0,8 s on a
+ * Mac with 24 runs each).
+ */
+export const SHARE_TOP_UP_WORK = 96;
+/** A share of more omdozen than 3D laden draws (MAX_BUILDER_BOXES) keeps its whole layers. */
+const SHARE_TOP_UP_MOST = 600;
+
+/**
  * One carrier shared by these products, as full as it goes (Emre, 2026-11-27: "alle producten, ook gecombineerd,
  * dus altijd vullen volledig eerste pallet"): Verdeel's whole layers first (shareOnePallet: the product with the
- * least height takes the next layer), then one omdoos more at a time for the product with the least volume on the
- * carrier so far (line order on a tie), kept only where the packer still loads every omdoos on this one carrier;
- * a product it refuses is done. A share the packer cannot load on one carrier stays as the layers gave it (the
- * plan then counts it in layers, one carrier all the same). Returns omdozen per key, as shareOnePallet does.
+ * least height takes the next layer), then topped up: the product with the least volume on the carrier (line order
+ * on a tie) takes its next step of omdozen, kept only where the packer still loads every omdoos on this one
+ * carrier. A product's step starts at 1 and doubles after a kept step and halves after a refused one; a refused
+ * single omdoos ends that product. A step that cannot fit the carrier's free volume or weight is refused without
+ * asking the packer. The work is bounded (review of 2026-11-27: one omdoos per packer run froze the page for
+ * seconds to minutes with small or mistyped omdozen): runs times sizes at most SHARE_TOP_UP_WORK, and no top-up at all
+ * for a share of more than SHARE_TOP_UP_MOST omdozen or one the packer cannot load on one carrier (the plan then
+ * counts it in layers, one carrier all the same). Returns omdozen per key, as shareOnePallet does.
  */
 export function shareFullPallet(layers: readonly Omit<PlanLine, 'cartons'>[], packs: readonly PackLine[], pallet: PalletSpec,
   sides: readonly CartonUp[]): Map<number, number> {
   const shared = shareOnePallet(layers, pallet);
   const sized = packs.filter((pack) => shared.has(pack.key) && pack.lengthCm > 0 && pack.widthCm > 0 && pack.heightCm > 0);
-  if (!sized.length) return shared;
+  const total = [...shared.values()].reduce((sum, cartons) => sum + cartons, 0);
+  if (!sized.length || total <= 0 || total > SHARE_TOP_UP_MOST) return shared;
+  let runs = 0;
   const onOne = (counts: ReadonlyMap<number, number>) => {
+    runs += 1;
     const loaded = packedPlan(sized.map((pack) => ({ ...pack, cartons: counts.get(pack.key) ?? 0 })), pallet, sides,
       () => Number.POSITIVE_INFINITY, 1);
     return !!loaded && loaded.length === 1;
   };
-  if (![...shared.values()].some((cartons) => cartons > 0) || !onOne(shared)) return shared;
+  if (!onOne(shared)) return shared;
   const counts = new Map(shared);
+  const floor = loadFloor(pallet);
+  const room = floor.lengthCm * floor.widthCm * Math.max(0, pallet.maxHeightCm - pallet.baseHeightCm);
+  const volumeOf = (pack: PackLine) => pack.lengthCm * pack.widthCm * pack.heightCm;
+  const loaded = (of: (pack: PackLine) => number) => sized.reduce((sum, pack) => sum + (counts.get(pack.key) ?? 0) * of(pack), 0);
+  const step = new Map(sized.map((pack) => [pack.key, 1]));
   const open = new Set(sized.map((pack) => pack.key));
-  const volume = (pack: PackLine) => (counts.get(pack.key) ?? 0) * pack.lengthCm * pack.widthCm * pack.heightCm;
-  while (open.size) {
+  const most = Math.max(1, Math.floor(SHARE_TOP_UP_WORK / sized.length));
+  while (open.size && runs < most) {
     let pick: PackLine | null = null;
-    for (const pack of sized) if (open.has(pack.key) && (!pick || volume(pack) < volume(pick) - 1e-9)) pick = pack;
+    for (const pack of sized) {
+      if (!open.has(pack.key)) continue;
+      if (!pick || (counts.get(pack.key) ?? 0) * volumeOf(pack) < (counts.get(pick.key) ?? 0) * volumeOf(pick) - 1e-9) pick = pack;
+    }
     if (!pick) break;
-    const tried = new Map(counts).set(pick.key, (counts.get(pick.key) ?? 0) + 1);
-    if (onOne(tried)) counts.set(pick.key, tried.get(pick.key) ?? 0);
+    const size = step.get(pick.key) ?? 1;
+    const fitsRoom = size * volumeOf(pick) <= room - loaded(volumeOf) + 1e-6
+      && (!(pallet.maxWeightKg > 0) || size * pick.weightKg <= pallet.maxWeightKg - loaded((pack) => pack.weightKg) + 1e-9);
+    const tried = new Map(counts).set(pick.key, (counts.get(pick.key) ?? 0) + size);
+    if (fitsRoom && onOne(tried)) {
+      counts.set(pick.key, tried.get(pick.key) ?? 0);
+      step.set(pick.key, size * 2);
+    } else if (size > 1) step.set(pick.key, Math.max(1, Math.floor(size / 2)));
     else open.delete(pick.key);
   }
   return counts;
