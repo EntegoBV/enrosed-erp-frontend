@@ -42,6 +42,8 @@ import {
 import { autoCartonWeightKg, autoPiecesPerCarton } from './carton-auto';
 import { gpCapacityHint, isAutoGpCapacity, readGpCapacity } from './carton-capacity';
 import { karSpec, KAR_MAX_HEIGHT_CM, palletFit, palletSpec, PALLET_MAX_HEIGHT_CM, STANDARD_SPILL_CM } from '../sales/pallet-calculator-model';
+import { fullLoadWords } from '../sales/pallet-full';
+import { catalogueCartons } from './catalog-load';
 import { Skeleton } from '../../shared/skeleton';
 import { Sheet, Ui } from '../../shared/ui';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
@@ -734,32 +736,38 @@ export class ProductView {
   readonly isAutoGpCapacity = isAutoGpCapacity;
   readonly gpCapacityHint = gpCapacityHint;
   /**
-   * Whole omdozen on one europallet and on one Deense kar, as a standard catalogue prints them: upright, laid
-   * down only when they fit no pallet upright, at the standard heights (260 cm, 230 cm) with the standard
-   * spill (2 cm past the edge since 2026-11-26; on the kar across its width only, karSpec). Palletberekening
-   * can count other heights and another spill and tip every omdoos; a catalogue PDF can be made for other
-   * heights too (the studio's "Laadhoogte en spill").
+   * Whole omdozen on one europallet and on one Deense kar, as a standard catalogue prints them: a full carrier as
+   * the packer loads it, every side allowed (catalogueCartons; 2026-11-27, Emre: "normaal gaan er 13 steelrozen op
+   * een pallet van 230, en jij geeft op catalogus 10"), at least palletFit's whole upright layers, at the standard
+   * heights (260 cm, 230 cm) with the standard spill (2 cm past the edge since 2026-11-26; on the kar across its
+   * width only, karSpec). Palletberekening can count other heights and another spill; a catalogue PDF can be
+   * made for other heights too (the studio's "Laadhoogte en spill").
    */
   readonly carrierLoads = computed(() => {
     const product = this.product();
     if (!product) return [];
     const perCarton = product.carton.piecesPerCarton ?? 0;
     const carton = product.carton;
+    const pallet = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM, STANDARD_SPILL_CM);
+    const kar = karSpec(KAR_MAX_HEIGHT_CM, STANDARD_SPILL_CM);
+    const palletBare = palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM);
+    const karBare = karSpec(KAR_MAX_HEIGHT_CM);
     return [
-      { label: 'Per europallet', one: 'pallet', fit: palletFit(carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM, STANDARD_SPILL_CM)),
-        inside: palletFit(carton, palletSpec('EURO_120X80', PALLET_MAX_HEIGHT_CM)) },
-      { label: 'Per Deense kar', one: 'kar', fit: palletFit(carton, karSpec(KAR_MAX_HEIGHT_CM, STANDARD_SPILL_CM)),
-        inside: palletFit(carton, karSpec(KAR_MAX_HEIGHT_CM)) },
-    ].map(({ label, one, fit, inside }) => {
-      const cartons = perCarton > 0 ? fit.cartonsPerPallet : 0;
-      /* Said only where it decides the figure: this many (or this way up) stand there only because an omdoos may pass the
-         edge. Its words stay together when the line wraps (the phone's cell wraps it: pph-wrap). */
-      const onSpill = fit.cartonsPerPallet !== inside.cartonsPerPallet || fit.up !== inside.up;
+      { label: 'Per europallet', one: 'pallet', fit: palletFit(carton, pallet), full: catalogueCartons(carton, pallet),
+        inside: catalogueCartons(carton, palletBare) },
+      { label: 'Per Deense kar', one: 'kar', fit: palletFit(carton, kar), full: catalogueCartons(carton, kar),
+        inside: catalogueCartons(carton, karBare) },
+    ].map(({ label, one, fit, full, inside }) => {
+      const cartons = perCarton > 0 ? full.cartons : 0;
+      /* Said only where it decides the figure: this many stand there only because an omdoos may pass the edge. Its words
+         stay together when the line wraps (the phone's cell wraps it: pph-wrap). */
+      const onSpill = full.cartons !== inside.cartons;
+      const how = fullLoadWords(full, fit.up);
       return {
         label,
         units: cartons > 0 ? cartons * perCarton : null,
-        cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${fit.heightCm.toLocaleString('nl-BE')} cm hoog`
-          + (fit.up === 'w' ? ' · op de zij' : fit.up === 'l' ? ' · op de korte kant' : '')
+        cartons: cartons > 0 ? `${cartons.toLocaleString('nl-BE')} ${cartons === 1 ? 'omdoos' : 'omdozen'} · ${full.heightCm.toLocaleString('nl-BE')} cm hoog`
+          + (how ? ` · ${how}` : '')
           + (onSpill ? ` · met\u00a0${STANDARD_SPILL_CM}\u00a0cm\u00a0spill` : '') : '',
         /* Why nothing fits, in Palletberekening's words (its problemText), naming this carrier. */
         problem: perCarton <= 0 ? 'inhoud per omdoos ontbreekt'

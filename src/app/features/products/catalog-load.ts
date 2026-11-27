@@ -4,6 +4,8 @@ import {
   EURO_PALLET_HEIGHT_LIMIT_CM, KAR_HEIGHT_LIMIT_CM, KAR_MAX_HEIGHT_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM,
   karSpec, minHeightCm, palletFit, palletSpec, type PalletSpec,
 } from '../sales/pallet-calculator-model';
+import { fullLoad, type FullLoad } from '../sales/pallet-full';
+import { ALL_SIDES } from '../sales/pallet-pack';
 
 /**
  * What one catalogue PDF counts its per-pallet and per-kar figures with (Emre, 2026-11-26: "Catalogus pdf
@@ -116,13 +118,24 @@ export function catalogCarriers(load: CatalogLoad): CatalogCarriers {
 }
 
 /**
- * A product's figure on a pallet or a kar as the PDF prints it: whole omdozen (palletFit: upright, laid down
- * only when it fits no carrier upright) times what one omdoos holds, in the unit of 20ft and 40ft. Null when
- * nothing fits or the omdoos's contents are unknown (the PDF's "-").
+ * The omdozen on one carrier as the catalogue PDF counts them (the server's CataloguePalletFit, 2026-11-27): a full
+ * carrier as the packer loads it, every side allowed (fullLoad, pallet-full.ts), at least the whole upright layers
+ * of palletFit, which a quote counts with too. Before, the catalogue printed those layers alone ("alleen als het
+ * moet"); Emre (2026-11-27): "normaal gaan er 13 steelrozen op een pallet van 230, en jij geeft op catalogus 10".
+ * A new quote (PACKED) puts that many on one pallet.
+ */
+export function catalogueCartons(carton: Product['carton'], carrier: PalletSpec): FullLoad {
+  return fullLoad(carton, carrier, ALL_SIDES, palletFit(carton, carrier));
+}
+
+/**
+ * A product's figure on a pallet or a kar as the PDF prints it: a full carrier (catalogueCartons) times what one
+ * omdoos holds, in the unit of 20ft and 40ft. Null when nothing fits or the omdoos's contents are unknown (the
+ * PDF's "-").
  */
 export function catalogueUnits(product: Product, carrier: PalletSpec): number | null {
   const perCarton = product.carton.piecesPerCarton;
-  const cartons = palletFit(product.carton, carrier).cartonsPerPallet;
+  const cartons = catalogueCartons(product.carton, carrier).cartons;
   return cartons > 0 && perCarton ? cartons * perCarton : null;
 }
 

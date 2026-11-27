@@ -28,6 +28,11 @@ import type { CartonDto, OrderStep, PalletProfile, Product } from '../../core/ap
  *   upright (palletFit; Emre 2026-11-20: "alleen als het moet"). With
  *   "Omdozen mogen kantelen" off, Palletberekening counts upright only
  *   (palletFitUpright).
+ * - These fits are whole layers on ONE side. A full carrier, as cards, tiles,
+ *   the product page and the catalogue show it since 2026-11-27, is the
+ *   packer's (pallet-full.ts fullLoad): stacks side by side on any allowed
+ *   side, at least these layers (12 Steelrozen - Display at 230 cm: 14, where
+ *   the layers count 10 upright and 12 on the side).
  * - A container takes loose cartons: each product's own capacity (the hand
  *   count where one was confirmed, else full cartons on the practical
  *   volumes of the backend's ContainerType), a mix as the sum of the shares.
@@ -652,6 +657,13 @@ export interface PlanLine {
   cartonHeightCm: number;
   /** 0 when unknown: the height alone decides. */
   cartonWeightKg: number;
+  /**
+   * A full carrier of this omdoos as the packer loads it (pallet-full.ts fullLoad, 2026-11-27), at least
+   * fit.cartonsPerPallet; absent: the fit's own count. The whole layers here (planPallets, shareOnePallet,
+   * separatePallets) never read it, as the server's mixedPallets does not: it says when a carrier is full,
+   * how much one more carrier holds, and what one product alone fills.
+   */
+  fullCartons?: number;
 }
 
 export interface PalletPart {
@@ -792,7 +804,8 @@ export function roomWithoutExtraPallet(lines: readonly PlanLine[], key: number, 
   const keepsCount = (extra: number) => plan(
     lines.map((candidate, at) => (at === index ? { ...candidate, cartons: candidate.cartons + extra } : candidate))) <= count;
   let low = 0;
-  let high = line.fit.cartonsPerPallet;
+  /* Up to one full carrier of it: the packer's where it takes more than the layers (only a tried number is kept). */
+  let high = Math.max(line.fit.cartonsPerPallet, line.fullCartons ?? 0);
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
     if (keepsCount(middle)) low = middle;

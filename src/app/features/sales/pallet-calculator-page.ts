@@ -27,13 +27,14 @@ import {
   palletBrowserSections, rememberRecent, tilesByProduct, type PalletBrowserColour, type PalletBrowserTile,
 } from './pallet-browser-model';
 import { ALL_SIDES, UPRIGHT } from './pallet-pack';
-import { bestPlan, countedPlan, type CountedPlan, type PackLine } from './pallet-packed-plan';
+import { fullLoad, fullLoadWords, type FullLoad } from './pallet-full';
+import { bestPlan, countedPlan, shareFullPallet, type CountedPlan, type PackLine } from './pallet-packed-plan';
 import { builderStoreKey, plan3d, planLoads, planPage } from './pallet-plan-3d';
 import { PALLET_PRODUCT_COLOURS } from './pallet-stack';
 import {
   CARRIERS, CARRIER_WORDS, CONTAINERS, KAR_FORMER_STANDARD_CM, KAR_HEIGHT_LIMIT_CM, KAR_LENGTH_CM, KAR_MAX_HEIGHT_CM, KAR_MAX_WEIGHT_KG, KAR_POST_HEIGHT_CM, KAR_WIDTH_CM,
   MAX_PLANNED_PALLETS, PALLET_CHOICES, PALLET_FORMER_STANDARD_CM, PALLET_MAX_HEIGHT_CM, SPILL_LIMIT_CM, STANDARD_SPILL_CM, cartonCbm, cartonsFor, clampKarHeight, clampPalletHeight,
-  clampSpill, containerCapacity, containerFill, joinUnbroken, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, shareOnePallet, specSpillCm, startUnit, unitsPerCarton,
+  clampSpill, containerCapacity, containerFill, joinUnbroken, karSpec, palletFitTurnable, palletFitUpright, palletHeightLimit, palletSpec, productUnits, roomWithoutExtraPallet, separatePallets, specSpillCm, startUnit, unitsPerCarton,
   type CalcUnit, type CarrierKind, type CarrierWords, type ContainerCapacity, type ContainerChoice, type PalletFit, type PalletSpec, type PlanLine, type ProductUnits,
 } from './pallet-calculator-model';
 
@@ -60,7 +61,10 @@ interface CalcLine {
   pieceLabel: string;
   unitOptions: SegmentOption[];
   unit: CalcUnit;
+  /** Whole layers on one side: what the plan's layers, Verdeel and the 3D taps count with. */
   fit: PalletFit;
+  /** A full carrier as the packer loads it (pallet-full.ts): the figure the card and its tile show. */
+  full: FullLoad;
   containers: { container: ContainerChoice; capacity: ContainerCapacity | null }[];
   cartons: number;
   plan: PlanLine;
@@ -127,16 +131,24 @@ function cardFit(product: Product, pallet: PalletSpec, turnable: boolean): Palle
   return turnable ? palletFitTurnable(product.carton, pallet) : palletFitUpright(product.carton, pallet);
 }
 
+/**
+ * A card's full carrier (2026-11-27): as many omdozen as the packer loads on one, on the sides the switch allows,
+ * at least the card's layers. 12 Steelrozen - Display at 230 cm: 14, where the layers count 12 on the side.
+ */
+function cardFull(product: Product, pallet: PalletSpec, turnable: boolean, fit: PalletFit): FullLoad {
+  return fullLoad(product.carton, pallet, turnable ? ALL_SIDES : UPRIGHT, fit);
+}
+
 function cartonWeight(product: Product): number {
   const weightKg = product.carton.weightKg;
   return weightKg && weightKg > 0 ? weightKg : 0;
 }
 
-/** A card as the plan counts it in whole layers: the layers stand as high as the side the fit chose. */
-function planLine(product: Product, cartons: number, fit: PalletFit): PlanLine {
+/** A card as the plan counts it in whole layers: the layers stand as high as the side the fit chose; full says when a carrier is full. */
+function planLine(product: Product, cartons: number, fit: PalletFit, full: FullLoad): PlanLine {
   return {
     key: product.id as number, cartons, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : product.carton.heightCm ?? 0,
-    cartonWeightKg: cartonWeight(product),
+    cartonWeightKg: cartonWeight(product), fullCartons: full.cartons,
   };
 }
 
@@ -238,8 +250,8 @@ function packOf(line: CalcLine): PackLine {
                 @case ('capacity') {
                   @if (lines()[0]; as line) {
                     @if (line.fit.cartonsPerPallet > 0) {
-                      <h2 class="pc-sum__title">{{ line.fit.cartonsPerPallet | num }} {{ line.fit.cartonsPerPallet === 1 ? 'omdoos' : 'omdozen' }} <small>per {{ words().one }}</small></h2>
-                      @if (unitsLine(line, line.fit.cartonsPerPallet); as units) { <p class="pc-sum__units">{{ units }}</p> }
+                      <h2 class="pc-sum__title">{{ line.full.cartons | num }} {{ line.full.cartons === 1 ? 'omdoos' : 'omdozen' }} <small>per {{ words().one }}</small></h2>
+                      @if (unitsLine(line, line.full.cartons); as units) { <p class="pc-sum__units">{{ units }}</p> }
                     } @else {
                       <h2 class="pc-sum__title">Past niet</h2>
                       <p class="pc-sum__facts pc-warn">{{ line.problem }}</p>
@@ -375,9 +387,9 @@ function packOf(line: CalcLine): PackLine {
                     }
                     <tr class="pc-table__pallet">
                       <th scope="row">{{ words().title }}</th>
-                      <td>{{ cell(line.fit.cartonsPerPallet, 1) }}</td>
-                      @if (line.units.displaysPerCarton; as per) { <td>{{ cell(line.fit.cartonsPerPallet, per) }}</td> }
-                      @if (line.units.piecesPerCarton; as per) { <td>{{ cell(line.fit.cartonsPerPallet, per) }}</td> }
+                      <td>{{ cell(line.full.cartons, 1) }}</td>
+                      @if (line.units.displaysPerCarton; as per) { <td>{{ cell(line.full.cartons, per) }}</td> }
+                      @if (line.units.piecesPerCarton; as per) { <td>{{ cell(line.full.cartons, per) }}</td> }
                     </tr>
                     @for (entry of line.containers; track entry.container.id) {
                       <tr>
@@ -390,7 +402,7 @@ function packOf(line: CalcLine): PackLine {
                   </tbody>
                 </table>
                 @if (line.fit.cartonsPerPallet > 0) {
-                  <p class="pc-fit">{{ fitFacts(line.fit, line.fit.cartonsPerPallet * line.weightKg) }}</p>
+                  <p class="pc-fit">{{ fitFacts(line) }}</p>
                 }
                 <div class="pc-qtyblock">
                   <div class="pc-qty">
@@ -473,7 +485,7 @@ function packOf(line: CalcLine): PackLine {
             <div><dt>Gewicht</dt><dd>{{ line.weightKg ? cm(line.weightKg) + ' kg' : 'Onbekend' }}</dd></div>
             <div><dt>Inhoud</dt><dd>{{ contents(line) }}</dd></div>
             @if (line.cbm) { <div><dt>Volume</dt><dd>{{ line.cbm | cbm }}</dd></div> }
-            <div><dt>Op de {{ words().one }}</dt><dd>{{ line.fit.cartonsPerPallet > 0 ? fitFacts(line.fit, line.fit.cartonsPerPallet * line.weightKg) : line.problem }}</dd></div>
+            <div><dt>Op de {{ words().one }}</dt><dd>{{ line.fit.cartonsPerPallet > 0 ? fitFacts(line) : line.problem }}</dd></div>
             <div><dt>Containers</dt><dd>@for (text of containerSources(line); track text) { <span>{{ text }}</span> }</dd></div>
             <div><dt>Klant bestelt per</dt><dd>{{ orderUnit(line.product) }}</dd></div>
             <div><dt>Varianten</dt>
@@ -821,7 +833,10 @@ export class PalletCalculatorPage {
     return countedPlan(own, () => {
       const pallet = this.carrier() === 'kar' ? karSpec(this.karHeight()) : palletSpec(this.profile(), this.palletHeight());
       const turnable = this.turnable();
-      const layers = lines.map((line) => planLine(line.product, line.cartons, cardFit(line.product, pallet, turnable)));
+      const layers = lines.map((line) => {
+        const fit = cardFit(line.product, pallet, turnable);
+        return planLine(line.product, line.cartons, fit, cardFull(line.product, pallet, turnable, fit));
+      });
       /* Not beyond what the page works out pallet by pallet (the bare floor takes fewer per carrier). */
       if (separatePallets(layers) > MAX_PLANNED_PALLETS) return null;
       const fits = new Set(layers.filter((layer) => layer.fit.cartonsPerPallet > 0).map((layer) => layer.key));
@@ -1208,9 +1223,13 @@ export class PalletCalculatorPage {
     this.patch(line.row.productId, { quantity: (line.cartons + cartons) * per, unit: line.unit });
   }
 
-  /** One pallet shared out by layers; the quantities become whole omdozen. */
+  /**
+   * One carrier shared out, as full as it goes (2026-11-27): whole layers, then topped up while the packer still
+   * loads every omdoos on the one carrier (shareFullPallet); the quantities become whole omdozen.
+   */
   share(): void {
-    const shared = shareOnePallet(this.lines().map((line) => line.plan), this.pallet());
+    const lines = this.lines().filter((line) => line.fit.cartonsPerPallet > 0);
+    const shared = shareFullPallet(lines.map((line) => line.plan), lines.map((line) => packOf(line)), this.pallet(), this.sides());
     this.rows.update((rows) => rows.map((row) => shared.has(row.productId)
       ? { ...row, unit: 'carton', quantity: shared.get(row.productId) || null } : row));
   }
@@ -1254,11 +1273,21 @@ export class PalletCalculatorPage {
     return parts.length ? parts.join(' · ') : null;
   }
 
-  fitFacts(fit: PalletFit, weightKg: number): string {
-    const facts = [`${fit.perLayer} per laag × ${fit.layers} ${fit.layers === 1 ? 'laag' : 'lagen'}`, `${Math.round(fit.heightCm)} cm`];
-    if (fit.up !== 'h') facts.unshift(fit.up === 'w' ? 'Op de zij' : 'Op de korte kant');
+  /**
+   * How a full carrier of the card stands: "8 per laag × 6 lagen · 248 cm · 432 kg" where whole layers on one side
+   * give it, "Zo vol mogelijk, deels gekanteld · 218 cm · 55 kg" where the packer's stacks side by side take more
+   * (pallet-full.ts); the 3D shows how.
+   */
+  fitFacts(line: CalcLine): string {
+    const { fit, full } = line;
+    const weightKg = full.cartons * line.weightKg;
+    const words = fullLoadWords(full, fit.up);
+    const facts = full.how === 'layers'
+      ? [`${fit.perLayer} per laag × ${fit.layers} ${fit.layers === 1 ? 'laag' : 'lagen'}`, `${Math.round(fit.heightCm)} cm`]
+      : [`${Math.round(full.heightCm)} cm`];
+    if (words) facts.unshift(words.charAt(0).toUpperCase() + words.slice(1));
     if (weightKg > 0) facts.push(`${Math.round(weightKg).toLocaleString('nl-BE')} kg`);
-    if (fit.limitedBy === 'gewicht') facts.push('gewicht bepaalt');
+    if (full.limitedBy === 'gewicht') facts.push('gewicht bepaalt');
     return facts.join(' · ');
   }
 
@@ -1377,19 +1406,20 @@ export class PalletCalculatorPage {
     const unit = unitOptions.some((option) => option.id === row.unit) ? row.unit : 'carton';
     const carton = product.carton;
     const fit = cardFit(product, pallet, turnable);
+    const full = cardFull(product, pallet, turnable, fit);
     const cartons = cartonsFor(row.quantity, unit, units);
     const weightKg = cartonWeight(product);
     const problem = fit.problem ? problemText(fit.problem, words) : units.perCarton === null ? 'Doosinhoud ontbreekt' : null;
     const colour = product.colour?.trim() || null;
     return {
-      row, product, tile, unit, units, fit, cartons, weightKg, problem, unitOptions,
+      row, product, tile, unit, units, fit, full, cartons, weightKg, problem, unitOptions,
       title: [tile?.name ?? product.name, tile?.label, twin ? colour : null].filter(Boolean).join(' · '),
       colours: tile?.colours ?? (colour ? [{ name: colour, hex: product.colourHex }] : []),
       colour: PALLET_PRODUCT_COLOURS[row.slot % PALLET_PRODUCT_COLOURS.length],
       photo: tile?.photo ?? salesPhotoUrl(product),
       pieceLabel: capitalize(piece.other),
       containers: CONTAINERS.map((container) => ({ container, capacity: containerCapacity(product, units, container) })),
-      plan: planLine(product, cartons, fit),
+      plan: planLine(product, cartons, fit, full),
       cbm: (product.cartonCbm && product.cartonCbm > 0 ? product.cartonCbm : null) ?? cartonCbm(carton),
     };
   }

@@ -1,5 +1,5 @@
 import {
-  MAX_PLANNED_PALLETS, planPallets, specSpillCm, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
+  MAX_PLANNED_PALLETS, planPallets, shareOnePallet, specSpillCm, type CartonUp, type PalletPart, type PalletSpec, type PlanLine, type PlannedPallet,
 } from './pallet-calculator-model';
 import { packDeck, packPallets, packUnits, type PackKind, type PackResult, type PackedBox } from './pallet-pack';
 
@@ -126,9 +126,43 @@ export function packedLoads(lines: readonly PackLine[], pallet: PalletSpec, side
 /** As the server counts a PACKED document: loaded as full as it goes, unless whole layers need fewer pallets. */
 export function bestPlan(layers: readonly PlanLine[], packs: readonly PackLine[], pallet: PalletSpec, sides: readonly CartonUp[]): PlannedPallet[] {
   const stacked = planPallets(layers, pallet);
-  const fullAt = new Map(layers.map((line) => [line.key, line.fit.cartonsPerPallet]));
+  /* A pallet of one product is full at its full load (pallet-full.ts), not at the layers' count below it. */
+  const fullAt = new Map(layers.map((line) => [line.key, Math.max(line.fit.cartonsPerPallet, line.fullCartons ?? 0)]));
   const packed = packedPlan(packs, pallet, sides, (key) => fullAt.get(key) ?? Number.POSITIVE_INFINITY, Math.max(1, stacked.length));
   return packed && packed.length && packed.length <= stacked.length ? packed : stacked;
+}
+
+/**
+ * One carrier shared by these products, as full as it goes (Emre, 2026-11-27: "alle producten, ook gecombineerd,
+ * dus altijd vullen volledig eerste pallet"): Verdeel's whole layers first (shareOnePallet: the product with the
+ * least height takes the next layer), then one omdoos more at a time for the product with the least volume on the
+ * carrier so far (line order on a tie), kept only where the packer still loads every omdoos on this one carrier;
+ * a product it refuses is done. A share the packer cannot load on one carrier stays as the layers gave it (the
+ * plan then counts it in layers, one carrier all the same). Returns omdozen per key, as shareOnePallet does.
+ */
+export function shareFullPallet(layers: readonly Omit<PlanLine, 'cartons'>[], packs: readonly PackLine[], pallet: PalletSpec,
+  sides: readonly CartonUp[]): Map<number, number> {
+  const shared = shareOnePallet(layers, pallet);
+  const sized = packs.filter((pack) => shared.has(pack.key) && pack.lengthCm > 0 && pack.widthCm > 0 && pack.heightCm > 0);
+  if (!sized.length) return shared;
+  const onOne = (counts: ReadonlyMap<number, number>) => {
+    const loaded = packedPlan(sized.map((pack) => ({ ...pack, cartons: counts.get(pack.key) ?? 0 })), pallet, sides,
+      () => Number.POSITIVE_INFINITY, 1);
+    return !!loaded && loaded.length === 1;
+  };
+  if (![...shared.values()].some((cartons) => cartons > 0) || !onOne(shared)) return shared;
+  const counts = new Map(shared);
+  const open = new Set(sized.map((pack) => pack.key));
+  const volume = (pack: PackLine) => (counts.get(pack.key) ?? 0) * pack.lengthCm * pack.widthCm * pack.heightCm;
+  while (open.size) {
+    let pick: PackLine | null = null;
+    for (const pack of sized) if (open.has(pack.key) && (!pick || volume(pack) < volume(pick) - 1e-9)) pick = pack;
+    if (!pick) break;
+    const tried = new Map(counts).set(pick.key, (counts.get(pick.key) ?? 0) + 1);
+    if (onOne(tried)) counts.set(pick.key, tried.get(pick.key) ?? 0);
+    else open.delete(pick.key);
+  }
+  return counts;
 }
 
 /** What a plan is counted from: the cards as whole layers count them, the same omdozen as the packer takes them, and the carrier. */

@@ -1,0 +1,128 @@
+import type { CartonDto } from '../../core/api/models';
+import type { CartonUp, PalletFit, PalletSpec } from './pallet-calculator-model';
+import { packDeck, packPallets, packUnits, type PackDeck, type PackKind, type PackedPallet } from './pallet-pack';
+
+/**
+ * A full carrier of one omdoos (Emre, 2026-11-27, on 12 Steelrozen - Display, 68 × 50 × 40 cm: "normaal
+ * gaan er 13 steelrozen op een pallet van 230, en jij geeft op catalogus 10 aan", "die 13 ... heb ik zelf
+ * moeten kantelen, dit moet automatisch kunnen"). Whole layers on one side (palletFit and friends) give 10
+ * upright and 12 on the side; stacks side by side, some on the side and some on the end, take 14 at 218 cm.
+ * The packer (pallet-pack.ts, the very steps a PACKED document counts with) finds that load, so the figure a
+ * card, a tile, the product page and the catalogue show is what a new quote puts on one pallet.
+ *
+ * The search, free of Angular and identical to the server's PalletCalculator.fullLoad (keep the two alike):
+ * 1. the most omdozen the floor and the weight could ever take (the deck's volume, the weight limit): the bound;
+ * 2. the packer's first pallet from more than that, so it fills as full as it gets;
+ * 3. that many alone must go on one pallet (the packer is a search: the count it reaches from plenty is checked
+ *    as a load of its own), else one fewer, at most STEPS_DOWN times, never below the layers' count;
+ * 4. then one more at a time while that still goes on one pallet alone, from that count or, without one above
+ *    the layers, from the layers' count (the search can reach a pallet more from fewer omdozen: 41 and 42 bowls
+ *    of 40 × 30 × 38 go where it stops at 40 from plenty);
+ * 5. the layers (`layer`) where they take as many or more: the figure is never below what whole layers count.
+ * An omdoos so small that more than MAX_SEARCHED could go on is left to the layers (the packer would lay
+ * thousands of boxes, for a figure the layers give within a few omdozen).
+ *
+ * No step of the packer changes: it stays frozen for PACKED documents. This only asks it for one full pallet.
+ */
+
+type CartonSize = Pick<CartonDto, 'lengthCm' | 'widthCm' | 'heightCm' | 'weightKg'>;
+
+export interface FullLoad {
+  /** The most omdozen of this size on one carrier; 0 when none fits. */
+  cartons: number;
+  /** The loaded height of that carrier, the wood or the kar's base included; 0 when none fits. */
+  heightCm: number;
+  /**
+   * How that load stands: 'layers' is the fit's own (perLayer × layers, every omdoos on the fit's side `up`);
+   * 'packed' is the packer's, stacks side by side that may stand on different sides.
+   */
+  how: 'layers' | 'packed';
+  /** Omdozen that lie down in it (on the side or on the end): 0 when all stand upright. */
+  tipped: number;
+  /** What stops one more: the weight, or the room (the height and the floor); null when none fits. */
+  limitedBy: 'hoogte' | 'gewicht' | null;
+}
+
+/** Beyond this many omdozen on one carrier (by volume) the layers decide. */
+export const MAX_SEARCHED = 1500;
+/** How often a count reached from plenty may drop by one before the layers decide. */
+const STEPS_DOWN = 8;
+/** Results by omdoos, carrier and sides: a page asks for the same figures on every change. */
+const MEMO = new Map<string, FullLoad>();
+const MEMO_LIMIT = 600;
+
+function layerLoad(layer: PalletFit): FullLoad {
+  return {
+    cartons: layer.cartonsPerPallet, heightCm: layer.heightCm, how: 'layers',
+    tipped: layer.cartonsPerPallet > 0 && layer.up !== 'h' ? layer.cartonsPerPallet : 0, limitedBy: layer.limitedBy,
+  };
+}
+
+/** The pallet these many omdozen make on their own, or null when they need more than one. */
+function alone(kind: (count: number) => PackKind, deck: PackDeck, count: number): PackedPallet | null {
+  const result = packPallets([kind(count)], deck, 1);
+  return result.left.size === 0 && result.pallets.length === 1 ? result.pallets[0] : null;
+}
+
+/**
+ * The most omdozen of this size on one carrier and how they stand. `layer` is the whole-layer fit the caller
+ * counts with on the same spec (palletFit for the catalogue and a quote, the card's fit in Palletberekening);
+ * `sides` are the sides an omdoos may stand on (ALL_SIDES, or UPRIGHT when tipping is off).
+ */
+export function fullLoad(carton: CartonSize, pallet: PalletSpec, sides: readonly CartonUp[], layer: PalletFit): FullLoad {
+  const length = packUnits(carton.lengthCm ?? 0); const width = packUnits(carton.widthCm ?? 0); const height = packUnits(carton.heightCm ?? 0);
+  const weight = carton.weightKg && carton.weightKg > 0 ? packUnits(carton.weightKg) : 0;
+  if (!(length > 0 && width > 0 && height > 0) || !sides.length) return layerLoad(layer);
+  const deck = packDeck(pallet);
+  const key = [length, width, height, weight, deck.length, deck.width, deck.height, deck.maxWeight, sides.join(''),
+    layer.cartonsPerPallet, layer.heightCm, layer.up, pallet.baseHeightCm].join('|');
+  const known = MEMO.get(key);
+  if (known) return known;
+  const result = search(length, width, height, weight, deck, sides, layer, pallet.baseHeightCm);
+  if (MEMO.size >= MEMO_LIMIT) MEMO.clear();
+  MEMO.set(key, result);
+  return result;
+}
+
+function search(length: number, width: number, height: number, weight: number, deck: PackDeck, sides: readonly CartonUp[],
+  layer: PalletFit, baseHeightCm: number): FullLoad {
+  const layers = layerLoad(layer);
+  if (deck.maxWeight > 0 && weight > deck.maxWeight) return layers;
+  const byVolume = Math.floor((deck.length * deck.width * deck.height) / (length * width * height));
+  const byWeight = weight > 0 && deck.maxWeight > 0 ? Math.floor(deck.maxWeight / weight) : Number.POSITIVE_INFINITY;
+  const bound = Math.min(byVolume, byWeight);
+  if (bound <= layer.cartonsPerPallet || bound > MAX_SEARCHED) return layers;
+  const kind = (count: number): PackKind => ({ key: 1, length, width, height, weight, count, sides });
+  const plenty = packPallets([kind(bound + 1)], deck, 1).pallets[0];
+  let count = plenty?.counts.get(1) ?? 0;
+  let load: PackedPallet | null = null;
+  for (let step = 0; step <= STEPS_DOWN && count > layer.cartonsPerPallet; step++) {
+    load = alone(kind, deck, count);
+    if (load) break;
+    count -= 1;
+  }
+  /* Without a packed load above the layers, the layers stand and the next count is tried from there. */
+  if (!load) count = layer.cartonsPerPallet;
+  while (count < bound) {
+    const more = alone(kind, deck, count + 1);
+    if (!more) break;
+    count += 1;
+    load = more;
+  }
+  if (!load || count <= layer.cartonsPerPallet) return layers;
+  return {
+    cartons: count,
+    heightCm: Math.round((baseHeightCm + load.top / 100) * 10) / 10,
+    how: 'packed',
+    tipped: load.boxes.filter((box) => box.up !== 'h').length,
+    limitedBy: count >= byWeight ? 'gewicht' : 'hoogte',
+  };
+}
+
+/** How a full load stands, in words for a card or a product page; null when it stands upright in whole layers. */
+export function fullLoadWords(full: FullLoad, layerUp: CartonUp): string | null {
+  if (full.cartons <= 0) return null;
+  if (full.how === 'layers') return layerUp === 'w' ? 'op de zij' : layerUp === 'l' ? 'op de korte kant' : null;
+  if (!full.tipped) return 'zo vol mogelijk';
+  return full.tipped >= full.cartons ? 'zo vol mogelijk, gekanteld' : 'zo vol mogelijk, deels gekanteld';
+}

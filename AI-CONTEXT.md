@@ -5079,11 +5079,13 @@ settings view ends with its own "Alle instellingen ›" row (settings-page,
 
 **Deense kar elsewhere (2026-11-15):** the product page's Omdoos & logistiek (desk
 `product-desk.ts`, phone `product-view.ts`, shared `carrierLoads`) shows "Per europallet"
-and "Per Deense kar" next to 20ft/40ft: `palletFit` upright at the standard heights
+and "Per Deense kar" next to 20ft/40ft: a full carrier (`catalogueCartons` in catalog-load.ts,
+since 2026-11-27; see "Full carrier" below; before: `palletFit` upright) at the standard heights
 (260 / 230 cm) with the standard spill (`STANDARD_SPILL_CM`, 2 cm since 2026-11-26; the kar
 across its width only), as a standard catalogue PDF prints them, with the omdozen and the
-loaded height under it, or why nothing fits. Where the spill decides the figure (another
-count, or another side up, than on the floor itself) the line ends in "· met 2 cm spill"
+loaded height under it and how they stand ("op de zij", "zo vol mogelijk, deels gekanteld":
+`fullLoadWords`), or why nothing fits. Where the spill decides the figure (another
+count than on the floor itself) the line ends in "· met 2 cm spill"
 (14 of 84 products on the pallet, 21 on the kar today); the phone's line wraps (`pph-wrap`)
 instead of ending in an ellipsis. A catalogue PDF made for other heights (the studio's
 "Laadhoogte en spill") prints other figures than this card. The catalogue studio's Compact overzicht preview
@@ -5201,6 +5203,41 @@ adds, the answer stays in sight.
   stack, so the plan puts them on one pallet. Above 200 pallets counted per
   product (`separatePallets`, a seven-digit typo) the plan is skipped: "Meer dan
   200 pallets".
+- **Full carrier (2026-11-27, `pallet-full.ts`).** Emre on 12 Steelrozen - Display (omdoos 68 × 50 ×
+  40 cm, 3D laden at 230 cm): "Op 3d kan ik meer steelrozen drukken dan de catalogus ... normaal gaan er 13
+  steelrozen op een pallet van 230, en jij geeft op catalogus 10 aan", "als ik automatisch laat vullen vergeet
+  hij er 4", "die 13 ... heb ik zelf moeten kantelen, dit moet automatisch kunnen", and on Slim: "alle
+  producten, ook gecombineerd dus altijd vullen volledig eerste pallet daarna tweede enzo". Whole layers on one
+  side count 10 upright and 12 on the side; the packer (pallet-pack.ts) loads 14 at 218,4 cm (two stacks of 4
+  on the side, two of 3 on the end). `fullLoad(carton, spec, sides, layer)` is the most omdozen the packer puts
+  on ONE carrier, at least the layers' count (`layer`), with how they stand (`how` 'layers' | 'packed',
+  `tipped`, `heightCm`, `limitedBy`), memoised per omdoos and spec. Steps (the server's
+  `PalletCalculator.fullLoad` step for step, identical on 6,696 cases; keep the two alike): bound = min(deck
+  volume ÷ omdoos volume, weight limit ÷ weight) in pack units; above `MAX_SEARCHED` 1500 or at most the layers
+  the layers stand; the packer's first pallet from bound + 1; that count must go on one carrier ALONE, else
+  one fewer (at most 8, never below the layers); then one more at a time while that still goes alone (from the
+  layers' count when no packed count stood above it). Nothing in pallet-pack.ts changed (frozen for PACKED).
+  Where it shows:
+  - **Cards and tiles**: `CalcLine.full` (`cardFull`: the switch's sides, the card's own fit as `layer`): the
+    Pallet row, the capacity title "14 omdozen per pallet", the tile figure (pallet-browser.ts) and the fit
+    line `fitFacts(line)`: "4 per laag × 5 lagen · 229 cm · 280 kg" while the layers give it, else
+    "Zo vol mogelijk, gekanteld · 218 cm · 55 kg" (`fullLoadWords`). `line.fit` stays the layers: the plan's
+    whole layers, `separatePallets`, Verdeel's first share and the 3D taps (`item.up`) read it.
+  - **The plan**: `PlanLine.fullCartons` (optional; the sales planner sets none, so its figures did not move)
+    makes a one-product pallet "vol" at the full load (`bestPlan`'s `fullAt`) and lets "Past nog bij" offer
+    up to one full carrier (`roomWithoutExtraPallet`'s upper bound). 100 steelrozen at 230 cm: 8 pallets
+    (7 × 14 vol, 2), "+ 12 omdozen" past nog bij; the 3D pages each carrier ("Pallet 1", 1/8) as counted.
+  - **Automatisch on an empty carrier** (`plan3d`): one product at its full load (14, not the layers' 12;
+    nothing left to tap); several products and "Verdeel 1 pallet" (`share()`) through `shareFullPallet`
+    (pallet-packed-plan.ts): `shareOnePallet`'s whole layers first, then one omdoos more at a time for the
+    product with the least volume on the carrier, kept only while the packer still loads all of it on one
+    carrier (12 Steelrozen + Rose In Dome 15x30 at 230 cm: 7 + 10, 218 cm, 167 kg). A share the packer cannot
+    load on one carrier stays as the layers gave it.
+  - **Catalogue** (`catalogueCartons` in catalog-load.ts: `fullLoad` with every side, `palletFit` as the
+    layer): the studio's Compact preview (`catalogueUnits`) and the product page's carrier lines, the same
+    figures the server's `CataloguePalletFit` prints. This replaces "alleen als het moet" (2026-11-20) for the
+    catalogue's capacity only; a quote's own MIXED/STRICT layers and the order 3D's layers still use `palletFit`.
+    On the 29 omdozen of 2026-11-26, 50 of the 87 standard figures went up, none down.
 - **Containers** take loose cartons per product: 20ft = the confirmed count, else
   28 m³ by volume, else the 40ft HC count × 28/68 (the product screen's "Per 20ft
   GP"); 40ft HC = the hand count, else 68 m³ ("Per 40' HC"); 40ft = scaled from a

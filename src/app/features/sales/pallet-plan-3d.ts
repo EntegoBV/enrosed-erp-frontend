@@ -1,8 +1,8 @@
 import {
   carriedShare, deckOf, packedFill, packedPlace, settle, solidsOf, stackAbove, type BuilderBox, type BuilderItem, type LayerStock,
 } from './pallet-builder-model';
-import { shareOnePallet, type CartonUp, type PalletSpec, type PlanLine, type PlannedPallet } from './pallet-calculator-model';
-import { bestPlan, packedLoads, type LoadedBox, type PackLine } from './pallet-packed-plan';
+import { type CartonUp, type PalletSpec, type PlanLine, type PlannedPallet } from './pallet-calculator-model';
+import { bestPlan, packedLoads, shareFullPallet, type LoadedBox, type PackLine } from './pallet-packed-plan';
 
 /**
  * Palletberekening's plan in 3D (2026-11-26), free of Angular and three.js.
@@ -41,16 +41,19 @@ export interface Plan3d {
 
 /**
  * The plan 3D laden shows. With quantities on the cards: the page's own plan (`counted`, its bestPlan; empty
- * when it is not worked out). Without: one carrier as the count would fill it: one product at its card's own
- * count, several shared out as Verdeel does it (shareOnePallet: whole layers, one stack), then counted as the
- * page counts (bestPlan). Cards that fit no carrier stay out, as in the page's plan.
+ * when it is not worked out). Without: one carrier as full as it goes (Emre, 2026-11-27: Automatisch "vergeet
+ * er 4"): one product at its card's full load (fullCartons, pallet-full.ts; before, the layers' count, 12 where
+ * 14 steelrozen go), several shared out as Verdeel does it (shareFullPallet: whole layers, then topped up while
+ * the packer still loads it on one carrier), then counted as the page counts (bestPlan). Cards that fit no
+ * carrier stay out, as in the page's plan.
  */
 export function plan3d(cards: readonly PlanCard[], counted: () => PlannedPallet[], pallet: PalletSpec, sides: readonly CartonUp[]): Plan3d {
   const fitting = cards.filter((card) => card.plan.fit.cartonsPerPallet > 0);
   if (fitting.some((card) => card.plan.cartons > 0)) return { paged: true, plan: counted(), packs: fitting.map((card) => card.pack) };
   if (!fitting.length) return { paged: false, plan: [], packs: [] };
-  const shared = fitting.length === 1 ? new Map([[fitting[0].plan.key, fitting[0].plan.fit.cartonsPerPallet]])
-    : shareOnePallet(fitting.map((card) => card.plan), pallet);
+  const shared = fitting.length === 1
+    ? new Map([[fitting[0].plan.key, Math.max(fitting[0].plan.fit.cartonsPerPallet, fitting[0].plan.fullCartons ?? 0)]])
+    : shareFullPallet(fitting.map((card) => card.plan), fitting.map((card) => card.pack), pallet, sides);
   const filled = fitting.filter((card) => (shared.get(card.plan.key) ?? 0) > 0);
   const packs = filled.map((card) => ({ ...card.pack, cartons: shared.get(card.plan.key) ?? 0 }));
   const plan = bestPlan(filled.map((card) => ({ ...card.plan, cartons: shared.get(card.plan.key) ?? 0 })), packs, pallet, sides);

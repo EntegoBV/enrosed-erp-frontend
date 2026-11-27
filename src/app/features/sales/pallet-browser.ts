@@ -4,6 +4,8 @@ import {
 import { AuthImage } from '../../core/api/auth-image';
 import { Icon } from '../../shared/icon';
 import { palletFitTurnable, palletFitUpright, type CarrierKind, type PalletSpec } from './pallet-calculator-model';
+import { fullLoad } from './pallet-full';
+import { ALL_SIDES, UPRIGHT } from './pallet-pack';
 import { matchPalletTiles, type PalletBrowserSection, type PalletBrowserTile } from './pallet-browser-model';
 
 /** One cell of the grid: a section heading (Alle) or a tile with what it shows. */
@@ -196,11 +198,13 @@ export class PalletBrowser {
   private readonly figures = computed(() => {
     const pallet = this.pallet();
     const fitOf = this.turnable() ? palletFitTurnable : palletFitUpright;
+    const sides = this.turnable() ? ALL_SIDES : UPRIGHT;
     const figures = new Map<string, { text: string; warn: boolean }>();
     for (const section of this.sections()) {
       for (const tile of section.tiles) {
         const fit = fitOf(tile.lead.carton, pallet);
-        const count = fit.cartonsPerPallet;
+        /* A full carrier as the packer loads it (pallet-full.ts), as the card's row counts it. */
+        const count = fullLoad(tile.lead.carton, pallet, sides, fit).cartons;
         figures.set(tile.key, count > 0
           ? { text: `${count.toLocaleString('nl-BE')} ${count === 1 ? 'omdoos' : 'omdozen'}`, warn: false }
           : { text: PROBLEMS[fit.problem ?? ''] ?? 'Past niet', warn: true });
