@@ -1085,9 +1085,9 @@ export class PalletBuilder {
    * is partly in the air (spotHangs), and the carrier holds only omdozen of its size, they are laid again in the
    * count's own layers with the new one (relaidWithOne: one step for Ongedaan, the standing ones glide to their
    * places), so a page as counted takes taps up to the card's count and nothing rests half on a box. When no place
-   * and no layers take one more, they are loaded again as full as they go with the new one (packedWithOne, as
-   * Automatisch lays them: the card's full carrier, 14 steelrozen where the layers stop at 12). Else the place
-   * stands, or there is none. It is chosen, and it is said when the load is now past the carrier's weight (it
+   * (or only one partly in the air) and no layers take one more, they are loaded again as full as they go with the
+   * new one (packedWithOne, as Automatisch lays them: the card's full carrier, 14 steelrozen where the layers stop
+   * at 12). Else the place stands, or there is none. It is chosen, and it is said when the load is now past the carrier's weight (it
    * stands all the same).
    */
   private addBox(item: BuilderItem, up: CartonUp): void {
@@ -1095,8 +1095,11 @@ export class PalletBuilder {
     const id = this.nextId;
     const solids = solidsOf(this.boxes(), this.itemMap());
     const spot = tapSpot(solids, item, up, this.deck());
-    const relaid = spot && !spotHangs(solids, item, spot) ? null : relaidWithOne(this.boxes(), this.itemMap(), item, id, this.deck());
-    const packed = !spot && !relaid
+    const hangs = !!spot && spotHangs(solids, item, spot);
+    const relaid = spot && !hangs ? null : relaidWithOne(this.boxes(), this.itemMap(), item, id, this.deck());
+    /* No place, or one partly in the air, and the layers take no more: as full as it goes (second review of 2026-11-27: a
+       hanging place stood where the packer carries every omdoos in full). */
+    const packed = (!spot || hangs) && !relaid
       ? packedWithOne(this.boxes(), this.itemMap(), item, id, this.deck(), this.spec().maxWeightKg, this.turnable() ? ALL_SIDES : UPRIGHT) : null;
     const moved = relaid ?? packed;
     if (!spot && !moved) { this.say(`Geen plaats meer op deze ${this.one()}`); return; }

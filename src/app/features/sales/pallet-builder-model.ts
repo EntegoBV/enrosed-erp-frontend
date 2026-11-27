@@ -497,9 +497,11 @@ export function relaidWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<n
  * No place in the layers either (relaidWithOne gave none) on a carrier that holds only omdozen of this size: the
  * same omdozen and one more loaded as the packer loads them (packedFill, what Automatisch lays), so taps reach the
  * card's full carrier (2026-11-27: the card says 14 steelrozen at 230 cm, the count's layers stop at 12; review of
- * that day: "+" said "Geen plaats meer" at 12). Each omdoos keeps its id and its product, per product the lowest
- * standing one in the lowest place; the new one gets `newId`. One step for Ongedaan, as relaidWithOne. Null when
- * another size stands on the carrier, or the packer does not take them all on this one carrier under the height.
+ * that day: "+" said "Geen plaats meer" at 12). All its omdozen share one size, so the packer's places are handed
+ * out by height, as relaidWithOne does: the lowest standing omdoos (with its id and its product) takes the lowest
+ * place, and the new one (`newId`) the last (second review of 2026-11-27: handed out per colour, a colour's boxes
+ * jumped from the top to one column). One step for Ongedaan. Null when another size stands on the carrier, or the
+ * packer does not take them all on this one carrier under the height.
  */
 export function packedWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<number, BuilderItem>, item: BuilderItem, newId: number,
   deck: Deck, maxWeightKg: number, sides: readonly CartonUp[]): BuilderBox[] | null {
@@ -512,16 +514,10 @@ export function packedWithOne(boxes: readonly BuilderBox[], items: ReadonlyMap<n
   counts.set(item.key, (counts.get(item.key) ?? 0) + 1);
   const filled = packedFill(items, [...counts].map(([key, cartons]) => ({ key, cartons })), deck, maxWeightKg, sides, 1);
   if (filled.length !== boxes.length + 1) return null;
-  const standing = new Map<number, BuilderBox[]>();
-  for (const box of [...boxes].sort((left, right) => left.y - right.y || left.id - right.id)) {
-    standing.set(box.key, [...(standing.get(box.key) ?? []), box]);
-  }
+  const standing = [...boxes].sort((left, right) => left.y - right.y || left.id - right.id);
   const placed = [...filled].sort((left, right) => left.y - right.y || left.z - right.z || left.x - right.x);
-  const relaid = placed.map((box) => {
-    const kept = standing.get(box.key)?.shift();
-    return kept ? { ...box, id: kept.id } : { ...box, id: newId };
-  });
-  if (relaid.filter((box) => box.id === newId).length !== 1) return null;
+  const relaid = placed.map((box, index) => (index < standing.length
+    ? { ...box, id: standing[index].id, key: standing[index].key } : { ...box, id: newId, key: item.key }));
   const settled = settle(relaid, items);
   return solidsOf(settled, items).every((solid) => solid.y + solid.sy <= deck.usableCm + EPSILON) ? settled : null;
 }

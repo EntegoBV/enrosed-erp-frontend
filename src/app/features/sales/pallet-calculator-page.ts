@@ -148,7 +148,7 @@ function cartonWeight(product: Product): number {
 function planLine(product: Product, cartons: number, fit: PalletFit, full: FullLoad): PlanLine {
   return {
     key: product.id as number, cartons, fit, cartonHeightCm: fit.cartonsPerPallet > 0 ? fit.upCm : product.carton.heightCm ?? 0,
-    cartonWeightKg: cartonWeight(product), fullCartons: full.cartons,
+    cartonWeightKg: cartonWeight(product), fullCartons: full.cartons, aloneCartons: full.alone,
   };
 }
 
@@ -1288,6 +1288,8 @@ export class PalletCalculatorPage {
     if (words) facts.unshift(words.charAt(0).toUpperCase() + words.slice(1));
     if (weightKg > 0) facts.push(`${Math.round(weightKg).toLocaleString('nl-BE')} kg`);
     if (full.limitedBy === 'gewicht') facts.push('gewicht bepaalt');
+    /* A few omdozen: one carrier on its own takes more than each of several (the packer is not monotone). */
+    if (full.alone > full.cartons) facts.push(`één losse ${this.words().one}: ${full.alone.toLocaleString('nl-BE')}`);
     return facts.join(' · ');
   }
 

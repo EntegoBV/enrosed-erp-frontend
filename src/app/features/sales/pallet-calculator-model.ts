@@ -664,6 +664,8 @@ export interface PlanLine {
    * how much one more carrier holds, and what one product alone fills.
    */
   fullCartons?: number;
+  /** The most ONE carrier of it takes on its own (pallet-full.ts FullLoad.alone), at least fullCartons: a plan's only carrier is full at it. */
+  aloneCartons?: number;
 }
 
 export interface PalletPart {

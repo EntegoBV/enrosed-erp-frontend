@@ -24,7 +24,15 @@ import { packDeck, packPallets, packUnits, type PackDeck, type PackKind, type Pa
  * 3. the packer's first pallet from more than the bound, so it fills as full as it gets from plenty;
  * 4. that many alone must go on one pallet too (the last pallet of a load is packed from what is left), else
  *    one fewer, at most STEPS_DOWN times, never below the layers' count;
- * 5. the layers where they take as many or more: the figure is never below what whole layers count.
+ * 5. no hole just under it: each of the HOLE_WINDOW counts below must go on one carrier alone too, else the
+ *    figure drops below the highest such hole (and must again go alone), at most HOLE_ROUNDS times. From F + m
+ *    omdozen the first carrier takes F and the rest m must go on one more: the packer is not monotone, and an
+ *    omdoos of 14,22 × 50,15 × 72,67 cm read 42 per pallet while 83 counted 3 (42, 40, 1; second review of
+ *    2026-11-27; none of the 29 real omdozen had such a hole);
+ * 6. the layers where they take as many or more: the figure is never below what whole layers count.
+ * Beside it, `alone`: the most ONE carrier takes on its own (the packer's count from plenty and one more at a
+ * time while that still goes alone). Never shown as the per-carrier figure; Palletberekening judges a plan of
+ * one carrier by it ("vol", the fill, Automatisch and Verdeel on one carrier). Only the frontend has it.
  *
  * No step of the packer changes: it stays frozen for PACKED documents. This only asks it for one full pallet.
  */
@@ -32,8 +40,10 @@ import { packDeck, packPallets, packUnits, type PackDeck, type PackKind, type Pa
 type CartonSize = Pick<CartonDto, 'lengthCm' | 'widthCm' | 'heightCm' | 'weightKg'>;
 
 export interface FullLoad {
-  /** The most omdozen of this size on one carrier; 0 when none fits. */
+  /** Omdozen of this size per carrier, for any number of carriers; 0 when none fits. */
   cartons: number;
+  /** The most one carrier takes on its own: at least `cartons`, a few more for a few omdozen (21 bowls on one kar, 20 per kar). */
+  alone: number;
   /** The loaded height of that carrier, the wood or the kar's base included; 0 when none fits. */
   heightCm: number;
   /**
@@ -51,13 +61,16 @@ export interface FullLoad {
 export const MAX_SEARCHED = 1500;
 /** How often a count reached from plenty may drop by one before the layers decide. */
 const STEPS_DOWN = 8;
+/** The counts under the figure that must each go on one carrier alone, and how often a hole may lower it. */
+const HOLE_WINDOW = 8;
+const HOLE_ROUNDS = 4;
 /** Results by omdoos, carrier and sides: a page asks for the same figures on every change. */
 const MEMO = new Map<string, FullLoad>();
 const MEMO_LIMIT = 600;
 
-function layerLoad(layer: PalletFit): FullLoad {
+function layerLoad(layer: PalletFit, alone = layer.cartonsPerPallet): FullLoad {
   return {
-    cartons: layer.cartonsPerPallet, heightCm: layer.heightCm, how: 'layers',
+    cartons: layer.cartonsPerPallet, alone: Math.max(alone, layer.cartonsPerPallet), heightCm: layer.heightCm, how: 'layers',
     tipped: layer.cartonsPerPallet > 0 && layer.up !== 'h' ? layer.cartonsPerPallet : 0, limitedBy: layer.limitedBy,
   };
 }
@@ -105,9 +118,30 @@ function search(length: number, width: number, height: number, weight: number, d
     if (load) break;
     count -= 1;
   }
-  if (!load || count <= layer.cartonsPerPallet) return layers;
+  const verified = !!load && count > layer.cartonsPerPallet;
+  /* One carrier on its own: one more at a time while that still goes alone, from the packed count or the layers. */
+  let most = verified ? count : layer.cartonsPerPallet;
+  while (most < bound && alone(kind, deck, most + 1)) most += 1;
+  if (!verified) return layerLoad(layer, most);
+  /* No hole just under the figure: the rest of F + m omdozen must go on one carrier more. */
+  for (let round = 0; round < HOLE_ROUNDS && load && count > layer.cartonsPerPallet; round++) {
+    let hole = 0;
+    for (let m = count - 1; m >= Math.max(1, count - HOLE_WINDOW); m--) {
+      if (!alone(kind, deck, m)) { hole = m; break; }
+    }
+    if (!hole) break;
+    count = hole - 1;
+    load = null;
+    for (let step = 0; step <= STEPS_DOWN && count > layer.cartonsPerPallet; step++) {
+      load = alone(kind, deck, count);
+      if (load) break;
+      count -= 1;
+    }
+  }
+  if (!load || count <= layer.cartonsPerPallet) return layerLoad(layer, most);
   return {
     cartons: count,
+    alone: Math.max(count, most),
     heightCm: Math.round((baseHeightCm + load.top / 100) * 10) / 10,
     how: 'packed',
     tipped: load.boxes.filter((box) => box.up !== 'h').length,

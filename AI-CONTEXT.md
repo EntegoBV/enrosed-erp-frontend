@@ -5217,47 +5217,57 @@ adds, the answer stays in sight.
   min(deck volume ÷ omdoos volume, weight limit ÷ weight) in pack units, at most the layers' count or above
   `MAX_SEARCHED` 1500 and the layers stand; the packer's first pallet from bound + 1 omdozen; that count must
   also go on one carrier ALONE (the last carrier of a load is packed from what is left), else one fewer (at most
-  8, never below the layers). NO climb above the plenty count: the first version climbed while one more went on
-  alone and printed 21 bowls (40 × 30 × 38) per kar where the packer loads 20 per kar from plenty, so 42 counted
-  3 karren (review of 2026-11-27). Proved since: k × the figure (k = 1..5) never needs more than k carriers, for
+  8, never below the layers); then no hole just under it: each of the 8 counts below (`HOLE_WINDOW`) must go on
+  one carrier alone too, else the figure drops below the highest hole and must again go alone (at most 4 rounds),
+  since from F + m omdozen the first carrier takes F and the rest m needs one more (second review: 14,22 × 50,15
+  × 72,67 cm read 42 while 83 counted 3 = 42 + 40 + 1; none of the 29 real omdozen had a hole). NO climb above the
+  plenty count: the first version climbed while one more went on alone and printed 21 bowls (40 × 30 × 38) per kar
+  where the packer loads 20 per kar from plenty, so 42 counted 3 karren (review of 2026-11-27). Proved since: k ×
+  the figure (k = 1..5) and every count from 2F − 9 to 2F − 1 never need more than k (2) carriers, for
   Palletberekening's plan (bestPlan, the card's layers and the switch's sides) and for a PACKED quote (the packer,
-  capped by MIXED), on 69,023 cases (29 real and 400 random omdozen × 75 carriers, heights, spills, both
-  switches). One carrier on its own may take a few more (21 bowls on one kar): 3D laden lets them be tapped
-  (below). Nothing in pallet-pack.ts changed (frozen for PACKED). Where it shows:
+  capped by MIXED). Beside it `FullLoad.alone`: the most ONE carrier takes on its own (from the plenty count, one
+  more at a time while it still goes alone; frontend only), at least the figure, a few more for a few omdozen
+  (21 bowls on one kar). Nothing in pallet-pack.ts changed (frozen for PACKED). Where it shows:
   - **Cards and tiles**: `CalcLine.full` (`cardFull`: the switch's sides, the card's own fit as `layer`): the
     Pallet row, the capacity title "14 omdozen per pallet", the tile figure (pallet-browser.ts) and the fit
     line `fitFacts(line)`: "4 per laag × 5 lagen · 229 cm · 280 kg" while the layers give it, else
-    "Zo vol mogelijk, gekanteld · 218 cm · 55 kg" (`fullLoadWords`). `line.fit` stays the layers: the plan's
+    "Zo vol mogelijk, gekanteld · 218 cm · 55 kg" (`fullLoadWords`), ending "· één losse pallet: 40" (or kar)
+    where `alone` is higher than the figure. `line.fit` stays the layers: the plan's
     whole layers, `separatePallets`, Verdeel's first share and the 3D taps' layer places (`item.up`) read it.
   - **The plan**: `PlanLine.fullCartons` (optional; the sales planner sets none) makes a one-product pallet "vol"
-    at the full load (`bestPlan`'s `fullAt`) and its fill the share of it (`packedPlan`: cartons ÷ full load, so
+    at the full load (`bestPlan`'s `fullAt`; a plan's ONLY carrier at `aloneCartons`, so 39 typed where one carrier
+    takes 40 reads 98 % beside "Past nog bij + 1", not "vol") and its fill the share of it (`packedPlan`: cartons ÷ that, so
     12, 13, 14 steelrozen at 260 cm read 75, 81, 88 % instead of the packer's heights 98, 81, 98 %; several
     products keep the height or weight share), and lets "Past nog bij" offer up to one full carrier
     (`roomWithoutExtraPallet`'s upper bound). 100 steelrozen at 230 cm: 8 pallets (7 × 14 vol, 2), "+ 12 omdozen"
     past nog bij; the 3D pages each carrier ("Pallet 1", 1/8) as counted.
-  - **Automatisch on an empty carrier** (`plan3d`): one product at its full load (14, not the layers' 12);
-    several products and "Verdeel 1 pallet" (`share()`) through `shareFullPallet` (pallet-packed-plan.ts):
-    `shareOnePallet`'s whole layers first, then topped up: the product with the least volume on the carrier
-    takes its next step (1, doubling after a kept step, halving after a refused one; a refused single omdoos ends
-    it), kept only while the packer still loads all of it on one carrier; a step that cannot fit the free volume
-    or weight is refused without the packer. Bounded (review of 2026-11-27: a mistyped 3,4 × 2 × 3,5 cm omdoos
-    froze Verdeel for 36 s): no top-up for a share of more than 600 omdozen (3D laden draws no more), runs ×
-    omdoos sizes at most `SHARE_TOP_UP_WORK` 96 (24 runs for 1-4 products, 8 for 12). 12 Steelrozen + Rose In
-    Dome 15x30 at 230 cm: 7 + 10, 218 cm, 167 kg. A share the packer cannot load on one carrier stays as the
-    layers gave it.
-  - **Taps in 3D laden** reach the card's full carrier: where neither a place (tapSpot) nor the layers
-    (relaidWithOne) take one more on a carrier of one omdoos size, `packedWithOne` (pallet-builder-model.ts)
-    loads its omdozen and one more as the packer does (packedFill, the switch's sides; ids kept, the lowest
-    first; "Opnieuw gestapeld, zo vol mogelijk"). Over the 29 real omdozen at six carriers, both switches: taps
-    from empty reach the card in all 340 cases, never overlap or pass the height; in 8 (blok, euro 230 without
-    spill, euro 200 with 5 cm) one carrier alone takes 1-2 more than the per-carrier figure.
+  - **Automatisch on an empty carrier** (`plan3d`) and "Verdeel 1 pallet" (`share()`) both go through
+    `shareFullPallet` (pallet-packed-plan.ts): one product at `aloneCartons`, the most one carrier takes (14
+    steelrozen, not the layers' 12); several: `shareOnePallet`'s whole layers first, then topped up: the product
+    with the least volume on the carrier takes its next step (1, doubling after a kept step, halving after a
+    refused one; a refused single omdoos ends it), kept only while the packer still loads all of it on one carrier;
+    a step that cannot fit the free volume or weight is refused without the packer. Bounded (review of 2026-11-27: a
+    mistyped 3,4 × 2 × 3,5 cm omdoos froze Verdeel for 36 s): no top-up for a share of more than 600 omdozen (3D
+    laden draws no more), and the work (omdozen × omdoos sizes per packer run, a refused run three times) at most
+    `SHARE_TOP_UP_WORK` 8,000 (a cap on runs alone left 10-12 real cards a fifth less full and 4-6 small omdozen
+    still slow; now at most ~0,26 s on a Mac, 2-6 cards as full as unbounded, 10-12 cards a few % less full in a
+    quarter of the mixes). 12 Steelrozen + Rose In Dome 15x30 at 230 cm: 7 + 10, 218 cm, 167 kg. A share the packer cannot
+    load on one carrier stays as the layers gave it.
+  - **Taps in 3D laden** reach the card's full carrier: where no place (tapSpot), or only one partly in the air
+    (spotHangs), and no layers (relaidWithOne) take one more on a carrier of one omdoos size, `packedWithOne`
+    (pallet-builder-model.ts) loads its omdozen and one more as the packer does (packedFill, the switch's sides;
+    the places handed out by height, the lowest standing omdoos with its id and product in the lowest place, the
+    new one last, as relaidWithOne; "Opnieuw gestapeld, zo vol mogelijk"). Taps from empty reach the card on every
+    real omdoos, never overlap or pass the height; one carrier alone may take its `alone` count.
   - **Kept builds**: the key's tag is 'pc2' since this round (`builderStoreKey`), so a build kept before it
     (Automatisch laid 12 steelrozen) never reopens.
   - **Catalogue** (`catalogueCartons` in catalog-load.ts: `fullLoad` with every side, `palletFit` as the
     layer): the studio's Compact preview (`catalogueUnits`) and the product page's carrier lines, the same
     figures the server's `CataloguePalletFit` prints. This replaces "alleen als het moet" (2026-11-20) for the
     catalogue's capacity only; a quote's own MIXED/STRICT layers and the order 3D's layers still use `palletFit`.
-    On the 29 omdozen of 2026-11-26, 48 of the 87 standard figures went up, none down.
+    On the 29 omdozen of 2026-11-26, 48 of the 87 standard figures went up, none down. Known: the figure is not
+    monotone in the height or the spill at a few 1 cm steps away from the standards (a forced price of the
+    k-carrier rule on the frozen packer: keeping the higher figure would make 2 × it need a third carrier).
 - **Containers** take loose cartons per product: 20ft = the confirmed count, else
   28 m³ by volume, else the 40ft HC count × 28/68 (the product screen's "Per 20ft
   GP"); 40ft HC = the hand count, else 68 m³ ("Per 40' HC"); 40ft = scaled from a
