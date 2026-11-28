@@ -128,6 +128,10 @@ interface Row {
       .ct-table{--wk-cols:24px minmax(124px,1.2fr) minmax(92px,1fr) minmax(108px,1fr) minmax(108px,1fr) 84px}
       .ct-load{display:none!important}
     }
+    /* The narrow rail beside a small window: no floors, so Pakbon never leaves the card (the cells end in "…"). */
+    @container ct (max-width: 613.98px){
+      .ct-table{--wk-cols:24px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 84px}
+    }
     .ct-tr{min-height:56px;scroll-margin-top:calc(var(--pp-sticky-top,0px) + var(--wk-head-h,32px) + 8px)}
     .ct-tr.is-open{background:var(--surface-2)}
     .ct-tr[aria-selected=true]{background:var(--rose-soft);box-shadow:inset 3px 0 0 var(--rose)}

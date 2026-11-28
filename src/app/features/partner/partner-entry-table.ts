@@ -145,6 +145,8 @@ import { NO_TWINS, Twins, twinLabel } from './partner-twins';
     .et{--wk-cols:minmax(140px,1fr) 112px 68px 80px 100px 88px 56px;--wk-gap:8px;--wk-pad-x:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
     /* Products that count in different pieces: each price field says "/ roos", so it gets the room. */
     .et--per{--wk-cols:minmax(130px,1fr) 108px 64px 76px 128px 86px 56px}
+    /* Too narrow for the floors (the portal's rail beside a small window): every column shares the room. */
+    @container et (max-width: 717.98px){.et,.et--per{--wk-cols:minmax(0,1.3fr) minmax(0,1.1fr) minmax(0,.7fr) minmax(0,.8fr) minmax(0,1.1fr) minmax(0,1fr) 56px;--wk-gap:6px}}
     .et .wk-thead{border-radius:14px 14px 0 0}
     .et .wk-th{white-space:normal;line-height:1.15}
     .et-main{min-height:52px}

@@ -128,7 +128,7 @@ const NEXT_FAMILIES = 4;
         </section>
       </div>
 
-      @if (!desk.active() && o.contact?.phone) {
+      @if (o.contact?.phone) {
         <p class="contact">Vragen? {{ o.contact?.name || 'Enrosed' }} · <a [href]="'tel:' + tel(o.contact?.phone)">{{ o.contact?.phone }}</a></p>
       }
     } @else if (data.failure()) {
@@ -180,6 +180,8 @@ const NEXT_FAMILIES = 4;
     .cats b{font-weight:700;font-variant-numeric:tabular-nums}
     .contact{margin:18px 0 8px;color:var(--muted);font-size:14px;text-align:center}
     .contact a{display:inline-flex;align-items:center;min-height:44px;color:var(--rose-dark);font-weight:650;text-decoration:none}
+    /* From 1024 px the side bar's foot says whom to call; below it (phone, the narrow rail) this line does. */
+    @media (min-width: 1024px){.contact{display:none}}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
       .grid{grid-template-columns:minmax(0,1.65fr) minmax(250px,1fr);grid-template-rows:auto 1fr;align-items:start}
       .ov-card--next{grid-row:1 / span 2}
@@ -252,9 +254,13 @@ export class PartnerHome {
     };
   });
 
-  /** Meldingen at a glance: waiting on Enrosed, confirmed but not invoiced, the last one's day. */
+  /**
+   * Meldingen at a glance: waiting on Enrosed, confirmed but not invoiced (the server counts them over all his
+   * meldingen; an older server without the summary: the 10 newest it lists), the last one's day.
+   */
   readonly meld = computed(() => {
-    const reports = this.overview()?.reports ?? [];
+    const overview = this.overview();
+    const reports = overview?.reports ?? [];
     let waiting = 0;
     let waitingEur = 0;
     let confirmed = 0;
@@ -266,10 +272,12 @@ export class PartnerHome {
       else { confirmed++; confirmedEur += report.totals.netEur; }
     }
     const latest = reports.filter((report) => report.status !== 'VOIDED').sort((a, b) => b.soldOn.localeCompare(a.soldOn) || b.id - a.id)[0];
-    return {
-      waiting, waitingEur: Math.round(waitingEur * 100) / 100, confirmed, confirmedEur: Math.round(confirmedEur * 100) / 100,
-      last: latest ? `${latest.number}, ${longDate(latest.soldOn)}` : null,
-    };
+    const last = latest ? `${latest.number}, ${longDate(latest.soldOn)}` : null;
+    const summary = overview?.meldingen;
+    if (summary) {
+      return { waiting: summary.waiting, waitingEur: summary.waitingNetEur, confirmed: summary.confirmed, confirmedEur: summary.confirmedNetEur, last };
+    }
+    return { waiting, waitingEur: Math.round(waitingEur * 100) / 100, confirmed, confirmedEur: Math.round(confirmedEur * 100) / 100, last };
   });
 
   /** The stock per category in Enrosed's order: how many products. */

@@ -1,4 +1,6 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal, viewChild,
+} from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { Auth } from '../../core/api/auth';
@@ -86,9 +88,10 @@ const MELDEN: Tab = { path: '/partner/melden', label: 'Melden', icon: 'plus', ex
             <app-brand-mark subtitle="Partnerportaal" [small]="true" />
           </a>
           @if (!host.present) {
-            <nav class="pt-tabs" aria-label="Partnerportaal">
+            <nav class="pt-tabs" aria-label="Partnerportaal" #tabStrip>
               @for (tab of phoneTabs; track tab.path) {
-                <a class="pt-tab" [routerLink]="tab.path" [class.is-on]="isOn(tab)" [attr.aria-current]="isOn(tab) ? 'page' : null">{{ tab.label }}</a>
+                <a class="pt-tab" [routerLink]="tab.path" [class.is-on]="isOn(tab)" [attr.aria-current]="isOn(tab) ? 'page' : null"
+                   [attr.aria-label]="tab.rail ? tab.label : null">{{ tab.rail ?? tab.label }}</a>
               }
             </nav>
           }
@@ -124,9 +127,9 @@ const MELDEN: Tab = { path: '/partner/melden', label: 'Melden', icon: 'plus', ex
     .pt-head__brand{display:flex;flex:none;align-items:center;min-height:44px;color:inherit;text-decoration:none;--brand-sub:var(--rose-dark)}
     .pt-tabs{display:flex;order:3;flex:1 0 100%;gap:2px;height:48px;margin:0 calc(-1 * var(--pp-gutter));padding:0 calc(var(--pp-gutter) - 8px) 4px;overflow-x:auto;scrollbar-width:none}
     .pt-tabs::-webkit-scrollbar{display:none}
-    .pt-tab{position:relative;display:inline-flex;flex:none;align-items:center;min-height:44px;padding:0 10px;border-radius:10px;color:var(--ink-2);font-size:15px;font-weight:650;text-decoration:none;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+    .pt-tab{position:relative;display:inline-flex;flex:none;align-items:center;min-height:44px;padding:0 8px;border-radius:10px;color:var(--ink-2);font-size:15px;font-weight:650;text-decoration:none;white-space:nowrap;-webkit-tap-highlight-color:transparent}
     .pt-tab.is-on{color:var(--rose-dark)}
-    .pt-tab.is-on::after{content:'';position:absolute;right:10px;bottom:4px;left:10px;height:2.5px;border-radius:2px;background:var(--rose)}
+    .pt-tab.is-on::after{content:'';position:absolute;right:8px;bottom:4px;left:8px;height:2.5px;border-radius:2px;background:var(--rose)}
     .pt-tab:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
     .pt-head__who{display:grid;flex:1;justify-items:end;min-width:0;line-height:1.2;text-align:right}
     .pt-head__who strong{max-width:100%;overflow:hidden;font-size:14.5px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
@@ -197,6 +200,8 @@ export class PartnerShell {
   private readonly data = inject(PartnerData);
   private readonly containers = inject(PartnerContainersData);
   readonly host = inject(HostBridge);
+  private readonly injector = inject(Injector);
+  private readonly tabStrip = viewChild<ElementRef<HTMLElement>>('tabStrip');
 
   readonly tabs = TABS;
   readonly melden = MELDEN;
@@ -213,7 +218,9 @@ export class PartnerShell {
   /** What the side bar counts: containers still coming, products in stock, meldingen waiting on Enrosed. */
   private readonly counts = computed(() => {
     const overview = this.data.overview();
-    const waiting = (overview?.reports ?? []).filter((report) => report.status === 'OPEN' && partnerStatus(report).label === 'Ingediend').length;
+    /* Over all his meldingen (the server's summary); an older server: the 10 newest it lists. */
+    const waiting = overview?.meldingen?.waiting
+      ?? (overview?.reports ?? []).filter((report) => report.status === 'OPEN' && partnerStatus(report).label === 'Ingediend').length;
     return {
       coming: this.containers.page() ? this.containers.coming().length : 0,
       stock: overview?.stock.length ?? 0,
@@ -223,7 +230,9 @@ export class PartnerShell {
 
   constructor() {
     const navigation = this.router.events.subscribe((event) => {
-      if (event instanceof NavigationEnd) this.path.set(event.urlAfterRedirects.split(/[?#]/)[0]);
+      if (!(event instanceof NavigationEnd)) return;
+      this.path.set(event.urlAfterRedirects.split(/[?#]/)[0]);
+      afterNextRender(() => this.revealTab(), { injector: this.injector });
     });
     inject(DestroyRef).onDestroy(() => navigation.unsubscribe());
     if (this.host.present) return;
@@ -249,6 +258,17 @@ export class PartnerShell {
       if (timer !== undefined) win?.clearInterval(timer);
       useAppManifest(doc, 'staff');
     });
+  }
+
+  /** On the phone the tabs can be wider than the screen: the current one scrolls into the strip (never the page). */
+  private revealTab(): void {
+    const strip = this.tabStrip()?.nativeElement;
+    const tab = strip?.querySelector<HTMLElement>('.pt-tab.is-on');
+    if (!strip || !tab || !strip.clientWidth) return;
+    const box = strip.getBoundingClientRect();
+    const at = tab.getBoundingClientRect();
+    if (at.right > box.right) strip.scrollLeft += at.right - box.right + 8;
+    else if (at.left < box.left) strip.scrollLeft -= box.left - at.left + 8;
   }
 
   isOn(tab: { path: string; exact: boolean }): boolean {

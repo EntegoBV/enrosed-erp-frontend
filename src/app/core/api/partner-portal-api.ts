@@ -240,6 +240,16 @@ export interface PartnerOverview {
   serverDate: string;
   /** 2 from round 2 on; absent on a round-1 server. */
   apiVersion?: number;
+  /** Since 2026-11-28, over ALL his meldingen (reports holds only the 10 newest); absent on an older server. */
+  meldingen?: PartnerMeldingSummary;
+}
+
+/** His meldingen with an open part: not confirmed yet (waiting on Enrosed), and confirmed but not invoiced. */
+export interface PartnerMeldingSummary {
+  waiting: number;
+  waitingNetEur: number;
+  confirmed: number;
+  confirmedNetEur: number;
 }
 
 export interface PartnerReportPage {

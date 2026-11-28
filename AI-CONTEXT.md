@@ -6835,3 +6835,10 @@ arrives; the dashboard much more DESKTOP like, easier, clear and not double."
 - **Melden at 1070**: beside the side bar the form is 822 px wide, under `partner-entry`'s 1008 px two-column point, so
   the totals and Opslaan stand under the table on the right (as on the staff page beside the ERP sidebar); from 1280 px
   they stand beside it.
+- **Review fixes (same day, before release)**: the Overzicht's "Wacht op Enrosed" / "Bevestigd, nog niet gefactureerd"
+  and the side bar's Meldingen count read `overview.meldingen` (the server's summary over ALL his meldingen; the
+  `reports` list holds only the 10 newest), the old list count only as a fallback for an older server. The Overzicht's
+  "Vragen?" line shows below 1024 px (phone and the rail, where the side bar has no contact) and hides from 1024 px. In
+  the rail range the Inkooporders table drops its column floors below 614 px table width and `partner-entry-table`
+  (shared with the staff melding page) shares the room below 718 px. Phone tabs print the rail word ("Inkoop") and the
+  shell scrolls the current tab into the strip after every navigation (`revealTab`, never the page).
