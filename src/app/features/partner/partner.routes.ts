@@ -31,10 +31,17 @@ export const PARTNER_ROUTES: Routes = [
         loadComponent: () => import('./partner-meldingen').then((m) => m.PartnerMeldingen),
       },
       {
-        path: 'containers',
-        title: 'Containers',
+        path: 'inkooporders',
+        title: 'Inkooporders',
         loadComponent: () => import('./partner-containers').then((m) => m.PartnerContainers),
       },
+      {
+        path: 'voorraad',
+        title: 'Voorraad',
+        loadComponent: () => import('./partner-voorraad').then((m) => m.PartnerVoorraad),
+      },
+      /* The page's name until 2026-11-28 (a bookmark, an old link with ?container=): Inkooporders, query kept. */
+      { path: 'containers', redirectTo: 'inkooporders' },
       /* Any other /partner address: the portal's home. */
       { path: '**', redirectTo: '' },
     ],

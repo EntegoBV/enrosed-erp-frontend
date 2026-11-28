@@ -1,80 +1,134 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { PartnerPortalApi, type PartnerReport } from '../../core/api/partner-portal-api';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import type { PartnerContainer, PartnerProductTile } from '../../core/api/partner-portal-api';
 import { messageOf } from '../../core/api/errors';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Icon } from '../../shared/icon';
 import { LOAD_ERROR_FALLBACK, LoadError } from '../../shared/load-error';
 import { Skeleton } from '../../shared/skeleton';
-import { Ui } from '../../shared/ui';
-import { PartnerComing } from './partner-coming';
 import { PartnerContainersData } from './partner-containers-data';
+import { STATE_TONE, STATE_WORD, cartonsText, cbmText, palletsText, productsText, specOrFallback, stateOf } from './partner-containers-model';
 import { PartnerData } from './partner-data';
-import { KIND_ICON, KIND_LABEL, KIND_TONE, PARTNER_KINDS, percent } from './partner-format';
-import { PartnerProductTable, TableProduct, withCategories } from './partner-product-table';
-import { bySoldOn } from './partner-report-format';
-import { PartnerReportRows } from './partner-report-rows';
-import { PartnerReportSheet, confirmUndo } from './partner-report-sheet';
-import { PartnerReportTable } from './partner-report-table';
+import { familyTotal, foldFamilies } from './partner-families';
+import { count, euro, longDate, percent } from './partner-format';
+import { PartnerPakbonButton } from './partner-pakbon-button';
+import { PartnerPhoto } from './partner-photo';
+import { partnerStatus } from './partner-report-format';
+import { PartnerRoute } from './partner-route';
+
+/** "zaterdag 28 november". */
+const WEEKDAY_DATE = new Intl.DateTimeFormat('nl-BE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+
+/** How many of the next container's product families the card names. */
+const NEXT_FAMILIES = 4;
 
 /**
- * Overzicht, desk first: three buttons for what happened (veiling, direct,
- * terugkoop), the two cost percentages, the next three containers coming
- * (links to Containers), the stock as one table grouped by
- * category and series like the ERP's Voorraad (Melden on a row reports that
- * product sold at the auction), and the
- * latest meldingen as a table.
+ * Overzicht (2026-11-28, desk first, one screen): three cards, each one subject once, each with one way on.
+ * - Volgende container: the next one to come, its way (Besteld, Vertrokken, the port, Zaltbommel) with the days,
+ *   what is in it per product family, its pakbon, and how many more are on their way (the list itself lives on
+ *   Inkooporders only).
+ * - Meldingen: what waits on Enrosed and what is confirmed but not invoiced, the last melding's day, the cost
+ *   percents (the list lives on Meldingen).
+ * - Voorraad: per category how many products lie in Zaltbommel (the products live on Voorraad).
+ * Melden is the side bar's button. Never a price of Enrosed's: the money here is his own meldingen.
  */
 @Component({
   selector: 'app-partner-home',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink, Icon, LoadError, Skeleton, PartnerComing, PartnerProductTable, PartnerReportRows, PartnerReportSheet, PartnerReportTable],
+  imports: [RouterLink, Icon, LoadError, Skeleton, PartnerPakbonButton, PartnerPhoto, PartnerRoute],
   template: `
-    <nav class="acts" aria-label="Melden">
-      @for (kind of kinds; track kind) {
-        <a class="act {{ tone[kind] }}" routerLink="/partner/melden" [queryParams]="{ soort: kind }">
-          <span class="act__icon" aria-hidden="true"><app-icon [name]="icon[kind]" [size]="22" /></span>
-          <span class="act__label">{{ label[kind] }}</span>
-        </a>
-      }
-    </nav>
+    <header class="hd">
+      <h1>{{ greeting() }}</h1>
+      @if (todayText()) { <p>{{ todayText() }}</p> }
+    </header>
 
     @if (overview(); as o) {
-      <p class="costs">Veilingcommissie {{ pct(o.costs.auctionCommissionPct) }} · Transport {{ pct(o.costs.auctionTransportPct) }}</p>
-
-      <app-partner-coming />
-
-      <section class="sec" aria-labelledby="pp-stock">
-        <div class="sec__head">
-          <h2 id="pp-stock">Voorraad</h2>
-          <span class="sec__trail">{{ o.stock.length }} {{ o.stock.length === 1 ? 'product' : 'producten' }}</span>
-        </div>
-        <div class="sec__card sec__card--pad">
-          <app-partner-product-table mode="stock" caption="Voorraad" [items]="stockItems()" [stockFilter]="true"
-                                     emptyText="Er ligt nu geen voorraad." (report)="sell($event)" />
-        </div>
-      </section>
-
-      <section class="sec" aria-labelledby="pp-latest">
-        <div class="sec__head">
-          <h2 id="pp-latest">Laatste meldingen</h2>
-          @if (o.reports.length) { <a class="sec__link" routerLink="/partner/meldingen">Alle meldingen</a> }
-        </div>
-        @if (latest().length) {
-          @if (desk.active()) {
-            <div class="sec__card">
-              <app-partner-report-table caption="Laatste meldingen" [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()"
-                                        (opened)="open.set($event)" (edit)="edit($event)" (undo)="undo($event)" />
+      <div class="grid">
+        <section class="ov-card ov-card--next" aria-labelledby="ov-next">
+          <div class="ov-card__head">
+            <h2 id="ov-next" class="ov-card__kicker">Volgende container</h2>
+            <a class="ov-card__link" routerLink="/partner/inkooporders">Alle inkooporders</a>
+          </div>
+          @if (next(); as n) {
+            <div class="nx-title">
+              <div class="nx-name">
+                <b>{{ n.container.name }}</b>
+                <span class="wk-pill {{ n.tone }}">{{ n.word }}</span>
+                @if (n.container.own) { <span class="wk-pill tone-accent">Samen met jou</span> }
+              </div>
+              <div class="nx-actions">
+                <app-partner-pakbon-button [containerId]="n.container.id" [name]="n.container.name" />
+                <a class="nx-open" routerLink="/partner/inkooporders" [queryParams]="{ container: n.container.id }">Bekijk <app-icon name="chevron-right" [size]="15" /></a>
+              </div>
             </div>
+            <app-partner-route class="nx-route" [container]="n.container" [today]="n.today" [warehouseName]="n.warehouse" />
+            <p class="nx-cargo">{{ n.cargo }}</p>
+            @if (n.families.length) {
+              <ul class="nx-list" aria-label="Wat erin zit">
+                @for (family of n.families; track family.key) {
+                  <li>
+                    <app-partner-photo class="nx-photo" [product]="family.photo" />
+                    <span class="nx-fam"><b>{{ family.title }}</b>
+                      @if (family.colours.length > 1) {
+                        <span class="nx-dots" aria-hidden="true">@for (colour of family.colours; track $index) { <i [style.background]="colour"></i> }</span>
+                      }
+                    </span>
+                    <span class="nx-fig">{{ family.total }}</span>
+                  </li>
+                }
+              </ul>
+              @if (n.moreFamilies) { <p class="nx-more">+ {{ n.moreFamilies }} {{ n.moreFamilies === 1 ? 'product' : 'producten' }} meer op de pakbon</p> }
+            }
+            @if (n.after) { <p class="nx-after">{{ n.after }}</p> }
+          } @else if (containers.page()) {
+            <p class="none">Er is nu geen container onderweg.</p>
+          } @else if (containers.failure()) {
+            <p class="none">De inkooporders konden niet geladen worden. <button class="none__retry" type="button" (click)="reload()">Opnieuw</button></p>
           } @else {
-            <app-partner-report-rows [reports]="latest()" [today]="o.serverDate" [twins]="data.twins()" (opened)="open.set($event)" />
+            <app-skeleton kind="card" [rows]="3" />
           }
-        } @else {
-          <p class="none">Nog niets gemeld.</p>
-        }
-      </section>
+        </section>
 
-      @if (o.contact?.phone) {
+        <section class="ov-card ov-card--meld" aria-labelledby="ov-meld">
+          <div class="ov-card__head">
+            <h2 id="ov-meld" class="ov-card__kicker">Meldingen</h2>
+            <a class="ov-card__link" routerLink="/partner/meldingen">Alle meldingen</a>
+          </div>
+          <div class="kv" [class.is-on]="meld().waiting > 0">
+            <span class="kv__label">Wacht op Enrosed</span>
+            <b class="kv__value">{{ meld().waiting }}</b>
+            @if (meld().waiting) { <span class="kv__sub">{{ eur(meld().waitingEur) }} netto</span> }
+          </div>
+          <div class="kv">
+            <span class="kv__label">Bevestigd, nog niet gefactureerd</span>
+            <b class="kv__value">{{ meld().confirmed }}</b>
+            @if (meld().confirmed) { <span class="kv__sub">{{ eur(meld().confirmedEur) }} netto</span> }
+          </div>
+          <p class="ov-card__foot">
+            @if (meld().last; as last) { Laatste melding {{ last }} · } @else { Nog niets gemeld · }
+            veilingcommissie {{ pct(o.costs.auctionCommissionPct) }}, transport {{ pct(o.costs.auctionTransportPct) }}
+          </p>
+        </section>
+
+        <section class="ov-card ov-card--stock" aria-labelledby="ov-stock">
+          <div class="ov-card__head">
+            <h2 id="ov-stock" class="ov-card__kicker">Voorraad</h2>
+            <a class="ov-card__link" routerLink="/partner/voorraad">Naar voorraad</a>
+          </div>
+          @if (stock().length) {
+            <ul class="cats">
+              @for (category of stock(); track category.key) {
+                <li><span>{{ category.name }}</span><b>{{ category.products }}</b></li>
+              }
+            </ul>
+            <p class="ov-card__foot">{{ stockTotal() }}</p>
+          } @else {
+            <p class="none">Er ligt nu geen voorraad.</p>
+          }
+        </section>
+      </div>
+
+      @if (!desk.active() && o.contact?.phone) {
         <p class="contact">Vragen? {{ o.contact?.name || 'Enrosed' }} · <a [href]="'tel:' + tel(o.contact?.phone)">{{ o.contact?.phone }}</a></p>
       }
     } @else if (data.failure()) {
@@ -82,100 +136,168 @@ import { PartnerReportTable } from './partner-report-table';
     } @else {
       <app-skeleton [kind]="desk.active() ? 'table' : 'card'" [rows]="5" />
     }
-
-    @if (open(); as report) {
-      <app-partner-report-sheet [report]="report" [twins]="data.twins()" [related]="overview()?.reports ?? []" (closed)="open.set(null)" (changed)="changed($event)" (edit)="edit($event)" />
-    }
   `,
   styles: `
-    :host{display:block;padding-bottom:calc(20px + var(--safe-b,0px))}
-    .acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:4px 0 10px}
-    .act{display:flex;align-items:center;gap:12px;min-height:72px;padding:12px 14px;border-radius:18px;background:color-mix(in srgb,var(--tone) 12%,var(--surface));color:color-mix(in srgb,var(--tone) 70%,var(--ink));text-decoration:none;box-shadow:0 1px 2px rgb(26 22 20/5%);-webkit-tap-highlight-color:transparent}
-    .act:last-child{grid-column:1/-1}
-    .act:hover{background:color-mix(in srgb,var(--tone) 17%,var(--surface))}
-    .act:active{transform:scale(.98)}
-    .act:focus-visible{outline:3px solid color-mix(in srgb,var(--tone) 60%,transparent);outline-offset:2px}
-    .act__icon{display:grid;flex:none;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--tone);color:#fff}
-    .act__label{font-size:16px;font-weight:750;line-height:1.2;letter-spacing:-.01em}
-    .costs{margin:0 0 18px;color:var(--muted);font-size:13.5px;font-weight:600}
-    .sec{margin:0 0 24px}
-    .sec__head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 2px 8px}
-    .sec__head h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.02em}
-    .sec__trail{color:var(--muted);font-size:13.5px;font-weight:600}
-    .sec__link{display:inline-flex;align-items:center;min-height:44px;margin:-12px 0;color:var(--rose-dark);font-size:14px;font-weight:650;text-decoration:none}
-    .sec__card{border:1px solid var(--line);border-radius:14px;background:var(--surface);--wk-sticky-top:var(--pp-sticky-top,60px)}
-    .sec__card--pad{padding:12px 12px 4px}
-    .none{margin:0;padding:22px;border-radius:16px;background:var(--surface);color:var(--muted);text-align:center}
-    .contact{margin:0 0 8px;color:var(--muted);font-size:14px;text-align:center}
+    :host{display:block;padding-bottom:calc(24px + var(--safe-b,0px))}
+    .hd{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:4px 16px;margin:6px 2px 16px}
+    .hd h1{margin:0;font-size:26px;font-weight:800;letter-spacing:-.025em;line-height:1.15}
+    .hd p{margin:0;color:var(--muted);font-size:14px;font-weight:600}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+    .ov-card{min-width:0;padding:16px 18px 16px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+    .ov-card__head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .ov-card__kicker{margin:0;color:var(--muted);font-size:12px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+    .ov-card__link{display:inline-flex;align-items:center;min-height:32px;margin:-8px 0;color:var(--rose-dark);font-size:13.5px;font-weight:650;text-decoration:none}
+    .ov-card__link:hover{text-decoration:underline}
+    .ov-card__foot{margin:12px 0 0;color:var(--muted);font-size:12.5px;line-height:1.4}
+    .none{margin:0;padding:14px 0 4px;color:var(--muted)}
+    .none__retry{padding:0;border:0;background:none;color:var(--rose-dark);font:inherit;font-weight:650;cursor:pointer}
+    .nx-title{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-bottom:18px}
+    .nx-name{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+    .nx-name b{font-size:22px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+    .nx-actions{display:flex;align-items:center;gap:8px}
+    .nx-open{display:inline-flex;align-items:center;gap:2px;min-height:36px;padding:0 10px 0 13px;border-radius:10px;background:var(--rose);color:#fff;font-size:13.5px;font-weight:650;text-decoration:none}
+    .nx-open:hover{background:var(--rose-dark)}
+    .nx-route{margin:0 -4px 14px}
+    .nx-cargo{margin:0 0 10px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-2);font-size:13px;font-weight:600}
+    .nx-list{display:grid;gap:2px;margin:0;padding:0;list-style:none}
+    .nx-list li{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:40px}
+    .nx-photo{width:32px;height:32px;border-radius:8px}
+    .nx-fam{display:flex;align-items:center;gap:8px;min-width:0}
+    .nx-fam b{min-width:0;overflow:hidden;font-size:13.5px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+    .nx-dots{display:inline-flex;flex:none;gap:3px}
+    .nx-dots i{width:8px;height:8px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(26 22 20/14%)}
+    .nx-fig{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .nx-more{margin:4px 0 0 42px;color:var(--muted);font-size:12.5px}
+    .nx-after{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--ink-2);font-size:13px}
+    .kv{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:0 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+    .kv__label{color:var(--ink-2);font-size:13.5px;font-weight:600}
+    .kv__value{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+    .kv.is-on .kv__value{color:#9a6212}
+    .kv__sub{grid-column:1/-1;color:var(--muted);font-size:12.5px}
+    .cats{display:grid;margin:0;padding:0;list-style:none}
+    .cats li{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+    .cats li:last-child{border-bottom:0}
+    .cats b{font-weight:700;font-variant-numeric:tabular-nums}
+    .contact{margin:18px 0 8px;color:var(--muted);font-size:14px;text-align:center}
     .contact a{display:inline-flex;align-items:center;min-height:44px;color:var(--rose-dark);font-weight:650;text-decoration:none}
     @media (min-width: 1024px), (min-width: 680px) and (hover: hover){
-      .acts{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-      .act:last-child{grid-column:auto}
-      .act{min-height:64px;border-radius:14px}
+      .grid{grid-template-columns:minmax(0,1.65fr) minmax(250px,1fr);grid-template-rows:auto 1fr;align-items:start}
+      .ov-card--next{grid-row:1 / span 2}
     }
     @media (max-width: 679.98px), (hover: none) and (max-width: 1023.98px){
-      .sec__card{border:0;border-radius:20px}
-      .sec__card--pad{padding:12px 0 4px}
-      .costs{text-align:center}
+      .hd h1{font-size:24px}
+      .ov-card{border:0;border-radius:20px;padding:16px}
+      .nx-name b{font-size:20px}
+      .nx-actions{width:100%}
+      .nx-actions > *{flex:1}
+      .nx-open{justify-content:center;min-height:44px;border-radius:12px;font-size:15px}
     }
   `,
 })
 export class PartnerHome {
   readonly data = inject(PartnerData);
-  private readonly containers = inject(PartnerContainersData);
-  private readonly api = inject(PartnerPortalApi);
-  private readonly router = inject(Router);
-  private readonly ui = inject(Ui);
+  readonly containers = inject(PartnerContainersData);
   readonly desk = inject(DesktopViewport);
 
-  readonly kinds = PARTNER_KINDS;
-  readonly label = KIND_LABEL;
-  readonly icon = KIND_ICON;
-  readonly tone = KIND_TONE;
-
   readonly overview = this.data.overview;
-  readonly latest = computed<PartnerReport[]>(() => [...(this.overview()?.reports ?? [])].sort(bySoldOn).slice(0, 5));
-  readonly open = signal<PartnerReport | null>(null);
   readonly failureText = computed(() => messageOf(this.data.failure(), LOAD_ERROR_FALLBACK));
 
-  /** The stock, and behind "Alleen met voorraad" what sold lately and is gone (0). */
-  readonly stockItems = computed<TableProduct[]>(() => {
-    const overview = this.overview();
-    if (!overview) return [];
-    const ids = new Set(overview.stock.map((tile) => tile.productId));
-    const gone = overview.recentSales.filter((tile) => !ids.has(tile.productId)).map((tile) => ({ ...tile, quantity: 0 }));
-    return withCategories<TableProduct>([...overview.stock, ...gone], this.containers.specs());
+  readonly greeting = computed(() => {
+    const name = this.overview()?.partner.displayName?.trim();
+    const hour = new Date().getHours();
+    const word = hour < 12 ? 'Goedemorgen' : hour < 18 ? 'Goedemiddag' : 'Goedenavond';
+    return name ? `${word}, ${name}` : word;
+  });
+
+  readonly todayText = computed(() => {
+    const today = this.overview()?.serverDate;
+    if (!today || !/^\d{4}-\d{2}-\d{2}/.test(today)) return '';
+    const [y, m, d] = today.slice(0, 10).split('-').map(Number);
+    return WEEKDAY_DATE.format(new Date(Date.UTC(y, m - 1, d)));
+  });
+
+  /** The next container still coming, with its way, its cargo and what is in it per family. */
+  readonly next = computed(() => {
+    const page = this.containers.page();
+    if (!page) return null;
+    const coming = this.containers.coming();
+    const container: PartnerContainer | undefined = coming[0];
+    if (!container) return null;
+    const today = page.serverDate;
+    const state = stateOf(container, today);
+    const specs = this.containers.specs();
+    const order = this.containers.order();
+    const lines = [...container.lines]
+      .filter((line) => line.quantity > 0)
+      .sort((a, b) => (order.get(a.productId) ?? 1e9) - (order.get(b.productId) ?? 1e9) || a.productId - b.productId);
+    const tiles = lines.map((line) => ({ ...specOrFallback(specs.get(line.productId), line.productId), quantity: line.quantity }));
+    const families = foldFamilies<PartnerProductTile & { quantity: number }>(tiles, (tile) => tile.quantity).flatMap((category) => category.families);
+    const totals = container.totals;
+    const cargo = totals
+      ? [container.containerType, productsText(totals.products), cartonsText(totals.cartons), palletsText(totals.pallets), cbmText(totals.cbm)].filter(Boolean).join(' · ')
+      : container.containerType ?? '';
+    const rest = coming.slice(1);
+    const onWay = rest.filter((item) => stateOf(item, today) !== 'BESTELD').length;
+    const ordered = rest.length - onWay;
+    const after = [onWay ? `${onWay} onderweg` : '', ordered ? `${ordered} besteld` : ''].filter(Boolean).join(' en ');
+    return {
+      container, today, word: STATE_WORD[state], tone: STATE_TONE[state], cargo,
+      warehouse: page.warehouseName || 'Zaltbommel',
+      families: families.slice(0, NEXT_FAMILIES).map((family) => ({
+        key: family.key, title: family.title, total: familyTotal(family), photo: family.variants[0].item,
+        colours: family.variants.map((variant) => variant.colour ?? '#c9bfb7').slice(0, 8),
+      })),
+      moreFamilies: Math.max(0, families.length - NEXT_FAMILIES),
+      after: after ? `Daarna nog ${after}.` : '',
+    };
+  });
+
+  /** Meldingen at a glance: waiting on Enrosed, confirmed but not invoiced, the last one's day. */
+  readonly meld = computed(() => {
+    const reports = this.overview()?.reports ?? [];
+    let waiting = 0;
+    let waitingEur = 0;
+    let confirmed = 0;
+    let confirmedEur = 0;
+    for (const report of reports) {
+      if (report.status !== 'OPEN') continue;
+      const status = partnerStatus(report);
+      if (status.label === 'Ingediend') { waiting++; waitingEur += report.totals.netEur; }
+      else { confirmed++; confirmedEur += report.totals.netEur; }
+    }
+    const latest = reports.filter((report) => report.status !== 'VOIDED').sort((a, b) => b.soldOn.localeCompare(a.soldOn) || b.id - a.id)[0];
+    return {
+      waiting, waitingEur: Math.round(waitingEur * 100) / 100, confirmed, confirmedEur: Math.round(confirmedEur * 100) / 100,
+      last: latest ? `${latest.number}, ${longDate(latest.soldOn)}` : null,
+    };
+  });
+
+  /** The stock per category in Enrosed's order: how many products. */
+  readonly stock = computed(() => {
+    const stock = this.overview()?.stock ?? [];
+    const sorted = [...stock].sort((a, b) =>
+      (a.categoryOrder ?? Number.MAX_SAFE_INTEGER - (a.categoryName ? 1 : 0)) - (b.categoryOrder ?? Number.MAX_SAFE_INTEGER - (b.categoryName ? 1 : 0)));
+    return foldFamilies(sorted, (tile) => tile.quantity).map((category) => ({ key: category.key, name: category.name, products: category.products }));
+  });
+
+  readonly stockTotal = computed(() => {
+    const stock = this.overview()?.stock ?? [];
+    return `${count(stock.length)} ${stock.length === 1 ? 'product' : 'producten'} in Zaltbommel`;
   });
 
   constructor() {
-    /* Every visit reads the stock afresh (after a melding it changed); the last overview shows meanwhile. */
+    /* Every visit reads the stock and the containers afresh; the last answers show meanwhile. */
     void this.data.load();
+    void this.containers.load();
   }
 
   reload(): void {
     void this.data.load();
+    void this.containers.load();
   }
 
-  /** Melden on a stock row: the form with that product, sold at the auction (the kind can still change there). */
-  sell(product: TableProduct): void {
-    if (!product.quantity) return;
-    void this.router.navigate(['/partner/melden'], { queryParams: { soort: 'veiling', product: product.productId } });
-  }
-
-  edit(report: PartnerReport): void {
-    this.open.set(null);
-    void this.router.navigate(['/partner/melden'], { queryParams: { bewerk: report.id } });
-  }
-
-  async undo(report: PartnerReport): Promise<void> {
-    const voided = await confirmUndo(this.ui, this.api, report);
-    if (voided) this.changed(voided);
-  }
-
-  changed(report: PartnerReport): void {
-    this.open.set(null);
-    this.data.upsertReport(report);
-    void this.data.load();
+  eur(value: number): string {
+    return euro(value);
   }
 
   pct(value: number): string {

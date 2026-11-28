@@ -5,6 +5,7 @@ import type {
 import { addDaysIso, monthCells, shiftMonthIso, weekdayMon0 } from '../dashboard/agenda-days';
 import { count } from './partner-format';
 import { safeColour } from './partner-photo';
+import { sameName } from './partner-families';
 import { stockFigure } from './partner-units';
 
 /**
@@ -307,6 +308,48 @@ export function progressOf(container: PartnerContainer, today: string): number |
   return Math.max(0, Math.min(100, Math.round((daysBetween(start, today) / span) * 100)));
 }
 
+/* ------------------------------------------------------------------ route */
+
+/** One stop of a container's way: Besteld, Vertrokken, the port, the warehouse. */
+export interface RouteStop {
+  key: 'besteld' | 'vertrokken' | 'haven' | 'magazijn';
+  /** "Besteld", "Vertrokken", "Haven Rotterdam", "In Zaltbommel". */
+  label: string;
+  /** "vr 21 aug", "± ma 30 nov", "nog niet", "nog niet gepland". */
+  main: string;
+  /** "Ningbo", "over 2 dagen", "schip is binnen", "08:30". */
+  sub: string;
+  /** Reached (filled), or still ahead (open). */
+  done: boolean;
+  /** The day has passed while the stop is not reached: amber. */
+  late: boolean;
+  /** Nothing known yet: the words read quieter. */
+  muted: boolean;
+}
+
+/**
+ * The four stops of a container in order, with what is known of each: ordered, departed (the port it left), the
+ * port of arrival (the expected day, the day its ship came in) and the warehouse (the day and hour set by hand, or
+ * the receipt). The same words as the table's cells (portCell, stockCell); never a price.
+ */
+export function routeStops(container: PartnerContainer, today: string, warehouseName: string): RouteStop[] {
+  const received = isReceived(container);
+  const departed = received || container.status === 'ONDERWEG' || (isDay(container.shippedOn) && day10(container.shippedOn) <= today);
+  const port = portCell(container, today);
+  const stock = stockCell(container, today, warehouseName);
+  /* Another partner's container unloaded elsewhere: that place is never named. */
+  const place = container.locationName?.trim() || null;
+  return [
+    { key: 'besteld', label: 'Besteld', main: isDay(container.orderDate) ? dayText(container.orderDate, today) : '—', sub: '',
+      done: true, late: false, muted: !isDay(container.orderDate) },
+    { key: 'vertrokken', label: 'Vertrokken', main: isDay(container.shippedOn) ? dayText(container.shippedOn, today) : departed ? 'vertrokken' : 'nog niet',
+      sub: container.departurePort ?? '', done: departed, late: false, muted: !departed },
+    { key: 'haven', label: container.destinationPort ? `Haven ${container.destinationPort}` : 'Haven', main: port.main, sub: port.sub,
+      done: received || !!shipInDay(container), late: port.late, muted: port.muted && !received },
+    { key: 'magazijn', label: place ? `In ${place}` : 'Magazijn', main: stock.main, sub: stock.sub, done: received, late: stock.late, muted: stock.muted },
+  ];
+}
+
 /* ------------------------------------------------------------------ figures */
 
 /** "1,08", "61,3": two decimals under 10 m³, one above. */
@@ -426,8 +469,10 @@ export interface LineRow {
 
 export interface LineGroup {
   key: string;
-  /** "Acryl · Rozenstolp"; "Acryl" for products without a family. */
+  /** "Acryl · Rozenstolp"; "Acryl" for products without a family; the name its products share where they do. */
   label: string;
+  /** Every product in it carries one name (the label says it): a row reads as its colour and size. */
+  shared: boolean;
   rows: LineRow[];
   /** The colours in the group (at most 8), for the swatches beside the label. */
   swatches: string[];
@@ -447,13 +492,21 @@ export function lineGroups(container: PartnerContainer, specs: ReadonlyMap<numbe
     let group = byKey.get(key);
     if (!group) {
       const label = [category, family].filter(Boolean).join(' · ') || 'Andere producten';
-      group = { key, label, rows: [], swatches: [] };
+      group = { key, label, shared: false, rows: [], swatches: [] };
       byKey.set(key, group);
       groups.push(group);
     }
     group.rows.push({ line, spec });
     const colour = safeColour(spec.colourHex);
     if (colour && group.swatches.length < 8 && !group.swatches.includes(colour)) group.swatches.push(colour);
+  }
+  /* A family whose products share one name (or a family of one): the head carries that name once, the rows their
+     colour (not the same name on every row under a head that repeats it). */
+  for (const group of groups) {
+    const first = group.rows[0]?.spec;
+    if (!first || first.familyId == null || !group.rows.every((row) => !!row.spec.variant && sameName(row.spec.name, first.name))) continue;
+    group.shared = true;
+    group.label = [first.categoryName?.trim() || '', first.name].filter(Boolean).join(' · ');
   }
   return groups;
 }

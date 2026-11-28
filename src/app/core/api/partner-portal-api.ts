@@ -500,6 +500,11 @@ export class PartnerPortalApi {
     return firstValueFrom(this.http.get<PartnerContainerPage>(api('/api/partner-portal/containers')));
   }
 
+  /** De pakbon of one container as a PDF (2026-11-28): its products to tick off, no price; 404 for a concept. */
+  pakbon(containerId: number): Promise<Blob> {
+    return firstValueFrom(this.http.get(api(`/api/partner-portal/containers/${containerId}/pakbon.pdf`), { responseType: 'blob' }));
+  }
+
   /** Ends this device's partner session on the server; the caller then signs out locally. */
   logout(): Promise<void> {
     return firstValueFrom(this.http.post<void>(api('/api/partner-portal/logout'), null));

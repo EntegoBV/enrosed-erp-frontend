@@ -6792,3 +6792,46 @@ count its per-pallet and per-kar figures on its own pallet height, kar height an
   21 kar figures differ for those minutes (e.g. Bowl M: preview 3.920, PDF 3.360 per pallet).
 - **Not built**: no per-customer stored height, nothing in the file name, no question when the recipient changes
   while a load is picked (the line on the action bar covers that, and the catalogue without prices too).
+
+## Partnerportaal: desk-first shell, Inkooporders with pakbon, Voorraad page (2026-11-28)
+
+Emre: "Verhoeven must see all our purchase orders, no prices; the container's pakbon, when it left and when it
+arrives; the dashboard much more DESKTOP like, easier, clear and not double."
+
+- **Shell** (`partner-shell.ts`): on a desk (`DESK_MEDIA`) a side bar like the ERP's: Enrosed, the green **Melden**
+  button, Overzicht · Inkooporders · Voorraad · Meldingen with counts (containers still coming, products in stock,
+  meldingen waiting on Enrosed = OPEN and not confirmed), at its foot whom to call, who is signed in, Afmelden. 200 px
+  from 1024, 216 px from 1200, an 84 px rail between 680 and 1023 with a mouse ("Inkoop" as the rail word). The phone
+  keeps the top bar with the tabs in a row (Melden second). `.has-side` scopes the grid: the iOS host shows no side bar
+  and keeps the one-row top bar (`--pp-head-h` / `--pp-sticky-top` 60 px there, the safe top only beside the side bar).
+- **Routes** (`partner.routes.ts`): `/partner/inkooporders` (the page that was Containers), `/partner/voorraad` (new);
+  `/partner/containers` redirects to inkooporders with its query (`?container=` keeps working).
+- **Overzicht** (`partner-home.ts`): three cards, each subject once with one way on: Volgende container (the first of
+  `PartnerContainersData.coming()`: its way via `app-partner-route`, the cargo, its product families, Pakbon, Bekijk →
+  `?container=`, "Daarna nog n onderweg en n besteld"), Meldingen (waiting / confirmed-not-invoiced counts and net, the
+  last melding, the cost percents) and Voorraad (products per category). The old three kind banners, the Komt eraan
+  strip (`partner-coming.ts`, deleted), the 33-row stock table with a Melden button per row and the latest-meldingen
+  table are gone from it. Classes are `ov-card*`: the global `.card` / `.card + .card { margin-top: 12px }` of
+  styles.scss pushed the right column down.
+- **Inkooporders** (`partner-containers.ts`, `partner-container-table.ts`): Alle · Komt eraan · Aangekomen (Alle by
+  default; old received containers are simply in the list, no "Ook oude containers" chip any more) and Lijst |
+  Kalender (one view at a time; the calendar lost its "Komt eraan" side list). Columns: Inkooporder (state dot + word,
+  "Samen met jou") · Vertrokken (never folds away: it used to vanish under 1100 px, i.e. in Emre's 1070 pane) · Aankomst
+  haven · In Zaltbommel · Lading (± pallets; dozen · m³; folds under 740 px table width) · Pakbon. Phone: a card per
+  container with its route, Pakbon and Inhoud.
+- **Pakbon** (`partner-pakbon-button.ts`): `PartnerPortalApi.pakbon(id)` → `saveBlob` as `pakbon-PO-2026-011.pdf`; its
+  click stops propagation (a row never opens or closes from it); 404 says the container no longer exists.
+- **Route** (`partner-route.ts` + `routeStops()` in the model): Besteld → Vertrokken → Haven {port} → In {place}
+  ("Magazijn" where the place may not be named), the words of `portCell` / `stockCell`; the track fills to the voyage's
+  share at sea (`progressOf`, at most 95 % of that leg until the ship is in).
+- **Families** (`partner-families.ts`, `foldFamilies`): products folded per family. A family whose products share one
+  name (often not the family's own: "Glass Bowl - M" in "Bowl Rozen M - Display") is titled by that name once and its
+  variants read as colour and size; otherwise the family name with each product's own name in its label. Used by the
+  Voorraad page and the Overzicht card. `lineGroups()` follows the same rule (`LineGroup.shared`): the opened container
+  and the pakbon no longer repeat the name on every colour row.
+- **Voorraad** (`partner-voorraad.ts`): one row per family: photo, title, colour chips with their pieces (a chip is a
+  button: Melden with that product, kind Veiling), the total in the piece noun, and Komt eraan (pieces on containers not
+  received, the nearest calendar day). Search and "Ook uitverkocht" (recent sales now at 0).
+- **Melden at 1070**: beside the side bar the form is 822 px wide, under `partner-entry`'s 1008 px two-column point, so
+  the totals and Opslaan stand under the table on the right (as on the staff page beside the ERP sidebar); from 1280 px
+  they stand beside it.

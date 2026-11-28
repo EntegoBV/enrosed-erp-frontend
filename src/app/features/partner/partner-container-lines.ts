@@ -13,6 +13,11 @@ import { stockFigure } from './partner-units';
 interface LineView {
   key: number;
   row: LineRow;
+  /** The colour (and size) where the product carries its family's name (the group head says it), else the name. */
+  title: string;
+  /** The colour beside a name of its own; null when the title is the colour. */
+  detail: string | null;
+  folded: boolean;
   colour: string | null;
   figure: { main: string; sub: string | null };
   ordered: string | null;
@@ -89,8 +94,8 @@ interface GroupView {
                     </button>
                   </span>
                   <span class="wk-td cl-name" role="cell">
-                    <b>{{ line.row.spec.name }}</b>
-                    @if (line.row.spec.variant) { <small><i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>{{ line.row.spec.variant }}</small> }
+                    <b>@if (line.folded) {<i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>}{{ line.title }}</b>
+                    @if (line.detail) { <small><i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>{{ line.detail }}</small> }
                     @if (line.spec) { <small class="cl-own-inline">{{ line.spec }}</small> }
                     @if (line.size || line.content) { <small class="cl-box-inline">Omdoos {{ boxLine(line) }}</small> }
                   </span>
@@ -126,8 +131,8 @@ interface GroupView {
                   <app-partner-photo class="cl-item__photo" [product]="line.row.spec" />
                 </button>
                 <span class="cl-item__text">
-                  <b>{{ line.row.spec.name }}</b>
-                  @if (line.row.spec.variant) { <small><i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>{{ line.row.spec.variant }}</small> }
+                  <b>@if (line.folded) {<i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>}{{ line.title }}</b>
+                  @if (line.detail) { <small><i class="cl-dot" [style.background]="line.colour" aria-hidden="true"></i>{{ line.detail }}</small> }
                   <small>{{ line.phone }}</small>
                   @if (line.spec) { <small>{{ line.spec }}</small> }
                   @if (line.size || line.content) { <small>Omdoos {{ boxLine(line) }}</small> }
@@ -242,7 +247,7 @@ export class PartnerContainerLines {
   readonly groups = computed<GroupView[]>(() =>
     lineGroups(this.container(), this.specs(), this.order()).map((group: LineGroup) => ({
       key: group.key, label: group.label, swatches: group.swatches,
-      lines: group.rows.map((row) => this.view(row)),
+      lines: group.rows.map((row) => this.view(row, group.shared)),
     })));
 
   /** "Ningbo → Rotterdam · lost in Magazijn · besteld di 3 nov · 412 kg". */
@@ -272,12 +277,14 @@ export class PartnerContainerLines {
     return text ? text[0].toUpperCase() + text.slice(1) : '';
   }
 
-  private view(row: LineRow): LineView {
+  private view(row: LineRow, shared: boolean): LineView {
     const { line, spec } = row;
     const ordered = line.orderedQuantity != null && line.orderedQuantity !== line.quantity
       ? `${stockFigure(spec, line.orderedQuantity).main} besteld` : null;
+    const folded = shared && !!spec.variant;
     return {
-      key: line.productId, row, colour: safeColour(spec.colourHex), figure: lineFigure(line, spec), ordered,
+      key: line.productId, row, title: folded ? spec.variant! : spec.name, detail: folded ? null : spec.variant, folded,
+      colour: safeColour(spec.colourHex), figure: lineFigure(line, spec), ordered,
       cartons: count(line.cartons), cbm: cbmNumber(line.cbm), pallets: line.pallets == null ? '' : `± ${count(line.pallets)}`,
       phone: [cartonsText(line.cartons), cbmText(line.cbm), palletsText(line.pallets)].filter(Boolean).join(' · '),
       size: sizeText(spec.cartonCm), content: cartonContentText(spec), perPallet: perPalletText(spec),

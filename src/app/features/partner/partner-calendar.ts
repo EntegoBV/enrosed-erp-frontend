@@ -2,36 +2,15 @@ import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSign
 import type { PartnerContainer } from '../../core/api/partner-portal-api';
 import { DesktopViewport } from '../../core/platform/desktop-viewport';
 import { Icon } from '../../shared/icon';
-import {
-  CalendarCell, STATE_TONE, STATE_WORD, WEEKDAY_HEADS, arrivalLine, arrivalWords, calendarCells, cargoLine, monthOf,
-  monthTitle, nextMonth, progressOf, stateOf, upcoming,
-} from './partner-containers-model';
-
-/** How many coming containers the list beside the month shows (desk, phone); the rest are in the table below. */
-const LIST_MAX = 5;
-const LIST_MAX_PHONE = 3;
-
-interface ComingRow {
-  id: number;
-  name: string;
-  own: boolean;
-  word: string;
-  tone: string;
-  cargo: string;
-  when: string;
-  late: boolean;
-  moved: string | null;
-  progress: number | null;
-}
+import { CalendarCell, WEEKDAY_HEADS, calendarCells, monthOf, monthTitle, nextMonth } from './partner-containers-model';
 
 /**
- * The calendar card on top of Containers: a Monday-first month with every
- * container on its arrival day (the expected day, or the receipt once in),
- * ‹ › and Vandaag; beside it "Komt eraan", the containers still coming, the
- * nearest first, each with its cargo, "± do 20 nov · over 8 dagen" and a thin
- * bar from leaving to arriving (amber when its day has passed). A chip or a
- * row picks the container (the page selects it in the table). On the phone
- * the month shows dots and a day with containers is one button.
+ * Inkooporders' Kalender view: a Monday-first month with every container on
+ * its arrival day (the warehouse day set by hand, else the port; the receipt
+ * once in), ‹ › and Vandaag. A chip picks the container (the page opens it in
+ * the list). Since 2026-11-28 the list of what is coming no longer stands
+ * beside it: the list view is that list. On the phone the month shows dots
+ * and a day with containers is one button.
  */
 @Component({
   selector: 'app-partner-calendar',
@@ -84,28 +63,6 @@ interface ComingRow {
         </div>
       </div>
 
-      <section class="pk-side" aria-labelledby="pk-coming">
-        <h2 class="pk-side__title" id="pk-coming">Komt eraan @if (coming().length) { <span class="pk-side__count">{{ coming().length }}</span> }</h2>
-        @for (row of shown(); track row.id) {
-          <button class="pk-row" type="button" [class.is-on]="row.id === selectedId()" [attr.aria-current]="row.id === selectedId() ? 'true' : null" (click)="picked.emit(row.id)">
-            <span class="pk-row__top">
-              <b class="pk-row__name">{{ row.name }}</b>
-              @if (row.own) { <span class="wk-pill tone-accent pk-row__own">Samen met jou</span> }
-            </span>
-            <span class="pk-row__cargo {{ row.tone }}"><i class="wk-dot" aria-hidden="true"></i>{{ row.word }} · {{ row.cargo }}</span>
-            <span class="pk-row__when" [class.is-late]="row.late">{{ row.when }}</span>
-            @if (row.progress !== null) {
-              <span class="pk-bar {{ row.late ? 'tone-amber' : row.tone }}" role="presentation"><i [style.width.%]="row.progress"></i></span>
-            }
-            @if (row.moved) { <span class="pk-row__moved">{{ row.moved }}</span> }
-          </button>
-        } @empty {
-          <p class="pk-none">Er komt nu geen container aan.</p>
-        }
-        @if (coming().length > shown().length) {
-          <p class="pk-rest">+ {{ coming().length - shown().length }} later, in de tabel hieronder</p>
-        }
-      </section>
     </div>
   `,
   styles: `
@@ -131,36 +88,14 @@ interface ComingRow {
     .pk-chip:hover{background:color-mix(in srgb,var(--tone) 22%,var(--surface))}
     .pk-chip.is-on{box-shadow:inset 0 0 0 1.5px var(--tone)}
     .pk-chip.is-late{background:color-mix(in srgb,#c7851d 15%,var(--surface));color:#8a5a10}
-    .pk-chip:focus-visible,.pk-more:focus-visible,.pk-row:focus-visible,.pk-day--tap:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
+    .pk-chip:focus-visible,.pk-more:focus-visible,.pk-day--tap:focus-visible{outline:2px solid var(--rose-dark);outline-offset:-2px}
     .pk-chip__dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--tone)}
     .pk-chip.is-late .pk-chip__dot{background:#c7851d}
     .pk-chip__text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .pk-chip__full{display:none}
     .pk-more{align-self:flex-start;height:18px;padding:0 6px;border:0;border-radius:6px;background:var(--surface-2);color:var(--ink-2);font:inherit;font-size:11px;font-weight:700;cursor:pointer}
-    .pk-side{min-width:0;padding:14px 16px 16px;border-top:1px solid var(--line)}
-    .pk-side__title{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:15px;font-weight:780}
-    .pk-side__count{color:var(--muted);font-size:13px;font-weight:650}
-    .pk-row{display:grid;gap:3px;width:100%;margin:0 0 6px;padding:9px 11px 10px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-    .pk-row:hover{border-color:var(--line-strong);background:var(--surface-2)}
-    .pk-row.is-on{border-color:var(--rose-line);background:var(--rose-soft)}
-    .pk-row__top{display:flex;align-items:center;gap:8px;min-width:0}
-    .pk-row__name{min-width:0;overflow:hidden;font-size:13.5px;font-weight:720;font-variant-numeric:tabular-nums;text-overflow:ellipsis;white-space:nowrap}
-    .pk-row__own{flex:none}
-    .pk-row__cargo{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;color:var(--ink-2);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-    .pk-row__when{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
-    .pk-row__when.is-late{color:#9a6212}
-    .pk-row__moved{color:var(--muted);font-size:11.5px}
-    .pk-bar{display:block;height:4px;margin-top:3px;border-radius:2px;background:color-mix(in srgb,var(--tone) 14%,var(--surface-2));overflow:hidden}
-    .pk-bar>i{display:block;height:100%;border-radius:2px;background:var(--tone)}
-    .pk-none{margin:0;padding:18px 8px;color:var(--muted);font-size:13.5px;text-align:center}
-    .pk-rest{margin:2px 0 0;color:var(--muted);font-size:12.5px}
-    @container pk (min-width: 820px){
-      .pk{grid-template-columns:minmax(0,1fr) 320px}
-      .pk-side{border-top:0;border-left:1px solid var(--line)}
-    }
-    @container pk (min-width: 1100px){
-      .pk{grid-template-columns:minmax(0,1fr) 350px}
-      .pk-day{min-height:70px}
+    @container pk (min-width: 760px){
+      .pk-day{min-height:76px}
       .pk-chip__full{display:block}
       .pk-chip__short{display:none}
     }
@@ -178,13 +113,6 @@ interface ComingRow {
       .pk-num{align-self:center;min-width:26px;height:26px;font-size:14px}
       .pk-dots{display:flex;gap:3px}
       .pk-dot{width:6px;height:6px;border-radius:50%;background:var(--tone)}
-      .pk-side{padding:14px 12px 12px}
-      .pk-side__title{font-size:17px}
-      .pk-row{min-height:44px;padding:11px 13px 12px;border-radius:14px}
-      .pk-row__name{font-size:15.5px}
-      .pk-row__cargo{font-size:13.5px}
-      .pk-row__when{font-size:14px}
-      .pk-row__moved{font-size:13px}
     }
   `,
 })
@@ -210,21 +138,6 @@ export class PartnerCalendar {
     for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
     return weeks;
   });
-
-  readonly coming = computed<ComingRow[]>(() => {
-    const today = this.today();
-    return upcoming(this.containers(), today).map((container) => {
-      const state = stateOf(container, today);
-      const words = arrivalWords(container, today);
-      return {
-        id: container.id, name: container.name, own: container.own, word: STATE_WORD[state], tone: STATE_TONE[state],
-        cargo: cargoLine(container), when: arrivalLine(container, today), late: words.late, moved: words.moved,
-        progress: progressOf(container, today),
-      };
-    });
-  });
-
-  readonly shown = computed(() => this.coming().slice(0, this.desk.active() ? LIST_MAX : LIST_MAX_PHONE));
 
   shift(step: number): void {
     this.month.set(nextMonth(this.month(), step));
